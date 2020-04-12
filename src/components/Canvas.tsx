@@ -1,8 +1,8 @@
 import React, { useRef, useEffect, useState } from "react";
 import { Layer, Stage } from "react-konva";
-import { NodeSystem } from "./NodeSystem";
 import { KonvaEventObject } from "konva/types/Node";
 import { PDF_BUTTON } from "./PDF_Button";
+import { AtomDisplay } from "./AtomDisplay";
 
 const Canvas = () => {
   const [stage, setStage] = useState(null);
@@ -42,7 +42,7 @@ const Canvas = () => {
         onWheel={zoom}
       >
         <Layer>
-          <NodeSystem />
+          <AtomDisplay />
         </Layer>
       </Stage>
       {stage && <PDF_BUTTON stage={stageRef.current} />}

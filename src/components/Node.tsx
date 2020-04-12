@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Circle } from "react-konva";
+import { Circle, Text } from "react-konva";
 import { KonvaEventObject } from "konva/types/Node";
 import { Pos } from "../types";
 
@@ -21,18 +21,22 @@ export const Node = ({ setPos, pos }: NodeProps) => {
   };
 
   return (
-    <Circle
-      radius={50}
-      fill={dragging ? "yellow" : "green"}
-      shadowBlur={10}
-      stroke="black"
-      x={pos.x}
-      y={pos.y}
-      draggable
-      zIndex={dragging ? 4 : 0}
-      onDragStart={startDragging}
-      onDragMove={dragMove}
-      onDragEnd={endDragging}
-    />
+    <>
+      <Circle
+        radius={50}
+        fill={dragging ? "yellow" : "green"}
+        shadowBlur={10}
+        stroke="black"
+        name="Node"
+        x={pos.x}
+        y={pos.y}
+        draggable
+        zIndex={dragging ? 4 : 0}
+        onDragStart={startDragging}
+        onDragMove={dragMove}
+        onDragEnd={endDragging}
+      ></Circle>
+      <Text text="Drag the spheres" x={0} y={0} />
+    </>
   );
 };

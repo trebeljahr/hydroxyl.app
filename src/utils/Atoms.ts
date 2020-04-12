@@ -1,6 +1,7 @@
 interface AtomConstructor {
   type?: string;
   childOf?: Atom | null;
+  connectionOn?: number;
 }
 
 export class Atom {
@@ -21,7 +22,7 @@ export class Atom {
       : null;
   };
   show = () => {
-    const structure: string = `
+    const structure: String = trim(`
         ${this.type[0]} ${
       this.connections
         ? Object.values(this.connections)
@@ -30,8 +31,8 @@ export class Atom {
             .join("")
         : ""
     }
-    `;
-    const condensedStructure = trim(structure)
+    `);
+    const condensedStructure = structure
       .split("")
       .reduce((agg: any, val: string) => {
         return {
@@ -66,13 +67,25 @@ export class Hydrogen extends Atom {
 
 export class Carbon extends Atom {
   connections: FourBonds;
-  constructor({ childOf = null }: AtomConstructor) {
+  constructor({ childOf = null, connectionOn = 1 }: AtomConstructor) {
     super({ childOf, type: "Carbon" });
     this.connections = {
-      1: childOf || new Hydrogen({ childOf: this }),
-      2: new Hydrogen({ childOf: this }),
-      3: new Hydrogen({ childOf: this }),
-      4: new Hydrogen({ childOf: this }),
+      1:
+        childOf && connectionOn === 1
+          ? childOf
+          : new Hydrogen({ childOf: this }),
+      2:
+        childOf && connectionOn === 2
+          ? childOf
+          : new Hydrogen({ childOf: this }),
+      3:
+        childOf && connectionOn === 3
+          ? childOf
+          : new Hydrogen({ childOf: this }),
+      4:
+        childOf && connectionOn === 4
+          ? childOf
+          : new Hydrogen({ childOf: this }),
     };
   }
 }
