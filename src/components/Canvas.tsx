@@ -1,10 +1,11 @@
-import React, { useRef } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import { Layer, Stage } from "react-konva";
 import { NodeSystem } from "./NodeSystem";
 import { KonvaEventObject } from "konva/types/Node";
-import { PDF_Button } from "./PDF_Button";
+import { PDF_BUTTON } from "./PDF_Button";
 
 const Canvas = () => {
+  const [stage, setStage] = useState(null);
   const stageRef: any = useRef();
   const zoom = (e: KonvaEventObject<WheelEvent>) => {
     e.evt.preventDefault();
@@ -27,6 +28,9 @@ const Canvas = () => {
     s.batchDraw();
   };
 
+  useEffect(() => {
+    setStage(stageRef.current);
+  }, []);
   return (
     <>
       <Stage
@@ -41,7 +45,7 @@ const Canvas = () => {
           <NodeSystem />
         </Layer>
       </Stage>
-      <PDF_Button stage={stageRef.current} />;
+      {stage && <PDF_BUTTON stage={stageRef.current} />}
     </>
   );
 };
