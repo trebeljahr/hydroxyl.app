@@ -7,7 +7,6 @@ interface PDF_Props {
 }
 
 export const PDF_BUTTON = ({ stage }: PDF_Props) => {
-  console.log(stage);
   const saveAsPDF = () => {
     const pdf = new jsPDF("l", "px", [stage.width(), stage.height()]);
     pdf.setTextColor("#000000");

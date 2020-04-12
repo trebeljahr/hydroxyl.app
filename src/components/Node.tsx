@@ -7,6 +7,7 @@ interface NodeProps {
   setPos: (pos: Pos) => void;
   pos: Pos;
 }
+
 export const Node = ({ setPos, pos }: NodeProps) => {
   const [dragging, setDragging] = useState(false);
   const startDragging = () => setDragging(true);
@@ -28,7 +29,7 @@ export const Node = ({ setPos, pos }: NodeProps) => {
       x={pos.x}
       y={pos.y}
       draggable
-      zIndex={dragging ? 10 : 1}
+      zIndex={dragging ? 4 : 0}
       onDragStart={startDragging}
       onDragMove={dragMove}
       onDragEnd={endDragging}
