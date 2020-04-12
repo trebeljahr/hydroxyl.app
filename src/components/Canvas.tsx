@@ -2,6 +2,7 @@ import React, { useRef } from "react";
 import { Layer, Stage } from "react-konva";
 import { NodeSystem } from "./NodeSystem";
 import { KonvaEventObject } from "konva/types/Node";
+import { PDF_Button } from "./PDF_Button";
 
 const Canvas = () => {
   const stageRef: any = useRef();
@@ -27,18 +28,21 @@ const Canvas = () => {
   };
 
   return (
-    <Stage
-      style={{ backgroundColor: "white" }}
-      draggable
-      width={700}
-      height={700}
-      ref={stageRef}
-      onWheel={zoom}
-    >
-      <Layer>
-        <NodeSystem />
-      </Layer>
-    </Stage>
+    <>
+      <Stage
+        style={{ backgroundColor: "white" }}
+        draggable
+        width={700}
+        height={700}
+        ref={stageRef}
+        onWheel={zoom}
+      >
+        <Layer>
+          <NodeSystem />
+        </Layer>
+      </Stage>
+      <PDF_Button stage={stageRef.current} />;
+    </>
   );
 };
 
