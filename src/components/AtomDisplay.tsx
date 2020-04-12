@@ -79,11 +79,11 @@ export const AtomDisplay = ({ showHydrogen }: AtomDisplayProps) => {
           key === 1
             ? { x: newPos.x - positionOffset - 30, y: newPos.y - 5 }
             : key === 2
-            ? { y: newPos.y - positionOffset - 10 }
+            ? { x: newPos.x - 15, y: newPos.y - positionOffset }
             : key === 3
             ? { x: newPos.x + positionOffset - 10, y: newPos.y - 5 }
             : key === 4
-            ? { y: newPos.y + positionOffset - 5 }
+            ? { x: newPos.x - 15, y: newPos.y + positionOffset - 10 }
             : pos;
         const offset = 6;
         const oldOffset = -offset;
