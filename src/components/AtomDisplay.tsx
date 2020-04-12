@@ -1,42 +1,66 @@
-import React from "react";
+import React, { useState } from "react";
 import { Text, Line } from "react-konva";
-import { Carbon } from "../utils/Atoms";
-export const AtomDisplay = () => {
-  const molecule = new Carbon({ childOf: null });
-  molecule.changeConnection(
-    2,
-    new Carbon({
-      childOf: molecule,
-      connectionOn: 4,
-    })
-  );
-  molecule.changeConnection(
-    1,
-    new Carbon({
-      childOf: molecule,
-      connectionOn: 3,
-    })
-  );
-  molecule.changeConnection(
-    4,
-    new Carbon({
-      childOf: molecule,
-      connectionOn: 2,
-    })
-  );
-  molecule.connections[4].changeConnection(
-    4,
-    new Carbon({ childOf: molecule.connections[1], connectionOn: 2 })
-  );
-  molecule.connections[1].changeConnection(
-    1,
-    new Carbon({ childOf: molecule.connections[1], connectionOn: 3 })
-  );
+import { Carbon, Oxygen } from "../utils/Atoms";
+
+interface Editing {
+  on: boolean;
+  id: string | null;
+}
+const initialEditing: Editing = { on: false, id: null };
+interface AtomDisplayProps {
+  showHydrogen: boolean;
+}
+const molecule = new Carbon({ childOf: null });
+molecule.changeConnection(
+  2,
+  new Carbon({
+    childOf: molecule,
+    connectionOn: 4,
+  })
+);
+molecule.changeConnection(
+  1,
+  new Carbon({
+    childOf: molecule,
+    connectionOn: 3,
+  })
+);
+molecule.changeConnection(
+  4,
+  new Carbon({
+    childOf: molecule,
+    connectionOn: 2,
+  })
+);
+molecule.connections[4].changeConnection(
+  4,
+  new Carbon({ childOf: molecule.connections[1], connectionOn: 2 })
+);
+molecule.connections[1].changeConnection(
+  1,
+  new Carbon({ childOf: molecule.connections[1], connectionOn: 3 })
+);
+molecule.changeConnection(
+  3,
+  new Oxygen({ childOf: molecule, connectionOn: 1 })
+);
+
+export const AtomDisplay = ({ showHydrogen }: AtomDisplayProps) => {
+  const [editing, setEditing] = useState(initialEditing);
+
+  const toggleEditing = (id: string) => {
+    setEditing({ on: true, id });
+  };
+  const turnOffEditing = () => {
+    setEditing(initialEditing);
+  };
+
   const generateAtomChain = (atom: any, pos: any = { x: 350, y: 350 }): any => {
     const { x, y } = pos;
     if (atom.connections) {
       return Object.keys(atom.connections).map((k: any) => {
-        const parentKey = atom.connections[k] === atom.childOf ? k : null;
+        const parentKey =
+          atom.childOf && atom.connections[k].id === atom.childOf.id ? k : null;
         const key = parseInt(k);
 
         const positionOffset =
@@ -51,6 +75,16 @@ export const AtomDisplay = () => {
             : key === 4
             ? { ...pos, y: y + positionOffset }
             : pos;
+        const editingPos =
+          key === 1
+            ? { x: newPos.x - positionOffset - 30, y: newPos.y - 5 }
+            : key === 2
+            ? { y: newPos.y - positionOffset - 10 }
+            : key === 3
+            ? { x: newPos.x + positionOffset - 10, y: newPos.y - 5 }
+            : key === 4
+            ? { y: newPos.y + positionOffset - 5 }
+            : pos;
         const offset = 6;
         const oldOffset = -offset;
         const linePoints =
@@ -64,25 +98,49 @@ export const AtomDisplay = () => {
             ? [pos.x, pos.y - oldOffset, newPos.x, newPos.y - offset]
             : [pos.x, pos.y, newPos.x, newPos.y];
         if (parentKey) {
-          console.log(parentKey);
           return null;
         }
+
         return (
           <>
-            <Text
-              text={atom.connections[key].type[0]}
-              x={newPos.x - 4}
-              y={newPos.y - 5}
-              align="center"
-              verticalAlign="middle"
-              onClick={() => console.log(atom.connections[key].type[0])}
-            />
-            <Line points={linePoints} fill={"black"} stroke={"black"} />
+            {showHydrogen || atom.connections[key].type !== "Hydrogen" ? (
+              <>
+                <Text
+                  key={"text-" + atom.connections[key].id}
+                  text={atom.connections[key].type[0]}
+                  x={newPos.x - 4}
+                  y={newPos.y - 5}
+                  align="center"
+                  verticalAlign="middle"
+                  fontStyle={
+                    editing && atom.connections[key].id === editing.id
+                      ? "bold"
+                      : "normal"
+                  }
+                  onClick={() => toggleEditing(atom.connections[key].id)}
+                />
+                {editing && atom.connections[key].id === editing.id ? (
+                  <Text
+                    onClick={turnOffEditing}
+                    x={editingPos.x}
+                    y={editingPos.y}
+                    text={"Editing"}
+                  />
+                ) : null}
+                <Line
+                  key={"line-" + atom.connections[key].id}
+                  points={linePoints}
+                  fill={"black"}
+                  stroke={"black"}
+                />
+              </>
+            ) : null}
             {generateAtomChain(atom.connections[key], newPos)}
           </>
         );
       });
     }
+
     return null;
   };
   return (

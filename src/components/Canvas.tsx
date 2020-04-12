@@ -5,12 +5,14 @@ import { PDF_BUTTON } from "./PDF_Button";
 import { AtomDisplay } from "./AtomDisplay";
 
 const Canvas = () => {
+  const [showHydrogen, setShowHydrogen] = useState(true);
   const [stage, setStage] = useState(null);
   const stageRef: any = useRef();
   const zoom = (e: KonvaEventObject<WheelEvent>) => {
     e.evt.preventDefault();
-    const scaleBy = 1.04;
     const s = stageRef.current;
+
+    const scaleBy = 1.02;
     const oldScale = s.scaleX();
     const mousePointTo = {
       x: s.getPointerPosition().x / oldScale - s.x() / oldScale,
@@ -33,6 +35,9 @@ const Canvas = () => {
   }, []);
   return (
     <>
+      <button onClick={() => setShowHydrogen(!showHydrogen)}>
+        {showHydrogen ? "Hide hydrogen" : "Show hydrogen"}
+      </button>
       <Stage
         style={{ backgroundColor: "white" }}
         draggable
@@ -42,7 +47,7 @@ const Canvas = () => {
         onWheel={zoom}
       >
         <Layer>
-          <AtomDisplay />
+          <AtomDisplay showHydrogen={showHydrogen} />
         </Layer>
       </Stage>
       {stage && <PDF_BUTTON stage={stageRef.current} />}

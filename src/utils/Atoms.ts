@@ -1,3 +1,5 @@
+import { v4 as uuid } from "uuid";
+
 interface AtomConstructor {
   type?: string;
   childOf?: Atom | null;
@@ -5,6 +7,7 @@ interface AtomConstructor {
 }
 
 export class Atom {
+  id: string;
   childOf: Atom | null;
   type: string;
   connections: null | TwoBonds | ThreeBonds | FourBonds;
@@ -12,6 +15,7 @@ export class Atom {
     this.type = type;
     this.childOf = childOf || null;
     this.connections = null;
+    this.id = uuid();
   }
   changeConnection = (connection: number, newAtom: Atom) => {
     this.connections = this.connections
@@ -21,6 +25,7 @@ export class Atom {
         }
       : null;
   };
+
   show = () => {
     const structure: String = trim(`
         ${this.type[0]} ${
@@ -51,10 +56,17 @@ export const trim = (str: String): String => str.replace(/\s+/g, "");
 
 export class Oxygen extends Atom {
   connections: TwoBonds;
-  constructor({ childOf = null }: AtomConstructor) {
-    super({ childOf, type: "Carbon" });
+  constructor({ childOf = null, connectionOn = 1 }: AtomConstructor) {
+    super({ childOf, type: "Oxygen" });
     this.connections = {
-      1: new Hydrogen({ childOf: this }),
+      1:
+        childOf && connectionOn === 1
+          ? childOf
+          : new Hydrogen({ childOf: this }),
+      2:
+        childOf && connectionOn === 1
+          ? childOf
+          : new Hydrogen({ childOf: this }),
     };
   }
 }
@@ -92,11 +104,13 @@ export class Carbon extends Atom {
 
 interface TwoBonds {
   1: Atom;
+  2: Atom;
 }
 
 interface ThreeBonds {
   1: Atom;
   2: Atom;
+  3: Atom;
 }
 
 interface FourBonds {
