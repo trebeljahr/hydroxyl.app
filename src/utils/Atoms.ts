@@ -64,7 +64,28 @@ export class Oxygen extends Atom {
           ? childOf
           : new Hydrogen({ childOf: this }),
       2:
+        childOf && connectionOn === 2
+          ? childOf
+          : new Hydrogen({ childOf: this }),
+    };
+  }
+}
+
+export class Nitrogen extends Atom {
+  connections: ThreeBonds;
+  constructor({ childOf = null, connectionOn = 1 }: AtomConstructor) {
+    super({ childOf, type: "Nitrogen" });
+    this.connections = {
+      1:
         childOf && connectionOn === 1
+          ? childOf
+          : new Hydrogen({ childOf: this }),
+      2:
+        childOf && connectionOn === 2
+          ? childOf
+          : new Hydrogen({ childOf: this }),
+      3:
+        childOf && connectionOn === 3
           ? childOf
           : new Hydrogen({ childOf: this }),
     };

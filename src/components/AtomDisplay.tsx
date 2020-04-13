@@ -1,15 +1,14 @@
 import React, { useState } from "react";
 import { Text, Line } from "react-konva";
-import { Carbon, Oxygen } from "../utils/Atoms";
+import { Carbon, Oxygen, Nitrogen } from "../utils/Atoms";
+import { Pos } from "../types";
+import { Editing } from "./Editing";
 
-interface Editing {
-  on: boolean;
-  id: string | null;
-}
-const initialEditing: Editing = { on: false, id: null };
-interface AtomDisplayProps {
-  showHydrogen: boolean;
-}
+const initialEditing: EditingData = {
+  on: false,
+  id: null,
+  pos: { x: 0, y: 0 },
+};
 const molecule = new Carbon({ childOf: null });
 molecule.changeConnection(
   2,
@@ -36,20 +35,26 @@ molecule.connections[4].changeConnection(
   4,
   new Carbon({ childOf: molecule.connections[1], connectionOn: 2 })
 );
-molecule.connections[1].changeConnection(
+const leftCarbon = molecule.connections[1];
+leftCarbon.changeConnection(
   1,
-  new Carbon({ childOf: molecule.connections[1], connectionOn: 3 })
+  new Carbon({ childOf: leftCarbon, connectionOn: 3 })
 );
 molecule.changeConnection(
   3,
   new Oxygen({ childOf: molecule, connectionOn: 1 })
 );
+leftCarbon.connections &&
+  leftCarbon.connections[1].changeConnection(
+    1,
+    new Nitrogen({ childOf: leftCarbon.connections[1], connectionOn: 3 })
+  );
 
 export const AtomDisplay = ({ showHydrogen }: AtomDisplayProps) => {
   const [editing, setEditing] = useState(initialEditing);
 
-  const toggleEditing = (id: string) => {
-    setEditing({ on: true, id });
+  const toggleEditing = (id: string, pos: Pos) => {
+    setEditing({ on: true, id, pos });
   };
   const turnOffEditing = () => {
     setEditing(initialEditing);
@@ -75,16 +80,6 @@ export const AtomDisplay = ({ showHydrogen }: AtomDisplayProps) => {
             : key === 4
             ? { ...pos, y: y + positionOffset }
             : pos;
-        const editingPos =
-          key === 1
-            ? { x: newPos.x - positionOffset - 30, y: newPos.y - 5 }
-            : key === 2
-            ? { x: newPos.x - 15, y: newPos.y - positionOffset }
-            : key === 3
-            ? { x: newPos.x + positionOffset - 10, y: newPos.y - 5 }
-            : key === 4
-            ? { x: newPos.x - 15, y: newPos.y + positionOffset - 10 }
-            : pos;
         const offset = 6;
         const oldOffset = -offset;
         const linePoints =
@@ -100,7 +95,6 @@ export const AtomDisplay = ({ showHydrogen }: AtomDisplayProps) => {
         if (parentKey) {
           return null;
         }
-
         return (
           <>
             {showHydrogen || atom.connections[key].type !== "Hydrogen" ? (
@@ -117,16 +111,10 @@ export const AtomDisplay = ({ showHydrogen }: AtomDisplayProps) => {
                       ? "bold"
                       : "normal"
                   }
-                  onClick={() => toggleEditing(atom.connections[key].id)}
+                  onClick={() =>
+                    toggleEditing(atom.connections[key].id, newPos)
+                  }
                 />
-                {editing && atom.connections[key].id === editing.id ? (
-                  <Text
-                    onClick={turnOffEditing}
-                    x={editingPos.x}
-                    y={editingPos.y}
-                    text={"Editing"}
-                  />
-                ) : null}
                 <Line
                   key={"line-" + atom.connections[key].id}
                   points={linePoints}
@@ -145,6 +133,7 @@ export const AtomDisplay = ({ showHydrogen }: AtomDisplayProps) => {
   };
   return (
     <>
+      <Editing turnOffEditing={turnOffEditing} editing={editing} />
       <Text text={molecule.type[0]} x={350 - 4} y={350 - 5} />
       {generateAtomChain(molecule)}
     </>
