@@ -3,8 +3,27 @@ import { Atom } from "../utils/Atoms";
 
 export type Connections = Map<number, Atom>;
 
+export interface Bond {
+  type: 1 | 2 | 3 | 4;
+  atom: Atom;
+}
+export enum BondDirections {
+  left = "left",
+  right = "right",
+  up = "up",
+  down = "down",
+}
+export interface Bonds {
+  left: Bond | null;
+  right: Bond | null;
+  up: Bond | null;
+  down: Bond | null;
+}
+
 export interface AtomConstructor {
   type?: string;
+  bonds?: Bonds;
+  maxBonds?: number;
   connections?: Connections;
 }
 

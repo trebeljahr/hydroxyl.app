@@ -1,13 +1,13 @@
 import React from "react";
 import { Text, Rect } from "react-konva";
-import { EditingProps } from "../types";
+import { EditingProps, Bond, BondDirections } from "../types";
 import {
-  Atom,
   Carbon,
   Hydrogen,
   Nitrogen,
   Oxygen,
   mapConnection,
+  opposite,
 } from "../utils/Atoms";
 
 export const Editing = ({ editing, turnOffEditing }: EditingProps) => {
@@ -18,30 +18,30 @@ export const Editing = ({ editing, turnOffEditing }: EditingProps) => {
   } = editing;
   const changeMolecule = (type: string) => {
     console.log("Molecule to Edit: ", editing.molecule);
-    editing.molecule.connections.forEach((atom, key) => {
-      const newAtom =
-        type === "Hydrogen"
-          ? new Hydrogen()
-          : type === "Carbon"
-          ? new Carbon()
-          : type === "Oxygen"
-          ? new Oxygen()
-          : type === "Nitrogen"
-          ? new Nitrogen()
-          : null;
-      if (newAtom) {
-        const actualKey = [...atom.connections.entries()].find(
-          ([_, value]) => value.id === editing.molecule.id
-        );
-        if (actualKey) {
-          console.log(actualKey[0]);
-          atom.changeConnection(actualKey[0], newAtom);
-          newAtom.changeConnection(mapConnection[actualKey[0]], atom);
-          console.log(key);
-          console.log("Molecule to insert: ", newAtom);
+    Object.entries(editing.molecule.bonds).forEach(
+      (entry: [any, Bond | null]) => {
+        const [direction, bond] = entry;
+        const newAtom =
+          type === "Hydrogen"
+            ? new Hydrogen()
+            : type === "Carbon"
+            ? new Carbon()
+            : type === "Oxygen"
+            ? new Oxygen()
+            : type === "Nitrogen"
+            ? new Nitrogen()
+            : null;
+        if (newAtom && bond) {
+          if (direction) {
+            const atom = bond.atom;
+            console.log(direction);
+            newAtom.changeBond(direction, { type: 1, atom });
+            console.log(direction);
+            console.log("Molecule to insert: ", newAtom);
+          }
         }
       }
-    });
+    );
     turnOffEditing();
   };
 

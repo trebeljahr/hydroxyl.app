@@ -1,28 +1,97 @@
 import { v4 as uuid } from "uuid";
-import { AtomConstructor, Connections } from "../types";
+import {
+  AtomConstructor,
+  Connections,
+  Bonds,
+  BondDirections,
+  Bond,
+} from "../types";
 
-interface Bond {
-  type: 1 | 2 | 3 | 4;
-  atoms: [Atom, Atom];
-}
-type Bonds = Map<string, Bond>;
+const defaultBonds = (): Bonds => {
+  return {
+    [BondDirections.left]: null,
+    [BondDirections.right]: null,
+    [BondDirections.up]: null,
+    [BondDirections.down]: null,
+  };
+};
+
+const hydrogenate = (atom: Atom) => {
+  Object.entries(atom.bonds).forEach((entry) => {
+    const [direction, bond]: [any, Bond | null] = entry;
+    if (bond === null) {
+      atom.changeBond(direction, { type: 1, atom: new Hydrogen() });
+    }
+  });
+};
+
+export const opposite = (direction: BondDirections) => {
+  switch (direction) {
+    case BondDirections.left:
+      return BondDirections.right;
+    case BondDirections.right:
+      return BondDirections.left;
+    case BondDirections.up:
+      return BondDirections.down;
+    case BondDirections.down:
+      return BondDirections.up;
+  }
+};
+
 export class Atom {
   id: string;
   type: string;
-  totalBonds: number;
+  maxBonds: number;
   bonds: Bonds;
   connections: Connections;
   constructor({
     type = "Unknown Atom",
-    totalBonds = 1,
-    bonds,
+    maxBonds = 1,
+    bonds = defaultBonds(),
     connections = new Map(),
   }: AtomConstructor) {
     this.type = type;
-    this.totalBonds = totalBonds;
+    this.maxBonds = maxBonds;
+    this.bonds = bonds;
     this.connections = connections;
     this.id = uuid();
   }
+  deleteBond = (direction: BondDirections) => {
+    this.bonds[direction]?.atom.deleteBond(opposite(direction));
+    this.bonds[direction] = null;
+  };
+  totalBonds = () => {
+    return Object.values(this.bonds).reduce((acc: number, bond: Bond) => {
+      const type = bond ? bond.type : 0;
+      return acc + type;
+    }, 0);
+  };
+  changeBond = (direction: BondDirections, newBond: Bond) => {
+    const oldBond = this.bonds[direction];
+    const oldBondType = oldBond === null ? 0 : oldBond.type;
+    console.log(this.totalBonds());
+    if (this.totalBonds() + newBond.type - oldBondType > this.maxBonds) {
+      return;
+    }
+
+    this.bonds[direction] = newBond;
+    console.log(this.totalBonds());
+
+    const otherAtom = newBond.atom;
+    console.log(otherAtom.bonds);
+
+    const bondOnOtherAtom = otherAtom.bonds[opposite(direction)];
+    console.log(direction);
+    console.log(opposite(direction));
+    console.log({ bondOnOtherAtom });
+    console.log({ bonds: otherAtom.bonds });
+
+    otherAtom.bonds[opposite(direction)] = {
+      type: newBond.type,
+      atom: this,
+    };
+    console.log(this.totalBonds());
+  };
   changeConnection = (connection: number, newAtom: Atom) => {
     this.connections.set(connection, newAtom);
     // newAtom.connections.set(mapConnection[connection], this);
@@ -74,6 +143,7 @@ export class Oxygen extends Atom {
 export class Nitrogen extends Atom {
   constructor(connections?: Connections) {
     super({ connections, type: "Nitrogen" });
+
     this.connections = new Map([
       [0, new Hydrogen(this)],
       [1, new Hydrogen(this)],
@@ -93,7 +163,8 @@ export const mapConnection = [2, 3, 0, 1];
 
 export class Carbon extends Atom {
   constructor(connections?: Connections) {
-    super({ connections, type: "Carbon" });
+    super({ connections, type: "Carbon", maxBonds: 4 });
+    hydrogenate(this);
     this.connections = new Map([
       [0, new Hydrogen(this)],
       [1, new Hydrogen(this)],
