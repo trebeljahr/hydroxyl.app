@@ -1,24 +1,25 @@
 import { v4 as uuid } from "uuid";
-import { TwoBonds, ThreeBonds, FourBonds, AtomConstructor } from "../types";
+import { AtomConstructor } from "../types";
 
 export class Atom {
   id: string;
   childOf: Atom | null;
   type: string;
-  connections: null | TwoBonds | ThreeBonds | FourBonds;
+  connections: Atom[];
   constructor({ type = "Unknown Atom", childOf = null }: AtomConstructor) {
     this.type = type;
     this.childOf = childOf || null;
-    this.connections = null;
+    this.connections = [childOf || new Hydrogen({ childOf: this })];
     this.id = uuid();
   }
   changeConnection = (connection: number, newAtom: Atom) => {
-    this.connections = this.connections
-      ? {
-          ...this.connections,
-          [connection]: newAtom,
-        }
-      : null;
+    this.connections = this.connections.map((atom, i) => {
+      if (i === connection) {
+        return newAtom;
+      } else {
+        return atom;
+      }
+    });
   };
 
   show = () => {
@@ -50,40 +51,20 @@ export class Atom {
 export const trim = (str: String): String => str.replace(/\s+/g, "");
 
 export class Oxygen extends Atom {
-  connections: TwoBonds;
-  constructor({ childOf = null, connectionOn = 1 }: AtomConstructor) {
+  connectionOn: number[];
+  constructor({ childOf = null, connectionOn = [0] }: AtomConstructor) {
     super({ childOf, type: "Oxygen" });
-    this.connections = {
-      1:
-        childOf && connectionOn === 1
-          ? childOf
-          : new Hydrogen({ childOf: this }),
-      2:
-        childOf && connectionOn === 2
-          ? childOf
-          : new Hydrogen({ childOf: this }),
-    };
+    this.connectionOn = connectionOn;
+    this.connections = createConnections(2, childOf, connectionOn, this);
   }
 }
 
 export class Nitrogen extends Atom {
-  connections: ThreeBonds;
-  constructor({ childOf = null, connectionOn = 1 }: AtomConstructor) {
+  connectionOn: number[];
+  constructor({ childOf = null, connectionOn = [0] }: AtomConstructor) {
     super({ childOf, type: "Nitrogen" });
-    this.connections = {
-      1:
-        childOf && connectionOn === 1
-          ? childOf
-          : new Hydrogen({ childOf: this }),
-      2:
-        childOf && connectionOn === 2
-          ? childOf
-          : new Hydrogen({ childOf: this }),
-      3:
-        childOf && connectionOn === 3
-          ? childOf
-          : new Hydrogen({ childOf: this }),
-    };
+    this.connectionOn = connectionOn;
+    this.connections = createConnections(3, childOf, connectionOn, this);
   }
 }
 
@@ -94,26 +75,25 @@ export class Hydrogen extends Atom {
 }
 
 export class Carbon extends Atom {
-  connections: FourBonds;
-  constructor({ childOf = null, connectionOn = 1 }: AtomConstructor) {
+  connectionOn: number[];
+  constructor({ childOf = null, connectionOn = [0] }: AtomConstructor) {
     super({ childOf, type: "Carbon" });
-    this.connections = {
-      1:
-        childOf && connectionOn === 1
-          ? childOf
-          : new Hydrogen({ childOf: this }),
-      2:
-        childOf && connectionOn === 2
-          ? childOf
-          : new Hydrogen({ childOf: this }),
-      3:
-        childOf && connectionOn === 3
-          ? childOf
-          : new Hydrogen({ childOf: this }),
-      4:
-        childOf && connectionOn === 4
-          ? childOf
-          : new Hydrogen({ childOf: this }),
-    };
+    this.connectionOn = connectionOn;
+    this.connections = createConnections(4, childOf, connectionOn, this);
   }
 }
+
+const createConnections = (
+  connections: number,
+  childOf: Atom | null,
+  connectionOn: number[],
+  parent: Atom
+) => {
+  return new Array(connections)
+    .fill(0)
+    .map((_, i) =>
+      childOf && connectionOn.find((j) => j === i)
+        ? childOf
+        : new Hydrogen({ childOf: parent })
+    );
+};
