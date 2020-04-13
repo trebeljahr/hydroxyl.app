@@ -55,10 +55,6 @@ const Canvas = () => {
   useEffect(() => {
     setStage(stageRef.current);
   }, []);
-  // const dragStart = (e: any) => {
-  //   console.log(e.target);
-  //   dragUrl.current = e.target.src;
-  // };
   const dragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
   };

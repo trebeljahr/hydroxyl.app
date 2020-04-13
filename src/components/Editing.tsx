@@ -1,14 +1,7 @@
 import React from "react";
 import { Text, Rect } from "react-konva";
-import { EditingProps, Bond, BondDirections } from "../types";
-import {
-  Carbon,
-  Hydrogen,
-  Nitrogen,
-  Oxygen,
-  mapConnection,
-  opposite,
-} from "../utils/Atoms";
+import { EditingProps, Bond } from "../types";
+import { Carbon, Hydrogen, Nitrogen, Oxygen } from "../utils/Atoms";
 
 export const Editing = ({ editing, turnOffEditing }: EditingProps) => {
   const editingOffsetY = 10;
@@ -17,7 +10,6 @@ export const Editing = ({ editing, turnOffEditing }: EditingProps) => {
     pos: { x, y },
   } = editing;
   const changeMolecule = (type: string) => {
-    console.log("Molecule to Edit: ", editing.molecule);
     Object.entries(editing.molecule.bonds).forEach(
       (entry: [any, Bond | null]) => {
         const [direction, bond] = entry;
@@ -34,10 +26,7 @@ export const Editing = ({ editing, turnOffEditing }: EditingProps) => {
         if (newAtom && bond) {
           if (direction) {
             const atom = bond.atom;
-            console.log(direction);
             newAtom.changeBond(direction, { type: 1, atom });
-            console.log(direction);
-            console.log("Molecule to insert: ", newAtom);
           }
         }
       }

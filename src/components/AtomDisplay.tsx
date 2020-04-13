@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { Text, Line } from "react-konva";
-import { Carbon, Atom, Hydrogen } from "../utils/Atoms";
+import { Text, Line, Group } from "react-konva";
+import { Carbon, Atom } from "../utils/Atoms";
 import {
   Pos,
   EditingData,
@@ -10,38 +10,23 @@ import {
 } from "../types";
 import { Editing } from "./Editing";
 
-const initialEditing: EditingData = {
-  on: false,
-  id: null,
-  pos: { x: 0, y: 0 },
-  molecule: new Atom({ type: "Hydrogen" }),
+const initialEditing = (): EditingData => {
+  return {
+    on: false,
+    id: null,
+    pos: { x: 0, y: 0 },
+    molecule: new Atom({ type: "Hydrogen" }),
+  };
 };
 export const molecule = new Carbon();
-molecule.changeBond(BondDirections.right, { type: 1, atom: new Hydrogen() });
-console.log(molecule);
-
-molecule.changeBond(BondDirections.left, { type: 1, atom: new Carbon() });
-console.log(molecule.bonds);
-
-molecule.bonds[BondDirections.right]?.atom.changeBond(BondDirections.right, {
-  type: 1,
-  atom: new Hydrogen(),
-});
-// molecule.changeBond(BondDirections.up, { type: 1, atom: new Hydrogen() });
-// console.log(molecule.bonds);
-// molecule.changeBond(BondDirections.left, { type: 1, atom: new Hydrogen() });
-// console.log(molecule.bonds);
-// molecule.changeConnection(1, new Carbon(new Map([[3, molecule]])));
-
 export const AtomDisplay = ({ showHydrogen }: AtomDisplayProps) => {
-  const [editing, setEditing] = useState(initialEditing);
+  const [editing, setEditing] = useState(initialEditing());
 
   const toggleEditing = (id: string, pos: Pos, molecule: Atom, key: string) => {
-    console.log(key);
     setEditing({ on: true, id, pos, molecule });
   };
   const turnOffEditing = () => {
-    setEditing(initialEditing);
+    setEditing(initialEditing());
   };
 
   const generateAtomChain = (
@@ -82,7 +67,7 @@ export const AtomDisplay = ({ showHydrogen }: AtomDisplayProps) => {
             return null;
           }
           return (
-            <>
+            <Group key={connection.id}>
               {(showHydrogen || connection.type !== "Hydrogen") && (
                 <>
                   <Text
@@ -113,10 +98,9 @@ export const AtomDisplay = ({ showHydrogen }: AtomDisplayProps) => {
                 ...traversedNodes,
                 connection.id,
               ])}
-            </>
+            </Group>
           );
         }
-
         return null;
       });
     }

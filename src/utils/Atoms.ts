@@ -56,10 +56,6 @@ export class Atom {
     this.connections = connections;
     this.id = uuid();
   }
-  deleteBond = (direction: BondDirections) => {
-    this.bonds[direction]?.atom.deleteBond(opposite(direction));
-    this.bonds[direction] = null;
-  };
   totalBonds = () => {
     return Object.values(this.bonds).reduce((acc: number, bond: Bond) => {
       const type = bond ? bond.type : 0;
@@ -69,60 +65,15 @@ export class Atom {
   changeBond = (direction: BondDirections, newBond: Bond) => {
     const oldBond = this.bonds[direction];
     const oldBondType = oldBond === null ? 0 : oldBond.type;
-    console.log(this.totalBonds());
     if (this.totalBonds() + newBond.type - oldBondType > this.maxBonds) {
       return;
     }
-
     this.bonds[direction] = newBond;
-    console.log(this.totalBonds());
-
-    const otherAtom = newBond.atom;
-    console.log(otherAtom.bonds);
-
-    const bondOnOtherAtom = otherAtom.bonds[opposite(direction)];
-    console.log(direction);
-    console.log(opposite(direction));
-    console.log({ bondOnOtherAtom });
-    console.log({ bonds: otherAtom.bonds });
-
-    otherAtom.bonds[opposite(direction)] = {
+    newBond.atom.bonds[opposite(direction)] = {
       type: newBond.type,
       atom: this,
     };
-    console.log(this.totalBonds());
   };
-  changeConnection = (connection: number, newAtom: Atom) => {
-    this.connections.set(connection, newAtom);
-    // newAtom.connections.set(mapConnection[connection], this);
-  };
-  delete = () => {
-    this.type = "Hydrogen";
-    this.connections = new Map();
-  };
-
-  // show = () => {
-  //   const structure: String = trim(`
-  //       ${this.type[0]} ${
-  //     this.connections
-  //       ? Object.values(this.connections)
-  //           .filter((atom: Atom) => atom !== this.childOf)
-  //           .map((atom: Atom) => atom.show())
-  //           .join("")
-  //       : ""
-  //   }
-  //   `);
-  //   const condensedStructure = structure
-  //     .split("")
-  //     .reduce((agg: any, val: string) => {
-  //       return {
-  //         ...agg,
-  //         [val]: agg[val] === undefined ? 1 : agg[val] + 1,
-  //       };
-  //     }, {});
-
-  //   return structure;
-  // };
 }
 
 export const trim = (str: String): String => str.replace(/\s+/g, "");
@@ -130,25 +81,12 @@ export const trim = (str: String): String => str.replace(/\s+/g, "");
 export class Oxygen extends Atom {
   constructor(connections?: Connections) {
     super({ connections, type: "Oxygen" });
-    this.connections = new Map([
-      [0, new Hydrogen(this)],
-      [1, new Hydrogen(this)],
-    ]);
-    this.connections.forEach((connection: Atom, i) => {
-      connection.changeConnection(mapConnection[i], this);
-    });
   }
 }
 
 export class Nitrogen extends Atom {
   constructor(connections?: Connections) {
     super({ connections, type: "Nitrogen" });
-
-    this.connections = new Map([
-      [0, new Hydrogen(this)],
-      [1, new Hydrogen(this)],
-      [2, new Hydrogen(this)],
-    ]);
   }
 }
 
@@ -165,26 +103,5 @@ export class Carbon extends Atom {
   constructor(connections?: Connections) {
     super({ connections, type: "Carbon", maxBonds: 4 });
     hydrogenate(this);
-    this.connections = new Map([
-      [0, new Hydrogen(this)],
-      [1, new Hydrogen(this)],
-      [2, new Hydrogen(this)],
-      [3, new Hydrogen(this)],
-    ]);
   }
 }
-
-// const createConnections = (
-//   connections: number,
-//   childOf: Atom | null,
-//   connectionOn: number[],
-//   parent: Atom
-// ) => {
-//   return new Array(connections)
-//     .fill(0)
-//     .map((_, i) =>
-//       childOf && connectionOn.find((j) => j === i)
-//         ? childOf
-//         : new Hydrogen({ childOf: parent })
-//     );
-// };
