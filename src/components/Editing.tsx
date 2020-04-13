@@ -1,10 +1,7 @@
 import React from "react";
 import { Text, Rect } from "react-konva";
+import { EditingProps } from "../types";
 
-interface EditingProps {
-  editing: EditingData;
-  turnOffEditing: () => void;
-}
 export const Editing = ({ editing, turnOffEditing }: EditingProps) => {
   const editingOffsetY = 10;
   const editingOffsetX = -10;
@@ -13,7 +10,7 @@ export const Editing = ({ editing, turnOffEditing }: EditingProps) => {
   } = editing;
   return (
     <>
-      {editing ? (
+      {editing.on ? (
         <>
           <Rect
             x={x + editingOffsetX}

@@ -1,10 +1,6 @@
 import React from "react";
-import { Stage } from "konva/types/Stage";
 import jsPDF from "jspdf";
-
-interface PDF_Props {
-  stage: Stage;
-}
+import { PDF_Props } from "../types";
 
 export const PDF_BUTTON = ({ stage }: PDF_Props) => {
   const saveAsPDF = () => {

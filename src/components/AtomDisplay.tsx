@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Text, Line } from "react-konva";
 import { Carbon, Oxygen, Nitrogen } from "../utils/Atoms";
-import { Pos } from "../types";
+import { Pos, EditingData, AtomDisplayProps } from "../types";
 import { Editing } from "./Editing";
 
 const initialEditing: EditingData = {

@@ -1,10 +1,6 @@
 import React from "react";
-import { Pos } from "../types";
+import { AddNodeProps } from "../types";
 import Portal from "./Portal";
-
-interface AddNodeProps {
-  addNode: (pos: Pos) => void;
-}
 
 export const AddNode = ({ addNode }: AddNodeProps) => {
   return (

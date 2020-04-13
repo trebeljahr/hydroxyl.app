@@ -4,17 +4,9 @@ import { KonvaEventObject } from "konva/types/Node";
 import { PDF_BUTTON } from "./PDF_Button";
 import { AtomDisplay } from "./AtomDisplay";
 import useImage from "use-image";
-import alkeneImage from "../images/alkene.jpg";
+// import alkeneImage from "../images/alkene.jpg";
+import { URLImageProps, ImageData } from "../types";
 
-interface URLImageProps {
-  image: ImageData;
-}
-interface ImageData {
-  src: string;
-  scale: any;
-  x: number;
-  y: number;
-}
 const URLImage = ({ image }: URLImageProps) => {
   const [img] = useImage(image.src);
   return (
@@ -63,10 +55,10 @@ const Canvas = () => {
   useEffect(() => {
     setStage(stageRef.current);
   }, []);
-  const dragStart = (e: any) => {
-    // console.log(e.target);
-    dragUrl.current = e.target.src;
-  };
+  // const dragStart = (e: any) => {
+  //   console.log(e.target);
+  //   dragUrl.current = e.target.src;
+  // };
   const dragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
   };

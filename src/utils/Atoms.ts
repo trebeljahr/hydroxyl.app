@@ -1,10 +1,5 @@
 import { v4 as uuid } from "uuid";
-
-interface AtomConstructor {
-  type?: string;
-  childOf?: Atom | null;
-  connectionOn?: number;
-}
+import { TwoBonds, ThreeBonds, FourBonds, AtomConstructor } from "../types";
 
 export class Atom {
   id: string;
@@ -121,22 +116,4 @@ export class Carbon extends Atom {
           : new Hydrogen({ childOf: this }),
     };
   }
-}
-
-interface TwoBonds {
-  1: Atom;
-  2: Atom;
-}
-
-interface ThreeBonds {
-  1: Atom;
-  2: Atom;
-  3: Atom;
-}
-
-interface FourBonds {
-  1: Atom;
-  2: Atom;
-  3: Atom;
-  4: Atom;
 }
