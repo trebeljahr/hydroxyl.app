@@ -1,9 +1,15 @@
 import React from "react";
 import { Text, Rect } from "react-konva";
 import { EditingProps } from "../types";
-import { Atom, Carbon, Hydrogen, Nitrogen, Oxygen } from "../utils/Atoms";
+import {
+  Atom,
+  Carbon,
+  Hydrogen,
+  Nitrogen,
+  Oxygen,
+  mapConnection,
+} from "../utils/Atoms";
 
-const mapConnection = [2, 3, 0, 1];
 export const Editing = ({ editing, turnOffEditing }: EditingProps) => {
   const editingOffsetY = 10;
   const editingOffsetX = -10;
@@ -11,37 +17,31 @@ export const Editing = ({ editing, turnOffEditing }: EditingProps) => {
     pos: { x, y },
   } = editing;
   const changeMolecule = (type: string) => {
-    if (editing.molecule.childOf) {
-      const parent: Atom = editing.molecule.childOf;
-      const index = parent.connections.findIndex(
-        (atom) => atom.id === editing.molecule.id
-      );
+    console.log("Molecule to Edit: ", editing.molecule);
+    editing.molecule.connections.forEach((atom, key) => {
       const newAtom =
         type === "Hydrogen"
-          ? new Hydrogen({
-              childOf: parent,
-              connectionOn: [mapConnection[index]],
-            })
+          ? new Hydrogen()
           : type === "Carbon"
-          ? new Carbon({
-              childOf: parent,
-              connectionOn: [mapConnection[index]],
-            })
+          ? new Carbon()
           : type === "Oxygen"
-          ? new Oxygen({
-              childOf: parent,
-              connectionOn: [mapConnection[index]],
-            })
+          ? new Oxygen()
           : type === "Nitrogen"
-          ? new Nitrogen({
-              childOf: parent,
-              connectionOn: [mapConnection[index]],
-            })
+          ? new Nitrogen()
           : null;
       if (newAtom) {
-        editing.molecule.childOf.changeConnection(index, newAtom);
+        const actualKey = [...atom.connections.entries()].find(
+          ([_, value]) => value.id === editing.molecule.id
+        );
+        if (actualKey) {
+          console.log(actualKey[0]);
+          atom.changeConnection(actualKey[0], newAtom);
+          newAtom.changeConnection(mapConnection[actualKey[0]], atom);
+          console.log(key);
+          console.log("Molecule to insert: ", newAtom);
+        }
       }
-    }
+    });
     turnOffEditing();
   };
 

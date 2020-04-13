@@ -1,10 +1,11 @@
 import { Stage } from "konva/types/Stage";
 import { Atom } from "../utils/Atoms";
 
+export type Connections = Map<number, Atom>;
+
 export interface AtomConstructor {
   type?: string;
-  childOf?: Atom | null;
-  connectionOn?: number[];
+  connections?: Connections;
 }
 
 export interface Pos {
