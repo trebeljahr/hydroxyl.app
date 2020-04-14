@@ -1,8 +1,6 @@
 import { Stage } from "konva/types/Stage";
 import { Atom } from "../utils/Atoms";
 
-export type Connections = Map<number, Atom>;
-
 export interface Bond {
   type: 1 | 2 | 3 | 4;
   atom: Atom;
@@ -24,7 +22,6 @@ export interface AtomConstructor {
   type?: string;
   bonds?: Bonds;
   maxBonds?: number;
-  connections?: Connections;
 }
 
 export interface Pos {

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Text, Line, Group } from "react-konva";
+import { Text, Group } from "react-konva";
 import { Carbon, Atom } from "../utils/Atoms";
 import {
   Pos,
@@ -9,6 +9,7 @@ import {
   Bond,
 } from "../types";
 import { Editing } from "./Editing";
+import { BondLines } from "./BondLines";
 
 const initialEditing = (): EditingData => {
   return {
@@ -19,6 +20,10 @@ const initialEditing = (): EditingData => {
   };
 };
 export const molecule = new Carbon();
+molecule.changeBond(BondDirections.up, null);
+molecule.changeBond(BondDirections.left, { type: 2, atom: new Carbon() });
+console.log(molecule.bonds);
+
 export const AtomDisplay = ({ showHydrogen }: AtomDisplayProps) => {
   const [editing, setEditing] = useState(initialEditing());
 
@@ -37,9 +42,10 @@ export const AtomDisplay = ({ showHydrogen }: AtomDisplayProps) => {
     const { x, y } = pos;
     if (atom.bonds) {
       return Object.entries(atom.bonds).map((entry: [string, Bond | null]) => {
-        const [k, bond] = entry;
-        const connection = bond?.atom;
-        if (connection) {
+        const [j, bond] = entry;
+        const k = j as BondDirections;
+        if (bond) {
+          const connection = bond.atom;
           const positionOffset = connection.type === "Hydrogen" ? 20 : 30;
           const newPos =
             k === BondDirections.left
@@ -51,18 +57,7 @@ export const AtomDisplay = ({ showHydrogen }: AtomDisplayProps) => {
               : k === BondDirections.down
               ? { ...pos, y: y + positionOffset }
               : pos;
-          const offset = 6;
-          const oldOffset = -offset;
-          const linePoints =
-            k === BondDirections.left
-              ? [pos.x + oldOffset, pos.y, newPos.x + offset, newPos.y]
-              : k === BondDirections.up
-              ? [pos.x, pos.y + oldOffset, newPos.x, newPos.y + offset]
-              : k === BondDirections.right
-              ? [pos.x - oldOffset, pos.y, newPos.x - offset, newPos.y]
-              : k === BondDirections.down
-              ? [pos.x, pos.y - oldOffset, newPos.x, newPos.y - offset]
-              : [pos.x, pos.y, newPos.x, newPos.y];
+
           if (traversedNodes.find((id) => id === connection.id)) {
             return null;
           }
@@ -86,14 +81,10 @@ export const AtomDisplay = ({ showHydrogen }: AtomDisplayProps) => {
                       toggleEditing(connection.id, newPos, connection, k)
                     }
                   />
-                  <Line
-                    key={"line-" + connection.id}
-                    points={linePoints}
-                    fill={"black"}
-                    stroke={"black"}
-                  />
+                  <BondLines bond={bond} k={k} pos={{ oldPos: pos, newPos }} />
                 </>
               )}
+
               {generateAtomChain(connection, newPos, [
                 ...traversedNodes,
                 connection.id,
