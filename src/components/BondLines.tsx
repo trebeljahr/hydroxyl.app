@@ -11,7 +11,10 @@ interface BondLinesProps {
   k: BondDirections;
   pos: Positions;
 }
-const offsetLine = ({ oldPos, newPos }: Positions, k: BondDirections) => {
+const offsetLine = (
+  { oldPos, newPos }: Positions,
+  k: BondDirections
+): LinePoints => {
   const offset = 6;
   const oldOffset = -offset;
   return k === BondDirections.left
@@ -25,6 +28,27 @@ const offsetLine = ({ oldPos, newPos }: Positions, k: BondDirections) => {
     : [oldPos.x, oldPos.y, newPos.x, newPos.y];
 };
 
+type LinePoints = [number, number, number, number];
+const doubleBondLine = (
+  linePoints: LinePoints,
+  offset: number,
+  k: BondDirections
+) => {
+  return linePoints
+    .map((val, i) => {
+      return (k === BondDirections.up || k === BondDirections.down) &&
+        (i === 0 || i === 2)
+        ? val + offset
+        : val;
+    })
+    .map((val, i) => {
+      return (k === BondDirections.right || k === BondDirections.left) &&
+        (i === 1 || i === 3)
+        ? val + offset
+        : val;
+    });
+};
+
 export const BondLines = ({
   bond,
   k,
@@ -32,34 +56,9 @@ export const BondLines = ({
 }: BondLinesProps) => {
   const connection = bond?.atom;
   const linePoints = offsetLine({ oldPos, newPos }, k);
-  const offset = 2;
-  const rightTwoBondLine = linePoints
-    .map((val, i) => {
-      return (k === BondDirections.up || k === BondDirections.down) &&
-        (i === 0 || i === 2)
-        ? val - offset
-        : val;
-    })
-    .map((val, i) => {
-      return (k === BondDirections.right || k === BondDirections.left) &&
-        (i === 1 || i === 3)
-        ? val - offset
-        : val;
-    });
-  const leftTwoBondLine = linePoints
-    .map((val, i) => {
-      return (k === BondDirections.up || k === BondDirections.down) &&
-        (i === 0 || i === 2)
-        ? val + offset
-        : val;
-    })
-    .map((val, i) => {
-      return (k === BondDirections.right || k === BondDirections.left) &&
-        (i === 1 || i === 3)
-        ? val + offset
-        : val;
-    });
-  console.log(leftTwoBondLine);
+  const offset = 3;
+  const rightTwoBondLine = doubleBondLine(linePoints, -offset, k);
+  const leftTwoBondLine = doubleBondLine(linePoints, offset, k);
   return (
     <>
       {(bond.type === 1 || bond.type === 3) && (

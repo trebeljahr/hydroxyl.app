@@ -20,8 +20,10 @@ const initialEditing = (): EditingData => {
   };
 };
 export const molecule = new Carbon();
-molecule.changeBond(BondDirections.up, null);
-molecule.changeBond(BondDirections.left, { type: 2, atom: new Carbon() });
+molecule.deleteBond(BondDirections.up);
+console.log(molecule.hydrogenBonds());
+molecule.deleteBond(BondDirections.down);
+molecule.changeBond(BondDirections.left, { type: 3, atom: new Carbon() });
 console.log(molecule.bonds);
 
 export const AtomDisplay = ({ showHydrogen }: AtomDisplayProps) => {

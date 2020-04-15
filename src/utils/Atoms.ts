@@ -10,15 +10,6 @@ const defaultBonds = (): Bonds => {
   };
 };
 
-const hydrogenate = (atom: Atom) => {
-  Object.entries(atom.bonds).forEach((entry) => {
-    const [direction, bond]: [any, Bond | null] = entry;
-    if (bond === null) {
-      atom.changeBond(direction, { type: 1, atom: new Hydrogen() });
-    }
-  });
-};
-
 export const opposite = (direction: BondDirections) => {
   switch (direction) {
     case BondDirections.left:
@@ -47,27 +38,70 @@ export class Atom {
     this.bonds = bonds;
     this.id = uuid();
   }
-  totalBonds = () => {
+  freeBonds = (): number => {
+    return this.maxBonds - this.totalBonds();
+  };
+  totalBonds = (): number => {
     return Object.values(this.bonds).reduce((acc: number, bond: Bond) => {
       const type = bond ? bond.type : 0;
       return acc + type;
     }, 0);
   };
-  changeBond = (direction: BondDirections, newBond: Bond | null) => {
-    if (newBond === null) {
+  deleteBond = (direction: BondDirections) => {
+    this.bonds[direction] = null;
+  };
+  hydrogenBonds = (): { amount: number; directions: BondDirections[] } => {
+    return Object.keys(this.bonds).reduce(
+      (agg: any, k: string) => {
+        const key = k as BondDirections;
+        const bond = this.bonds[key] as Bond;
+        if (bond && bond.atom.type === "Hydrogen") {
+          return {
+            amount: agg.amount + 1,
+            directions: [...agg.directions, key],
+          };
+        }
+        return agg;
+      },
+      { amount: 0, directions: [] }
+    );
+  };
+  fillUpWithHydrogen = () => {
+    Object.entries(this.bonds).forEach((entry) => {
+      const [direction, bond]: [any, Bond | null] = entry;
+      if (bond === null && this.freeBonds() >= 1) {
+        this.addHydrogen(direction);
+      }
+    });
+  };
+  addHydrogen = (direction: BondDirections) => {
+    const newAtom = new Hydrogen();
+    newAtom.bonds[opposite(direction)] = { type: 1, atom: this };
+    this.bonds[direction] = { type: 1, atom: newAtom };
+  };
+  removeHydrogen = () => {
+    Object.keys(this.bonds).forEach((k) => {
+      const key = k as BondDirections;
+      const bond = this.bonds[key] as Bond;
+      if (bond && bond.atom.type === "Hydrogen") {
+        this.deleteBond(key);
+      }
+    });
+  };
+  changeBond = (direction: BondDirections, newBond: Bond) => {
+    this.removeHydrogen();
+    newBond.atom.removeHydrogen();
+    const canBond = this.freeBonds() >= newBond.type;
+    const partnerCanBond = newBond.atom.freeBonds() >= newBond.type;
+    if (canBond && partnerCanBond) {
       this.bonds[direction] = newBond;
-      return;
+      newBond.atom.bonds[opposite(direction)] = {
+        type: newBond.type,
+        atom: this,
+      };
     }
-    const oldBond = this.bonds[direction];
-    const oldBondType = oldBond === null ? 0 : oldBond.type;
-    if (this.totalBonds() + newBond.type - oldBondType > this.maxBonds) {
-      return;
-    }
-    this.bonds[direction] = newBond;
-    newBond.atom.bonds[opposite(direction)] = {
-      type: newBond.type,
-      atom: this,
-    };
+    this.fillUpWithHydrogen();
+    newBond.atom.fillUpWithHydrogen();
   };
 }
 
@@ -75,23 +109,15 @@ export const trim = (str: String): String => str.replace(/\s+/g, "");
 
 export class Oxygen extends Atom {
   constructor() {
-    super({ type: "Oxygen" });
+    super({ type: "Oxygen", maxBonds: 2 });
+    this.fillUpWithHydrogen();
   }
 }
 
 export class Nitrogen extends Atom {
   constructor() {
-    super({ type: "Nitrogen" });
-    Object.entries(this.bonds).forEach((entry) => {
-      // const [direction, bond]: [any, Bond | null] = entry;
-      // if (
-      //   bond === null &&
-      //   (!bondedFrom ||
-      //     (direction !== bondedFrom && direction !== opposite(bondedFrom)))
-      // ) {
-      //   this.changeBond(direction, { type: 1, atom: new Hydrogen() });
-      // }
-    });
+    super({ type: "Nitrogen", maxBonds: 3 });
+    this.fillUpWithHydrogen();
   }
 }
 
@@ -101,11 +127,9 @@ export class Hydrogen extends Atom {
   }
 }
 
-export const mapConnection = [2, 3, 0, 1];
-
 export class Carbon extends Atom {
   constructor() {
     super({ type: "Carbon", maxBonds: 4 });
-    hydrogenate(this);
+    this.fillUpWithHydrogen();
   }
 }

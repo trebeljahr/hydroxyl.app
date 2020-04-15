@@ -92,8 +92,8 @@ const Canvas = () => {
         <Stage
           style={{ backgroundColor: "white" }}
           draggable
-          width={700}
-          height={700}
+          width={window.innerWidth * 0.8}
+          height={window.innerHeight * 0.8}
           ref={stageRef}
           onWheel={zoom}
         >
