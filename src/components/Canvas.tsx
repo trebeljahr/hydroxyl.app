@@ -1,34 +1,22 @@
-import React, { useRef, useEffect, useState } from "react";
-import { Layer, Stage, Image } from "react-konva";
+import React, { useRef, useEffect } from "react";
+import { Layer, Stage } from "react-konva";
 import { KonvaEventObject } from "konva/types/Node";
-import { PDF_BUTTON } from "./PDF_Button";
 import { AtomDisplay } from "./AtomDisplay";
-import useImage from "use-image";
-// import alkeneImage from "../images/alkene.jpg";
-import { URLImageProps, ImageData } from "../types";
+import { makeStyles, createStyles, Theme } from "@material-ui/core";
 
-const URLImage = ({ image }: URLImageProps) => {
-  const [img] = useImage(image.src);
-  return (
-    <Image
-      image={img}
-      x={image.x}
-      y={image.y}
-      width={img ? img.width / image.scale : 0}
-      height={img ? img.height / image.scale : 0}
-      offsetX={img ? img.width / 2 : 0}
-      offsetY={img ? img.height / 2 : 0}
-    />
-  );
-};
+const useStyles = makeStyles((theme: Theme) =>
+  createStyles({
+    root: {
+      width: "90%",
+      maxWidth: "90%",
+      overflow: "hidden",
+      height: "100%",
+    },
+  })
+);
 
-const Canvas = () => {
-  const [showHydrogen, setShowHydrogen] = useState(true);
-  const [stage, setStage] = useState(null);
-  const [images, setImages] = useState<ImageData[]>([]);
-
+const Canvas = ({ stage, setStage }: any) => {
   const stageRef: any = useRef();
-  const dragUrl: any = useRef();
 
   const zoom = (e: KonvaEventObject<WheelEvent>) => {
     e.evt.preventDefault();
@@ -54,60 +42,23 @@ const Canvas = () => {
 
   useEffect(() => {
     setStage(stageRef.current);
-  }, []);
-  const dragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-  };
-  const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const s = stageRef.current;
-    s.setPointersPositions(e);
-    const scale = s.scaleX();
-    const mousePointTo = {
-      x: s.getPointerPosition().x / scale - s.x() / scale,
-      y: s.getPointerPosition().y / scale - s.y() / scale,
-    };
-    setImages(
-      images.concat([
-        {
-          ...mousePointTo,
-          src: dragUrl.current,
-          scale: s.scaleX(),
-        },
-      ])
-    );
-  };
+  }, [setStage]);
+
+  const classes = useStyles();
   return (
-    <div>
-      <button onClick={() => setShowHydrogen(!showHydrogen)}>
-        {showHydrogen ? "Hide hydrogen" : "Show hydrogen"}
-      </button>
-      {/* <img
-        draggable={true}
-        onDragStart={dragStart}
-        alt="Some alt text"
-        src={alkeneImage}
-      /> */}
-      <div onDrop={onDrop} onDragOver={dragOver}>
-        <Stage
-          style={{ backgroundColor: "white" }}
-          draggable
-          width={window.innerWidth * 0.8}
-          height={window.innerHeight * 0.8}
-          ref={stageRef}
-          onWheel={zoom}
-        >
-          <Layer>
-            <AtomDisplay showHydrogen={showHydrogen} />
-          </Layer>
-          <Layer>
-            {images.map((image) => {
-              return <URLImage image={image} />;
-            })}
-          </Layer>
-        </Stage>
-      </div>
-      {stage && <PDF_BUTTON stage={stageRef.current} />}
+    <div className={classes.root}>
+      <Stage
+        style={{ backgroundColor: "white" }}
+        draggable
+        width={window.innerWidth}
+        height={window.innerHeight}
+        ref={stageRef}
+        onWheel={zoom}
+      >
+        <Layer>
+          <AtomDisplay showHydrogen={true} />
+        </Layer>
+      </Stage>
     </div>
   );
 };
