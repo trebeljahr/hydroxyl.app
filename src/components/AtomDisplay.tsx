@@ -21,10 +21,8 @@ const initialEditing = (): EditingData => {
 };
 export const molecule = new Carbon();
 molecule.deleteBond(BondDirections.up);
-console.log(molecule.hydrogenBonds());
 molecule.deleteBond(BondDirections.down);
 molecule.changeBond(BondDirections.left, { type: 3, atom: new Carbon() });
-console.log(molecule.bonds);
 
 export const AtomDisplay = ({ showHydrogen }: AtomDisplayProps) => {
   const [editing, setEditing] = useState(initialEditing());

@@ -1,9 +1,13 @@
 import React from "react";
 import { makeStyles } from "@material-ui/core";
+import { Element } from "./types";
 
 const useStyles = makeStyles({
-  text: (element: any) => ({ color: "black", fontWeight: "bold" }),
-  singleElement: (element: any) => ({
+  text: (element: Element) => ({
+    color: "inherit",
+    fontWeight: "bold",
+  }),
+  singleElement: (element: Element) => ({
     position: "relative",
     cursor: "pointer",
     outline: "none",
@@ -16,8 +20,21 @@ const useStyles = makeStyles({
     marginRight: "-1px",
     marginBottom: "-1px",
     border: "1px white solid",
+    color: "black",
+    "&::before": {
+      content: `""`,
+      position: "absolute",
+      top: 0,
+      bottom: 0,
+      left: 0,
+      right: 0,
+      zIndex: -1,
+      boxShadow:
+        "0px 3px 5px -1px rgba(0,0,0,0.2), 0px 6px 10px 0px rgba(0,0,0,0.14), 0px 1px 18px 0px rgba(0,0,0,0.12)",
+    },
     "&:hover": {
-      backgroundColor: "rgb(200,200,200)",
+      color: "#555555",
+      backgroundColor: "white",
     },
   }),
   elementNumber: {

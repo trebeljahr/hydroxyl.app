@@ -4,9 +4,11 @@ import {
   createStyles,
   makeStyles,
   Theme,
+  Fab,
 } from "@material-ui/core";
-import { combinedPeriodicTable as periodicTable } from "../../data/periodicTable";
 import { SingleElement } from "./SingleElement";
+import { combinedPeriodicTable } from "./data/periodicTable";
+import { Element } from "./types";
 
 interface PeriodicSystemProps {
   drawer: boolean;
@@ -25,9 +27,17 @@ const useStyles = makeStyles((theme: Theme) =>
     },
     periodicTableContainer: {
       height: "100vh",
+      width: "100vw",
       display: "flex",
       justifyContent: "center",
       alignItems: "center",
+    },
+    closeButton: {
+      border: "none",
+      color: "black",
+      position: "absolute",
+      top: "3vh",
+      right: "3vh",
     },
   })
 );
@@ -45,9 +55,19 @@ export const PeriodicSystem = ({
       onOpen={toggleDrawer}
     >
       <div className={classes.periodicTableContainer}>
+        <Fab className={classes.closeButton} onClick={toggleDrawer}>
+          X
+        </Fab>
         <div className={classes.periodicTable}>
-          {Object.values(periodicTable).map((element) => {
-            return <SingleElement element={element} />;
+          {Object.values(combinedPeriodicTable).map((e: any) => {
+            const element = e as Element;
+            return (
+              <SingleElement
+                key={element.symbol}
+                element={element}
+                toggleDrawer={toggleDrawer}
+              />
+            );
           })}
         </div>
       </div>

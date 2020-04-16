@@ -1,4 +1,6 @@
-const periodicTable = {
+import { ChangeColorBrightness } from "../../../utils/color";
+
+const periodicTableData = {
   Hydrogen: {
     id: 1,
     symbol: "H",
@@ -6,7 +8,7 @@ const periodicTable = {
     name: "Hydrogen",
     posX: 1,
     posY: 1,
-    color: "#DDDDDD",
+    color: "#999999",
     color2: "#808080",
   },
   Helium: {
@@ -16,7 +18,7 @@ const periodicTable = {
     name: "Helium",
     posX: 1,
     posY: 18,
-    color: "#D9FFFF",
+    color: "#888888",
     color2: "#849B9B",
   },
   Lithium: {
@@ -56,7 +58,7 @@ const periodicTable = {
     name: "Carbon",
     posX: 2,
     posY: 14,
-    color: "#909090",
+    color: "black",
     color2: "#000000",
   },
   Nitrogen: {
@@ -206,7 +208,7 @@ const periodicTable = {
     name: "Scandium",
     posX: 4,
     posY: 3,
-    color: "#E6E6E6",
+    color: "#777777",
     color2: "#969696",
   },
   Titanium: {
@@ -1121,7 +1123,7 @@ const periodicTable = {
   },
 };
 
-const newPeriodicTable = [
+const differentPeriodicTableData = [
   {
     name: "Hydrogen",
     appearance: "colorless gas",
@@ -5091,47 +5093,53 @@ const colorMap: { [key: string]: string } = {
   actinide: "#cf647f",
 };
 
-const oldPeriodicTable = Object.values(periodicTable);
-export const combinedPeriodicTable = newPeriodicTable.reduce((agg, element) => {
-  const oldElement = oldPeriodicTable.find(
-    (oldElement) => oldElement.id === element.number
-  );
-  const category = element.category
-    .replace("unknown, probably ", "")
-    .replace("unknown, predicted to be ", "")
-    .replace("unknown, but predicted to be an ", "");
-  const color = element.xpos === 17 ? "#b47b43" : colorMap[category];
-  if (oldElement) {
+const oldPeriodicTable = Object.values(periodicTableData);
+export const combinedPeriodicTable = differentPeriodicTableData.reduce(
+  (agg, element) => {
+    const oldElement = oldPeriodicTable.find(
+      (oldElement) => oldElement.id === element.number
+    );
+    const category = element.category
+      .replace("unknown, probably ", "")
+      .replace("unknown, predicted to be ", "")
+      .replace("unknown, but predicted to be an ", "");
+    const color = ChangeColorBrightness(
+      element.xpos === 17 ? "#b47b43" : colorMap[category],
+      40
+    );
+    if (oldElement) {
+      return {
+        ...agg,
+        [oldElement.name]: {
+          ...oldElement,
+          color,
+          atomColor: oldElement.color,
+        },
+      };
+    }
     return {
       ...agg,
-      [oldElement.name]: {
-        ...oldElement,
+      [element.name]: {
+        name: element.name,
+        id: element.number,
+        posX: element.ypos,
+        posY: element.xpos,
         color,
-        atomColor: oldElement.color,
+        symbol: element.symbol,
+        atomColor: "violet",
       },
     };
-  }
-  return {
-    ...agg,
-    [element.name]: {
-      name: element.name,
-      id: element.number,
-      posX: element.ypos,
-      posY: element.xpos,
-      color,
-      symbol: element.symbol,
-      atomColor: "blue",
-    },
-  };
-}, {});
-
-console.log(combinedPeriodicTable);
-console.log(
-  Object.values(combinedPeriodicTable).reduce((agg: any, element: any) => {
-    if (!agg.includes(element.color)) {
-      return [...agg, element.color];
-    } else {
-      return agg;
-    }
-  }, [])
+  },
+  {}
 );
+
+// console.log(combinedPeriodicTable);
+// console.log(
+//   Object.values(combinedPeriodicTable).reduce((agg: any, element: Element) => {
+//     if (!agg.includes(element.color)) {
+//       return [...agg, element.color];
+//     } else {
+//       return agg;
+//     }
+//   }, [])
+// );

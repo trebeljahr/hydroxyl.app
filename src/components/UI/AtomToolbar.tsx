@@ -1,7 +1,9 @@
 import React, { useState } from "react";
 import { createStyles, makeStyles, Theme } from "@material-ui/core/styles";
 import Toolbar from "@material-ui/core/Toolbar";
-import { PeriodicSystem } from "./PeriodicSystem";
+import { PeriodicSystem } from "../PeriodicTable/PeriodicSystem";
+import { combinedPeriodicTable } from "../PeriodicTable/data/periodicTable";
+import { Element } from "../PeriodicTable/types";
 
 const useStyles = makeStyles((theme: Theme) =>
   createStyles({
@@ -44,18 +46,34 @@ export const AtomToolBar = () => {
   const toggleDrawer = () => {
     setDrawer(!drawer);
   };
-  const buttons = ["C", "H", "N", "0", "P", "S", "F", "Cl", "Br", "I"];
+  const elements = ["C", "H", "N", "O", "P", "S", "F", "Cl", "Br", "I"].map(
+    (symbol) => {
+      const element = Object.values(combinedPeriodicTable).find((e: any) => {
+        const element = e as Element;
+        return element.symbol === symbol;
+      });
+      return element;
+    }
+  );
   return (
     <Toolbar className={classes.atomToolBar}>
-      {buttons.map((symbol) => (
-        <button className={classes.menuButton} onClick={handleClick}>
-          {symbol}
-        </button>
-      ))}
+      {elements.map((e: any) => {
+        const element = e as Element;
+
+        return (
+          <button
+            key={element.symbol}
+            className={classes.menuButton}
+            onClick={handleClick}
+          >
+            {element.symbol}
+          </button>
+        );
+      })}
       <button className={classes.menuButton} onClick={openDrawer}>
         ...
       </button>
-      <PeriodicSystem drawer={drawer} toggleDrawer={toggleDrawer} />}
+      <PeriodicSystem drawer={drawer} toggleDrawer={toggleDrawer} />
     </Toolbar>
   );
 };
