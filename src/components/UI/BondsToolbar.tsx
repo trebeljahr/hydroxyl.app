@@ -1,6 +1,7 @@
 import React from "react";
 import { createStyles, makeStyles, Theme } from "@material-ui/core/styles";
 import Toolbar from "@material-ui/core/Toolbar";
+import { Button } from "@material-ui/core";
 
 const useStyles = makeStyles((theme: Theme) =>
   createStyles({
@@ -18,11 +19,16 @@ const useStyles = makeStyles((theme: Theme) =>
 );
 
 interface BondsToolbarProps {
-  stage: any;
   setBond: (e: string) => void;
 }
-export const BondsToolbar = ({ stage, setBond }: BondsToolbarProps) => {
+export const BondsToolbar = ({ setBond }: BondsToolbarProps) => {
   const classes = useStyles();
 
-  return <Toolbar className={classes.bondToolbar}></Toolbar>;
+  return (
+    <Toolbar className={classes.bondToolbar}>
+      <Button>-</Button>
+      <Button>=</Button>
+      <Button>≡</Button>
+    </Toolbar>
+  );
 };

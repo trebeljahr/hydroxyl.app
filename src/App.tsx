@@ -46,7 +46,7 @@ function App() {
         setShowHydrogen={setShowHydrogen}
       />
       <Box className={classes.container}>
-        <BondsToolbar stage={stage} setBond={setBond} />
+        <BondsToolbar setBond={setBond} />
         <Canvas
           stage={stage}
           setStage={setStage}
