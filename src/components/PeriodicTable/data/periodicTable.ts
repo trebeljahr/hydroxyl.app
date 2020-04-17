@@ -1,4 +1,5 @@
 import { ChangeColorBrightness } from "../../../utils/color";
+import { PeriodicTableElements } from "../types";
 
 const periodicTableData = {
   Hydrogen: {
@@ -64,7 +65,7 @@ const periodicTableData = {
   Nitrogen: {
     id: 7,
     symbol: "N",
-    maxBonds: 4,
+    maxBonds: 3,
     name: "Nitrogen",
     posX: 2,
     posY: 15,
@@ -5125,13 +5126,14 @@ export const combinedPeriodicTable = differentPeriodicTableData.reduce(
         posX: element.ypos,
         posY: element.xpos,
         color,
+        maxBonds: 12,
         symbol: element.symbol,
         atomColor: "violet",
       },
     };
   },
   {}
-);
+) as PeriodicTableElements;
 
 // console.log(combinedPeriodicTable);
 // console.log(

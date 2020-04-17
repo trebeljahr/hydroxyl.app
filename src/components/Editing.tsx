@@ -9,18 +9,18 @@ export const Editing = ({ editing, turnOffEditing }: EditingProps) => {
   const {
     pos: { x, y },
   } = editing;
-  const changeMolecule = (type: string) => {
+  const changeMolecule = (name: string) => {
     Object.entries(editing.molecule.bonds).forEach(
       (entry: [any, Bond | null]) => {
         const [direction, bond] = entry;
         const newAtom =
-          type === "Hydrogen"
+          name === "Hydrogen"
             ? new Hydrogen()
-            : type === "Carbon"
+            : name === "Carbon"
             ? new Carbon()
-            : type === "Oxygen"
+            : name === "Oxygen"
             ? new Oxygen()
-            : type === "Nitrogen"
+            : name === "Nitrogen"
             ? new Nitrogen()
             : null;
         if (newAtom && bond) {

@@ -6,4 +6,9 @@ export interface Element {
   color: string;
   symbol: string;
   atomColor: string;
+  maxBonds: number;
+}
+
+export interface PeriodicTableElements {
+  [key: string]: Element;
 }

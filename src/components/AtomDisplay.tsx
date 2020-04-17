@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Text, Group } from "react-konva";
-import { Carbon, Atom } from "../utils/Atoms";
+import { Atom, Hydrogen } from "../utils/Atoms";
 import {
   Pos,
   EditingData,
@@ -10,21 +10,22 @@ import {
 } from "../types";
 import { Editing } from "./Editing";
 import { BondLines } from "./BondLines";
+import { v4 } from "uuid";
 
 const initialEditing = (): EditingData => {
   return {
     on: false,
     id: null,
     pos: { x: 0, y: 0 },
-    molecule: new Atom({ type: "Hydrogen" }),
+    molecule: new Hydrogen(),
   };
 };
-export const molecule = new Carbon();
-molecule.deleteBond(BondDirections.up);
-molecule.deleteBond(BondDirections.down);
-molecule.changeBond(BondDirections.left, { type: 3, atom: new Carbon() });
 
-export const AtomDisplay = ({ showHydrogen }: AtomDisplayProps) => {
+export const AtomDisplay = ({
+  showHydrogen,
+  molecule,
+  pos,
+}: AtomDisplayProps) => {
   const [editing, setEditing] = useState(initialEditing());
 
   const toggleEditing = (id: string, pos: Pos, molecule: Atom, key: string) => {
@@ -46,7 +47,7 @@ export const AtomDisplay = ({ showHydrogen }: AtomDisplayProps) => {
         const k = j as BondDirections;
         if (bond) {
           const connection = bond.atom;
-          const positionOffset = connection.type === "Hydrogen" ? 20 : 30;
+          const positionOffset = connection.name === "Hydrogen" ? 20 : 30;
           const newPos =
             k === BondDirections.left
               ? { ...pos, x: x - positionOffset }
@@ -63,11 +64,11 @@ export const AtomDisplay = ({ showHydrogen }: AtomDisplayProps) => {
           }
           return (
             <Group key={connection.id}>
-              {(showHydrogen || connection.type !== "Hydrogen") && (
+              {(showHydrogen || connection.name !== "Hydrogen") && (
                 <>
                   <Text
                     key={"text-" + connection.id}
-                    text={connection.type[0]}
+                    text={connection.name[0]}
                     x={newPos.x - 4}
                     y={newPos.y - 5}
                     align="center"
@@ -98,10 +99,10 @@ export const AtomDisplay = ({ showHydrogen }: AtomDisplayProps) => {
     return null;
   };
   return (
-    <>
-      <Text text={molecule.type[0]} x={350 - 4} y={350 - 5} />
-      {generateAtomChain(molecule, undefined, [molecule.id])}
+    <Group key={v4()}>
+      <Text text={molecule.name[0]} x={pos.x - 5} y={pos.y - 5} />
+      {generateAtomChain(molecule, pos, [molecule.id])}
       <Editing turnOffEditing={turnOffEditing} editing={editing} />
-    </>
+    </Group>
   );
 };

@@ -1,11 +1,10 @@
-import React, { useState } from "react";
+import React from "react";
 import { createStyles, makeStyles, Theme } from "@material-ui/core/styles";
 import Toolbar from "@material-ui/core/Toolbar";
-import { PDF_BUTTON } from "../PDF_Button";
 
 const useStyles = makeStyles((theme: Theme) =>
   createStyles({
-    atomToolBar: {
+    bondToolbar: {
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
@@ -18,17 +17,12 @@ const useStyles = makeStyles((theme: Theme) =>
   })
 );
 
-export const BondsToolbar = ({ stage }: any) => {
-  const [showHydrogen, setShowHydrogen] = useState(true);
-
+interface BondsToolbarProps {
+  stage: any;
+  setBond: (e: string) => void;
+}
+export const BondsToolbar = ({ stage, setBond }: BondsToolbarProps) => {
   const classes = useStyles();
 
-  return (
-    <Toolbar className={classes.atomToolBar}>
-      <button onClick={() => setShowHydrogen(!showHydrogen)}>
-        {showHydrogen ? "Hide hydrogen" : "Show hydrogen"}
-      </button>
-      {stage && <PDF_BUTTON stage={stage} />}
-    </Toolbar>
-  );
+  return <Toolbar className={classes.bondToolbar}></Toolbar>;
 };

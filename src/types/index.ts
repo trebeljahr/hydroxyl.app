@@ -5,6 +5,12 @@ export interface Bond {
   type: 1 | 2 | 3 | 4;
   atom: Atom;
 }
+
+export interface HydrogenProps {
+  setShowHydrogen: (e: boolean) => void;
+  showHydrogen: boolean;
+}
+
 export enum BondDirections {
   left = "left",
   right = "right",
@@ -19,9 +25,10 @@ export interface Bonds {
 }
 
 export interface AtomConstructor {
-  type?: string;
+  name: string;
   bonds?: Bonds;
-  maxBonds?: number;
+  maxBonds: number;
+  symbol: string;
 }
 
 export interface Pos {
@@ -46,6 +53,8 @@ export interface EditingProps {
 
 export interface AtomDisplayProps {
   showHydrogen: boolean;
+  molecule: Atom;
+  pos: Pos;
 }
 
 export interface URLImageProps {

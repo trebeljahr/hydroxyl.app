@@ -1,5 +1,7 @@
 import { v4 as uuid } from "uuid";
 import { AtomConstructor, Bonds, BondDirections, Bond } from "../types";
+import { combinedPeriodicTable } from "../components/PeriodicTable/data/periodicTable";
+import { Element } from "../components/PeriodicTable/types";
 
 const defaultBonds = (): Bonds => {
   return {
@@ -25,18 +27,24 @@ export const opposite = (direction: BondDirections) => {
 
 export class Atom {
   id: string;
-  type: string;
+  name: string;
   maxBonds: number;
   bonds: Bonds;
+  symbol: string;
   constructor({
-    type = "Unknown Atom",
-    maxBonds = 1,
+    name,
+    maxBonds,
     bonds = defaultBonds(),
+    symbol,
   }: AtomConstructor) {
-    this.type = type;
+    this.name = name;
+    this.symbol = symbol;
     this.maxBonds = maxBonds;
     this.bonds = bonds;
     this.id = uuid();
+    if (this.name !== "Hydrogen") {
+      this.fillUpWithHydrogen();
+    }
   }
   freeBonds = (): number => {
     return this.maxBonds - this.totalBonds();
@@ -55,7 +63,7 @@ export class Atom {
       (agg: any, k: string) => {
         const key = k as BondDirections;
         const bond = this.bonds[key] as Bond;
-        if (bond && bond.atom.type === "Hydrogen") {
+        if (bond && bond.atom.name === "Hydrogen") {
           return {
             amount: agg.amount + 1,
             directions: [...agg.directions, key],
@@ -83,7 +91,7 @@ export class Atom {
     Object.keys(this.bonds).forEach((k) => {
       const key = k as BondDirections;
       const bond = this.bonds[key] as Bond;
-      if (bond && bond.atom.type === "Hydrogen") {
+      if (bond && bond.atom.name === "Hydrogen") {
         this.deleteBond(key);
       }
     });
@@ -105,31 +113,56 @@ export class Atom {
   };
 }
 
-export const trim = (str: String): String => str.replace(/\s+/g, "");
-
-export class Oxygen extends Atom {
+export class Hydrogen extends Atom {
   constructor() {
-    super({ type: "Oxygen", maxBonds: 2 });
-    this.fillUpWithHydrogen();
+    const { maxBonds, symbol, name } = combinedPeriodicTable[
+      "Hydrogen"
+    ] as Element;
+    super({
+      name,
+      maxBonds,
+      symbol,
+    });
   }
 }
 
 export class Nitrogen extends Atom {
   constructor() {
-    super({ type: "Nitrogen", maxBonds: 3 });
-    this.fillUpWithHydrogen();
+    const { maxBonds, symbol, name } = combinedPeriodicTable[
+      "Nitrogen"
+    ] as Element;
+    super({
+      name,
+      maxBonds,
+      symbol,
+    });
   }
 }
 
-export class Hydrogen extends Atom {
+export class Oxygen extends Atom {
   constructor() {
-    super({ type: "Hydrogen" });
+    const { maxBonds, symbol, name } = combinedPeriodicTable[
+      "Oxygen"
+    ] as Element;
+    super({
+      name,
+      maxBonds,
+      symbol,
+    });
   }
 }
 
 export class Carbon extends Atom {
   constructor() {
-    super({ type: "Carbon", maxBonds: 4 });
-    this.fillUpWithHydrogen();
+    const { maxBonds, symbol, name } = combinedPeriodicTable[
+      "Carbon"
+    ] as Element;
+    super({
+      name,
+      maxBonds,
+      symbol,
+    });
   }
 }
+
+export const trim = (str: String): String => str.replace(/\s+/g, "");

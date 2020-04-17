@@ -3,6 +3,7 @@ import Button from "@material-ui/core/Button";
 import Menu from "@material-ui/core/Menu";
 import MenuItem from "@material-ui/core/MenuItem";
 import { createStyles, makeStyles, Theme } from "@material-ui/core";
+import { PDF_BUTTON } from "../PDF_Button";
 
 const useStyles = makeStyles((theme: Theme) =>
   createStyles({
@@ -12,7 +13,10 @@ const useStyles = makeStyles((theme: Theme) =>
   })
 );
 
-export default function SimpleMenu() {
+interface SimpleMenuProps {
+  stage: any;
+}
+export const SimpleMenu = ({ stage }: SimpleMenuProps) => {
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
 
   const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -41,10 +45,8 @@ export default function SimpleMenu() {
         onClose={handleClose}
         color="inherit"
       >
-        <MenuItem onClick={handleClose}>Profile</MenuItem>
-        <MenuItem onClick={handleClose}>My account</MenuItem>
-        <MenuItem onClick={handleClose}>Logout</MenuItem>
+        <MenuItem> {stage && <PDF_BUTTON stage={stage} />}</MenuItem>
       </Menu>
     </div>
   );
-}
+};

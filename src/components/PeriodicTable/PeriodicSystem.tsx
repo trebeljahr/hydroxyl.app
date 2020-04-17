@@ -13,6 +13,7 @@ import { Element } from "./types";
 interface PeriodicSystemProps {
   drawer: boolean;
   toggleDrawer: () => void;
+  setElement: (symbol: string) => void;
 }
 
 const useStyles = makeStyles((theme: Theme) =>
@@ -44,9 +45,11 @@ const useStyles = makeStyles((theme: Theme) =>
 export const PeriodicSystem = ({
   drawer,
   toggleDrawer,
+  setElement,
 }: PeriodicSystemProps) => {
   const anchor = "right";
   const classes = useStyles();
+
   return (
     <SwipeableDrawer
       anchor={anchor}
@@ -66,6 +69,7 @@ export const PeriodicSystem = ({
                 key={element.symbol}
                 element={element}
                 toggleDrawer={toggleDrawer}
+                setElement={setElement}
               />
             );
           })}

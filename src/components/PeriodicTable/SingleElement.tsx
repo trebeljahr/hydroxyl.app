@@ -46,10 +46,15 @@ const useStyles = makeStyles({
   },
 });
 
-export const SingleElement = ({ element }: any) => {
+export const SingleElement = ({ element, toggleDrawer, setElement }: any) => {
   const classes = useStyles(element);
+  const handleClick = () => {
+    setElement(element.symbol);
+    toggleDrawer();
+  };
+
   return (
-    <div className={classes.singleElement}>
+    <div className={classes.singleElement} onClick={handleClick}>
       <p className={classes.elementNumber}>{element.id}</p>
       <h2 className={classes.text}>{element.symbol}</h2>
     </div>

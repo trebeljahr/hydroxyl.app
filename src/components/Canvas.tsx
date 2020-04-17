@@ -1,8 +1,12 @@
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import { Layer, Stage } from "react-konva";
 import { KonvaEventObject } from "konva/types/Node";
 import { AtomDisplay } from "./AtomDisplay";
 import { makeStyles, createStyles, Theme } from "@material-ui/core";
+import { combinedPeriodicTable } from "./PeriodicTable/data/periodicTable";
+import { Atom, Carbon } from "../utils/Atoms";
+import { BondDirections } from "../types";
+import { getRelativePosition } from "../utils/relativePosition";
 
 const useStyles = makeStyles((theme: Theme) =>
   createStyles({
@@ -15,7 +19,31 @@ const useStyles = makeStyles((theme: Theme) =>
   })
 );
 
-const Canvas = ({ stage, setStage }: any) => {
+export const defaultMolecule = new Carbon() as Atom;
+defaultMolecule.deleteBond(BondDirections.up);
+defaultMolecule.deleteBond(BondDirections.down);
+defaultMolecule.changeBond(BondDirections.left, {
+  type: 3,
+  atom: new Carbon(),
+});
+
+interface CanvasProps {
+  stage: any;
+  setStage: (e: any) => void;
+  showHydrogen: boolean;
+  atomHighlight: string;
+  bondHighlight: string;
+}
+const Canvas = ({
+  stage,
+  setStage,
+  showHydrogen,
+  atomHighlight,
+  bondHighlight,
+}: CanvasProps) => {
+  const [molecules, setMolecules] = useState([
+    { atom: defaultMolecule, pos: { x: 350, y: 350 } },
+  ]);
   const stageRef: any = useRef();
 
   const zoom = (e: KonvaEventObject<WheelEvent>) => {
@@ -45,6 +73,23 @@ const Canvas = ({ stage, setStage }: any) => {
   }, [setStage]);
 
   const classes = useStyles();
+
+  const handleClick = () => {
+    if (atomHighlight !== "") {
+      const element = Object.values(combinedPeriodicTable).find(
+        (element) => element.symbol === atomHighlight
+      );
+      if (element) {
+        const s = stageRef.current;
+        const { name, maxBonds, symbol } = element;
+        const newAtom = new Atom({ name, maxBonds, symbol });
+        setMolecules([
+          ...molecules,
+          { atom: newAtom, pos: getRelativePosition(s) },
+        ]);
+      }
+    }
+  };
   return (
     <div className={classes.root}>
       <Stage
@@ -54,9 +99,16 @@ const Canvas = ({ stage, setStage }: any) => {
         height={window.innerHeight}
         ref={stageRef}
         onWheel={zoom}
+        onClick={handleClick}
       >
         <Layer>
-          <AtomDisplay showHydrogen={true} />
+          {molecules.map((molecule) => (
+            <AtomDisplay
+              molecule={molecule.atom}
+              showHydrogen={showHydrogen}
+              pos={molecule.pos}
+            />
+          ))}
         </Layer>
       </Stage>
     </div>
