@@ -4,8 +4,8 @@ import Toolbar from "@material-ui/core/Toolbar";
 import { PeriodicSystem } from "../PeriodicTable/PeriodicSystem";
 import { combinedPeriodicTable } from "../PeriodicTable/data/periodicTable";
 import { Element } from "../PeriodicTable/types";
-import { ElementButton, ElementButtonStyles } from "./ElementButton";
-import { Button, Typography } from "@material-ui/core";
+import { ElementButton } from "./ElementButton";
+import { OpenDrawerButton } from "./DrawerButton";
 
 const useStyles = makeStyles((theme: Theme) =>
   createStyles({
@@ -25,6 +25,7 @@ interface AtomToolBarProps {
   highlight: string;
   setElement: (e: string) => void;
 }
+
 export const AtomToolBar = ({ highlight, setElement }: AtomToolBarProps) => {
   const [drawer, setDrawer] = useState(false);
   const classes = useStyles();
@@ -71,24 +72,5 @@ export const AtomToolBar = ({ highlight, setElement }: AtomToolBarProps) => {
         setElement={setElement}
       />
     </Toolbar>
-  );
-};
-
-interface ButtonDrawerProps {
-  openDrawer: () => void;
-}
-const OpenDrawerButton = ({ openDrawer }: ButtonDrawerProps) => {
-  const classes = ElementButtonStyles(false);
-  return (
-    <Button
-      key={"...-button"}
-      color="primary"
-      className={classes.menuButton}
-      onClick={openDrawer}
-    >
-      <Typography variant="h4" component="span">
-        ...
-      </Typography>
-    </Button>
   );
 };

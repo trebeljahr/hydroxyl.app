@@ -24,6 +24,10 @@ export interface Bonds {
   down: Bond | null;
 }
 
+export interface ButtonDrawerProps {
+  openDrawer: () => void;
+}
+
 export interface AtomConstructor {
   name: string;
   bonds?: Bonds;

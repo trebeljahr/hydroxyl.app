@@ -1,4 +1,4 @@
-import { ChangeColorBrightness } from "../../../utils/color";
+import { ChangeColorBrightness } from "../../../../utils/color";
 import { PeriodicTableElements } from "../types";
 
 const periodicTableData = {

@@ -3,7 +3,7 @@ import Button from "@material-ui/core/Button";
 import Menu from "@material-ui/core/Menu";
 import MenuItem from "@material-ui/core/MenuItem";
 import { createStyles, makeStyles, Theme } from "@material-ui/core";
-import { PDF_BUTTON } from "../PDF_Button";
+import { PDF_BUTTON } from "./PDF_Button";
 
 const useStyles = makeStyles((theme: Theme) =>
   createStyles({

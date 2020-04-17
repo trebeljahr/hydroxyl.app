@@ -3,7 +3,7 @@ import { Layer, Stage } from "react-konva";
 import { KonvaEventObject } from "konva/types/Node";
 import { AtomDisplay } from "./AtomDisplay";
 import { makeStyles, createStyles, Theme } from "@material-ui/core";
-import { combinedPeriodicTable } from "./PeriodicTable/data/periodicTable";
+import { combinedPeriodicTable } from "./UI/PeriodicTable/data/periodicTable";
 import { Atom, Carbon } from "../utils/Atoms";
 import { BondDirections } from "../types";
 import { getRelativePosition } from "../utils/relativePosition";

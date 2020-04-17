@@ -1,7 +1,7 @@
 import { v4 as uuid } from "uuid";
 import { AtomConstructor, Bonds, BondDirections, Bond } from "../types";
-import { combinedPeriodicTable } from "../components/PeriodicTable/data/periodicTable";
-import { Element } from "../components/PeriodicTable/types";
+import { combinedPeriodicTable } from "../components/UI/PeriodicTable/data/periodicTable";
+import { Element } from "../components/UI/PeriodicTable/types";
 
 const defaultBonds = (): Bonds => {
   return {

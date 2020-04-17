@@ -1,10 +1,10 @@
 import React, { useState } from "react";
 import "./App.css";
 import Canvas from "./components/Canvas";
-import { ButtonAppBar } from "./components/UI/Appbar";
+import { ButtonAppBar } from "./components/UI/Navbar/Appbar";
 import { Box, makeStyles, createStyles, Theme } from "@material-ui/core";
-import { AtomToolBar } from "./components/UI/AtomToolbar";
-import { BondsToolbar } from "./components/UI/BondsToolbar";
+import { AtomToolBar } from "./components/UI/AtomsToolbar/AtomToolbar";
+import { BondsToolbar } from "./components/UI/BondsToolbar/BondsToolbar";
 
 const useStyles = makeStyles((theme: Theme) =>
   createStyles({
@@ -46,7 +46,7 @@ function App() {
         setShowHydrogen={setShowHydrogen}
       />
       <Box className={classes.container}>
-        <BondsToolbar setBond={setBond} />
+        <BondsToolbar setBond={setBond} bondHighlight={bondHighlight} />
         <Canvas
           stage={stage}
           setStage={setStage}

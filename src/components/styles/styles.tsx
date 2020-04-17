@@ -1,10 +1,9 @@
-import React from "react";
-import { Element } from "../PeriodicTable/types";
-import { makeStyles, Typography, Button } from "@material-ui/core";
+import { makeStyles } from "@material-ui/core";
 
 const orange = "rgb(255, 200, 150)";
 const darkOrange = "rgb(200, 60, 20)";
-export const ElementButtonStyles = makeStyles({
+
+export const ButtonStyle = makeStyles({
   menuButton: (selected: boolean) => ({
     textTransform: "none",
     border: "none",
@@ -40,27 +39,3 @@ export const ElementButtonStyles = makeStyles({
     },
   }),
 });
-export const ElementButton = ({
-  element,
-  setElement,
-  highlight,
-}: {
-  element: Element;
-  setElement: (e: string) => void;
-  highlight: string;
-}) => {
-  const selected = highlight ? element.symbol === highlight : false;
-  const classes = ElementButtonStyles(selected);
-  return (
-    <Button
-      key={element.symbol}
-      color="primary"
-      className={classes.menuButton}
-      onClick={() => setElement(element.symbol)}
-    >
-      <Typography variant="h4" component="span">
-        {element.symbol}
-      </Typography>
-    </Button>
-  );
-};

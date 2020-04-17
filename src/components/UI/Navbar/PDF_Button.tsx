@@ -1,6 +1,6 @@
 import React from "react";
 import jsPDF from "jspdf";
-import { PDF_Props } from "../types";
+import { PDF_Props } from "../../../types";
 
 export const PDF_BUTTON = ({ stage }: PDF_Props) => {
   const saveAsPDF = () => {
