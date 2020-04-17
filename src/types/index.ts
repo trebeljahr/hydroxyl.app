@@ -1,5 +1,6 @@
 import { Stage } from "konva/types/Stage";
 import { Atom } from "../utils/Atoms";
+import { Element } from "../components/UI/PeriodicTable/types";
 
 export interface Bond {
   type: 1 | 2 | 3 | 4;
@@ -17,6 +18,7 @@ export enum BondDirections {
   up = "up",
   down = "down",
 }
+
 export interface Bonds {
   left: Bond | null;
   right: Bond | null;
@@ -26,6 +28,18 @@ export interface Bonds {
 
 export interface ButtonDrawerProps {
   openDrawer: () => void;
+}
+
+export interface ElementButtonProps {
+  element: Element;
+  setElement: (e: string) => void;
+  highlight: string;
+}
+
+export interface BondButtonProps {
+  bondType: string;
+  bondHighlight: string;
+  setBond: (e: string) => void;
 }
 
 export interface AtomConstructor {

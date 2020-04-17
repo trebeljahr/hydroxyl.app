@@ -9,10 +9,10 @@ import { ShowHydrogenButton } from "./ShowHydrogenButton";
 const useStyles = makeStyles((theme: Theme) =>
   createStyles({
     root: {
+      position: "relative",
       flexGrow: 1,
       gridColumn: "1/4",
       gridRow: 1,
-      width: "100%",
     },
     menuButton: {
       marginRight: theme.spacing(2),

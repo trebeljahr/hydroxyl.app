@@ -1,13 +1,13 @@
 import React, { useState } from "react";
 import { Text, Group } from "react-konva";
-import { Atom, Hydrogen } from "../utils/Atoms";
+import { Atom, Hydrogen } from "../../../utils/Atoms";
 import {
   Pos,
   EditingData,
   AtomDisplayProps,
   BondDirections,
   Bond,
-} from "../types";
+} from "../../../types";
 import { Editing } from "./Editing";
 import { BondLines } from "./BondLines";
 import { v4 } from "uuid";

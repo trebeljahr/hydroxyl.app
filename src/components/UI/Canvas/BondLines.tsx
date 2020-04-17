@@ -1,6 +1,6 @@
 import React from "react";
 import { Line } from "react-konva";
-import { Bond, BondDirections, Pos } from "../types";
+import { Bond, BondDirections, Pos } from "../../../types";
 
 interface Positions {
   oldPos: Pos;

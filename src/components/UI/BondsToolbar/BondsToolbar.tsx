@@ -1,20 +1,23 @@
 import React from "react";
 import { createStyles, makeStyles, Theme } from "@material-ui/core/styles";
 import Toolbar from "@material-ui/core/Toolbar";
-import { Button, Typography } from "@material-ui/core";
-import { ButtonStyle } from "../../styles/styles";
+import { BondButton } from "./BondButton";
+import { littleBorderWidth } from "../../styles/styles";
+import { v4 } from "uuid";
 
 const useStyles = makeStyles((theme: Theme) =>
   createStyles({
     bondToolbar: {
       display: "flex",
+      paddingTop: 0,
+      margin: 0,
+      padding: 0,
+      paddingRight: `${littleBorderWidth}px`,
+      zIndex: 2,
+      height: "100%",
       flexDirection: "column",
-      alignItems: "center",
-      backgroundColor: "yellow",
+      alignItems: "flexEnd",
       position: "relative",
-    },
-    menuButton: {
-      marginRight: theme.spacing(2),
     },
   })
 );
@@ -31,6 +34,7 @@ export const BondsToolbar = ({ setBond, bondHighlight }: BondsToolbarProps) => {
       {bondTypes.map((bondType) => {
         return (
           <BondButton
+            key={`${v4()}-bondButton`}
             bondType={bondType}
             setBond={setBond}
             bondHighlight={bondHighlight}
@@ -38,31 +42,5 @@ export const BondsToolbar = ({ setBond, bondHighlight }: BondsToolbarProps) => {
         );
       })}
     </Toolbar>
-  );
-};
-
-interface BondButtonProps {
-  bondType: string;
-  bondHighlight: string;
-  setBond: (e: string) => void;
-}
-
-const BondButton = ({ bondType, setBond, bondHighlight }: BondButtonProps) => {
-  const selected = bondType === bondHighlight;
-  const classes = ButtonStyle(selected);
-  const handleClick = () => {
-    setBond(selected ? "" : bondType);
-  };
-  return (
-    <Button
-      key={`${bondType}-bond`}
-      color="primary"
-      className={classes.menuButton}
-      onClick={handleClick}
-    >
-      <Typography variant="h4" component="span">
-        {bondType}
-      </Typography>
-    </Button>
   );
 };

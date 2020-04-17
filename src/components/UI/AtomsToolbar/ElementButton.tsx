@@ -1,13 +1,7 @@
 import React from "react";
-import { Element } from "../PeriodicTable/types";
 import { Typography, Button } from "@material-ui/core";
 import { ButtonStyle } from "../../styles/styles";
-
-export interface ElementButtonProps {
-  element: Element;
-  setElement: (e: string) => void;
-  highlight: string;
-}
+import { ElementButtonProps } from "../../../types";
 
 export const ElementButton = ({
   element,
@@ -15,7 +9,7 @@ export const ElementButton = ({
   highlight,
 }: ElementButtonProps) => {
   const selected = highlight ? element.symbol === highlight : false;
-  const classes = ButtonStyle(selected);
+  const classes = ButtonStyle({ selected, direction: "left" });
   return (
     <Button
       key={element.symbol}

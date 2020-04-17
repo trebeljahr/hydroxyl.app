@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import "./App.css";
-import Canvas from "./components/Canvas";
+import Canvas from "./components/UI/Canvas/Canvas";
 import { ButtonAppBar } from "./components/UI/Navbar/Appbar";
 import { Box, makeStyles, createStyles, Theme } from "@material-ui/core";
 import { AtomToolBar } from "./components/UI/AtomsToolbar/AtomToolbar";
@@ -9,15 +9,12 @@ import { BondsToolbar } from "./components/UI/BondsToolbar/BondsToolbar";
 const useStyles = makeStyles((theme: Theme) =>
   createStyles({
     root: {
+      display: "grid",
+      gridTemplateRows: "auto auto",
+      gridTemplateColumns: "1fr 20fr 1fr",
       width: "100vw",
       height: "100vh",
       overflow: "hidden",
-    },
-    container: {
-      width: "100%",
-      maxWidth: "100vw",
-      height: "100%",
-      display: "flex",
     },
   })
 );
@@ -45,17 +42,15 @@ function App() {
         showHydrogen={showHydrogen}
         setShowHydrogen={setShowHydrogen}
       />
-      <Box className={classes.container}>
-        <BondsToolbar setBond={setBond} bondHighlight={bondHighlight} />
-        <Canvas
-          stage={stage}
-          setStage={setStage}
-          showHydrogen={showHydrogen}
-          atomHighlight={atomHighlight}
-          bondHighlight={bondHighlight}
-        />
-        <AtomToolBar highlight={atomHighlight} setElement={setElement} />
-      </Box>
+      <BondsToolbar setBond={setBond} bondHighlight={bondHighlight} />
+      <Canvas
+        stage={stage}
+        setStage={setStage}
+        showHydrogen={showHydrogen}
+        atomHighlight={atomHighlight}
+        bondHighlight={bondHighlight}
+      />
+      <AtomToolBar highlight={atomHighlight} setElement={setElement} />
     </Box>
   );
 }

@@ -4,7 +4,7 @@ import { ButtonStyle } from "../../styles/styles";
 import { ButtonDrawerProps } from "../../../types";
 
 export const OpenDrawerButton = ({ openDrawer }: ButtonDrawerProps) => {
-  const classes = ButtonStyle(false);
+  const classes = ButtonStyle({ selected: false, direction: "left" });
   return (
     <Button
       key={"...-button"}

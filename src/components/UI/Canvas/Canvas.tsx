@@ -3,18 +3,20 @@ import { Layer, Stage } from "react-konva";
 import { KonvaEventObject } from "konva/types/Node";
 import { AtomDisplay } from "./AtomDisplay";
 import { makeStyles, createStyles, Theme } from "@material-ui/core";
-import { combinedPeriodicTable } from "./UI/PeriodicTable/data/periodicTable";
-import { Atom, Carbon } from "../utils/Atoms";
-import { BondDirections } from "../types";
-import { getRelativePosition } from "../utils/relativePosition";
+import { combinedPeriodicTable } from "../PeriodicTable/data/periodicTable";
+import { Atom, Carbon } from "../../../utils/Atoms";
+import { BondDirections } from "../../../types";
+import { getRelativePosition } from "../../../utils/relativePosition";
+import { v4 } from "uuid";
 
 const useStyles = makeStyles((theme: Theme) =>
   createStyles({
     root: {
-      width: "90%",
-      maxWidth: "90%",
+      width: "100%",
       overflow: "hidden",
       height: "100%",
+      gridRow: 2,
+      gridColumn: 2,
     },
   })
 );
@@ -104,6 +106,7 @@ const Canvas = ({
         <Layer>
           {molecules.map((molecule) => (
             <AtomDisplay
+              key={`${v4()}-atomDisplay`}
               molecule={molecule.atom}
               showHydrogen={showHydrogen}
               pos={molecule.pos}

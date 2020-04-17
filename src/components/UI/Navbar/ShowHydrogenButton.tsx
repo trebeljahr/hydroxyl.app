@@ -10,7 +10,7 @@ export const ShowHydrogenButton = ({
   const handleClick = () => {
     setShowHydrogen(!showHydrogen);
   };
-  const classes = ButtonStyle(showHydrogen);
+  const classes = ButtonStyle({ selected: showHydrogen, direction: "bottom" });
 
   return (
     <Button

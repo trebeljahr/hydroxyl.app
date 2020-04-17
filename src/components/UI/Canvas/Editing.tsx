@@ -1,7 +1,7 @@
 import React from "react";
 import { Text, Rect } from "react-konva";
-import { EditingProps, Bond } from "../types";
-import { Carbon, Hydrogen, Nitrogen, Oxygen } from "../utils/Atoms";
+import { EditingProps, Bond } from "../../../types";
+import { Carbon, Hydrogen, Nitrogen, Oxygen } from "../../../utils/Atoms";
 
 export const Editing = ({ editing, turnOffEditing }: EditingProps) => {
   const editingOffsetY = 10;
