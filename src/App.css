@@ -6,6 +6,32 @@ body {
   text-align: center;
 }
 
+.tooltip {
+  position: relative;
+  display: inline-block;
+}
+
+.tooltiptext {
+  display: none;
+  width: 120px;
+  background-color: black;
+  color: #fff;
+  text-align: center;
+  padding: 5px 0;
+  border-radius: 6px;
+  position: absolute;
+  left: 120%;
+  top: 20;
+  z-index: 500;
+}
+.left {
+  left: -220%;
+}
+
+.tooltip:hover .tooltiptext {
+  display: block;
+}
+
 .App-logo {
   height: 40vmin;
   pointer-events: none;

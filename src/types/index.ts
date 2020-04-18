@@ -37,10 +37,9 @@ export interface ElementButtonProps {
 }
 
 export interface BondButtonProps {
-  bondType: string;
   bondHighlight: string;
   setBond: (e: string) => void;
-  bondSvg: any;
+  bond: any;
 }
 
 export interface AtomConstructor {

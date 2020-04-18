@@ -1,26 +1,28 @@
 import React from "react";
 import { ButtonStyle } from "../../styles/styles";
-import { Button, SvgIcon } from "@material-ui/core";
+import { Button } from "@material-ui/core";
 import { BondButtonProps } from "../../../types";
 
 export const BondButton = ({
-  bondType,
-  bondSvg,
+  bond,
   setBond,
   bondHighlight,
 }: BondButtonProps) => {
-  const selected = bondType === bondHighlight;
+  const selected = bond.tooltip === bondHighlight;
   const classes = ButtonStyle({ selected, direction: "right" });
   const handleClick = () => {
-    setBond(selected ? "" : bondType);
+    setBond(selected ? "" : bond.tooltip);
   };
+  console.log(bond.tooltip);
+  const Svg = bond.svg;
   return (
     <Button
       color="primary"
-      className={classes.menuButton}
+      className={classes.menuButton + " tooltip"}
       onClick={handleClick}
     >
-      <SvgIcon component={bondSvg} viewBox="0 0 600 476.6" />
+      <span className="tooltiptext">{bond.tooltip}</span>
+      <Svg />
     </Button>
   );
 };

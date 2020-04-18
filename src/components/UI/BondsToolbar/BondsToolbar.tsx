@@ -2,7 +2,6 @@ import React from "react";
 import { createStyles, makeStyles, Theme } from "@material-ui/core/styles";
 import Toolbar from "@material-ui/core/Toolbar";
 import { BondButton } from "./BondButton";
-import { littleBorderWidth } from "../../styles/styles";
 import { v4 } from "uuid";
 import { ReactComponent as singleBond } from "../../../images/svg/single-bond.svg";
 import { ReactComponent as doubleBond } from "../../../images/svg/double-bond.svg";
@@ -15,18 +14,26 @@ import { ReactComponent as carbonChain } from "../../../images/svg/carbon-chain.
 import { ReactComponent as cyclopentane } from "../../../images/svg/cyclopentane.svg";
 import { ReactComponent as cyclohexane } from "../../../images/svg/cyclohexane.svg";
 import { ReactComponent as cycloheptane } from "../../../images/svg/cycloheptane.svg";
+import { Typography } from "@material-ui/core";
 
+const charge = (c: string) => () => (
+  <Typography variant="h4" component="span">
+    e<sup>{c}</sup>
+  </Typography>
+);
 const bonds = [
-  singleBond,
-  doubleBond,
-  tripleBond,
-  hashBond,
-  wedgeBond,
-  benzene,
-  carbonChain,
-  cyclopentane,
-  cyclohexane,
-  cycloheptane,
+  { svg: singleBond, tooltip: "Single Bond" },
+  { svg: doubleBond, tooltip: "Double Bond" },
+  { svg: tripleBond, tooltip: "Triple Bond" },
+  { svg: hashBond, tooltip: "Hash Bond" },
+  { svg: wedgeBond, tooltip: "Wedge Bond" },
+  { svg: benzene, tooltip: "Benzene" },
+  { svg: carbonChain, tooltip: "Carbon Chain" },
+  { svg: cyclopentane, tooltip: "Cyclopentane" },
+  { svg: cyclohexane, tooltip: "Cyclohexane" },
+  { svg: cycloheptane, tooltip: "Cycloheptane" },
+  { svg: charge("+"), tooltip: "Add Charge" },
+  { svg: charge("-"), tooltip: "Subtract Charge" },
 ];
 
 const useStyles = makeStyles((theme: Theme) =>
@@ -36,7 +43,6 @@ const useStyles = makeStyles((theme: Theme) =>
       paddingTop: 0,
       margin: 0,
       padding: 0,
-      paddingRight: `${littleBorderWidth}px`,
       zIndex: 2,
       height: "100%",
       flexDirection: "column",
@@ -58,9 +64,8 @@ export const BondsToolbar = ({ setBond, bondHighlight }: BondsToolbarProps) => {
         return (
           <BondButton
             key={`${v4()}-bondButton`}
-            bondType={"-"}
             setBond={setBond}
-            bondSvg={bond}
+            bond={bond}
             bondHighlight={bondHighlight}
           />
         );

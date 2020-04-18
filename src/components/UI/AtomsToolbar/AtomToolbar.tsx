@@ -6,7 +6,6 @@ import { combinedPeriodicTable } from "../PeriodicTable/data/periodicTable";
 import { Element } from "../PeriodicTable/types";
 import { ElementButton } from "./ElementButton";
 import { OpenDrawerButton } from "./DrawerButton";
-import { littleBorderWidth } from "../../styles/styles";
 import { v4 } from "uuid";
 
 const useStyles = makeStyles((theme: Theme) =>
@@ -16,7 +15,6 @@ const useStyles = makeStyles((theme: Theme) =>
       zIndex: 2,
       margin: 0,
       padding: 0,
-      paddingLeft: `${littleBorderWidth}px`,
       height: "100%",
       flexDirection: "column",
       alignItems: "flexEnd",

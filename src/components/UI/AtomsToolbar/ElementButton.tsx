@@ -14,9 +14,10 @@ export const ElementButton = ({
     <Button
       key={element.symbol}
       color="primary"
-      className={classes.menuButton}
+      className={classes.menuButton + " tooltip"}
       onClick={() => setElement(element.symbol)}
     >
+      <span className="tooltiptext left">{element.name}</span>
       <Typography variant="h4" component="span">
         {element.symbol}
       </Typography>
