@@ -7,6 +7,7 @@ export const OpenDrawerButton = ({ openDrawer }: ButtonDrawerProps) => {
   const classes = ButtonStyle({ selected: false, direction: "left" });
   return (
     <Button
+      disableRipple={true}
       key={"...-button"}
       color="primary"
       className={classes.menuButton}

@@ -1,6 +1,6 @@
 import React from "react";
 import {
-  SwipeableDrawer,
+  Drawer,
   createStyles,
   makeStyles,
   Theme,
@@ -51,11 +51,11 @@ export const PeriodicSystem = ({
   const classes = useStyles();
 
   return (
-    <SwipeableDrawer
+    <Drawer
       anchor={anchor}
       open={drawer}
       onClose={toggleDrawer}
-      onOpen={toggleDrawer}
+      transitionDuration={500}
     >
       <div className={classes.periodicTableContainer}>
         <Fab className={classes.closeButton} onClick={toggleDrawer}>
@@ -75,6 +75,6 @@ export const PeriodicSystem = ({
           })}
         </div>
       </div>
-    </SwipeableDrawer>
+    </Drawer>
   );
 };

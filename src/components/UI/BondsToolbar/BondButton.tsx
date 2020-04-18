@@ -1,10 +1,11 @@
 import React from "react";
 import { ButtonStyle } from "../../styles/styles";
-import { Button, Typography } from "@material-ui/core";
+import { Button, SvgIcon } from "@material-ui/core";
 import { BondButtonProps } from "../../../types";
 
 export const BondButton = ({
   bondType,
+  bondSvg,
   setBond,
   bondHighlight,
 }: BondButtonProps) => {
@@ -19,9 +20,7 @@ export const BondButton = ({
       className={classes.menuButton}
       onClick={handleClick}
     >
-      <Typography variant="h4" component="span">
-        {bondType}
-      </Typography>
+      <SvgIcon component={bondSvg} viewBox="0 0 600 476.6" />
     </Button>
   );
 };
