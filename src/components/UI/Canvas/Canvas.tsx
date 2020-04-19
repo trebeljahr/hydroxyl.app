@@ -30,11 +30,12 @@ const Canvas = ({
   atomHighlight,
   bondHighlight,
 }: CanvasProps) => {
-  const [molecules, setMolecules] = useState([
-    { atom: defaultMolecule, pos: { x: 350, y: 350 } },
-  ]);
   const stageRef: any = useRef();
-
+  const [stageContainer, setStageContainer] = useState();
+  const stageContainerRef: any = useRef();
+  const [molecules, setMolecules] = useState([
+    { atom: defaultMolecule, pos: { x: 0, y: 0 } },
+  ]);
   const zoom = (e: KonvaEventObject<WheelEvent>) => {
     e.evt.preventDefault();
     const s = stageRef.current;
@@ -58,8 +59,23 @@ const Canvas = ({
   };
 
   useEffect(() => {
-    setStage(stageRef.current);
-  }, [setStage]);
+    setStageContainer(stageContainerRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (stageRef.current) {
+      setStage(stageRef.current);
+      setMolecules([
+        {
+          atom: defaultMolecule,
+          pos: {
+            x: stageRef.current.width() / 2,
+            y: stageRef.current.height() / 2,
+          },
+        },
+      ]);
+    }
+  }, [stageContainer, setStage]);
 
   const classes = useStyles();
 
@@ -80,27 +96,29 @@ const Canvas = ({
     }
   };
   return (
-    <div className={classes.root}>
-      <Stage
-        style={{ backgroundColor: "white" }}
-        draggable
-        width={window.innerWidth}
-        height={window.innerHeight}
-        ref={stageRef}
-        onWheel={zoom}
-        onClick={handleClick}
-      >
-        <Layer>
-          {molecules.map((molecule) => (
-            <AtomDisplay
-              key={`${v4()}-atomDisplay`}
-              molecule={molecule.atom}
-              showHydrogen={showHydrogen}
-              pos={molecule.pos}
-            />
-          ))}
-        </Layer>
-      </Stage>
+    <div className={classes.root} ref={stageContainerRef}>
+      {stageContainerRef.current && (
+        <Stage
+          style={{ backgroundColor: "white" }}
+          draggable
+          width={stageContainerRef?.current?.clientWidth}
+          height={stageContainerRef?.current?.clientHeight}
+          ref={stageRef}
+          onWheel={zoom}
+          onClick={handleClick}
+        >
+          <Layer>
+            {molecules.map((molecule) => (
+              <AtomDisplay
+                key={`${v4()}-atomDisplay`}
+                molecule={molecule.atom}
+                showHydrogen={showHydrogen}
+                pos={molecule.pos}
+              />
+            ))}
+          </Layer>
+        </Stage>
+      )}
     </div>
   );
 };

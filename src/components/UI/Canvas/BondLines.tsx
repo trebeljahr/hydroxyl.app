@@ -1,12 +1,12 @@
 import React from "react";
-import { Line } from "react-konva";
+import { Line, Group } from "react-konva";
 import { BondDirections, Positions, BondLinesProps } from "../../../types";
 
 const offsetLine = (
   { oldPos, newPos }: Positions,
   k: BondDirections
 ): LinePoints => {
-  const offset = 7;
+  const offset = 50;
   const oldOffset = -offset;
   return k === BondDirections.left
     ? [oldPos.x + oldOffset, oldPos.y, newPos.x + offset, newPos.y]
@@ -51,9 +51,10 @@ export const BondLines = ({
   const rightTwoBondLine = doubleBondLine(linePoints, -offset, k);
   const leftTwoBondLine = doubleBondLine(linePoints, offset, k);
   return (
-    <>
+    <Group>
       {(bond.type === 1 || bond.type === 3) && (
         <Line
+          strokeWidth={10}
           key={"line1-" + connection.id}
           points={linePoints}
           fill={"black"}
@@ -63,12 +64,14 @@ export const BondLines = ({
       {(bond.type === 2 || bond.type === 3) && (
         <>
           <Line
+            strokeWidth={10}
             key={"line2-" + connection.id}
             points={leftTwoBondLine}
             fill={"black"}
             stroke={"black"}
           />
           <Line
+            strokeWidth={10}
             key={"line3-" + connection.id}
             points={rightTwoBondLine}
             fill={"black"}
@@ -76,6 +79,6 @@ export const BondLines = ({
           />
         </>
       )}
-    </>
+    </Group>
   );
 };

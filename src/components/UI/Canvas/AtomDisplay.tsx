@@ -64,7 +64,7 @@ interface AtomConnectionsProps {
 }
 const AtomConnections = ({
   atom,
-  pos = { x: 350, y: 350 },
+  pos,
   hover,
   setHover,
   showHydrogen,
@@ -97,8 +97,8 @@ const AtomConnections = ({
             const length = Math.sqrt(newPos.x * newPos.x + newPos.y * newPos.y);
             newPos.x = newPos.x / length;
             newPos.y = newPos.y / length;
-            newPos.x = newPos.x * 50 + x;
-            newPos.y = newPos.y * 50 + y;
+            newPos.x = newPos.x * 200 + x;
+            newPos.y = newPos.y * 200 + y;
             if (newTraversedNodes.includes(connection.id)) {
               return null;
             }
@@ -142,7 +142,7 @@ interface SingleAtomProps {
 }
 const SingleAtom = ({
   atom,
-  pos = { x: 350, y: 350 },
+  pos,
   hover,
   setHover,
   editing,
@@ -166,16 +166,18 @@ const SingleAtom = ({
       <Circle
         x={pos.x}
         y={pos.y}
-        radius={20}
+        radius={60}
         fill={hover === atom.id ? "yellow" : "transparent"}
       />
       <Text
         key={"text-" + atom.id}
+        width={60}
+        fontSize={80}
         text={atom.symbol}
-        x={pos.x - 4}
-        y={pos.y - 5}
+        x={pos.x - 30}
         align="center"
         verticalAlign="middle"
+        y={pos.y - 35}
         fontStyle={editing && atom.id === editing.id ? "bold" : "normal"}
         onClick={() => toggleEditing(atom.id, pos, atom)}
       />
