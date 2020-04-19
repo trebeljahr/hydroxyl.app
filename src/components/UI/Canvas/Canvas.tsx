@@ -21,7 +21,7 @@ const useStyles = makeStyles((theme: Theme) =>
   })
 );
 
-export const defaultMolecule = new Carbon() as Atom;
+export const defaultMolecule: Atom = new Carbon();
 
 const Canvas = ({
   stage,
