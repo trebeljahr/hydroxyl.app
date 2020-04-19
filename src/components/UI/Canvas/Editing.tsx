@@ -26,7 +26,7 @@ export const Editing = ({ editing, turnOffEditing }: EditingProps) => {
         if (newAtom && bond) {
           if (direction) {
             const atom = bond.atom;
-            newAtom.changeBond(direction, { type: 1, atom });
+            newAtom.changeBond(direction, { type: 1, atom, angle: 120 });
           }
         }
       }

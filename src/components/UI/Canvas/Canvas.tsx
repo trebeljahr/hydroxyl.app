@@ -27,6 +27,7 @@ defaultMolecule.deleteBond(BondDirections.down);
 defaultMolecule.changeBond(BondDirections.left, {
   type: 3,
   atom: new Carbon(),
+  angle: 120,
 });
 
 const Canvas = ({

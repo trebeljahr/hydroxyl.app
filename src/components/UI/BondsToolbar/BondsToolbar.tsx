@@ -8,6 +8,7 @@ import { ReactComponent as doubleBond } from "../../../images/svg/double-bond.sv
 import { ReactComponent as tripleBond } from "../../../images/svg/triple-bond.svg";
 import { ReactComponent as hashBond } from "../../../images/svg/hash-bond.svg";
 import { ReactComponent as wedgeBond } from "../../../images/svg/wedge-bond.svg";
+import { ReactComponent as waveBond } from "../../../images/svg/wave-bond.svg";
 
 import { ReactComponent as benzene } from "../../../images/svg/benzene.svg";
 import { ReactComponent as carbonChain } from "../../../images/svg/carbon-chain.svg";
@@ -28,6 +29,7 @@ const bonds = [
   { svg: tripleBond, tooltip: "Triple Bond" },
   { svg: hashBond, tooltip: "Hash Bond" },
   { svg: wedgeBond, tooltip: "Wedge Bond" },
+  { svg: waveBond, tooltip: "Wave Bond" },
   { svg: benzene, tooltip: "Benzene" },
   { svg: carbonChain, tooltip: "Carbon Chain" },
   { svg: cyclopentane, tooltip: "Cyclopentane" },

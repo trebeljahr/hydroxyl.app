@@ -84,8 +84,8 @@ export class Atom {
   };
   addHydrogen = (direction: BondDirections) => {
     const newAtom = new Hydrogen();
-    newAtom.bonds[opposite(direction)] = { type: 1, atom: this };
-    this.bonds[direction] = { type: 1, atom: newAtom };
+    newAtom.bonds[opposite(direction)] = { type: 1, atom: this, angle: 120 };
+    this.bonds[direction] = { type: 1, atom: newAtom, angle: 120 };
   };
   removeHydrogen = () => {
     Object.keys(this.bonds).forEach((k) => {
@@ -106,6 +106,7 @@ export class Atom {
       newBond.atom.bonds[opposite(direction)] = {
         type: newBond.type,
         atom: this,
+        angle: 180 - newBond.angle,
       };
     }
     this.fillUpWithHydrogen();

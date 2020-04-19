@@ -46,18 +46,23 @@ export const AtomDisplay = ({
         const [j, bond] = entry;
         const k = j as BondDirections;
         if (bond) {
-          const connection = bond.atom;
-          const positionOffset = connection.name === "Hydrogen" ? 20 : 30;
-          const newPos =
-            k === BondDirections.left
-              ? { ...pos, x: x - positionOffset }
-              : k === BondDirections.up
-              ? { ...pos, y: y - positionOffset }
-              : k === BondDirections.right
-              ? { ...pos, x: x + positionOffset }
-              : k === BondDirections.down
-              ? { ...pos, y: y + positionOffset }
-              : pos;
+          const { angle, atom: connection } = bond;
+          console.log(angle);
+          const lineLength = connection.name === "Hydrogen" ? 20 : 30;
+          const newPos = { x: Math.cos(angle), y: Math.sin(angle) };
+          const length = Math.sqrt(newPos.x * newPos.x + newPos.y * newPos.y);
+          newPos.x *= 300;
+          newPos.y *= 300;
+          // const newPos =
+          //   k === BondDirections.left
+          //     ? { ...pos, x: x - positionOffset }
+          //     : k === BondDirections.up
+          //     ? { ...pos, y: y - positionOffset }
+          //     : k === BondDirections.right
+          //     ? { ...pos, x: x + positionOffset }
+          //     : k === BondDirections.down
+          //     ? { ...pos, y: y + positionOffset }
+          //     : pos;
 
           if (traversedNodes.find((id) => id === connection.id)) {
             return null;

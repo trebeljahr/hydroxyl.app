@@ -13,7 +13,6 @@ export const BondButton = ({
   const handleClick = () => {
     setBond(selected ? "" : bond.tooltip);
   };
-  console.log(bond.tooltip);
   const Svg = bond.svg;
   return (
     <Button

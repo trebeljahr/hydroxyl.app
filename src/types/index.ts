@@ -5,6 +5,7 @@ import { Element } from "../components/UI/PeriodicTable/types";
 export interface Bond {
   type: 1 | 2 | 3 | 4;
   atom: Atom;
+  angle: number;
 }
 
 export interface HydrogenProps {
