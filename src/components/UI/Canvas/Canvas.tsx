@@ -5,7 +5,7 @@ import { AtomDisplay } from "./AtomDisplay";
 import { makeStyles, createStyles, Theme } from "@material-ui/core";
 import { combinedPeriodicTable } from "../PeriodicTable/data/periodicTable";
 import { Atom, Carbon } from "../../../utils/Atoms";
-import { BondDirections, CanvasProps } from "../../../types";
+import { CanvasProps } from "../../../types";
 import { getRelativePosition } from "../../../utils/relativePosition";
 import { v4 } from "uuid";
 
@@ -22,13 +22,6 @@ const useStyles = makeStyles((theme: Theme) =>
 );
 
 export const defaultMolecule = new Carbon() as Atom;
-defaultMolecule.deleteBond(BondDirections.up);
-defaultMolecule.deleteBond(BondDirections.down);
-defaultMolecule.changeBond(BondDirections.left, {
-  type: 3,
-  atom: new Carbon(),
-  angle: 120,
-});
 
 const Canvas = ({
   stage,

@@ -6,16 +6,16 @@ const offsetLine = (
   { oldPos, newPos }: Positions,
   k: BondDirections
 ): LinePoints => {
-  const offset = 6;
+  const offset = 7;
   const oldOffset = -offset;
   return k === BondDirections.left
     ? [oldPos.x + oldOffset, oldPos.y, newPos.x + offset, newPos.y]
     : k === BondDirections.up
-    ? [oldPos.x, oldPos.y + oldOffset, newPos.x, newPos.y + offset]
+    ? [oldPos.x, oldPos.y - oldOffset, newPos.x, newPos.y - offset]
     : k === BondDirections.right
     ? [oldPos.x - oldOffset, oldPos.y, newPos.x - offset, newPos.y]
     : k === BondDirections.down
-    ? [oldPos.x, oldPos.y - oldOffset, newPos.x, newPos.y - offset]
+    ? [oldPos.x, oldPos.y + oldOffset, newPos.x, newPos.y + offset]
     : [oldPos.x, oldPos.y, newPos.x, newPos.y];
 };
 
@@ -47,7 +47,7 @@ export const BondLines = ({
 }: BondLinesProps) => {
   const connection = bond?.atom;
   const linePoints = offsetLine({ oldPos, newPos }, k);
-  const offset = 3;
+  const offset = 0;
   const rightTwoBondLine = doubleBondLine(linePoints, -offset, k);
   const leftTwoBondLine = doubleBondLine(linePoints, offset, k);
   return (

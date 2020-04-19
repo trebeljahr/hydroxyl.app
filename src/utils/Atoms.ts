@@ -25,6 +25,18 @@ export const opposite = (direction: BondDirections) => {
   }
 };
 
+const directionToAngle = (direction: BondDirections): number => {
+  switch (direction) {
+    case BondDirections.left:
+      return 180;
+    case BondDirections.right:
+      return 0;
+    case BondDirections.up:
+      return 90;
+    case BondDirections.down:
+      return 270;
+  }
+};
 export class Atom {
   id: string;
   name: string;
@@ -84,8 +96,16 @@ export class Atom {
   };
   addHydrogen = (direction: BondDirections) => {
     const newAtom = new Hydrogen();
-    newAtom.bonds[opposite(direction)] = { type: 1, atom: this, angle: 120 };
-    this.bonds[direction] = { type: 1, atom: newAtom, angle: 120 };
+    newAtom.bonds[opposite(direction)] = {
+      type: 1,
+      atom: this,
+      angle: directionToAngle(direction),
+    };
+    this.bonds[direction] = {
+      type: 1,
+      atom: newAtom,
+      angle: directionToAngle(direction),
+    };
   };
   removeHydrogen = () => {
     Object.keys(this.bonds).forEach((k) => {
