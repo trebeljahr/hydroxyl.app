@@ -3,7 +3,7 @@ import { createStyles, makeStyles, Theme } from "@material-ui/core/styles";
 import AppBar from "@material-ui/core/AppBar";
 import Toolbar from "@material-ui/core/Toolbar";
 import { SimpleMenu } from "./Menu";
-import { HydrogenProps } from "../../../types";
+import { ButtonAppBarProps } from "../../../types";
 import { ShowHydrogenButton } from "./ShowHydrogenButton";
 
 const useStyles = makeStyles((theme: Theme) =>
@@ -23,15 +23,11 @@ const useStyles = makeStyles((theme: Theme) =>
   })
 );
 
-interface ButtonAppBar extends HydrogenProps {
-  stage: any;
-}
-
 export const ButtonAppBar = ({
   showHydrogen,
   setShowHydrogen,
   stage,
-}: ButtonAppBar) => {
+}: ButtonAppBarProps) => {
   const classes = useStyles();
 
   return (

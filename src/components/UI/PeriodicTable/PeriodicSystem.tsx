@@ -9,12 +9,7 @@ import {
 import { SingleElement } from "./SingleElement";
 import { combinedPeriodicTable } from "./data/periodicTable";
 import { Element } from "./types";
-
-interface PeriodicSystemProps {
-  drawer: boolean;
-  toggleDrawer: () => void;
-  setElement: (symbol: string) => void;
-}
+import { PeriodicSystemProps } from "../../../types";
 
 const useStyles = makeStyles((theme: Theme) =>
   createStyles({

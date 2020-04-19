@@ -4,6 +4,7 @@ import Menu from "@material-ui/core/Menu";
 import MenuItem from "@material-ui/core/MenuItem";
 import { createStyles, makeStyles, Theme } from "@material-ui/core";
 import { PDF_BUTTON } from "./PDF_Button";
+import { SimpleMenuProps } from "../../../types";
 
 const useStyles = makeStyles((theme: Theme) =>
   createStyles({
@@ -13,9 +14,6 @@ const useStyles = makeStyles((theme: Theme) =>
   })
 );
 
-interface SimpleMenuProps {
-  stage: any;
-}
 export const SimpleMenu = ({ stage }: SimpleMenuProps) => {
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
 

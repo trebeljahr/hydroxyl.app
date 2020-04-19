@@ -42,6 +42,48 @@ export interface BondButtonProps {
   bond: any;
 }
 
+export interface ButtonAppBarProps extends HydrogenProps {
+  stage: any;
+}
+
+export interface BondsToolbarProps {
+  setBond: (e: string) => void;
+  bondHighlight: string;
+}
+
+export interface SimpleMenuProps {
+  stage: any;
+}
+
+export interface PeriodicSystemProps {
+  drawer: boolean;
+  toggleDrawer: () => void;
+  setElement: (symbol: string) => void;
+}
+
+export interface CanvasProps {
+  stage: any;
+  setStage: (e: any) => void;
+  showHydrogen: boolean;
+  atomHighlight: string;
+  bondHighlight: string;
+}
+export interface Positions {
+  oldPos: Pos;
+  newPos: Pos;
+}
+
+export interface AtomToolBarProps {
+  highlight: string;
+  setElement: (e: string) => void;
+}
+
+export interface BondLinesProps {
+  bond: Bond;
+  k: BondDirections;
+  pos: Positions;
+}
+
 export interface AtomConstructor {
   name: string;
   bonds?: Bonds;

@@ -7,6 +7,7 @@ import { Element } from "../PeriodicTable/types";
 import { ElementButton } from "./ElementButton";
 import { OpenDrawerButton } from "./DrawerButton";
 import { v4 } from "uuid";
+import { AtomToolBarProps } from "../../../types";
 
 const useStyles = makeStyles((theme: Theme) =>
   createStyles({
@@ -22,11 +23,6 @@ const useStyles = makeStyles((theme: Theme) =>
     },
   })
 );
-
-interface AtomToolBarProps {
-  highlight: string;
-  setElement: (e: string) => void;
-}
 
 export const AtomToolBar = ({ highlight, setElement }: AtomToolBarProps) => {
   const [drawer, setDrawer] = useState(false);

@@ -15,6 +15,7 @@ import { ReactComponent as cyclopentane } from "../../../images/svg/cyclopentane
 import { ReactComponent as cyclohexane } from "../../../images/svg/cyclohexane.svg";
 import { ReactComponent as cycloheptane } from "../../../images/svg/cycloheptane.svg";
 import { Typography } from "@material-ui/core";
+import { BondsToolbarProps } from "../../../types";
 
 const charge = (c: string) => () => (
   <Typography variant="h4" component="span">
@@ -52,10 +53,6 @@ const useStyles = makeStyles((theme: Theme) =>
   })
 );
 
-interface BondsToolbarProps {
-  setBond: (e: string) => void;
-  bondHighlight: string;
-}
 export const BondsToolbar = ({ setBond, bondHighlight }: BondsToolbarProps) => {
   const classes = useStyles();
   return (

@@ -1,16 +1,7 @@
 import React from "react";
 import { Line } from "react-konva";
-import { Bond, BondDirections, Pos } from "../../../types";
+import { BondDirections, Positions, BondLinesProps } from "../../../types";
 
-interface Positions {
-  oldPos: Pos;
-  newPos: Pos;
-}
-interface BondLinesProps {
-  bond: Bond;
-  k: BondDirections;
-  pos: Positions;
-}
 const offsetLine = (
   { oldPos, newPos }: Positions,
   k: BondDirections
