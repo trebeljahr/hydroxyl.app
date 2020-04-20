@@ -2,8 +2,19 @@ import { Stage } from "konva/types/Stage";
 import { Atom } from "../utils/Atoms";
 import { Element } from "../components/UI/PeriodicTable/types";
 
+export enum BondTypes {
+  single = "single",
+  double = "double",
+  triple = "triple",
+  wedge = "wedge",
+  hash = "hash",
+  wave = "wave",
+}
+
+export type LinePoints = [number, number, number, number];
+
 export interface Bond {
-  type: 1 | 2 | 3 | 4;
+  type: BondTypes;
   atom: Atom;
   angle: number;
 }

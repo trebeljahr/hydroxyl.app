@@ -1,6 +1,6 @@
 import React from "react";
 import { Text, Rect } from "react-konva";
-import { EditingProps, Bond } from "../../../types";
+import { EditingProps, Bond, BondTypes } from "../../../types";
 import { Carbon, Hydrogen, Nitrogen, Oxygen } from "../../../utils/Atoms";
 
 export const Editing = ({ editing, turnOffEditing }: EditingProps) => {
@@ -26,7 +26,11 @@ export const Editing = ({ editing, turnOffEditing }: EditingProps) => {
         if (newAtom && bond) {
           if (direction) {
             const atom = bond.atom;
-            newAtom.changeBond(direction, { type: 1, atom, angle: 120 });
+            newAtom.changeBond(direction, {
+              atom,
+              type: BondTypes.single,
+              angle: 120,
+            });
           }
         }
       }

@@ -1,5 +1,11 @@
 import { v4 as uuid } from "uuid";
-import { AtomConstructor, Bonds, BondDirections, Bond } from "../types";
+import {
+  AtomConstructor,
+  Bonds,
+  BondDirections,
+  Bond,
+  BondTypes,
+} from "../types";
 import { combinedPeriodicTable } from "../components/UI/PeriodicTable/data/periodicTable";
 import { Element } from "../components/UI/PeriodicTable/types";
 
@@ -10,6 +16,21 @@ const defaultBonds = (): Bonds => {
     [BondDirections.up]: null,
     [BondDirections.down]: null,
   };
+};
+
+const electronsNeededBy = (bondType: BondTypes): number => {
+  switch (bondType) {
+    case BondTypes.double:
+      return 2;
+    case BondTypes.triple:
+      return 3;
+    case BondTypes.single:
+    case BondTypes.wedge:
+    case BondTypes.hash:
+    case BondTypes.wave:
+    default:
+      return 1;
+  }
 };
 
 export const opposite = (direction: BondDirections) => {
@@ -63,7 +84,7 @@ export class Atom {
   };
   totalBonds = (): number => {
     return Object.values(this.bonds).reduce((acc: number, bond: Bond) => {
-      const type = bond ? bond.type : 0;
+      const type = bond ? electronsNeededBy(bond.type) : 0;
       return acc + type;
     }, 0);
   };
@@ -97,12 +118,12 @@ export class Atom {
   addHydrogen = (direction: BondDirections) => {
     const newAtom = new Hydrogen();
     newAtom.bonds[opposite(direction)] = {
-      type: 1,
+      type: BondTypes.single,
       atom: this,
       angle: directionToAngle(direction),
     };
     this.bonds[direction] = {
-      type: 1,
+      type: BondTypes.single,
       atom: newAtom,
       angle: directionToAngle(direction),
     };
@@ -119,8 +140,9 @@ export class Atom {
   changeBond = (direction: BondDirections, newBond: Bond) => {
     this.removeHydrogen();
     newBond.atom.removeHydrogen();
-    const canBond = this.freeBonds() >= newBond.type;
-    const partnerCanBond = newBond.atom.freeBonds() >= newBond.type;
+    const canBond = this.freeBonds() >= electronsNeededBy(newBond.type);
+    const partnerCanBond =
+      newBond.atom.freeBonds() >= electronsNeededBy(newBond.type);
     if (canBond && partnerCanBond) {
       this.bonds[direction] = newBond;
       newBond.atom.bonds[opposite(direction)] = {
