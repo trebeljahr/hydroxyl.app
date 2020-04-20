@@ -1,63 +1,19 @@
-import { v4 as uuid } from "uuid";
+import { v4 as uuid, v4 } from "uuid";
 import {
   AtomConstructor,
   Bonds,
   BondDirections,
   Bond,
   BondTypes,
-} from "../types";
-import { combinedPeriodicTable } from "../components/UI/PeriodicTable/data/periodicTable";
-import { Element } from "../components/UI/PeriodicTable/types";
+} from "../../types";
+import {
+  electronsNeededBy,
+  opposite,
+  directionToAngle,
+  defaultBonds,
+} from "./utils";
+import { Hydrogen } from "./elements";
 
-const defaultBonds = (): Bonds => {
-  return {
-    [BondDirections.left]: null,
-    [BondDirections.right]: null,
-    [BondDirections.up]: null,
-    [BondDirections.down]: null,
-  };
-};
-
-const electronsNeededBy = (bondType: BondTypes): number => {
-  switch (bondType) {
-    case BondTypes.double:
-      return 2;
-    case BondTypes.triple:
-      return 3;
-    case BondTypes.single:
-    case BondTypes.wedge:
-    case BondTypes.hash:
-    case BondTypes.wave:
-    default:
-      return 1;
-  }
-};
-
-export const opposite = (direction: BondDirections) => {
-  switch (direction) {
-    case BondDirections.left:
-      return BondDirections.right;
-    case BondDirections.right:
-      return BondDirections.left;
-    case BondDirections.up:
-      return BondDirections.down;
-    case BondDirections.down:
-      return BondDirections.up;
-  }
-};
-
-const directionToAngle = (direction: BondDirections): number => {
-  switch (direction) {
-    case BondDirections.left:
-      return 180;
-    case BondDirections.right:
-      return 0;
-    case BondDirections.up:
-      return 90;
-    case BondDirections.down:
-      return 270;
-  }
-};
 export class Atom {
   id: string;
   name: string;
@@ -117,15 +73,18 @@ export class Atom {
   };
   addHydrogen = (direction: BondDirections) => {
     const newAtom = new Hydrogen();
+    const id = v4();
     newAtom.bonds[opposite(direction)] = {
       type: BondTypes.single,
       atom: this,
       angle: directionToAngle(direction),
+      id,
     };
     this.bonds[direction] = {
       type: BondTypes.single,
       atom: newAtom,
       angle: directionToAngle(direction),
+      id,
     };
   };
   removeHydrogen = () => {
@@ -146,6 +105,7 @@ export class Atom {
     if (canBond && partnerCanBond) {
       this.bonds[direction] = newBond;
       newBond.atom.bonds[opposite(direction)] = {
+        id: newBond.id,
         type: newBond.type,
         atom: this,
         angle: 180 - newBond.angle,
@@ -155,57 +115,3 @@ export class Atom {
     newBond.atom.fillUpWithHydrogen();
   };
 }
-
-export class Hydrogen extends Atom {
-  constructor() {
-    const { maxBonds, symbol, name } = combinedPeriodicTable[
-      "Hydrogen"
-    ] as Element;
-    super({
-      name,
-      maxBonds,
-      symbol,
-    });
-  }
-}
-
-export class Nitrogen extends Atom {
-  constructor() {
-    const { maxBonds, symbol, name } = combinedPeriodicTable[
-      "Nitrogen"
-    ] as Element;
-    super({
-      name,
-      maxBonds,
-      symbol,
-    });
-  }
-}
-
-export class Oxygen extends Atom {
-  constructor() {
-    const { maxBonds, symbol, name } = combinedPeriodicTable[
-      "Oxygen"
-    ] as Element;
-    super({
-      name,
-      maxBonds,
-      symbol,
-    });
-  }
-}
-
-export class Carbon extends Atom {
-  constructor() {
-    const { maxBonds, symbol, name } = combinedPeriodicTable[
-      "Carbon"
-    ] as Element;
-    super({
-      name,
-      maxBonds,
-      symbol,
-    });
-  }
-}
-
-export const trim = (str: String): String => str.replace(/\s+/g, "");

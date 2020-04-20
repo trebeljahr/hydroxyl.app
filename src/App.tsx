@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import "./App.css";
-import Canvas from "./components/UI/Canvas/Canvas";
+import { Canvas } from "./components/UI/Canvas/Canvas";
 import { ButtonAppBar } from "./components/UI/Navbar/Appbar";
 import { Box, makeStyles, createStyles, Theme } from "@material-ui/core";
 import { AtomToolBar } from "./components/UI/AtomsToolbar/AtomToolbar";

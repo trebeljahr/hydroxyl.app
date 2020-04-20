@@ -1,16 +1,19 @@
 import React, { useState } from "react";
 import { Text, Group, Circle } from "react-konva";
-import { Atom, Hydrogen } from "../../../utils/Atoms";
+import { Hydrogen } from "../../../utils/Atoms/elements";
 import {
   Pos,
   EditingData,
   AtomDisplayProps,
   BondDirections,
   Bond,
+  AtomConnectionsProps,
+  SingleAtomProps,
 } from "../../../types";
 import { Editing } from "./Editing";
-import { BondLines } from "./BondLines";
+import { BondLines } from "./Bonds/BondLines";
 import { v4 } from "uuid";
+import { Atom } from "../../../utils/Atoms/Atom";
 
 const initialEditing = (): EditingData => {
   return {
@@ -24,9 +27,10 @@ const initialEditing = (): EditingData => {
 export const AtomDisplay = ({
   showHydrogen,
   molecule,
+  hover,
+  setHover,
   pos,
 }: AtomDisplayProps) => {
-  const [hover, setHover] = useState("");
   const [editing, setEditing] = useState(initialEditing());
 
   const toggleEditing = (id: string, pos: Pos, molecule: Atom) => {
@@ -52,16 +56,6 @@ export const AtomDisplay = ({
   );
 };
 
-interface AtomConnectionsProps {
-  atom: Atom;
-  pos: Pos;
-  hover: string;
-  setHover: (e: string) => void;
-  showHydrogen: boolean;
-  editing: EditingData;
-  toggleEditing: (id: string, pos: Pos, molecule: Atom) => void;
-  traversedNodes: string[];
-}
 const AtomConnections = ({
   atom,
   pos,
@@ -132,14 +126,6 @@ const AtomConnections = ({
   );
 };
 
-interface SingleAtomProps {
-  atom: Atom;
-  pos: Pos;
-  hover: string;
-  setHover: (e: string) => void;
-  editing: EditingData;
-  toggleEditing: (id: string, pos: Pos, molecule: Atom) => void;
-}
 const SingleAtom = ({
   atom,
   pos,

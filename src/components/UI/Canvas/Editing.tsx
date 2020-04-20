@@ -1,7 +1,13 @@
 import React from "react";
 import { Text, Rect } from "react-konva";
 import { EditingProps, Bond, BondTypes } from "../../../types";
-import { Carbon, Hydrogen, Nitrogen, Oxygen } from "../../../utils/Atoms";
+import {
+  Carbon,
+  Hydrogen,
+  Nitrogen,
+  Oxygen,
+} from "../../../utils/Atoms/elements";
+import { v4 } from "uuid";
 
 export const Editing = ({ editing, turnOffEditing }: EditingProps) => {
   const editingOffsetY = 10;
@@ -30,6 +36,7 @@ export const Editing = ({ editing, turnOffEditing }: EditingProps) => {
               atom,
               type: BondTypes.single,
               angle: 120,
+              id: v4(),
             });
           }
         }

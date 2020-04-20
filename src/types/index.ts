@@ -1,5 +1,5 @@
 import { Stage } from "konva/types/Stage";
-import { Atom } from "../utils/Atoms";
+import { Atom } from "../utils/Atoms/Atom";
 import { Element } from "../components/UI/PeriodicTable/types";
 
 export enum BondTypes {
@@ -11,9 +11,30 @@ export enum BondTypes {
   wave = "wave",
 }
 
+export interface SingleAtomProps {
+  atom: Atom;
+  pos: Pos;
+  hover: string;
+  setHover: (e: string) => void;
+  editing: EditingData;
+  toggleEditing: (id: string, pos: Pos, molecule: Atom) => void;
+}
+
+export interface AtomConnectionsProps {
+  atom: Atom;
+  pos: Pos;
+  hover: string;
+  setHover: (e: string) => void;
+  showHydrogen: boolean;
+  editing: EditingData;
+  toggleEditing: (id: string, pos: Pos, molecule: Atom) => void;
+  traversedNodes: string[];
+}
+
 export type LinePoints = [number, number, number, number];
 
 export interface Bond {
+  id: string;
   type: BondTypes;
   atom: Atom;
   angle: number;
@@ -127,6 +148,8 @@ export interface AtomDisplayProps {
   showHydrogen: boolean;
   molecule: Atom;
   pos: Pos;
+  hover: string;
+  setHover: (e: string) => void;
 }
 
 export interface URLImageProps {

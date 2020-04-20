@@ -4,10 +4,11 @@ import { KonvaEventObject } from "konva/types/Node";
 import { AtomDisplay } from "./AtomDisplay";
 import { makeStyles, createStyles, Theme } from "@material-ui/core";
 import { combinedPeriodicTable } from "../PeriodicTable/data/periodicTable";
-import { Atom, Carbon } from "../../../utils/Atoms";
+import { Atom } from "../../../utils/Atoms/Atom";
 import { CanvasProps } from "../../../types";
 import { getRelativePosition } from "../../../utils/relativePosition";
 import { v4 } from "uuid";
+import { Carbon } from "../../../utils/Atoms/elements";
 
 const useStyles = makeStyles((theme: Theme) =>
   createStyles({
@@ -23,7 +24,7 @@ const useStyles = makeStyles((theme: Theme) =>
 
 export const defaultMolecule: Atom = new Carbon();
 
-const Canvas = ({
+export const Canvas = ({
   stage,
   setStage,
   showHydrogen,
@@ -36,6 +37,8 @@ const Canvas = ({
   const [molecules, setMolecules] = useState([
     { atom: defaultMolecule, pos: { x: 0, y: 0 } },
   ]);
+  const [hover, setHover] = useState("");
+
   const zoom = (e: KonvaEventObject<WheelEvent>) => {
     e.evt.preventDefault();
     const s = stageRef.current;
@@ -113,6 +116,8 @@ const Canvas = ({
                 key={`${v4()}-atomDisplay`}
                 molecule={molecule.atom}
                 showHydrogen={showHydrogen}
+                hover={hover}
+                setHover={setHover}
                 pos={molecule.pos}
               />
             ))}
@@ -122,5 +127,3 @@ const Canvas = ({
     </div>
   );
 };
-
-export default Canvas;
