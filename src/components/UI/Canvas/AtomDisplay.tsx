@@ -30,6 +30,7 @@ export const AtomDisplay = ({
   hover,
   setHover,
   pos,
+  bondHighlight,
 }: AtomDisplayProps) => {
   const [editing, setEditing] = useState(initialEditing());
 
@@ -50,6 +51,7 @@ export const AtomDisplay = ({
         editing={editing}
         toggleEditing={toggleEditing}
         traversedNodes={[]}
+        bondHighlight={bondHighlight}
       />
       <Editing turnOffEditing={turnOffEditing} editing={editing} />
     </Group>
@@ -65,6 +67,7 @@ const AtomConnections = ({
   editing,
   toggleEditing,
   traversedNodes,
+  bondHighlight,
 }: AtomConnectionsProps): any => {
   const { x, y } = pos;
   const newTraversedNodes = [...traversedNodes, atom.id];
@@ -97,6 +100,7 @@ const AtomConnections = ({
                     pos={{ oldPos: pos, newPos }}
                     hover={hover}
                     setHover={setHover}
+                    bondHighlight={bondHighlight}
                   />
                 )}
                 <SingleAtom
@@ -114,6 +118,7 @@ const AtomConnections = ({
                     showHydrogen={showHydrogen}
                     setHover={setHover}
                     hover={hover}
+                    bondHighlight={bondHighlight}
                     editing={editing}
                     toggleEditing={toggleEditing}
                     traversedNodes={[...newTraversedNodes]}
@@ -136,18 +141,13 @@ const SingleAtom = ({
   editing,
   toggleEditing,
 }: SingleAtomProps) => {
-  console.log(atom.name);
-  console.log(atom.symbol);
-  console.log(pos);
   return (
     <Group
       key={atom.id}
       onMouseOver={() => {
-        console.log("Over", atom.id);
         setHover(atom.id);
       }}
       onMouseOut={() => {
-        console.log("And Out");
         setHover("");
       }}
     >

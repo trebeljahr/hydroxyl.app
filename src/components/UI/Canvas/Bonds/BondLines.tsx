@@ -11,6 +11,7 @@ export const BondLines = ({
   pos,
   hover,
   setHover,
+  bondHighlight,
 }: BondLinesProps) => {
   switch (bond.type) {
     case BondTypes.single:
@@ -18,6 +19,7 @@ export const BondLines = ({
     case BondTypes.triple:
       return (
         <NormalBonds
+          bondHighlight={bondHighlight}
           bond={bond}
           k={k}
           pos={pos}
@@ -31,5 +33,7 @@ export const BondLines = ({
       return <WedgeBond />;
     case BondTypes.wave:
       return <WaveBond />;
+    default:
+      return null;
   }
 };

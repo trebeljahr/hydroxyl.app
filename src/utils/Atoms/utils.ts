@@ -9,7 +9,7 @@ export const defaultBonds = (): Bonds => {
   };
 };
 
-export const electronsNeededBy = (bondType: BondTypes): number => {
+export const electronsNeededBy = (bondType: string): number => {
   switch (bondType) {
     case BondTypes.double:
       return 2;

@@ -8,17 +8,22 @@ export const NormalBonds = ({
   setHover,
   bond,
   k,
+  bondHighlight,
   pos: { oldPos, newPos },
 }: BondLinesProps) => {
-  const connection = bond?.atom;
   const linePoints = offsetLine({ oldPos, newPos }, k);
   const offset = 0;
   const rightTwoBondLine = doubleBondLine(linePoints, -offset, k);
   const leftTwoBondLine = doubleBondLine(linePoints, offset, k);
+  const handleClick = () => {
+    console.log(bondHighlight);
+    bond && bond.atom.changeBondType(bond.id, bondHighlight);
+  };
   return (
     <Group
       onMouseOver={() => setHover(bond.id)}
       onMouseOut={() => setHover("")}
+      onClick={handleClick}
     >
       <Line
         points={linePoints}
@@ -29,7 +34,7 @@ export const NormalBonds = ({
       {(bond.type === BondTypes.single || bond.type === BondTypes.triple) && (
         <Line
           strokeWidth={10}
-          key={"line1-" + connection.id}
+          key={"line1-" + bond.id}
           points={linePoints}
           fill={"black"}
           stroke={"black"}
@@ -39,14 +44,14 @@ export const NormalBonds = ({
         <>
           <Line
             strokeWidth={10}
-            key={"line2-" + connection.id}
+            key={"line2-" + bond.id}
             points={leftTwoBondLine}
             fill={"black"}
             stroke={"black"}
           />
           <Line
             strokeWidth={10}
-            key={"line3-" + connection.id}
+            key={"line3-" + bond.id}
             points={rightTwoBondLine}
             fill={"black"}
             stroke={"black"}

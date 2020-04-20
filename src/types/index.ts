@@ -29,13 +29,14 @@ export interface AtomConnectionsProps {
   editing: EditingData;
   toggleEditing: (id: string, pos: Pos, molecule: Atom) => void;
   traversedNodes: string[];
+  bondHighlight: string;
 }
 
 export type LinePoints = [number, number, number, number];
 
 export interface Bond {
   id: string;
-  type: BondTypes;
+  type: string;
   atom: Atom;
   angle: number;
 }
@@ -117,6 +118,7 @@ export interface BondLinesProps {
   pos: Positions;
   hover: string;
   setHover: (e: string) => void;
+  bondHighlight: string;
 }
 
 export interface AtomConstructor {
@@ -151,6 +153,7 @@ export interface AtomDisplayProps {
   molecule: Atom;
   pos: Pos;
   hover: string;
+  bondHighlight: string;
   setHover: (e: string) => void;
 }
 

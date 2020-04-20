@@ -71,6 +71,18 @@ export class Atom {
       }
     });
   };
+  changeBondType = (bondId: string, newBondType: string) => {
+    const directionOfBond = Object.keys(this.bonds).find((k) => {
+      const key = k as BondDirections;
+      const bond = this.bonds[key];
+      return bond && bond.id === bondId;
+    });
+    if (directionOfBond) {
+      const direction = directionOfBond as BondDirections;
+      const bond = this.bonds[direction];
+      bond && this.changeBond(direction, { ...bond, type: newBondType });
+    }
+  };
   addHydrogen = (direction: BondDirections) => {
     const newAtom = new Hydrogen();
     const id = v4();

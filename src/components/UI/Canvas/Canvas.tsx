@@ -113,6 +113,7 @@ export const Canvas = ({
           <Layer>
             {molecules.map((molecule) => (
               <AtomDisplay
+                bondHighlight={bondHighlight}
                 key={`${v4()}-atomDisplay`}
                 molecule={molecule.atom}
                 showHydrogen={showHydrogen}
