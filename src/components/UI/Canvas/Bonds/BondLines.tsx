@@ -5,12 +5,26 @@ import { HashBond } from "./HashBond";
 import { WedgeBond } from "./WedgeBond";
 import { WaveBond } from "./WaveBond";
 
-export const BondLines = ({ bond, k, pos }: BondLinesProps) => {
+export const BondLines = ({
+  bond,
+  k,
+  pos,
+  hover,
+  setHover,
+}: BondLinesProps) => {
   switch (bond.type) {
     case BondTypes.single:
     case BondTypes.double:
     case BondTypes.triple:
-      return <NormalBonds bond={bond} k={k} pos={pos} />;
+      return (
+        <NormalBonds
+          bond={bond}
+          k={k}
+          pos={pos}
+          hover={hover}
+          setHover={setHover}
+        />
+      );
     case BondTypes.hash:
       return <HashBond />;
     case BondTypes.wedge:

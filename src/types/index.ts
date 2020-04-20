@@ -115,6 +115,8 @@ export interface BondLinesProps {
   bond: Bond;
   k: BondDirections;
   pos: Positions;
+  hover: string;
+  setHover: (e: string) => void;
 }
 
 export interface AtomConstructor {

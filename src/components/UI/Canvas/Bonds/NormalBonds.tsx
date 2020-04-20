@@ -4,6 +4,8 @@ import { doubleBondLine, offsetLine } from "./utils";
 import { BondLinesProps, BondTypes } from "../../../../types";
 
 export const NormalBonds = ({
+  hover,
+  setHover,
   bond,
   k,
   pos: { oldPos, newPos },
@@ -14,7 +16,16 @@ export const NormalBonds = ({
   const rightTwoBondLine = doubleBondLine(linePoints, -offset, k);
   const leftTwoBondLine = doubleBondLine(linePoints, offset, k);
   return (
-    <Group>
+    <Group
+      onMouseOver={() => setHover(bond.id)}
+      onMouseOut={() => setHover("")}
+    >
+      <Line
+        points={linePoints}
+        strokeWidth={50}
+        stroke={bond.id === hover ? "yellow" : "white"}
+        lineCap="round"
+      />
       {(bond.type === BondTypes.single || bond.type === BondTypes.triple) && (
         <Line
           strokeWidth={10}

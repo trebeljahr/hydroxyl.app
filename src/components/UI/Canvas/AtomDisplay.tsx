@@ -70,14 +70,6 @@ const AtomConnections = ({
   const newTraversedNodes = [...traversedNodes, atom.id];
   return (
     <>
-      <SingleAtom
-        atom={atom}
-        editing={editing}
-        toggleEditing={toggleEditing}
-        pos={pos}
-        hover={hover}
-        setHover={setHover}
-      />
       {atom.bonds &&
         Object.entries(atom.bonds).map((entry: [string, Bond | null]) => {
           const [j, bond] = entry;
@@ -99,23 +91,33 @@ const AtomConnections = ({
             return (
               <Group key={connection.id}>
                 {(showHydrogen || connection.name !== "Hydrogen") && (
-                  <>
-                    <BondLines
-                      bond={bond}
-                      k={k}
-                      pos={{ oldPos: pos, newPos }}
-                    />
-                    <AtomConnections
-                      atom={connection}
-                      pos={newPos}
-                      showHydrogen={showHydrogen}
-                      setHover={setHover}
-                      hover={hover}
-                      editing={editing}
-                      toggleEditing={toggleEditing}
-                      traversedNodes={[...newTraversedNodes]}
-                    />
-                  </>
+                  <BondLines
+                    bond={bond}
+                    k={k}
+                    pos={{ oldPos: pos, newPos }}
+                    hover={hover}
+                    setHover={setHover}
+                  />
+                )}
+                <SingleAtom
+                  atom={atom}
+                  editing={editing}
+                  toggleEditing={toggleEditing}
+                  pos={pos}
+                  hover={hover}
+                  setHover={setHover}
+                />
+                {(showHydrogen || connection.name !== "Hydrogen") && (
+                  <AtomConnections
+                    atom={connection}
+                    pos={newPos}
+                    showHydrogen={showHydrogen}
+                    setHover={setHover}
+                    hover={hover}
+                    editing={editing}
+                    toggleEditing={toggleEditing}
+                    traversedNodes={[...newTraversedNodes]}
+                  />
                 )}
               </Group>
             );
