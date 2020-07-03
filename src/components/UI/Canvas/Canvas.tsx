@@ -8,7 +8,7 @@ import { Atom } from "../../../utils/Atoms/Atom";
 import { CanvasProps } from "../../../types";
 import { getRelativePosition } from "../../../utils/relativePosition";
 import { v4 } from "uuid";
-import { Carbon } from "../../../utils/Atoms/elements";
+import { changeMoleculeRoot, Molecule, addMolecule } from "../../../actions";
 
 const useStyles = makeStyles((theme: Theme) =>
   createStyles({
@@ -22,21 +22,17 @@ const useStyles = makeStyles((theme: Theme) =>
   })
 );
 
-export const defaultMolecule: Atom = new Carbon();
-
 export const Canvas = ({
   stage,
   setStage,
   showHydrogen,
   atomHighlight,
   bondHighlight,
+  ...props
 }: CanvasProps) => {
   const stageRef: any = useRef();
   const [stageContainer, setStageContainer] = useState();
   const stageContainerRef: any = useRef();
-  const [molecules, setMolecules] = useState([
-    { atom: defaultMolecule, pos: { x: 0, y: 0 } },
-  ]);
   const [hover, setHover] = useState("");
 
   const zoom = (e: KonvaEventObject<WheelEvent>) => {
@@ -68,17 +64,14 @@ export const Canvas = ({
   useEffect(() => {
     if (stageRef.current) {
       setStage(stageRef.current);
-      setMolecules([
-        {
-          atom: defaultMolecule,
-          pos: {
-            x: stageRef.current.width() / 2,
-            y: stageRef.current.height() / 2,
-          },
-        },
-      ]);
+      props.store.dispatch(
+        changeMoleculeRoot(props.store.molecules[0], {
+          x: stageRef.current.width() / 2,
+          y: stageRef.current.height() / 2,
+        })
+      );
     }
-  }, [stageContainer, setStage]);
+  }, [stageContainer, setStage, props.store]);
 
   const classes = useStyles();
 
@@ -90,11 +83,8 @@ export const Canvas = ({
       if (element) {
         const s = stageRef.current;
         const { name, maxBonds, symbol } = element;
-        const newAtom = new Atom({ name, maxBonds, symbol });
-        setMolecules([
-          ...molecules,
-          { atom: newAtom, pos: getRelativePosition(s) },
-        ]);
+        const newRoot = new Atom({ name, maxBonds, symbol });
+        props.store.dispatch(addMolecule(newRoot, getRelativePosition(s)));
       }
     }
   };
@@ -111,11 +101,11 @@ export const Canvas = ({
           onClick={handleClick}
         >
           <Layer>
-            {molecules.map((molecule) => (
+            {props.store.molecules.map((molecule: Molecule) => (
               <AtomDisplay
                 bondHighlight={bondHighlight}
                 key={`${v4()}-atomDisplay`}
-                molecule={molecule.atom}
+                molecule={molecule.root}
                 showHydrogen={showHydrogen}
                 hover={hover}
                 setHover={setHover}
