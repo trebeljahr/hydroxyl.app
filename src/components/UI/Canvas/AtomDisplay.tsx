@@ -111,19 +111,17 @@ const AtomConnections = ({
                   hover={hover}
                   setHover={setHover}
                 />
-                {(showHydrogen || connection.name !== "Hydrogen") && (
-                  <AtomConnections
-                    atom={connection}
-                    pos={newPos}
-                    showHydrogen={showHydrogen}
-                    setHover={setHover}
-                    hover={hover}
-                    bondHighlight={bondHighlight}
-                    editing={editing}
-                    toggleEditing={toggleEditing}
-                    traversedNodes={[...newTraversedNodes]}
-                  />
-                )}
+                <AtomConnections
+                  atom={connection}
+                  pos={newPos}
+                  showHydrogen={showHydrogen}
+                  setHover={setHover}
+                  hover={hover}
+                  bondHighlight={bondHighlight}
+                  editing={editing}
+                  toggleEditing={toggleEditing}
+                  traversedNodes={[...newTraversedNodes]}
+                />
               </Group>
             );
           }

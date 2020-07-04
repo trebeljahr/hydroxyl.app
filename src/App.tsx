@@ -19,8 +19,7 @@ const useStyles = makeStyles((theme: Theme) =>
   })
 );
 
-function App(props: any) {
-  console.log(props.store);
+function App() {
   const [stage, setStage] = useState(null);
   const [atomHighlight, setAtomHighlight] = useState("");
   const [bondHighlight, setBondHighlight] = useState("");

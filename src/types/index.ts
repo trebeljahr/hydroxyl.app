@@ -101,7 +101,6 @@ export interface CanvasProps {
   showHydrogen: boolean;
   atomHighlight: string;
   bondHighlight: string;
-  store: any;
 }
 export interface Positions {
   oldPos: Pos;
