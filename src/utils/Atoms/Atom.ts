@@ -60,10 +60,6 @@ export class Atom {
     const newBond = { ...this.bonds[index], type: newBondType };
     index && this.changeBond(newBond);
   };
-  addBond = (angle: number, newBond: Bond) => {
-    this.addHydrogen(angle);
-    this.changeBond(newBond);
-  };
 
   addHydrogen = (angle: number) => {
     const pos = {
@@ -120,26 +116,38 @@ export class Atom {
     return this.bonds.findIndex((bond) => bond.atom.id === atomId);
   };
 
-  mapBonds = () => {
-    return this.bonds.map((bond) => bond.atom.symbol);
-  };
+  buildTree = (visited: string[] = [this.id]): string[] => {
+    const unvisited = this.bonds
+      .filter((bond) => !visited.includes(bond.atom.id))
+      .map((bond) => bond.atom);
 
-  buildTree = (visited: string[] = [], symbols: string[] = []): string[] => {
-    //console.log({ symbols });
-    const noUnvisitedBonds =
-      this.bonds.filter((bond) => !visited.includes(bond.id)).length === 0;
-
+    const noUnvisitedBonds = unvisited.length === 0;
     if (noUnvisitedBonds) {
-      return [];
+      return [this.symbol];
     }
 
-    const newSymbols = [...symbols, ...this.mapBonds()];
-    const newVisited = [...visited, ...this.bonds.map((bond) => bond.id)];
-    const newTree = this.bonds.reduce(
-      (agg, bond) => [...agg, ...bond.atom.buildTree(newVisited, symbols)],
-      [...newSymbols] as string[]
+    const newVisited = [...visited, ...unvisited.map((atom) => atom.id)];
+    const newTree = unvisited.reduce(
+      (agg, atom) => [...agg, ...atom.buildTree(newVisited)],
+      [this.symbol]
     );
-    // console.log({ newTree });
     return newTree;
+  };
+
+  sumFormula = () => {
+    const tree = this.buildTree();
+    return tree.reduce((agg, symbol) => {
+      return {
+        ...agg,
+        [symbol]: agg[symbol] ? agg[symbol] + 1 : 1,
+      };
+    }, {} as { [key: string]: number });
+  };
+
+  sumFormulaString = () => {
+    const sumFormula = this.sumFormula();
+    return Object.entries(sumFormula).reduce((agg, value) => {
+      return agg + value[0] + (value[1] === 1 ? "" : value[1]);
+    }, "");
   };
 }

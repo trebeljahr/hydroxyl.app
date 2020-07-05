@@ -1,14 +1,26 @@
 import { Atom } from "./Atom";
-import { Carbon, Nitrogen } from "./elements";
-import { origin } from "../../components/UI/Canvas/Canvas";
+import { Carbon } from "./elements";
+import {
+  origin,
+  makeCarbonChain,
+  addCarbon,
+} from "../../components/UI/Canvas/Canvas";
 import { BondTypes } from "../../types";
 import { v4 } from "uuid";
-import { electronsNeededBy } from "./utils";
+
+test("Sum Formula works correctly", () => {
+  const methane = makeCarbonChain(1);
+  const pentane = makeCarbonChain(5);
+  const heptane = makeCarbonChain(7);
+  const octane = makeCarbonChain(8);
+  expect(methane.sumFormulaString()).toBe("CH4");
+  expect(pentane.sumFormulaString()).toBe("C5H12");
+  expect(heptane.sumFormulaString()).toBe("C7H16");
+  expect(octane.sumFormulaString()).toBe("C8H18");
+});
 
 test("Build Tree works correctly", () => {
   const carbon = new Carbon(origin());
-  // expect(carbon.buildTree()).toStrictEqual(["C", "H", "H", "H", "H"]);
-
   const secondCarbon = new Carbon(origin());
   const newBond = {
     id: v4(),
@@ -17,7 +29,7 @@ test("Build Tree works correctly", () => {
     angle: 0,
   };
   carbon.changeBond(newBond);
-  const tree = ["C", "H", "H", "H", "C", "H", "H", "H"];
+  const tree = ["C", "C", "H", "H", "H", "H", "H", "H"];
   expect(carbon.buildTree()).toStrictEqual(tree);
 });
 
@@ -87,28 +99,24 @@ test("Changing to Triple Bonds works", () => {
   expect(bondedAtom.bonds.length).toBe(2);
 });
 
-test("Carbon Chaining works", () => {
+test("Carbon Chaining works correctly", () => {
   const first = new Carbon(origin());
-  const second = addCarbon(first, BondTypes.double);
-  const third = addCarbon(second, BondTypes.single);
-  const fourth = addCarbon(third, BondTypes.single);
-  const fifth = addCarbon(fourth, BondTypes.single);
-  addCarbon(fifth, BondTypes.triple);
+  const second = addCarbonTest(first, BondTypes.single);
+  const third = addCarbonTest(second, BondTypes.single);
+  const fourth = addCarbonTest(third, BondTypes.single);
+  const fifth = addCarbonTest(fourth, BondTypes.single);
+
+  expect(first.sumFormula()).toStrictEqual({ C: 5, H: 12 });
+  expect(first.sumFormula()).toStrictEqual(second.sumFormula());
+  expect(second.sumFormula()).toStrictEqual(third.sumFormula());
+  expect(third.sumFormula()).toStrictEqual(fourth.sumFormula());
+  expect(fourth.sumFormula()).toStrictEqual(fifth.sumFormula());
 });
 
-function addCarbon(molecule: Atom, bondType: BondTypes) {
-  const secondCarbon = new Carbon(origin());
-  const newBond = {
-    id: v4(),
-    type: bondType,
-    atom: secondCarbon,
-    angle: 0,
-  };
-  molecule.changeBond(newBond);
-  const index1 = molecule.findBondIndex(secondCarbon.id);
-  const bondedAtom = molecule.bonds[index1].atom;
-  expect(bondedAtom.id).toBe(secondCarbon.id);
+function addCarbonTest(molecule: Atom, bondType: BondTypes) {
+  const bondedAtom = addCarbon(molecule, bondType);
   expect(bondedAtom.name).toBe("Carbon");
+  const index1 = molecule.findBondIndex(bondedAtom.id);
   expect(molecule.bonds[index1].type).toBe(bondType);
 
   const index2 = bondedAtom.findBondIndex(molecule.id);
