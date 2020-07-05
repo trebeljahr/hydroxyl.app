@@ -1,6 +1,6 @@
 import React from "react";
 import { Text, Rect } from "react-konva";
-import { EditingProps, Bond, BondTypes } from "../../../types";
+import { EditingProps, BondTypes } from "../../../types";
 import {
   Carbon,
   Hydrogen,
@@ -15,32 +15,27 @@ export const Editing = ({ editing, turnOffEditing }: EditingProps) => {
   const pos = editing.molecule.pos;
   const { x, y } = pos;
   const changeMolecule = (name: string) => {
-    Object.entries(editing.molecule.bonds).forEach(
-      (entry: [any, Bond | null]) => {
-        const [direction, bond] = entry;
-        const newAtom =
-          name === "Hydrogen"
-            ? new Hydrogen(pos)
-            : name === "Carbon"
-            ? new Carbon(pos)
-            : name === "Oxygen"
-            ? new Oxygen(pos)
-            : name === "Nitrogen"
-            ? new Nitrogen(pos)
-            : null;
-        if (newAtom && bond) {
-          if (direction) {
-            const atom = bond.atom;
-            newAtom.changeBond(direction, {
-              atom,
-              type: BondTypes.single,
-              angle: 120,
-              id: v4(),
-            });
-          }
-        }
+    editing.molecule.bonds.forEach((bond) => {
+      const newAtom =
+        name === "Hydrogen"
+          ? new Hydrogen(pos)
+          : name === "Carbon"
+          ? new Carbon(pos)
+          : name === "Oxygen"
+          ? new Oxygen(pos)
+          : name === "Nitrogen"
+          ? new Nitrogen(pos)
+          : null;
+      if (newAtom && bond) {
+        const atom = bond.atom;
+        newAtom.changeBond({
+          atom,
+          type: BondTypes.single,
+          angle: 120,
+          id: v4(),
+        });
       }
-    );
+    });
     turnOffEditing();
   };
 

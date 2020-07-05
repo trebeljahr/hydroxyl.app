@@ -4,6 +4,12 @@ import { electronsNeededBy } from "./utils";
 import { Hydrogen } from "./elements";
 import { Coordinates } from "../functionalAtoms";
 
+// polarCoordinates formulas =>
+// x = bondLength * Math.cos(angle)
+// y = bondLength * Math.sin(angle)
+// angle = Math.acos(x / bondLength)
+// angle = Math.asin(y / bondLength)
+
 const bondLength = 10;
 
 export class Atom {
@@ -52,11 +58,11 @@ export class Atom {
   changeBondType = (bondId: string, newBondType: string) => {
     const index = this.bonds.findIndex((bond) => bond.id === bondId);
     const newBond = { ...this.bonds[index], type: newBondType };
-    index && this.changeBond(index, newBond);
+    index && this.changeBond(newBond);
   };
   addBond = (angle: number, newBond: Bond) => {
     this.addHydrogen(angle);
-    this.changeBond(this.bonds.length - 1, newBond);
+    this.changeBond(newBond);
   };
 
   addHydrogen = (angle: number) => {
@@ -87,7 +93,7 @@ export class Atom {
     this.bonds = this.bonds.filter((bond) => bond.atom.name !== "Hydrogen");
   };
 
-  changeBond = (index: number, newBond: Bond) => {
+  changeBond = (newBond: Bond) => {
     this.removeHydrogen();
     const partner = newBond.atom;
     partner.removeHydrogen();
@@ -95,14 +101,16 @@ export class Atom {
     const partnerCanBond =
       partner.freeBonds() >= electronsNeededBy(newBond.type);
     if (canBond && partnerCanBond) {
-      this.bonds[index] = newBond;
-      const partnerIndex = partner.findBondIndex(this.id);
-      partner.bonds[partnerIndex] = {
-        id: newBond.id,
-        type: newBond.type,
-        atom: this,
-        angle: 180 - newBond.angle,
-      };
+      this.bonds = [...this.bonds, newBond];
+      partner.bonds = [
+        ...partner.bonds,
+        {
+          id: newBond.id,
+          type: newBond.type,
+          atom: this,
+          angle: 180 - newBond.angle,
+        },
+      ];
     }
     this.fillUpWithHydrogen();
     partner.fillUpWithHydrogen();
@@ -110,5 +118,28 @@ export class Atom {
 
   findBondIndex = (atomId: string) => {
     return this.bonds.findIndex((bond) => bond.atom.id === atomId);
+  };
+
+  mapBonds = () => {
+    return this.bonds.map((bond) => bond.atom.symbol);
+  };
+
+  buildTree = (visited: string[] = [], symbols: string[] = []): string[] => {
+    //console.log({ symbols });
+    const noUnvisitedBonds =
+      this.bonds.filter((bond) => !visited.includes(bond.id)).length === 0;
+
+    if (noUnvisitedBonds) {
+      return [];
+    }
+
+    const newSymbols = [...symbols, ...this.mapBonds()];
+    const newVisited = [...visited, ...this.bonds.map((bond) => bond.id)];
+    const newTree = this.bonds.reduce(
+      (agg, bond) => [...agg, ...bond.atom.buildTree(newVisited, symbols)],
+      [...newSymbols] as string[]
+    );
+    // console.log({ newTree });
+    return newTree;
   };
 }

@@ -19,7 +19,7 @@ function moleculeActionsReducer(state = initialState, action: any) {
         ...state,
         molecules: state.molecules.map((molecule) => {
           if (molecule.id === action.moleculeId) {
-            return molecule.root.changeBond(action.direction, action.newBond);
+            return molecule.root.changeBond(action.newBond);
           }
           return molecule;
         }),
