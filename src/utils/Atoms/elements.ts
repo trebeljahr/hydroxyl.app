@@ -1,9 +1,10 @@
 import { combinedPeriodicTable } from "../../components/UI/PeriodicTable/data/periodicTable";
 import { Element } from "../../components/UI/PeriodicTable/types";
 import { Atom } from "./Atom";
+import { Coordinates } from "../functionalAtoms";
 
 export class Hydrogen extends Atom {
-  constructor() {
+  constructor(pos: Coordinates) {
     const { maxBonds, symbol, name } = combinedPeriodicTable[
       "Hydrogen"
     ] as Element;
@@ -11,12 +12,13 @@ export class Hydrogen extends Atom {
       name,
       maxBonds,
       symbol,
+      pos,
     });
   }
 }
 
 export class Nitrogen extends Atom {
-  constructor() {
+  constructor(pos: Coordinates) {
     const { maxBonds, symbol, name } = combinedPeriodicTable[
       "Nitrogen"
     ] as Element;
@@ -24,12 +26,13 @@ export class Nitrogen extends Atom {
       name,
       maxBonds,
       symbol,
+      pos,
     });
   }
 }
 
 export class Oxygen extends Atom {
-  constructor() {
+  constructor(pos: Coordinates) {
     const { maxBonds, symbol, name } = combinedPeriodicTable[
       "Oxygen"
     ] as Element;
@@ -37,12 +40,13 @@ export class Oxygen extends Atom {
       name,
       maxBonds,
       symbol,
+      pos,
     });
   }
 }
 
 export class Carbon extends Atom {
-  constructor() {
+  constructor(pos: Coordinates) {
     const { maxBonds, symbol, name } = combinedPeriodicTable[
       "Carbon"
     ] as Element;
@@ -50,6 +54,7 @@ export class Carbon extends Atom {
       name,
       maxBonds,
       symbol,
+      pos,
     });
   }
 }

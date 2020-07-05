@@ -3,7 +3,7 @@ import { combinedPeriodicTable } from "../components/UI/PeriodicTable/data/perio
 import { Element } from "../components/UI/PeriodicTable/types";
 import { BondTypes } from "../types";
 
-interface Coordinates {
+export interface Coordinates {
   x: number;
   y: number;
 }

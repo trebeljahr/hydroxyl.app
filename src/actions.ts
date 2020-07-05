@@ -1,5 +1,5 @@
 import { Atom } from "./utils/Atoms/Atom";
-import { Bond, BondDirections } from "./types";
+import { Bond } from "./types";
 import { v4 } from "uuid";
 
 enum MOLECULE_ACTIONS {
@@ -81,7 +81,6 @@ interface ChangeBond {
 const changeBond = (
   parent: Atom,
   bondId: String,
-  bondDirections: BondDirections,
   newBond: Bond
 ): ChangeBond => {
   return { type: MOLECULE_ACTIONS.CHANGE_BOND, bondId, newBond, parent };

@@ -6,8 +6,7 @@ import { v4 } from "uuid";
 
 export const defaultMolecule = {
   id: v4(),
-  root: new Carbon() as Atom,
-  pos: { x: 0, y: 0 },
+  root: new Carbon({ x: 0, y: 0 }) as Atom,
 };
 export const initialState = {
   molecules: [defaultMolecule],

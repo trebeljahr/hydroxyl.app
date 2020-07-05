@@ -1,6 +1,7 @@
 import { Stage } from "konva/types/Stage";
 import { Atom } from "../utils/Atoms/Atom";
 import { Element } from "../components/UI/PeriodicTable/types";
+import { Coordinates } from "../utils/functionalAtoms";
 
 export enum BondTypes {
   single = "single",
@@ -17,7 +18,7 @@ export interface SingleAtomProps {
   hover: string;
   setHover: (e: string) => void;
   editing: EditingData;
-  toggleEditing: (id: string, pos: Pos, molecule: Atom) => void;
+  toggleEditing: (id: string, molecule: Atom) => void;
 }
 
 export interface AtomConnectionsProps {
@@ -27,7 +28,7 @@ export interface AtomConnectionsProps {
   setHover: (e: string) => void;
   showHydrogen: boolean;
   editing: EditingData;
-  toggleEditing: (id: string, pos: Pos, molecule: Atom) => void;
+  toggleEditing: (id: string, molecule: Atom) => void;
   traversedNodes: string[];
   bondHighlight: string;
 }
@@ -44,20 +45,6 @@ export interface Bond {
 export interface HydrogenProps {
   setShowHydrogen: (e: boolean) => void;
   showHydrogen: boolean;
-}
-
-export enum BondDirections {
-  left = "left",
-  right = "right",
-  up = "up",
-  down = "down",
-}
-
-export interface Bonds {
-  left: Bond | null;
-  right: Bond | null;
-  up: Bond | null;
-  down: Bond | null;
 }
 
 export interface ButtonDrawerProps {
@@ -114,7 +101,6 @@ export interface AtomToolBarProps {
 
 export interface BondLinesProps {
   bond: Bond;
-  k: BondDirections;
   pos: Positions;
   hover: string;
   setHover: (e: string) => void;
@@ -123,9 +109,10 @@ export interface BondLinesProps {
 
 export interface AtomConstructor {
   name: string;
-  bonds?: Bonds;
+  bonds?: Bond[];
   maxBonds: number;
   symbol: string;
+  pos: Coordinates;
 }
 
 export interface Pos {
@@ -139,7 +126,6 @@ export interface PDF_Props {
 export interface EditingData {
   on: boolean;
   id: string | null;
-  pos: Pos;
   molecule: Atom;
 }
 

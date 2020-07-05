@@ -1,13 +1,4 @@
-import { BondDirections, Bonds, BondTypes } from "../../types";
-
-export const defaultBonds = (): Bonds => {
-  return {
-    [BondDirections.left]: null,
-    [BondDirections.right]: null,
-    [BondDirections.up]: null,
-    [BondDirections.down]: null,
-  };
-};
+import { BondTypes } from "../../types";
 
 export const electronsNeededBy = (bondType: string): number => {
   switch (bondType) {
@@ -21,32 +12,6 @@ export const electronsNeededBy = (bondType: string): number => {
     case BondTypes.wave:
     default:
       return 1;
-  }
-};
-
-export const opposite = (direction: BondDirections) => {
-  switch (direction) {
-    case BondDirections.left:
-      return BondDirections.right;
-    case BondDirections.right:
-      return BondDirections.left;
-    case BondDirections.up:
-      return BondDirections.down;
-    case BondDirections.down:
-      return BondDirections.up;
-  }
-};
-
-export const directionToAngle = (direction: BondDirections): number => {
-  switch (direction) {
-    case BondDirections.left:
-      return 180;
-    case BondDirections.right:
-      return 0;
-    case BondDirections.up:
-      return 90;
-    case BondDirections.down:
-      return 270;
   }
 };
 

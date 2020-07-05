@@ -9,6 +9,7 @@ import { CanvasProps } from "../../../types";
 import { getRelativePosition } from "../../../utils/relativePosition";
 import { v4 } from "uuid";
 import { Carbon } from "../../../utils/Atoms/elements";
+import { Coordinates } from "../../../utils/functionalAtoms";
 
 const useStyles = makeStyles((theme: Theme) =>
   createStyles({
@@ -22,7 +23,10 @@ const useStyles = makeStyles((theme: Theme) =>
   })
 );
 
-export const defaultMolecule: Atom = new Carbon();
+export const origin = (): Coordinates => {
+  return { x: 0, y: 0 };
+};
+export const defaultMolecule: Atom = new Carbon(origin());
 
 export const Canvas = ({
   stage,
@@ -34,9 +38,7 @@ export const Canvas = ({
   const stageRef: any = useRef();
   const [stageContainer, setStageContainer] = useState();
   const stageContainerRef: any = useRef();
-  const [molecules, setMolecules] = useState([
-    { atom: defaultMolecule, pos: { x: 0, y: 0 } },
-  ]);
+  const [molecules, setMolecules] = useState([defaultMolecule]);
   const [hover, setHover] = useState("");
 
   const zoom = (e: KonvaEventObject<WheelEvent>) => {
@@ -68,33 +70,28 @@ export const Canvas = ({
   useEffect(() => {
     if (stageRef.current) {
       setStage(stageRef.current);
-      setMolecules([
-        {
-          atom: defaultMolecule,
-          pos: {
-            x: stageRef.current.width() / 2,
-            y: stageRef.current.height() / 2,
-          },
-        },
-      ]);
+      setMolecules([defaultMolecule]);
     }
   }, [stageContainer, setStage]);
 
   const classes = useStyles();
 
   const handleClick = () => {
+    const s = stageRef.current;
+    const pos = getRelativePosition(s);
     if (atomHighlight !== "") {
-      const element = Object.values(combinedPeriodicTable).find(
+      const foundElement = Object.values(combinedPeriodicTable).find(
         (element) => element.symbol === atomHighlight
       );
-      if (element) {
-        const s = stageRef.current;
-        const { name, maxBonds, symbol } = element;
-        const newAtom = new Atom({ name, maxBonds, symbol });
-        setMolecules([
-          ...molecules,
-          { atom: newAtom, pos: getRelativePosition(s) },
-        ]);
+      if (foundElement) {
+        const { name, maxBonds, symbol } = foundElement;
+        const newAtom = new Atom({
+          name,
+          maxBonds,
+          symbol,
+          pos,
+        });
+        setMolecules([...molecules, newAtom]);
       }
     }
   };
@@ -115,7 +112,7 @@ export const Canvas = ({
               <AtomDisplay
                 bondHighlight={bondHighlight}
                 key={`${v4()}-atomDisplay`}
-                molecule={molecule.atom}
+                molecule={molecule}
                 showHydrogen={showHydrogen}
                 hover={hover}
                 setHover={setHover}

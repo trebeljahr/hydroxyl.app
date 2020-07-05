@@ -1,31 +1,20 @@
 import { v4 as uuid, v4 } from "uuid";
-import {
-  AtomConstructor,
-  Bonds,
-  BondDirections,
-  Bond,
-  BondTypes,
-} from "../../types";
-import {
-  electronsNeededBy,
-  opposite,
-  directionToAngle,
-  defaultBonds,
-} from "./utils";
+import { AtomConstructor, Bond, BondTypes } from "../../types";
+import { electronsNeededBy } from "./utils";
 import { Hydrogen } from "./elements";
+import { Coordinates } from "../functionalAtoms";
+
+const bondLength = 10;
 
 export class Atom {
   id: string;
   name: string;
   maxBonds: number;
-  bonds: Bonds;
+  bonds: Bond[];
   symbol: string;
-  constructor({
-    name,
-    maxBonds,
-    bonds = defaultBonds(),
-    symbol,
-  }: AtomConstructor) {
+  pos: Coordinates;
+  constructor({ name, maxBonds, bonds = [], symbol, pos }: AtomConstructor) {
+    this.pos = pos;
     this.name = name;
     this.symbol = symbol;
     this.maxBonds = maxBonds;
@@ -39,84 +28,76 @@ export class Atom {
     return this.maxBonds - this.totalBonds();
   };
   totalBonds = (): number => {
-    return Object.values(this.bonds).reduce((acc: number, bond: Bond) => {
-      const type = bond ? electronsNeededBy(bond.type) : 0;
-      return acc + type;
-    }, 0);
+    return this.bonds.reduce(
+      (acc: number, bond: Bond) => acc + electronsNeededBy(bond.type),
+      0
+    );
   };
-  deleteBond = (direction: BondDirections) => {
-    this.bonds[direction] = null;
+  deleteBond = (index: number) => {
+    this.bonds = this.bonds.filter((_, i) => index !== i);
   };
-  hydrogenBonds = (): { amount: number; directions: BondDirections[] } => {
-    return Object.keys(this.bonds).reduce(
-      (agg: any, k: string) => {
-        const key = k as BondDirections;
-        const bond = this.bonds[key] as Bond;
-        if (bond && bond.atom.name === "Hydrogen") {
-          return {
-            amount: agg.amount + 1,
-            directions: [...agg.directions, key],
-          };
-        }
-        return agg;
-      },
-      { amount: 0, directions: [] }
+  countHydrogenBonds = (): number => {
+    return this.bonds.reduce(
+      (agg, bond) => agg + (bond.atom.name === "Hydrogen" ? 1 : 0),
+      0
     );
   };
   fillUpWithHydrogen = () => {
-    Object.entries(this.bonds).forEach((entry) => {
-      const [direction, bond]: [any, Bond | null] = entry;
-      if (bond === null && this.freeBonds() >= 1) {
-        this.addHydrogen(direction);
-      }
-    });
-  };
-  changeBondType = (bondId: string, newBondType: string) => {
-    const directionOfBond = Object.keys(this.bonds).find((k) => {
-      const key = k as BondDirections;
-      const bond = this.bonds[key];
-      return bond && bond.id === bondId;
-    });
-    if (directionOfBond) {
-      const direction = directionOfBond as BondDirections;
-      const bond = this.bonds[direction];
-      bond && this.changeBond(direction, { ...bond, type: newBondType });
+    const freeBonds = this.freeBonds();
+    for (let i = 0; i < freeBonds; i++) {
+      const angle = i * (360 / freeBonds);
+      this.addHydrogen(angle);
     }
   };
-  addHydrogen = (direction: BondDirections) => {
-    const newAtom = new Hydrogen();
+  changeBondType = (bondId: string, newBondType: string) => {
+    const index = this.bonds.findIndex((bond) => bond.id === bondId);
+    const newBond = { ...this.bonds[index], type: newBondType };
+    index && this.changeBond(index, newBond);
+  };
+  addBond = (angle: number, newBond: Bond) => {
+    this.addHydrogen(angle);
+    this.changeBond(this.bonds.length - 1, newBond);
+  };
+
+  addHydrogen = (angle: number) => {
+    const pos = {
+      x: this.pos.x + Math.cos(angle) * bondLength,
+      y: this.pos.y + Math.sin(angle) * bondLength,
+    };
+    const newAtom = new Hydrogen(pos);
     const id = v4();
-    newAtom.bonds[opposite(direction)] = {
+
+    const newBondToThis = {
       type: BondTypes.single,
       atom: this,
-      angle: directionToAngle(direction),
+      angle,
       id,
     };
-    this.bonds[direction] = {
+    newAtom.bonds = [...newAtom.bonds, newBondToThis];
+
+    const newBond = {
       type: BondTypes.single,
       atom: newAtom,
-      angle: directionToAngle(direction),
+      angle: 180 - angle,
       id,
     };
+    this.bonds = [...this.bonds, newBond];
   };
   removeHydrogen = () => {
-    Object.keys(this.bonds).forEach((k) => {
-      const key = k as BondDirections;
-      const bond = this.bonds[key] as Bond;
-      if (bond && bond.atom.name === "Hydrogen") {
-        this.deleteBond(key);
-      }
-    });
+    this.bonds = this.bonds.filter((bond) => bond.atom.name !== "Hydrogen");
   };
-  changeBond = (direction: BondDirections, newBond: Bond) => {
+
+  changeBond = (index: number, newBond: Bond) => {
     this.removeHydrogen();
-    newBond.atom.removeHydrogen();
+    const partner = newBond.atom;
+    partner.removeHydrogen();
     const canBond = this.freeBonds() >= electronsNeededBy(newBond.type);
     const partnerCanBond =
-      newBond.atom.freeBonds() >= electronsNeededBy(newBond.type);
+      partner.freeBonds() >= electronsNeededBy(newBond.type);
     if (canBond && partnerCanBond) {
-      this.bonds[direction] = newBond;
-      newBond.atom.bonds[opposite(direction)] = {
+      this.bonds[index] = newBond;
+      const partnerIndex = partner.findBondIndex(this.id);
+      partner.bonds[partnerIndex] = {
         id: newBond.id,
         type: newBond.type,
         atom: this,
@@ -124,6 +105,10 @@ export class Atom {
       };
     }
     this.fillUpWithHydrogen();
-    newBond.atom.fillUpWithHydrogen();
+    partner.fillUpWithHydrogen();
+  };
+
+  findBondIndex = (atomId: string) => {
+    return this.bonds.findIndex((bond) => bond.atom.id === atomId);
   };
 }

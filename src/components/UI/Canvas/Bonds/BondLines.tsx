@@ -7,7 +7,6 @@ import { WaveBond } from "./WaveBond";
 
 export const BondLines = ({
   bond,
-  k,
   pos,
   hover,
   setHover,
@@ -21,7 +20,6 @@ export const BondLines = ({
         <NormalBonds
           bondHighlight={bondHighlight}
           bond={bond}
-          k={k}
           pos={pos}
           hover={hover}
           setHover={setHover}

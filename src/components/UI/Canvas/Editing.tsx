@@ -12,22 +12,21 @@ import { v4 } from "uuid";
 export const Editing = ({ editing, turnOffEditing }: EditingProps) => {
   const editingOffsetY = 10;
   const editingOffsetX = -10;
-  const {
-    pos: { x, y },
-  } = editing;
+  const pos = editing.molecule.pos;
+  const { x, y } = pos;
   const changeMolecule = (name: string) => {
     Object.entries(editing.molecule.bonds).forEach(
       (entry: [any, Bond | null]) => {
         const [direction, bond] = entry;
         const newAtom =
           name === "Hydrogen"
-            ? new Hydrogen()
+            ? new Hydrogen(pos)
             : name === "Carbon"
-            ? new Carbon()
+            ? new Carbon(pos)
             : name === "Oxygen"
-            ? new Oxygen()
+            ? new Oxygen(pos)
             : name === "Nitrogen"
-            ? new Nitrogen()
+            ? new Nitrogen(pos)
             : null;
         if (newAtom && bond) {
           if (direction) {

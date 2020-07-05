@@ -2,11 +2,8 @@ import React, { useState } from "react";
 import { Text, Group, Circle } from "react-konva";
 import { Hydrogen } from "../../../utils/Atoms/elements";
 import {
-  Pos,
   EditingData,
   AtomDisplayProps,
-  BondDirections,
-  Bond,
   AtomConnectionsProps,
   SingleAtomProps,
 } from "../../../types";
@@ -19,8 +16,7 @@ const initialEditing = (): EditingData => {
   return {
     on: false,
     id: null,
-    pos: { x: 0, y: 0 },
-    molecule: new Hydrogen(),
+    molecule: new Hydrogen({ x: 0, y: 0 }),
   };
 };
 
@@ -34,8 +30,8 @@ export const AtomDisplay = ({
 }: AtomDisplayProps) => {
   const [editing, setEditing] = useState(initialEditing());
 
-  const toggleEditing = (id: string, pos: Pos, molecule: Atom) => {
-    setEditing({ on: true, id, pos, molecule });
+  const toggleEditing = (id: string, molecule: Atom) => {
+    setEditing({ on: true, id, molecule });
   };
   const turnOffEditing = () => {
     setEditing(initialEditing());
@@ -73,60 +69,53 @@ const AtomConnections = ({
   const newTraversedNodes = [...traversedNodes, atom.id];
   return (
     <>
-      {atom.bonds &&
-        Object.entries(atom.bonds).map((entry: [string, Bond | null]) => {
-          const [j, bond] = entry;
-          const k = j as BondDirections;
-          if (bond) {
-            const { angle, atom: connection } = bond;
-            const newPos = {
-              x: Math.cos((angle * Math.PI) / 180),
-              y: Math.sin((angle * Math.PI) / 180),
-            };
-            const length = Math.sqrt(newPos.x * newPos.x + newPos.y * newPos.y);
-            newPos.x = newPos.x / length;
-            newPos.y = newPos.y / length;
-            newPos.x = newPos.x * 200 + x;
-            newPos.y = newPos.y * 200 + y;
-            if (newTraversedNodes.includes(connection.id)) {
-              return null;
-            }
-            return (
-              <Group key={connection.id}>
-                {(showHydrogen || connection.name !== "Hydrogen") && (
-                  <BondLines
-                    bond={bond}
-                    k={k}
-                    pos={{ oldPos: pos, newPos }}
-                    hover={hover}
-                    setHover={setHover}
-                    bondHighlight={bondHighlight}
-                  />
-                )}
-                <SingleAtom
-                  atom={atom}
-                  editing={editing}
-                  toggleEditing={toggleEditing}
-                  pos={pos}
-                  hover={hover}
-                  setHover={setHover}
-                />
-                <AtomConnections
-                  atom={connection}
-                  pos={newPos}
-                  showHydrogen={showHydrogen}
-                  setHover={setHover}
-                  hover={hover}
-                  bondHighlight={bondHighlight}
-                  editing={editing}
-                  toggleEditing={toggleEditing}
-                  traversedNodes={[...newTraversedNodes]}
-                />
-              </Group>
-            );
-          }
+      {atom.bonds.map((bond) => {
+        const { angle, atom: connection } = bond;
+        const newPos = {
+          x: Math.cos((angle * Math.PI) / 180),
+          y: Math.sin((angle * Math.PI) / 180),
+        };
+        const length = Math.sqrt(newPos.x * newPos.x + newPos.y * newPos.y);
+        newPos.x = newPos.x / length;
+        newPos.y = newPos.y / length;
+        newPos.x = newPos.x * 200 + x;
+        newPos.y = newPos.y * 200 + y;
+        if (newTraversedNodes.includes(connection.id)) {
           return null;
-        })}
+        }
+        return (
+          <Group key={connection.id}>
+            {(showHydrogen || connection.name !== "Hydrogen") && (
+              <BondLines
+                bond={bond}
+                pos={{ oldPos: pos, newPos }}
+                hover={hover}
+                setHover={setHover}
+                bondHighlight={bondHighlight}
+              />
+            )}
+            <SingleAtom
+              atom={atom}
+              editing={editing}
+              toggleEditing={toggleEditing}
+              pos={pos}
+              hover={hover}
+              setHover={setHover}
+            />
+            <AtomConnections
+              atom={connection}
+              pos={newPos}
+              showHydrogen={showHydrogen}
+              setHover={setHover}
+              hover={hover}
+              bondHighlight={bondHighlight}
+              editing={editing}
+              toggleEditing={toggleEditing}
+              traversedNodes={[...newTraversedNodes]}
+            />
+          </Group>
+        );
+      })}
     </>
   );
 };
@@ -165,7 +154,7 @@ const SingleAtom = ({
         verticalAlign="middle"
         y={pos.y - 35}
         fontStyle={editing && atom.id === editing.id ? "bold" : "normal"}
-        onClick={() => toggleEditing(atom.id, pos, atom)}
+        onClick={() => toggleEditing(atom.id, atom)}
       />
     </Group>
   );
