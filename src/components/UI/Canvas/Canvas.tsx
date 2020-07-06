@@ -5,11 +5,11 @@ import { AtomDisplay } from "./AtomDisplay";
 import { makeStyles, createStyles, Theme } from "@material-ui/core";
 import { combinedPeriodicTable } from "../PeriodicTable/data/periodicTable";
 import { Atom } from "../../../utils/Atoms/Atom";
-import { CanvasProps, BondTypes } from "../../../types";
+import { CanvasProps } from "../../../types";
 import { getRelativePosition } from "../../../utils/relativePosition";
 import { v4 } from "uuid";
+import { origin } from "../../../utils/Atoms/utils";
 import { Carbon } from "../../../utils/Atoms/elements";
-import { Coordinates } from "../../../utils/functionalAtoms";
 
 const useStyles = makeStyles((theme: Theme) =>
   createStyles({
@@ -22,32 +22,6 @@ const useStyles = makeStyles((theme: Theme) =>
     },
   })
 );
-
-export const origin = (): Coordinates => {
-  return { x: 0, y: 0 };
-};
-
-export function makeCarbonChain(length: number): Atom {
-  let chain = new Carbon(origin());
-  for (let i = 0; i < length - 1; i++) {
-    chain = addCarbon(chain, BondTypes.single);
-  }
-  return chain;
-}
-
-export function addCarbon(molecule: Atom, bondType: BondTypes) {
-  const secondCarbon = new Carbon(origin());
-  const newBond = {
-    id: v4(),
-    type: bondType,
-    atom: secondCarbon,
-    angle: 0,
-  };
-  molecule.changeBond(newBond);
-  const index1 = molecule.findBondIndex(secondCarbon.id);
-  const bondedAtom = molecule.bonds[index1].atom;
-  return bondedAtom;
-}
 
 export const defaultMolecule: Atom = new Carbon(origin());
 

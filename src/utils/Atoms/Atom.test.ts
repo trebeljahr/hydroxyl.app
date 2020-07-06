@@ -1,12 +1,8 @@
 import { Atom } from "./Atom";
 import { Carbon } from "./elements";
-import {
-  origin,
-  makeCarbonChain,
-  addCarbon,
-} from "../../components/UI/Canvas/Canvas";
 import { BondTypes } from "../../types";
 import { v4 } from "uuid";
+import { makeCarbonChain, origin, addCarbon } from "./utils";
 
 test("Sum Formula works correctly", () => {
   const methane = makeCarbonChain(1);
