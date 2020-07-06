@@ -1,8 +1,8 @@
 import { Atom } from "./Atom";
-import { Carbon } from "./elements";
+import { Carbon, makeCarbonChain, addCarbon } from "./elements";
 import { BondTypes } from "../../types";
 import { v4 } from "uuid";
-import { makeCarbonChain, origin, addCarbon } from "./utils";
+import { origin } from "./utils";
 
 test("Sum Formula works correctly", () => {
   const methane = makeCarbonChain(1);

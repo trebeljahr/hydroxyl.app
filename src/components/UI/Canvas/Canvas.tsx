@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from "react";
-import { Layer, Stage } from "react-konva";
+import { Layer, Stage, Line } from "react-konva";
 import { KonvaEventObject } from "konva/types/Node";
 import { AtomDisplay } from "./AtomDisplay";
 import { makeStyles, createStyles, Theme } from "@material-ui/core";
@@ -8,7 +8,12 @@ import { Atom } from "../../../utils/Atoms/Atom";
 import { CanvasProps } from "../../../types";
 import { getRelativePosition } from "../../../utils/relativePosition";
 import { v4 } from "uuid";
-import { origin } from "../../../utils/Atoms/utils";
+import {
+  origin,
+  getVectorBetweenPoints,
+  getRightAngleVector,
+  addVector,
+} from "../../../utils/Atoms/utils";
 import { Carbon } from "../../../utils/Atoms/elements";
 
 const useStyles = makeStyles((theme: Theme) =>
@@ -92,6 +97,16 @@ export const Canvas = ({
       }
     }
   };
+
+  const v1 = { x: 0, y: 100 };
+  const v2 = { x: 0, y: 100 };
+  const lineVector = getVectorBetweenPoints(v1, v2);
+  const linePoints = [0, lineVector.x, 0, lineVector.y];
+  console.log(lineVector);
+  const r2 = getRightAngleVector(v2);
+  // const v3 = addVector(rightAngle, v2);
+  // const v4 = addVector(rightAngle, v1);
+  const rightAngleLine = [r2.x, v2.x, r2.y, v2.y];
   return (
     <div className={classes.root} ref={stageContainerRef}>
       {stageContainerRef.current && (
@@ -105,7 +120,19 @@ export const Canvas = ({
           onClick={handleClick}
         >
           <Layer>
-            {molecules.map((molecule) => (
+            <Line
+              points={linePoints}
+              strokeWidth={5}
+              stroke={"black"}
+              lineCap="round"
+            />
+            <Line
+              points={rightAngleLine}
+              strokeWidth={5}
+              stroke={"black"}
+              lineCap="round"
+            />
+            {/* {molecules.map((molecule) => (
               <AtomDisplay
                 bondHighlight={bondHighlight}
                 key={`${v4()}-atomDisplay`}
@@ -115,7 +142,7 @@ export const Canvas = ({
                 setHover={setHover}
                 pos={molecule.pos}
               />
-            ))}
+            ))} */}
           </Layer>
         </Stage>
       )}

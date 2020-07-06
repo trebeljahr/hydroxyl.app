@@ -1,11 +1,13 @@
-import {v4} from 'uuid';
+import { BondTypes } from "../../types";
 
-import {BondTypes} from '../../types';
-import {Vec2D} from '../functionalAtoms';
+export interface Vec2D {
+  x: number;
+  y: number;
+}
 
-import {Atom} from './Atom';
-import {Carbon} from './elements';
-
+export function addVector(v1: Vec2D, v2: Vec2D): Vec2D {
+  return { x: v1.x + v2.x, y: v1.x + v2.x };
+}
 export function electronsNeededBy(bondType: string): number {
   switch (bondType) {
     case BondTypes.double:
@@ -19,49 +21,49 @@ export function electronsNeededBy(bondType: string): number {
     default:
       return 1;
   }
-};
-
-export function origin(): Vec2D {
-  return {x: 0, y: 0};
-};
-
-export function makeCarbonChain(length: number): Atom {
-  let chain = new Carbon(origin());
-  for (let i = 0; i < length - 1; i++) {
-    chain = addCarbon(chain, BondTypes.single);
-  }
-  return chain;
 }
 
-export function addCarbon(molecule: Atom, bondType: BondTypes) {
-  const secondCarbon = new Carbon(origin());
-  const newBond = {
-    id: v4(),
-    type: bondType,
-    atom: secondCarbon,
-    angle: 0,
+export function origin(): Vec2D {
+  return { x: 0, y: 0 };
+}
+
+export const defaultBondLength = 10;
+
+export function vectorFromPolarCoordinates(angle: number, bondLength = 10) {
+  return {
+    x: bondLength * Math.cos(angle),
+    y: bondLength * Math.sin(angle),
   };
-  molecule.changeBond(newBond);
-  const index1 = molecule.findBondIndex(secondCarbon.id);
-  const bondedAtom = molecule.bonds[index1].atom;
-  return bondedAtom;
+}
+
+export function vectorMagnitude(v: Vec2D) {
+  return Math.sqrt(v.x * v.x + v.y * v.y);
+}
+
+export function getAngleFromVector(v: Vec2D) {
+  const length = vectorMagnitude(v);
+  return Math.acos(v.x / length);
 }
 
 export function getVectorBetweenPoints(p1: Vec2D, p2: Vec2D): Vec2D {
   return {
-    x: p1.x - p2.x, y: p1.y - p2.y
-  }
+    x: p1.x - p2.x,
+    y: p1.y - p2.y,
+  };
 }
+
 export function getRightAngleVector(v: Vec2D): Vec2D {
   return {
-    x: -v.y, y: v.x
-  }
+    x: -v.y,
+    y: v.x,
+  };
 }
 
 export function reverseVector(v: Vec2D): Vec2D {
   return {
-    x: -v.x, y: -v.y
-  }
+    x: -v.x,
+    y: -v.y,
+  };
 }
 
-export const trim = (str: String): String => str.replace(/\s+/g, '');
+export const trim = (str: String): String => str.replace(/\s+/g, "");
