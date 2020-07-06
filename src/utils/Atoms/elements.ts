@@ -1,13 +1,13 @@
-import { combinedPeriodicTable } from "../../components/UI/PeriodicTable/data/periodicTable";
-import { Element } from "../../components/UI/PeriodicTable/types";
-import { Atom } from "./Atom";
-import { Coordinates } from "../functionalAtoms";
+import {combinedPeriodicTable} from '../../components/UI/PeriodicTable/data/periodicTable';
+import {Element} from '../../components/UI/PeriodicTable/types';
+import {Vec2D} from '../functionalAtoms';
+
+import {Atom} from './Atom';
 
 export class Hydrogen extends Atom {
-  constructor(pos: Coordinates) {
-    const { maxBonds, symbol, name } = combinedPeriodicTable[
-      "Hydrogen"
-    ] as Element;
+  constructor(pos: Vec2D) {
+    const {maxBonds, symbol, name} =
+        combinedPeriodicTable['Hydrogen'] as Element;
     super({
       name,
       maxBonds,
@@ -18,10 +18,9 @@ export class Hydrogen extends Atom {
 }
 
 export class Nitrogen extends Atom {
-  constructor(pos: Coordinates) {
-    const { maxBonds, symbol, name } = combinedPeriodicTable[
-      "Nitrogen"
-    ] as Element;
+  constructor(pos: Vec2D) {
+    const {maxBonds, symbol, name} =
+        combinedPeriodicTable['Nitrogen'] as Element;
     super({
       name,
       maxBonds,
@@ -32,10 +31,8 @@ export class Nitrogen extends Atom {
 }
 
 export class Oxygen extends Atom {
-  constructor(pos: Coordinates) {
-    const { maxBonds, symbol, name } = combinedPeriodicTable[
-      "Oxygen"
-    ] as Element;
+  constructor(pos: Vec2D) {
+    const {maxBonds, symbol, name} = combinedPeriodicTable['Oxygen'] as Element;
     super({
       name,
       maxBonds,
@@ -46,10 +43,8 @@ export class Oxygen extends Atom {
 }
 
 export class Carbon extends Atom {
-  constructor(pos: Coordinates) {
-    const { maxBonds, symbol, name } = combinedPeriodicTable[
-      "Carbon"
-    ] as Element;
+  constructor(pos: Vec2D) {
+    const {maxBonds, symbol, name} = combinedPeriodicTable['Carbon'] as Element;
     super({
       name,
       maxBonds,

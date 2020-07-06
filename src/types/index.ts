@@ -1,15 +1,16 @@
-import { Stage } from "konva/types/Stage";
-import { Atom } from "../utils/Atoms/Atom";
-import { Element } from "../components/UI/PeriodicTable/types";
-import { Coordinates } from "../utils/functionalAtoms";
+import {Stage} from 'konva/types/Stage';
+
+import {Element} from '../components/UI/PeriodicTable/types';
+import {Atom} from '../utils/Atoms/Atom';
+import {Vec2D} from '../utils/functionalAtoms';
 
 export enum BondTypes {
-  single = "single",
-  double = "double",
-  triple = "triple",
-  wedge = "wedge",
-  hash = "hash",
-  wave = "wave",
+  single = 'single',
+  double = 'double',
+  triple = 'triple',
+  wedge = 'wedge',
+  hash = 'hash',
+  wave = 'wave',
 }
 
 export interface SingleAtomProps {
@@ -112,7 +113,7 @@ export interface AtomConstructor {
   bonds?: Bond[];
   maxBonds: number;
   symbol: string;
-  pos: Coordinates;
+  pos: Vec2D;
 }
 
 export interface Pos {
@@ -125,7 +126,7 @@ export interface PDF_Props {
 
 export interface EditingData {
   on: boolean;
-  id: string | null;
+  id: string|null;
   molecule: Atom;
 }
 

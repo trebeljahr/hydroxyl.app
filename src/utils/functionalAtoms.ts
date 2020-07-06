@@ -1,9 +1,9 @@
-import { v4 } from "uuid";
-import { combinedPeriodicTable } from "../components/UI/PeriodicTable/data/periodicTable";
-import { Element } from "../components/UI/PeriodicTable/types";
-import { BondTypes } from "../types";
+import {v4} from 'uuid';
+import {combinedPeriodicTable} from '../components/UI/PeriodicTable/data/periodicTable';
+import {Element} from '../components/UI/PeriodicTable/types';
+import {BondTypes} from '../types';
 
-export interface Coordinates {
+export interface Vec2D {
   x: number;
   y: number;
 }
@@ -22,16 +22,16 @@ interface Atom {
   totalBonds: number;
   maxPossibleBonds: number;
   bonds: Bond[];
-  position: Coordinates;
+  position: Vec2D;
 }
 
 type Molecule = [Atom];
 
 function changeFreeBonds(atom: Atom, newFreeBonds: number) {
   if (newFreeBonds > atom.maxPossibleBonds) {
-    return { ...atom };
+    return {...atom};
   }
-  return { ...atom, freeBonds: newFreeBonds };
+  return {...atom, freeBonds: newFreeBonds};
 }
 
 function createBond(atom: Atom, type: string, angle: number): Bond {
@@ -57,7 +57,7 @@ interface bonding {
 
 function countHydrogen(atom: Atom) {
   return atom.bonds.reduce((agg, bond) => {
-    if (bond.atom.element === "Hydrogen") {
+    if (bond.atom.element === 'Hydrogen') {
       return agg + 1;
     }
     return agg;
@@ -69,10 +69,9 @@ function getFreeBonds(atom: Atom) {
 }
 
 function changeBond(atom1: Atom, bondIndex: number, type: string) {
-  const atom2 = { ...atom1.bonds[bondIndex].atom };
-  const bothCanBond =
-    getFreeBonds(atom1) >= bondsNeeded[type] &&
-    getFreeBonds(atom2) >= bondsNeeded[type];
+  const atom2 = {...atom1.bonds[bondIndex].atom};
+  const bothCanBond = getFreeBonds(atom1) >= bondsNeeded[type] &&
+      getFreeBonds(atom2) >= bondsNeeded[type];
   if (bothCanBond) {
   }
 }
@@ -84,9 +83,8 @@ function numberOfBonds(bonds: Bond[]) {
 }
 
 function removeHydrogen(atom: Atom) {
-  const newBonds = atom.bonds.filter(
-    (bond) => bond.atom.element !== "Hydrogen"
-  );
+  const newBonds =
+      atom.bonds.filter((bond) => bond.atom.element !== 'Hydrogen');
   const totalBonds = numberOfBonds(newBonds);
   const freeBonds = atom.maxPossibleBonds - totalBonds;
   return {
@@ -98,12 +96,11 @@ function removeHydrogen(atom: Atom) {
 }
 
 function createAtom(
-  element: string,
-  bondedTo?: Atom,
-  bondType = BondTypes.single,
-  position = { x: 0, y: 0 }
-): Atom {
-  const { maxBonds, name } = combinedPeriodicTable[element] as Element;
+    element: string, bondedTo?: Atom, bondType = BondTypes.single, position = {
+      x: 0,
+      y: 0
+    }): Atom {
+  const {maxBonds, name} = combinedPeriodicTable[element] as Element;
   const bonds = bondedTo ? [createBond(bondedTo, bondType, 0)] : [];
   const totalBonds = bondedTo ? bondsNeeded[bondType] : 0;
   const atom = {
