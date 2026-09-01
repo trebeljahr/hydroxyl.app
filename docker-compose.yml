@@ -1,0 +1,17 @@
+# Production Docker Compose — deploy as a Coolify Service Stack.
+# Coolify auto-detects ${VAR_NAME} syntax and creates UI fields for each.
+# Do NOT expose ports here — Coolify's Traefik handles external routing.
+
+services:
+  client:
+    image: ${CLIENT_IMAGE:-ghcr.io/trebeljahr/chemistry-sketcher-client:main}
+    environment:
+      # Pin client port — Coolify's app-level PORT (set for the server)
+      # would otherwise bleed into every service.
+      PORT: "6337"
+      # Deliberately NO NEXT_PUBLIC_* here: Next.js inlines those into
+      # the browser bundle when the image is BUILT, so runtime env on
+      # this prebuilt container cannot affect them. They are passed as
+      # Docker build args in .github/workflows/build-and-deploy.yml.
+    restart: unless-stopped
+

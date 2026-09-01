@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "client",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "@starter/client",
+        "run",
+        "dev"
+      ],
+      "port": 6337,
+      "autoPort": true
+    }
+  ]
+}

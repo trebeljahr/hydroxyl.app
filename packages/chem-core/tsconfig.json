@@ -1,21 +1,16 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2022"],
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "declaration": true,
-    "outDir": "./dist",
     "rootDir": "./src",
-    "strict": true,
+    "outDir": "./dist",
+    "composite": true,
+    "lib": ["ES2022"],
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
-    "verbatimModuleSyntax": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "verbatimModuleSyntax": true
   },
-  "include": ["src/**/*"],
+  "include": ["src"],
   "exclude": ["src/**/*.test.ts", "dist"]
 }

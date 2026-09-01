@@ -1,56 +1,31 @@
 {
-  "name": "webnote",
+  "name": "chemistry-sketcher",
   "version": "0.1.0",
   "private": true,
-  "dependencies": {
-    "@material-ui/core": "^4.9.10",
-    "@material-ui/icons": "^4.9.1",
-    "@testing-library/jest-dom": "^4.2.4",
-    "@testing-library/react": "^9.5.0",
-    "@testing-library/user-event": "^7.2.1",
-    "@types/jspdf": "^1.3.3",
-    "@types/node": "^12.12.35",
-    "@types/react": "^16.9.34",
-    "@types/react-dom": "^16.9.6",
-    "@types/react-redux": "^7.1.9",
-    "@types/uuid": "^7.0.2",
-    "jspdf": "^1.5.3",
-    "konva": "^4.2.2",
-    "react": "^16.13.1",
-    "react-dom": "^16.13.1",
-    "react-konva": "^16.13.0-0",
-    "react-redux": "^7.2.0",
-    "react-scripts": "3.4.1",
-    "redux": "^4.0.5",
-    "redux-devtools-extension": "^2.13.8",
-    "three": "^0.115.0",
-    "typescript": "^3.8.5",
-    "use-image": "^1.0.5",
-    "uuid": "^7.0.3"
+  "packageManager": "pnpm@11.1.2",
+  "engines": {
+    "node": ">=24"
   },
   "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
-  },
-  "eslintConfig": {
-    "extends": "react-app"
-  },
-  "browserslist": {
-    "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all"
-    ],
-    "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
-    ]
+    "dev": "pnpm --filter @starter/client dev",
+    "build": "pnpm --filter @starter/chem-core run build && pnpm --filter @starter/shared run build && pnpm --filter @starter/client run build",
+    "build:client": "pnpm --filter @starter/chem-core run build && pnpm --filter @starter/shared run build && pnpm --filter @starter/client run build",
+    "test": "pnpm run test:core && pnpm run test:client",
+    "test:client": "pnpm --filter @starter/client run test",
+    "dev:infra": "docker-compose -f docker-compose.dev.yml up -d",
+    "dev:infra:stop": "docker-compose -f docker-compose.dev.yml down",
+    "dev:infra:reset": "docker-compose -f docker-compose.dev.yml down -v",
+    "typecheck": "pnpm --filter @starter/chem-core run build && pnpm --filter @starter/shared run build && pnpm -r run typecheck",
+    "test:core": "pnpm --filter @starter/chem-core run test"
   },
   "devDependencies": {
-    "@types/jest": "^24.9.1",
-    "ts-jest": "^26.1.1"
-  }
+    "@playwright/test": "^1.60.0",
+    "@types/node": "^25.8.0",
+    "concurrently": "^9.2.1",
+    "mongodb": "^7.2.0",
+    "tsx": "^4.22.0",
+    "typescript": "^6.0.3"
+  },
+  "dependencies": {},
+  "description": "Chemical structure editor for publication figures"
 }

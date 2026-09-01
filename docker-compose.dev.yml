@@ -1,0 +1,14 @@
+services:
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    ports:
+      - "9000:8333"
+    environment:
+      # Omitting AWS creds keeps SeaweedFS in development allow-all mode.
+      # The app still sends its local dev credentials from .env.development.
+      S3_BUCKET: chemistry-sketcher-dev
+    volumes:
+      - seaweedfs-data:/data
+    restart: unless-stopped
+
+seaweedfs-data:
