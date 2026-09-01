@@ -1,0 +1,25 @@
+{
+  "version": 3,
+  "cliVersion": "0.2.18",
+  "scaffoldedAt": "2026-09-01T18:48:32.745Z",
+  "name": "chemistry-sketcher",
+  "domain": "chemistry.trebeljahr.com",
+  "description": "Chemical structure editor for publication figures",
+  "features": [
+    "analytics"
+  ],
+  "mlServices": [],
+  "s3Provider": "none",
+  "deployTarget": "existing",
+  "deploymentMode": "coolify",
+  "ports": {
+    "server": 3000,
+    "client": 3001
+  },
+  "surfaces": "fullstack",
+  "publicService": "client",
+  "email": {
+    "transactional": "listmonk-ses",
+    "mailingList": "listmonk-ses"
+  }
+}
