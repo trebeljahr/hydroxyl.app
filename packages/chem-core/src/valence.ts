@@ -1,0 +1,163 @@
+/**
+ * Valence and implicit hydrogens.
+ *
+ * Hydrogens are IMPLICIT. They are derived from valence at query time, not
+ * stored as atoms in the graph. The old model created a real Atom node per
+ * hydrogen, which meant every traversal, layout pass and export had to filter
+ * them back out, and adding a bond meant deleting hydrogens first and
+ * recreating them after.
+ *
+ * The charge and radical handling mirrors RDKit's `calculateImplicitValence`,
+ * carbon special case included. Matching it is deliberate: RDKit is the
+ * import/export oracle, and a different rule here would show up as hydrogens
+ * appearing or vanishing across a SMILES round-trip.
+ */
+
+import { requireElement } from "./elements.js";
+import { bondsAt, requireAtom } from "./molecule.js";
+import type { AtomId, Molecule } from "./types.js";
+
+/** An aromatic bond contributes 1.5, so a benzene carbon totals 3. */
+const AROMATIC_BOND_ORDER = 1.5;
+
+/**
+ * Sum of the orders of the bonds actually drawn at this atom. Excludes
+ * implicit hydrogens and radical electrons.
+ */
+export function bondOrderSum(mol: Molecule, atomId: AtomId): number {
+  let sum = 0;
+  for (const bond of bondsAt(mol, atomId)) {
+    sum += bond.aromatic ? AROMATIC_BOND_ORDER : bond.order;
+  }
+  // Aromatic rings give half-integers that should land on a whole number once
+  // the whole ring is accounted for; rounding absorbs float error.
+  return Math.round(sum * 2) / 2;
+}
+
+/**
+ * True when the element sits to the left of carbon in the periodic table, so
+ * a positive charge *increases* rather than decreases its bonding capacity.
+ */
+function isEarlyAtom(group: number): boolean {
+  // Outer electrons for main-group elements; d-block is handled by having no
+  // default valences at all, so it never reaches this.
+  const outerElectrons = group <= 2 ? group : group - 10;
+  return outerElectrons < 4;
+}
+
+/**
+ * The charge adjustment applied to a default valence.
+ *
+ * Ammonium N+ can take four bonds (3 + 1); alkoxide O- takes one (2 - 1).
+ * Electropositive elements invert, and carbon inverts for positive charge
+ * only — without that special case a carbocation would be assigned five
+ * bonds instead of three.
+ */
+function chargeAdjustment(symbol: string, group: number, charge: number): number {
+  if (charge === 0) return 0;
+  let adjusted = charge;
+  if (isEarlyAtom(group)) adjusted = -adjusted;
+  if (symbol === "C" && adjusted > 0) adjusted = -adjusted;
+  return adjusted;
+}
+
+/**
+ * Number of hydrogens drawn on this atom.
+ *
+ * Returns `explicitHydrogenCount` verbatim when the atom pins it. That escape
+ * hatch is required for cases valence alone cannot resolve — pyrrole's N-H is
+ * the classic one, since both pyrrole and pyridine nitrogens see a bond-order
+ * sum of 3 from their two aromatic ring bonds.
+ */
+export function implicitHydrogenCount(mol: Molecule, atomId: AtomId): number {
+  const atom = requireAtom(mol, atomId);
+  if (atom.explicitHydrogenCount !== undefined) return atom.explicitHydrogenCount;
+
+  const element = requireElement(atom.element);
+  if (element.valences.length === 0) return 0;
+
+  const used = bondOrderSum(mol, atomId) + atom.radicalElectrons;
+  const adjustment = chargeAdjustment(element.symbol, element.group, atom.charge);
+
+  for (const valence of element.valences) {
+    const target = valence + adjustment;
+    if (used <= target) return Math.max(0, Math.round(target - used));
+  }
+  // Over-valent: nothing left to fill. `valenceIssues` reports it separately.
+  return 0;
+}
+
+/** Bond orders drawn, plus radical electrons. */
+export function explicitValence(mol: Molecule, atomId: AtomId): number {
+  return bondOrderSum(mol, atomId) + requireAtom(mol, atomId).radicalElectrons;
+}
+
+/** Everything: drawn bonds, radicals, and implicit hydrogens. */
+export function totalValence(mol: Molecule, atomId: AtomId): number {
+  return explicitValence(mol, atomId) + implicitHydrogenCount(mol, atomId);
+}
+
+/** The highest valence this atom could reach, charge included. */
+export function maxValence(mol: Molecule, atomId: AtomId): number {
+  const atom = requireAtom(mol, atomId);
+  const element = requireElement(atom.element);
+  if (element.valences.length === 0) return Infinity;
+  const highest = element.valences[element.valences.length - 1]!;
+  return highest + chargeAdjustment(element.symbol, element.group, atom.charge);
+}
+
+/**
+ * How many more bond-order units this atom can accept. Infinite for metals,
+ * which carry no default valence and so are never treated as saturated.
+ */
+export function freeValence(mol: Molecule, atomId: AtomId): number {
+  const max = maxValence(mol, atomId);
+  if (max === Infinity) return Infinity;
+  return Math.max(0, max - explicitValence(mol, atomId));
+}
+
+/** Whether a bond of this order can be added without exceeding max valence. */
+export function canAcceptBond(mol: Molecule, atomId: AtomId, order = 1): boolean {
+  return freeValence(mol, atomId) >= order;
+}
+
+export function isOverValent(mol: Molecule, atomId: AtomId): boolean {
+  const max = maxValence(mol, atomId);
+  return max !== Infinity && explicitValence(mol, atomId) > max;
+}
+
+export interface ValenceIssue {
+  readonly atomId: AtomId;
+  readonly severity: "error" | "warning";
+  readonly message: string;
+}
+
+/**
+ * Structural problems worth surfacing in the status bar.
+ *
+ * Reported rather than prevented: a chemist sketching an intermediate should
+ * be able to draw something briefly wrong without the editor fighting them.
+ */
+export function valenceIssues(mol: Molecule): ValenceIssue[] {
+  const issues: ValenceIssue[] = [];
+  for (const atomId of mol.atomIds) {
+    const atom = requireAtom(mol, atomId);
+    if (isOverValent(mol, atomId)) {
+      issues.push({
+        atomId,
+        severity: "error",
+        message:
+          `${atom.element} has ${explicitValence(mol, atomId)} bonds but allows ` +
+          `at most ${maxValence(mol, atomId)}`,
+      });
+    }
+    if (atom.explicitHydrogenCount !== undefined && atom.explicitHydrogenCount < 0) {
+      issues.push({
+        atomId,
+        severity: "error",
+        message: `${atom.element} has a negative hydrogen count`,
+      });
+    }
+  }
+  return issues;
+}
