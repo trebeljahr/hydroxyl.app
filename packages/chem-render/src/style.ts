@@ -18,6 +18,7 @@
 import type { Vec2 } from "@starter/chem-core";
 
 import type { ScenePoint } from "./scene/types.js";
+import type { Measurer } from "./text/measurer.js";
 
 export interface RenderColors {
   readonly bond: string;
@@ -42,13 +43,39 @@ export interface RenderStyle {
   /** Whitespace added around the scene's primitive extents for the viewBox, px. */
   readonly marginPx: number;
   /**
-   * Placeholder vertex dot radius. Labels are a later task; until then a dot is
-   * the only way to see where an atom is. Set to 0 to suppress.
+   * Radius of the dot drawn at a BARE VERTEX — an atom the label pass decided
+   * not to draw a label for. Set to 0 to suppress it entirely.
+   *
+   * It used to mark every atom, because there were no labels and a dot was the
+   * only way to see where an atom was. Now an atom that draws a label draws no
+   * dot: a dot at a labelled atom is not merely redundant, it is the universal
+   * notation for an unpaired electron, so a methyl radical and a plain methyl
+   * would differ only in a dot's position.
+   *
+   * Both presets keep a non-zero radius for now. Once bond trimming lands, a
+   * bare carbon vertex is fully described by the two lines meeting at it and
+   * this can go to 0 — at which point the only thing it still buys is a
+   * visible marker for the editor's own hit target, which belongs on an
+   * overlay rather than in the figure.
    */
   readonly atomDotRadiusPx: number;
   readonly colors: RenderColors;
   /** Decimal places emitted for every coordinate. Fixed so output is byte-deterministic. */
   readonly coordinatePrecision: number;
+  /**
+   * The text measurer this style's scenes are measured with.
+   *
+   * UNDEFINED MEANS THE BUNDLED ARIMO TABLE, resolved in exactly one place —
+   * `measurerFor(style)` in `text/measurer.ts`. Nothing may read this field
+   * directly, or the two halves of a scene can end up measured by different
+   * backends and the labels and the viewBox stop agreeing.
+   *
+   * CAVEAT: a style carrying a measurer is no longer JSON-round-trippable,
+   * because a function does not survive serialisation. That is acceptable
+   * precisely because it is optional and unset on both presets, so any style
+   * that is actually persisted is unaffected.
+   */
+  readonly measurer?: Measurer;
 }
 
 export type RenderStyleName = "publication" | "screen";
@@ -66,7 +93,11 @@ export const PUBLICATION_STYLE: RenderStyle = Object.freeze({
   bondLengthPx: 24,
   bondLineWidthPx: 1.4,
   doubleBondGapPx: 4.2,
-  fontFamily: "Arial, Helvetica, sans-serif",
+  // Arimo first: it is the face this package vendors metrics for, so the
+  // measured advances and the drawn glyphs are the same glyphs. The fallbacks
+  // are metric-compatible with it by design, which is what makes the boxes
+  // still correct on a machine that has no Arimo installed.
+  fontFamily: "Arimo, Arial, Helvetica, sans-serif",
   fontSizePx: 10,
   subscriptScale: 0.72,
   labelPaddingPx: 1.6,
@@ -88,7 +119,11 @@ export const SCREEN_STYLE: RenderStyle = Object.freeze({
   bondLengthPx: 44,
   bondLineWidthPx: 2,
   doubleBondGapPx: 7,
-  fontFamily: "Arial, Helvetica, sans-serif",
+  // Arimo first: it is the face this package vendors metrics for, so the
+  // measured advances and the drawn glyphs are the same glyphs. The fallbacks
+  // are metric-compatible with it by design, which is what makes the boxes
+  // still correct on a machine that has no Arimo installed.
+  fontFamily: "Arimo, Arial, Helvetica, sans-serif",
   fontSizePx: 16,
   subscriptScale: 0.72,
   labelPaddingPx: 3,

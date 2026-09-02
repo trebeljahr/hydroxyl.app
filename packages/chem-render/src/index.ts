@@ -33,6 +33,16 @@
 export * from "./style.js";
 export * from "./representation.js";
 export * from "./scene/types.js";
+// Dependency order: the text layer measures, the label layer decides and
+// places, and the scene layer consumes both. `text/generated/` is deliberately
+// NOT re-exported — the generated table reaches consumers through
+// `text/metrics.js`, so no path containing `generated/` ever leaves the
+// package and a regeneration cannot become a breaking change for a caller.
+export * from "./text/metrics.js";
+export * from "./text/measurer.js";
+export * from "./label/visibility.js";
+export * from "./label/compose.js";
+export * from "./label/placement.js";
 export * from "./scene/build.js";
 export * from "./scene/bounds.js";
 export * from "./svg/serialize.js";

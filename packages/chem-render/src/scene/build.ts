@@ -9,11 +9,20 @@
  * drag is in flight is an ordinary UI race, not a programming error.
  */
 
-import { formulaParts, getAtom } from "@starter/chem-core";
+import { formulaParts, getAtom, neighborIds } from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
 
+import {
+  composeAtomLabel,
+  labelRunId,
+  radicalDotId,
+} from "../label/compose.js";
+import { placeAtomLabel } from "../label/placement.js";
 import { isStructural } from "../representation.js";
-import type { Representation } from "../representation.js";
+import type {
+  Representation,
+  StructuralRepresentation,
+} from "../representation.js";
 import { modelToPx } from "../style.js";
 import type { RenderStyle } from "../style.js";
 import { sceneBounds } from "./bounds.js";
@@ -33,10 +42,12 @@ import type {
  * insertion order — so the output is deterministic and bonds paint under the
  * atom decorations that sit on their ends.
  *
- * This is the foundation pass only. Atom labels, the bond trimming that keeps
- * a line clear of a label, the second line of a double bond and stereo wedges
- * all land in later tasks; a double bond is deliberately still one plain line
- * here, so benzene is exactly six lines and six dots.
+ * Atom labels are drawn here; bond geometry is not. The trimming that keeps a
+ * line clear of a label, the second line of a double bond and the stereo
+ * wedges are the next pass, which consumes the label boxes this one produces —
+ * so a double bond is still one plain line, and a bond still runs under the
+ * label it meets. Benzene skeletal is therefore exactly six lines and six
+ * bare-vertex dots.
  */
 export function buildScene(
   mol: Molecule,
@@ -44,7 +55,7 @@ export function buildScene(
   representation: Representation,
 ): RenderScene {
   const primitives = isStructural(representation)
-    ? buildStructural(mol, style)
+    ? buildStructural(mol, style, representation)
     : [buildFormulaRun(mol, style, representation.kind)];
 
   return {
@@ -59,6 +70,7 @@ export function buildScene(
 function buildStructural(
   mol: Molecule,
   style: RenderStyle,
+  representation: StructuralRepresentation,
 ): readonly ScenePrimitive[] {
   const primitives: ScenePrimitive[] = [];
 
@@ -82,24 +94,83 @@ function buildStructural(
     primitives.push(line);
   }
 
-  if (style.atomDotRadiusPx > 0) {
-    for (const atomId of mol.atomIds) {
-      const atom = getAtom(mol, atomId);
-      if (atom === undefined) continue;
+  for (const atomId of mol.atomIds) {
+    const atom = getAtom(mol, atomId);
+    if (atom === undefined) continue;
 
-      // The dot stands in for the atom label that a later task will draw, so
-      // it takes the label colour rather than the bond colour: swapping one
-      // for the other should not shift the palette of the drawing.
-      const dot: CirclePrimitive = {
-        id: `atom:${atomId}:dot`,
+    // ONE decision, made in `composeAtomLabel`: undefined means bare vertex.
+    // A second condition here — "is it a carbon", "does it have a charge" —
+    // would be a place the two could disagree, and the symptom is an atom
+    // drawn twice or not at all.
+    const label = composeAtomLabel(mol, atomId, representation);
+
+    if (label === undefined) {
+      // The dot marks a BARE vertex only. A labelled atom must never also
+      // carry one: a dot beside a symbol is the universal notation for an
+      // unpaired electron, so a plain methyl would read as a methyl radical.
+      if (style.atomDotRadiusPx > 0) {
+        const dot: CirclePrimitive = {
+          id: `atom:${atomId}:dot`,
+          source: { kind: "atom", atomId },
+          type: "circle",
+          centre: modelToPx(style, atom.pos),
+          radius: style.atomDotRadiusPx,
+          fill: { color: style.colors.label },
+        };
+        primitives.push(dot);
+      }
+      continue;
+    }
+
+    // Both the atom and its neighbours go through `modelToPx` HERE, so the
+    // placement pass differences two points that are already in scene px. It
+    // therefore never scales and never flips — the whole reason it takes
+    // `ScenePoint`s rather than a molecule. See the header of placement.ts.
+    const neighbourCentres = neighborIds(mol, atomId).flatMap((neighbourId) => {
+      const neighbour = getAtom(mol, neighbourId);
+      return neighbour === undefined ? [] : [modelToPx(style, neighbour.pos)];
+    });
+
+    const placement = placeAtomLabel({
+      atomId,
+      centre: modelToPx(style, atom.pos),
+      neighbourCentres,
+      label,
+      style,
+    });
+
+    // Identity and paint are decided here, not in the placement pass, which
+    // returns geometry and nothing else. Keeping the id scheme in one place is
+    // what makes the output byte-deterministic across an edit history.
+    const run: TextRunPrimitive = {
+      id: labelRunId(atomId),
+      source: { kind: "atom", atomId },
+      type: "textRun",
+      origin: placement.run.origin,
+      spans: placement.run.spans,
+      fontFamily: style.fontFamily,
+      fontSizePx: placement.run.fontSizePx,
+      fill: { color: style.colors.label },
+      anchor: placement.run.anchor,
+      baseline: placement.run.baseline,
+    };
+    primitives.push(run);
+
+    // Flat siblings rather than a `group`: the existing scheme is flat
+    // (`bond:b3:line`, `atom:a2:dot`), a group would make the primitive shape
+    // depend on whether the atom happens to be a radical, and both the bounds
+    // pass and the serialiser already handle a flat list.
+    placement.dots.forEach((placedDot, index) => {
+      const radicalDot: CirclePrimitive = {
+        id: radicalDotId(atomId, index),
         source: { kind: "atom", atomId },
         type: "circle",
-        centre: modelToPx(style, atom.pos),
-        radius: style.atomDotRadiusPx,
+        centre: placedDot.centre,
+        radius: placedDot.radius,
         fill: { color: style.colors.label },
       };
-      primitives.push(dot);
-    }
+      primitives.push(radicalDot);
+    });
   }
 
   return primitives;

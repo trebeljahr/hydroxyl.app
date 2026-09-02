@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-30.845 -14.578 73.956 30.044" width="73.956px" height="30.044px">
+  <line id="bond:b3:line" data-bond="b3" x1="0" y1="0" x2="24" y2="0" stroke="#000000" stroke-width="1.4"/>
+  <text id="atom:a1:label" data-atom="a1" x="-22.845" y="3.44" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="10" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>H</tspan><tspan font-size="7.2" dy="2.5">3</tspan><tspan font-size="7.2" dy="-6">13</tspan><tspan dy="3.5">C</tspan></text>
+  <text id="atom:a2:label" data-atom="a2" x="20.111" y="3.44" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="10" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>O</tspan><tspan>H</tspan></text>
+</svg>

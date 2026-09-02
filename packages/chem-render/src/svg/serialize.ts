@@ -23,6 +23,7 @@ import type {
   SceneStroke,
   TextRunPrimitive,
 } from "../scene/types.js";
+import { scriptDyPx, scriptFontSizePx } from "../text/metrics.js";
 
 export interface SerializeOptions {
   /**
@@ -36,25 +37,16 @@ export interface SerializeOptions {
 const XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8"?>\n';
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 
-/**
- * Subscript and superscript offsets, as a fraction of the run's font size.
- *
- * SVG's own `baseline-shift="sub"` is the obvious spelling, but browsers and
- * the print pipelines that consume these figures disagree about how far it
- * shifts — Inkscape and Chrome place the same "H2O" differently. An explicit
- * `dy` renders identically everywhere. The values are the usual typographic
- * ones: a subscript drops about a quarter of an em, a superscript rises a
- * little more because it also has to clear the x-height.
- *
- * These offsets are a serialisation detail and `sceneBounds` does not model
- * them: it measures a glyph run as one unshifted line, so a superscript reaches
- * roughly `SUPERSCRIPT_DY_FACTOR` of the font size above the estimated box. At
- * every preset that is a px or two against a margin of eight or more, which is
- * why it has never clipped anything — but a style with a small margin and a
- * charged formula is the case to check before assuming it still holds.
+/*
+ * The sub/superscript baseline offsets used to live here. They now live in
+ * `text/metrics.ts`, beside the font's own em fractions, because the measurer
+ * and this file have to agree on them to the last bit: the box a superscript
+ * charge is measured into and the `dy` it is drawn with must be the same
+ * number, or a charged label is clipped by exactly the discrepancy. The
+ * measurer models the shift, so `sceneBounds` no longer under-measures a
+ * scripted run — see `SUBSCRIPT_DY_FACTOR` there for why an explicit `dy`
+ * rather than SVG's own `baseline-shift`.
  */
-const SUBSCRIPT_DY_FACTOR = 0.25;
-const SUPERSCRIPT_DY_FACTOR = -0.35;
 
 /** Accumulates markup and carries the per-scene formatting decisions. */
 interface Emitter {
@@ -163,12 +155,7 @@ function textRunMarkup(e: Emitter, p: TextRunPrimitive): string {
   // an equal and opposite shift back up to the baseline.
   let shift = 0;
   for (const span of p.spans) {
-    const target =
-      span.script === "sub"
-        ? p.fontSizePx * SUBSCRIPT_DY_FACTOR
-        : span.script === "super"
-          ? p.fontSizePx * SUPERSCRIPT_DY_FACTOR
-          : 0;
+    const target = scriptDyPx(span.script, p.fontSizePx);
     const dy = target - shift;
     shift = target;
 
@@ -176,7 +163,7 @@ function textRunMarkup(e: Emitter, p: TextRunPrimitive): string {
     if (span.script !== undefined) {
       spanAttrs += attr(
         "font-size",
-        num(e, p.fontSizePx * e.subscriptScale, p.id),
+        num(e, scriptFontSizePx(span.script, p.fontSizePx, e.subscriptScale), p.id),
       );
     }
     // A zero dy is omitted: it is a no-op, and printing "dy=0" on every plain

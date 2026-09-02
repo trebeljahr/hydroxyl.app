@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-21.78 -27.7 61.52 55.65" width="61.52px" height="55.65px">
+  <rect data-decoration="background" x="-21.78" y="-27.7" width="61.52" height="55.65" fill="#ffffff"/>
+  <text id="atom:a1:label" data-atom="a1" x="-5.78" y="5.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start" dominant-baseline="alphabetic"><tspan>C</tspan><tspan>H</tspan><tspan font-size="11.52" dy="4">3</tspan></text>
+  <circle id="atom:a1:radical:0" data-atom="a1" cx="0" cy="-10.1" r="1.6" fill="#111827"/>
+</svg>

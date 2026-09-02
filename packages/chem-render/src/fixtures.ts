@@ -27,8 +27,11 @@ import {
   benzene as coreBenzene,
   buildMolecule,
   DEG,
+  flipAtoms,
   fromPolar,
   ORIGIN,
+  singleAtom,
+  verticalMirror,
 } from "@starter/chem-core";
 import type { Molecule, Vec2 } from "@starter/chem-core";
 
@@ -114,6 +117,179 @@ export function heavyChain(heavyAtoms = 300): Molecule {
   });
 }
 
+/**
+ * Ethanol reflected left-to-right about the origin.
+ *
+ * The second half of the "hydrogens sit on the free side" claim. The hydroxyl
+ * of `ethanol` has its free space to the east and sets "OH"; mirrored, the free
+ * space is to the west and the same label must set "HO". A renderer that
+ * centred the whole run instead of the symbol, or that took its bond directions
+ * from y-up model space, passes one of those two and fails the other.
+ *
+ * Ethanol is achiral and carries no wedges, so the mirror makes no
+ * stereochemical claim — this is a reflected drawing of the same compound, not
+ * an enantiomer.
+ */
+export function ethanolMirrored(): Molecule {
+  const mol = ethanol();
+  return flipAtoms(mol, mol.atomIds, verticalMirror(ORIGIN));
+}
+
+/**
+ * Methane, as a lone carbon.
+ *
+ * The isolated-atom rule: a vertex with no bonds is invisible, so carbon draws
+ * its symbol here and only here in a skeletal view. It is also the control for
+ * `methylRadical` — the two differ by one electron, and the drawing has to show
+ * it in more than one way.
+ */
+export function methane(): Molecule {
+  return singleAtom("C");
+}
+
+/**
+ * The methyl radical, CH3•.
+ *
+ * The unpaired electron is modelled, so `implicitHydrogenCount` already gives
+ * three rather than four: the picture and the formula panel must agree, which
+ * is why the dot cannot be a Lewis-only decoration. Against `methane` it
+ * differs twice over — one fewer hydrogen in the run, and a dot beside it.
+ */
+export function methylRadical(): Molecule {
+  return buildMolecule((b) => {
+    b.atom("C", ORIGIN, { radicalElectrons: 1 });
+  });
+}
+
+/**
+ * Methylene, :CH2 — the only two-dot fixture.
+ *
+ * `radicalElectrons` is one integer, so the model cannot distinguish the
+ * singlet carbene (a lone pair) from the triplet (two unpaired electrons). Two
+ * dots is what it can honestly draw; the distinction belongs to the Lewis pass,
+ * which has lone pairs of its own.
+ */
+export function methyleneCarbene(): Molecule {
+  return buildMolecule((b) => {
+    b.atom("C", ORIGIN, { radicalElectrons: 2 });
+  });
+}
+
+/**
+ * The tert-butyl cation, (CH3)3C+.
+ *
+ * Both halves of the charged-carbon rule in one picture: the central carbon
+ * draws "C+" because a charge needs something to sit on, while its three methyl
+ * carbons stay bare vertices. The central carbon carries no hydrogens —
+ * chem-core mirrors RDKit's carbon special case, which gives a +1 carbon a
+ * target valence of three, all of it used by the three bonds.
+ */
+export function tertButylCation(): Molecule {
+  return buildMolecule((b) => {
+    const centre = b.atom("C", ORIGIN, { charge: 1 });
+    for (const degrees of [90, 210, 330]) {
+      b.bond(centre, b.atom("C", step(ORIGIN, degrees)), 1);
+    }
+  });
+}
+
+/**
+ * Bromomethane, CH3Br. Half of the label-extent pair.
+ *
+ * Paired with `iodomethane`, which has IDENTICAL geometry and differs only in
+ * the halogen. "Br" is exactly one em wide in the vendored face and "I" is a
+ * little over a quarter of one, so the only thing that can move the two
+ * scenes' bounds apart is the label — by half that difference, since the
+ * halogen carries no hydrogen and its symbol is therefore centred on its atom
+ * while the methyl lies to its left. An estimator that charged a flat width
+ * per character would make them differ by a factor of two instead, from the
+ * character count alone.
+ */
+export function bromomethane(): Molecule {
+  return halomethane("Br");
+}
+
+/** Iodomethane, CH3I. See `bromomethane` — same geometry, narrower label. */
+export function iodomethane(): Molecule {
+  return halomethane("I");
+}
+
+function halomethane(halogen: string): Molecule {
+  return buildMolecule((b) => {
+    const methyl = b.atom("C", ORIGIN);
+    b.bond(methyl, b.atom(halogen, step(ORIGIN, 30)), 1);
+  });
+}
+
+/**
+ * Benzyl alcohol drawn with the phenyl ring abbreviated: Ph-CH2-OH.
+ *
+ * The display-override rule. "Ph" replaces the symbol and suppresses the
+ * hydrogens with it, because a phenyl group's hydrogens are inside the
+ * abbreviation and "PhH3" is nonsense.
+ *
+ * WARNING, and it is the whole reason this fixture is named "abbreviated":
+ * `Atom.label` is a DISPLAY override and changes no chemistry whatsoever. The
+ * model here is three heavy atoms, so `molecularFormula` reports C3H8O — not
+ * benzyl alcohol's C7H8O. The tests assert what the model actually contains.
+ */
+export function benzylAlcoholAbbreviated(): Molecule {
+  return buildMolecule((b) => {
+    const phenyl = b.atom("C", ORIGIN, { label: "Ph" });
+    const methylenePos = step(ORIGIN, 30);
+    const methylene = b.atom("C", methylenePos);
+    const hydroxyl = b.atom("O", step(methylenePos, -30));
+    b.bond(phenyl, methylene, 1);
+    b.bond(methylene, hydroxyl, 1);
+  });
+}
+
+/**
+ * Methanol with a carbon-13, drawn on a deliberately HORIZONTAL bond.
+ *
+ * Two rules at once. The mass number is a superscript glued to the left of the
+ * symbol in either orientation, and it is a satellite: the bond meets the C,
+ * not the 13. And the horizontal bond blocks exactly one side for each atom, so
+ * the carbon sets "H3(13)C" with its hydrogens west and the oxygen sets "OH"
+ * with its hydrogen east — the branch a 30-degree zig-zag never reaches.
+ */
+export function methanol13C(): Molecule {
+  return buildMolecule((b) => {
+    const carbon = b.atom("C", ORIGIN, { isotope: 13 });
+    b.bond(carbon, b.atom("O", { x: 1, y: 0 }), 1);
+  });
+}
+
+/**
+ * Butan-2-ol with the hydroxyl drawn on a wedge from C2.
+ *
+ * The stereocentre rule: a wedge or hash makes the implicit hydrogen at its
+ * NARROW end load-bearing, because that hydrogen is the fourth substituent the
+ * reader has to place. C2 therefore draws "CH" while C1, at the wide end,
+ * learns nothing about its own configuration and stays a bare vertex.
+ *
+ * No CIP descriptor appears in this name or these comments on purpose: nothing
+ * in this repo assigns R/S, and a fixture called (S)-butan-2-ol that depicted
+ * the R enantiomer would be wrong in the one way that renders perfectly.
+ */
+export function butan2olWedged(): Molecule {
+  return buildMolecule((b) => {
+    const c1 = b.atom("C", ORIGIN);
+    const c2Pos = step(ORIGIN, 30);
+    const c2 = b.atom("C", c2Pos);
+    const c3Pos = step(c2Pos, -30);
+    const c3 = b.atom("C", c3Pos);
+    const c4 = b.atom("C", step(c3Pos, 30));
+    // Narrow end at C2: chem-core fixes the wedge convention as narrow-at-
+    // `from`, so C2 is the stereocentre and the oxygen is what it points at.
+    const oxygen = b.atom("O", step(c2Pos, 90));
+    b.bond(c1, c2, 1);
+    b.bond(c2, oxygen, 1, "wedge");
+    b.bond(c2, c3, 1);
+    b.bond(c3, c4, 1);
+  });
+}
+
 export interface Fixture {
   readonly name: string;
   readonly molecule: Molecule;
@@ -131,6 +307,19 @@ export interface Fixture {
 export const FIXTURES: readonly Fixture[] = Object.freeze([
   Object.freeze({ name: "benzene", molecule: coreBenzene() }),
   Object.freeze({ name: "ethanol", molecule: ethanol() }),
+  Object.freeze({ name: "ethanolMirrored", molecule: ethanolMirrored() }),
   Object.freeze({ name: "acetate", molecule: acetate() }),
+  Object.freeze({ name: "methane", molecule: methane() }),
+  Object.freeze({ name: "methylRadical", molecule: methylRadical() }),
+  Object.freeze({ name: "methyleneCarbene", molecule: methyleneCarbene() }),
+  Object.freeze({ name: "tertButylCation", molecule: tertButylCation() }),
+  Object.freeze({ name: "bromomethane", molecule: bromomethane() }),
+  Object.freeze({ name: "iodomethane", molecule: iodomethane() }),
+  Object.freeze({
+    name: "benzylAlcoholAbbreviated",
+    molecule: benzylAlcoholAbbreviated(),
+  }),
+  Object.freeze({ name: "methanol13C", molecule: methanol13C() }),
+  Object.freeze({ name: "butan2olWedged", molecule: butan2olWedged() }),
 ]);
 

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-18 -46.98 74.33 64.98" width="74.33px" height="64.98px">
+  <rect data-decoration="background" x="-18" y="-46.98" width="74.33" height="64.98" fill="#ffffff"/>
+  <line id="bond:b3:line" data-bond="b3" x1="0" y1="0" x2="38.11" y2="-22" stroke="#1f2937" stroke-width="2"/>
+  <circle id="atom:a1:dot" data-atom="a1" cx="0" cy="0" r="2" fill="#111827"/>
+  <text id="atom:a2:label" data-atom="a2" x="35.88" y="-16.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start" dominant-baseline="alphabetic"><tspan>I</tspan></text>
+</svg>

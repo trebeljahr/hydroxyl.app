@@ -12,12 +12,25 @@ import { describe, expect, it } from "vitest";
 
 import { benzene, emptyMolecule } from "@starter/chem-core";
 
-import { acetate, ethanol } from "../src/fixtures.js";
+import {
+  acetate,
+  bromomethane,
+  ethanol,
+  iodomethane,
+} from "../src/fixtures.js";
 import { representation } from "../src/representation.js";
 import { buildScene } from "../src/scene/build.js";
 import { sceneBounds } from "../src/scene/bounds.js";
 import type { ScenePrimitive } from "../src/scene/types.js";
 import { PUBLICATION_STYLE, SCREEN_STYLE, withStyle } from "../src/style.js";
+import {
+  advanceWidthUnits,
+  EM_ASCENT,
+  EM_DESCENT,
+  UNITS_PER_EM,
+} from "../src/text/metrics.js";
+import { BUNDLED_MEASURER } from "../src/text/measurer.js";
+import type { Measurer } from "../src/text/measurer.js";
 
 const SKELETAL = representation("skeletal");
 
@@ -32,11 +45,20 @@ interface Box {
  * The ink extent of the primitives `buildScene` actually emits, measured here
  * rather than by calling the code under test.
  *
- * Only lines and circles, because those are the only two shapes the
- * foundation pass produces. When wedges and labels land, this grows with
- * them — and if it does not, the assertion below fails, which is the point.
+ * Lines, circles and glyph runs — the three shapes the pass now produces.
+ * Anything else throws rather than being silently ignored, which is what made
+ * this helper notice the day labels started appearing.
+ *
+ * The text arm RESTATES the measurement rather than calling `measureTextRun`
+ * or `textRunRect`: a helper that delegates to the implementation asserts
+ * nothing at all. It reads the advance table directly, applies the script
+ * scale and the two baseline-shift factors as literals, and does its own
+ * anchor and baseline arithmetic.
  */
-function measure(primitives: readonly ScenePrimitive[]): Box {
+function measure(
+  primitives: readonly ScenePrimitive[],
+  style: RenderStyle,
+): Box {
   const box: Box = {
     minX: Infinity,
     minY: Infinity,
@@ -49,6 +71,17 @@ function measure(primitives: readonly ScenePrimitive[]): Box {
     box.maxX = Math.max(box.maxX, x + pad);
     box.maxY = Math.max(box.maxY, y + pad);
   };
+  const growBox = (
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+  ): void => {
+    box.minX = Math.min(box.minX, minX);
+    box.minY = Math.min(box.minY, minY);
+    box.maxX = Math.max(box.maxX, maxX);
+    box.maxY = Math.max(box.maxY, maxY);
+  };
   for (const p of primitives) {
     if (p.type === "line") {
       const pad = p.stroke.width / 2;
@@ -56,6 +89,54 @@ function measure(primitives: readonly ScenePrimitive[]): Box {
       grow(p.b.x, p.b.y, pad);
     } else if (p.type === "circle") {
       grow(p.centre.x, p.centre.y, p.radius);
+    } else if (p.type === "textRun") {
+      let width = 0;
+      let ascent = EM_ASCENT * p.fontSizePx;
+      let descent = EM_DESCENT * p.fontSizePx;
+      let sawInk = false;
+      for (const span of p.spans) {
+        const size =
+          span.script === undefined
+            ? p.fontSizePx
+            : p.fontSizePx * style.subscriptScale;
+        // The serialiser's own dy factors, restated as literals.
+        const dy =
+          span.script === "sub"
+            ? p.fontSizePx * 0.25
+            : span.script === "super"
+              ? p.fontSizePx * -0.35
+              : 0;
+        let units = 0;
+        for (const character of span.text) {
+          units += advanceWidthUnits(character.codePointAt(0) ?? 0);
+        }
+        width += (units * size) / UNITS_PER_EM;
+        if (span.text.length === 0) continue;
+        const spanAscent = -dy + EM_ASCENT * size;
+        const spanDescent = dy + EM_DESCENT * size;
+        if (!sawInk) {
+          ascent = spanAscent;
+          descent = spanDescent;
+          sawInk = true;
+        } else {
+          ascent = Math.max(ascent, spanAscent);
+          descent = Math.max(descent, spanDescent);
+        }
+      }
+      if (width === 0) continue;
+      const left =
+        p.anchor === "start"
+          ? p.origin.x
+          : p.anchor === "middle"
+            ? p.origin.x - width / 2
+            : p.origin.x - width;
+      const baselineY =
+        p.baseline === "alphabetic"
+          ? p.origin.y
+          : p.baseline === "middle"
+            ? p.origin.y + (ascent - descent) / 2
+            : p.origin.y + ascent;
+      growBox(left, baselineY - ascent, left + width, baselineY + descent);
     } else {
       throw new Error(`measure() does not know how to size a ${p.type}`);
     }
@@ -68,7 +149,7 @@ describe("sceneBounds", () => {
     it(`encloses every primitive and leaves exactly marginPx of slack (${style.name})`, () => {
       for (const molecule of [benzene(), ethanol(), acetate()]) {
         const scene = buildScene(molecule, style, SKELETAL);
-        const ink = measure(scene.primitives);
+        const ink = measure(scene.primitives, style);
         const m = style.marginPx;
 
         expect(scene.bounds.minX).toBeCloseTo(ink.minX - m, 9);
@@ -114,6 +195,41 @@ describe("sceneBounds", () => {
       width: 16,
       height: 16,
     });
+  });
+
+  it("sizes a halogen's label from the halogen, not from a flat estimate", () => {
+    // The point of vendoring a metrics table at all. Bromomethane and
+    // iodomethane are the same molecule but for one atom, and "Br" is 2048
+    // font units against "I"'s 569 — 3.6 times the advance. Under the old
+    // flat 0.6-em-per-code-point estimate the two labels measured 2:1 purely
+    // from their character counts, so a figure of an iodide carried half an em
+    // of whitespace it had not earned and a bromide's box was too tight.
+    const bromo = buildScene(bromomethane(), PUBLICATION_STYLE, SKELETAL);
+    const iodo = buildScene(iodomethane(), PUBLICATION_STYLE, SKELETAL);
+
+    const brWidth =
+      (advanceWidthUnits("B".codePointAt(0)!) +
+        advanceWidthUnits("r".codePointAt(0)!)) *
+      (PUBLICATION_STYLE.fontSizePx / UNITS_PER_EM);
+    const iWidth =
+      advanceWidthUnits("I".codePointAt(0)!) *
+      (PUBLICATION_STYLE.fontSizePx / UNITS_PER_EM);
+    expect(brWidth).toBeGreaterThan(iWidth);
+
+    // Both fixtures put the halogen at the same position with the same bond,
+    // so the only thing that can move a bound is the label. HALF the advance
+    // difference, not all of it: the halogen carries no hydrogen, so its
+    // symbol is centred on its atom and the label grows symmetrically — but
+    // the methyl sits to its left, so only the right-hand growth reaches the
+    // box. Asserting the full difference here would be asserting that the
+    // label is anchored at its left edge, which is exactly the bug the
+    // symbol-centring rule exists to prevent.
+    expect(bromo.bounds.width - iodo.bounds.width).toBeCloseTo(
+      (brWidth - iWidth) / 2,
+      9,
+    );
+    // And it is a real difference, not a rounding artefact the margin hides.
+    expect(bromo.bounds.width).toBeGreaterThan(iodo.bounds.width + 1);
   });
 
   it("gives a text view a box big enough to hold its glyphs", () => {
@@ -163,7 +279,7 @@ describe("sceneBounds", () => {
     // ever fires on a real molecule it is silently moving every golden.
     for (const style of [PUBLICATION_STYLE, SCREEN_STYLE]) {
       const scene = buildScene(benzene(), style, SKELETAL);
-      const ink = measure(scene.primitives);
+      const ink = measure(scene.primitives, style);
       expect(scene.bounds.minX).toBeCloseTo(ink.minX - style.marginPx, 9);
       expect(scene.bounds.maxY).toBeCloseTo(ink.maxY + style.marginPx, 9);
     }

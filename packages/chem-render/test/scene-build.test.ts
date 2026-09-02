@@ -13,11 +13,33 @@ import { describe, expect, it } from "vitest";
 import { benzene, getAtom, molecularFormula } from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
 
-import { acetate, ethanol, FIXTURES, heavyChain } from "../src/fixtures.js";
+import {
+  acetate,
+  benzylAlcoholAbbreviated,
+  bromomethane,
+  butan2olWedged,
+  ethanol,
+  ethanolMirrored,
+  FIXTURES,
+  heavyChain,
+  iodomethane,
+  methane,
+  methanol13C,
+  methyleneCarbene,
+  methylRadical,
+  tertButylCation,
+} from "../src/fixtures.js";
+import {
+  composeAtomLabel,
+  labelPlainText,
+  symbolSpanIndex,
+} from "../src/label/compose.js";
+import type { LabelSide } from "../src/label/compose.js";
 import { representation } from "../src/representation.js";
 import { buildScene } from "../src/scene/build.js";
 import type { ScenePrimitive, TextRunPrimitive } from "../src/scene/types.js";
 import { modelToPx, PUBLICATION_STYLE, SCREEN_STYLE, withStyle } from "../src/style.js";
+import { BUNDLED_MEASURER, measureTextRun } from "../src/text/measurer.js";
 
 const SKELETAL = representation("skeletal");
 
@@ -28,14 +50,86 @@ function ofType(
   return primitives.filter((p) => p.type === type);
 }
 
+/**
+ * Where the atom's own SYMBOL sits inside a drawn label run, in scene px.
+ *
+ * Derived from the run the scene actually emitted plus the measurer, not from
+ * `placeAtomLabel` — asserting a placement against the function that produced
+ * it proves nothing. The two things borrowed from the label layer are which
+ * span is the symbol and how wide a glyph is; the arithmetic that puts them on
+ * the atom is redone here.
+ */
+function symbolCentreOf(
+  run: TextRunPrimitive,
+  mol: Molecule,
+  atomId: string,
+): { x: number; y: number } {
+  const label = composeAtomLabel(mol, atomId, SKELETAL);
+  if (label === undefined) throw new Error(`atom ${atomId} composed no label`);
+  // Read the orientation back off the run that was drawn rather than assuming
+  // one: "HO" and "OH" hold the same spans in opposite orders.
+  const drawn = run.spans.map((s) => s.text).join("");
+  const side: LabelSide = labelPlainText(label, "west") === drawn ? "west" : "east";
+  const index = symbolSpanIndex(label, side);
+
+  const box = measureTextRun(
+    run.spans,
+    {
+      fontFamily: run.fontFamily,
+      fontSizePx: run.fontSizePx,
+      subscriptScale: SCREEN_STYLE.subscriptScale,
+      anchor: run.anchor,
+      baseline: run.baseline,
+    },
+    BUNDLED_MEASURER,
+  );
+  const symbol = box.spans[index];
+  if (symbol === undefined) throw new Error("no symbol span");
+  return {
+    x: run.origin.x + box.startXPx + symbol.startXPx + symbol.advanceWidthPx / 2,
+    // The baseline sits half a cap height below the atom, so the cap band's
+    // midline — what a reader sees as the middle of a capital — is on it.
+    y: run.origin.y + box.baselineYPx - box.capHeightPx / 2,
+  };
+}
+
 describe("fixtures", () => {
   it("are the molecules they claim to be", () => {
     // If a fixture's chemistry drifts, every golden below is re-blessing a
     // picture of the wrong compound. Check the formula before anything else.
-    expect(FIXTURES.map((f) => f.name)).toEqual(["benzene", "ethanol", "acetate"]);
+    expect(FIXTURES.map((f) => f.name)).toEqual([
+      "benzene",
+      "ethanol",
+      "ethanolMirrored",
+      "acetate",
+      "methane",
+      "methylRadical",
+      "methyleneCarbene",
+      "tertButylCation",
+      "bromomethane",
+      "iodomethane",
+      "benzylAlcoholAbbreviated",
+      "methanol13C",
+      "butan2olWedged",
+    ]);
     expect(molecularFormula(benzene())).toBe("C6H6");
     expect(molecularFormula(ethanol())).toBe("C2H6O");
     expect(molecularFormula(acetate())).toBe("[C2H3O2]-");
+
+    // The label fixtures earn their place by their chemistry, not their
+    // picture. A radical is a radical because `radicalElectrons` took a
+    // hydrogen off the formula, and if that stops being true the fixture is
+    // no longer testing what its name says.
+    expect(molecularFormula(methane())).toBe("CH4");
+    expect(molecularFormula(methylRadical())).toBe("CH3");
+    expect(molecularFormula(methyleneCarbene())).toBe("CH2");
+    expect(molecularFormula(tertButylCation())).toBe("[C4H9]+");
+    expect(molecularFormula(bromomethane())).toBe("CH3Br");
+    expect(molecularFormula(iodomethane())).toBe("CH3I");
+    expect(molecularFormula(methanol13C())).toBe("CH4O");
+    expect(molecularFormula(butan2olWedged())).toBe("C4H10O");
+    // The mirror is a rigid motion: same compound, opposite side of the page.
+    expect(molecularFormula(ethanolMirrored())).toBe("C2H6O");
   });
 
   it("gives the benchmark subject exactly the heavy-atom count it advertises", () => {
@@ -69,33 +163,78 @@ describe("buildScene, structural views", () => {
   it("puts every coordinate through the one model-to-px conversion", () => {
     // The invariant this whole package exists for: geometry leaves here in
     // final px with y already flipped, and nothing re-derives the scale.
+    // Ethanol is two bare carbons and one labelled oxygen, so it exercises
+    // both ways an atom can be drawn.
     const mol = ethanol();
     const scene = buildScene(mol, SCREEN_STYLE, SKELETAL);
-    const dots = ofType(scene.primitives, "circle");
 
-    mol.atomIds.forEach((atomId, index) => {
+    for (const atomId of mol.atomIds) {
       const atom = getAtom(mol, atomId);
-      const dot = dots[index];
-      if (atom === undefined || dot === undefined || dot.type !== "circle") {
-        throw new Error(`Missing atom or dot at ${index}`);
-      }
-      expect(dot.centre).toEqual(modelToPx(SCREEN_STYLE, atom.pos));
+      if (atom === undefined) throw new Error(`no atom ${atomId}`);
+      const expected = modelToPx(SCREEN_STYLE, atom.pos);
       // y-down, spelled out rather than left to modelToPx to agree with itself.
-      expect(dot.centre.y).toBeCloseTo(-atom.pos.y * SCREEN_STYLE.bondLengthPx, 12);
-    });
+      expect(expected.y).toBeCloseTo(-atom.pos.y * SCREEN_STYLE.bondLengthPx, 12);
+
+      const dot = scene.primitives.find((p) => p.id === `atom:${atomId}:dot`);
+      if (dot !== undefined) {
+        if (dot.type !== "circle") throw new Error("a dot must be a circle");
+        expect(dot.centre).toEqual(expected);
+        continue;
+      }
+
+      // A labelled atom instead. The atom does not sit at the run's origin —
+      // the run is anchored at its start — but the SYMBOL block's advance
+      // midpoint must land exactly on it, which is what keeps a bond meeting
+      // the oxygen of "OH" rather than the gap between its two letters.
+      const run = scene.primitives.find((p) => p.id === `atom:${atomId}:label`);
+      if (run === undefined || run.type !== "textRun") {
+        throw new Error(`atom ${atomId} drew neither a dot nor a label`);
+      }
+      expect(symbolCentreOf(run, mol, atomId).x).toBeCloseTo(expected.x, 9);
+      expect(symbolCentreOf(run, mol, atomId).y).toBeCloseTo(expected.y, 9);
+    }
   });
 
   it("carries a source back-reference on every primitive", () => {
-    const scene = buildScene(acetate(), PUBLICATION_STYLE, SKELETAL);
-    for (const primitive of scene.primitives) {
-      // A structural scene has no decorations, so every primitive must be
-      // traceable to a model entity — that is what makes a click on a line
-      // select the right bond.
-      expect(primitive.source.kind).not.toBe("decoration");
-      if (primitive.source.kind === "bond") {
-        expect(primitive.id).toBe(`bond:${primitive.source.bondId}:line`);
-      } else if (primitive.source.kind === "atom") {
-        expect(primitive.id).toBe(`atom:${primitive.source.atomId}:dot`);
+    // The carbene is the fixture that reaches all three atom forms at once: a
+    // labelled atom, its two radical dots, and nothing else.
+    for (const mol of [acetate(), methyleneCarbene(), benzene()]) {
+      const scene = buildScene(mol, PUBLICATION_STYLE, SKELETAL);
+      for (const primitive of scene.primitives) {
+        // A structural scene has no decorations, so every primitive must be
+        // traceable to a model entity — that is what makes a click on a line
+        // select the right bond.
+        expect(primitive.source.kind).not.toBe("decoration");
+        if (primitive.source.kind === "bond") {
+          expect(primitive.id).toBe(`bond:${primitive.source.bondId}:line`);
+        } else if (primitive.source.kind === "atom") {
+          // Every id is a pure function of the atom it came from. The trailing
+          // index on a radical dot indexes ONE ATOM'S OWN cluster, so it is
+          // stable too — unlike a counter that advances as iteration reaches
+          // atoms, which would renumber the whole scene when one atom changed.
+          expect(primitive.id).toMatch(
+            new RegExp(`^atom:${primitive.source.atomId}:(dot|label|radical:\\d+)$`),
+          );
+        }
+      }
+      // Nothing is drawn twice under the same id, which is what a stable id
+      // scheme is actually for.
+      const ids = scene.primitives.map((p) => p.id);
+      expect(new Set(ids).size).toBe(ids.length);
+    }
+  });
+
+  it("draws a bare vertex or a label, never both", () => {
+    // A dot beside a symbol is the universal notation for an unpaired
+    // electron, so a labelled atom that also kept its placeholder dot would
+    // turn every charged carbon into a radical cation.
+    for (const { molecule } of FIXTURES) {
+      const scene = buildScene(molecule, PUBLICATION_STYLE, SKELETAL);
+      for (const atomId of molecule.atomIds) {
+        const dot = scene.primitives.some((p) => p.id === `atom:${atomId}:dot`);
+        const label = scene.primitives.some((p) => p.id === `atom:${atomId}:label`);
+        expect(dot && label).toBe(false);
+        expect(dot || label).toBe(true);
       }
     }
   });
@@ -127,16 +266,55 @@ describe("buildScene, structural views", () => {
     expect(ofType(scene.primitives, "circle")).toHaveLength(5);
   });
 
-  it("treats every structural kind the same for now", () => {
-    // Display flags are not consulted yet. Pinning that keeps the eventual
-    // divergence honest: whoever wires the flags up has to change this test on
-    // purpose rather than discover it was never covered.
-    const kinds = ["skeletal", "kekule", "explicitH", "lewis"] as const;
-    const scenes = kinds.map((kind) =>
-      buildScene(benzene(), PUBLICATION_STYLE, representation(kind)),
-    );
-    for (const scene of scenes) {
-      expect(scene.primitives).toHaveLength(12);
+  it("makes the structural kinds differ, starting with the carbon labels", () => {
+    // This is the first pass at which the four structural views stop being the
+    // same picture. Skeletal leaves benzene's carbons as bare vertices;
+    // kekule, explicitH and lewis all set `showCarbonLabels`, so every vertex
+    // becomes a "CH". Bond ORDER still does not differ — six lines throughout,
+    // because the second line of a double bond is the next task.
+    const bare = buildScene(benzene(), PUBLICATION_STYLE, SKELETAL);
+    expect(ofType(bare.primitives, "circle")).toHaveLength(6);
+    expect(ofType(bare.primitives, "textRun")).toHaveLength(0);
+
+    for (const kind of ["kekule", "explicitH", "lewis"] as const) {
+      const scene = buildScene(benzene(), PUBLICATION_STYLE, representation(kind));
+      expect(ofType(scene.primitives, "line")).toHaveLength(6);
+      expect(ofType(scene.primitives, "circle")).toHaveLength(0);
+      const runs = ofType(scene.primitives, "textRun");
+      expect(runs).toHaveLength(6);
+
+      // Not six identical "CH"s: the hydrogen goes into the free space, which
+      // for a ring vertex is radially OUTWARD. The two vertices on the left of
+      // the ring therefore read "HC", exactly as a chemist would draw them,
+      // and a renderer that wrote "CH" on all six would be making the mistake
+      // this whole pass exists to avoid.
+      const texts = runs.map((run) => {
+        if (run.type !== "textRun") throw new Error("expected a text run");
+        return run.spans.map((s) => s.text).join("");
+      });
+      expect(texts.filter((t) => t === "CH")).toHaveLength(4);
+      expect(texts.filter((t) => t === "HC")).toHaveLength(2);
+    }
+  });
+
+  it("puts a ring vertex's hydrogen on the outside of the ring", () => {
+    // The same rule stated where it can actually fail: for every benzene
+    // carbon, the H block must sit on the far side of the atom from the ring
+    // centre. Benzene is centred on the origin, so the test is a sign check.
+    const mol = benzene();
+    const scene = buildScene(mol, PUBLICATION_STYLE, representation("kekule"));
+    for (const primitive of scene.primitives) {
+      if (primitive.type !== "textRun" || primitive.source.kind !== "atom") continue;
+      const atom = getAtom(mol, primitive.source.atomId);
+      if (atom === undefined) throw new Error("missing atom");
+      const text = primitive.spans.map((s) => s.text).join("");
+      // A vertex on the vertical axis has both horizontals equally free; the
+      // tie-break sends it east, which is a decision, not an accident.
+      if (Math.abs(atom.pos.x) < 1e-9) {
+        expect(text).toBe("CH");
+        continue;
+      }
+      expect(text).toBe(atom.pos.x > 0 ? "CH" : "HC");
     }
   });
 });

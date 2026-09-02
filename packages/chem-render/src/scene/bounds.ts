@@ -3,11 +3,20 @@
  *
  * This is what the viewBox is cut from, so it measures the ink rather than the
  * atom positions: a stroke straddles its centreline, a circle reaches its
- * radius, a glyph run occupies an estimated advance. Measuring positions alone
+ * radius, a glyph run occupies its summed advance. Measuring positions alone
  * clipped half a line width off every edge of an exported figure.
+ *
+ * Text used to be estimated here — a flat 0.6 em per code point and a fixed
+ * 0.8/0.2 ascent and descent — with the margin absorbing the error. It is now
+ * measured against the vendored font's own advance table through
+ * `measureTextRun`, which also models the sub- and superscript baseline shifts
+ * the estimator ignored. What remains an over-estimate is deliberate: advances
+ * rather than ink boxes, so there are no side bearings and a figure gets a
+ * fraction of a px of extra whitespace rather than a clipped glyph.
  */
 
 import type { RenderStyle } from "../style.js";
+import { measurerFor, measureTextRun, textRunRect } from "../text/measurer.js";
 import type {
   SceneBounds,
   ScenePoint,
@@ -15,24 +24,6 @@ import type {
   SceneStroke,
   TextRunPrimitive,
 } from "./types.js";
-
-/**
- * Mean glyph advance as a fraction of the font size.
- *
- * Real metrics need the font file, which this package deliberately cannot
- * reach — it is DOM-free and dependency-free, and must measure identically in
- * node and in the browser. 0.6 is about right for the digits and capitals a
- * formula is made of in a normal sans face, and the margin absorbs the error.
- * Anywhere the exact ink box matters, measure in the consumer that has a
- * text-measuring API and override the bounds there.
- */
-const GLYPH_ADVANCE_RATIO = 0.6;
-
-/** Height above the baseline, as a fraction of the font size. */
-const ASCENT_RATIO = 0.8;
-
-/** Depth below the baseline, as a fraction of the font size. */
-const DESCENT_RATIO = 0.2;
 
 /**
  * Half the smallest box `sceneBounds` will hand back on either axis.
@@ -222,51 +213,40 @@ function pathPoints(d: string): ScenePoint[] {
 }
 
 /**
- * The estimated ink box of a glyph run.
+ * The ink box of a glyph run, measured rather than estimated.
  *
- * Width is the summed advance (subscripts and superscripts at
+ * Width is the summed advance of the spans at their real sizes (scripts at
  * `style.subscriptScale`), placed relative to the origin by `anchor`. Height
- * is one ascent above and one descent below the baseline, placed by
- * `baseline`. Both are estimates — see `GLYPH_ADVANCE_RATIO`.
+ * runs from the highest ascender to the deepest descender WITH the script
+ * shifts applied, placed by `baseline`.
  *
- * The run is measured as one unshifted line: the serialiser's sub- and
- * superscript `dy` offsets are not modelled here, so a superscript overshoots
- * this box by a px or two. The margin absorbs it at every shipped style. If a
- * caller ever wants a tight box around a charged formula, that is the term to
- * add — see `SUPERSCRIPT_DY_FACTOR` in svg/serialize.ts.
+ * A run whose spans are all empty measures zero wide and contributes nothing —
+ * the guard is what keeps an empty canvas collapsing to the origin so
+ * `nonDegenerate` can open it out, rather than being handed a sliver of a box
+ * around nothing.
+ *
+ * An all-superscript run legitimately measures a NEGATIVE descent: its lowest
+ * ink is still above the baseline. `addBox` is componentwise min/max and
+ * copes; clamping it to zero would re-inflate the box of every charged label.
  */
 function addTextRun(
   extent: Extent,
   run: TextRunPrimitive,
   style: RenderStyle,
 ): void {
-  let width = 0;
-  for (const span of run.spans) {
-    const size =
-      span.script === undefined
-        ? run.fontSizePx
-        : run.fontSizePx * style.subscriptScale;
-    width += [...span.text].length * size * GLYPH_ADVANCE_RATIO;
-  }
-  if (width === 0) return;
+  const box = measureTextRun(
+    run.spans,
+    {
+      fontFamily: run.fontFamily,
+      fontSizePx: run.fontSizePx,
+      subscriptScale: style.subscriptScale,
+      anchor: run.anchor,
+      baseline: run.baseline,
+    },
+    measurerFor(style),
+  );
+  if (box.advanceWidthPx === 0) return;
 
-  const left =
-    run.anchor === "start"
-      ? run.origin.x
-      : run.anchor === "middle"
-        ? run.origin.x - width / 2
-        : run.origin.x - width;
-
-  const ascent = run.fontSizePx * ASCENT_RATIO;
-  const descent = run.fontSizePx * DESCENT_RATIO;
-  // `origin.y` means a different line of the glyph box per baseline mode:
-  // the baseline itself, the visual centre, or the top of the ascenders.
-  const top =
-    run.baseline === "alphabetic"
-      ? run.origin.y - ascent
-      : run.baseline === "middle"
-        ? run.origin.y - (ascent + descent) / 2
-        : run.origin.y;
-
-  addBox(extent, left, top, left + width, top + ascent + descent);
+  const rect = textRunRect(box, run.origin);
+  addBox(extent, rect.minX, rect.minY, rect.maxX, rect.maxY);
 }
