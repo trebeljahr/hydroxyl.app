@@ -82,24 +82,31 @@ export interface Molecule {
   readonly nextId: number;
 }
 
-/** Input for creating an atom. Everything except the element has a default. */
+/**
+ * Input for creating an atom. Everything except the element has a default.
+ *
+ * The optional fields admit an explicit `undefined` — meaning "use the
+ * default" — because under `exactOptionalPropertyTypes` a bare `x?: number`
+ * rejects `{ isotope: labelled ? 13 : undefined }`, which is how a caller
+ * threading a maybe-value naturally writes it.
+ */
 export interface AtomInit {
   readonly element: ElementSymbol;
-  readonly pos?: Vec2;
-  readonly charge?: number;
-  readonly radicalElectrons?: number;
-  readonly isotope?: number;
-  readonly explicitHydrogenCount?: number;
-  readonly aromatic?: boolean;
-  readonly label?: string;
+  readonly pos?: Vec2 | undefined;
+  readonly charge?: number | undefined;
+  readonly radicalElectrons?: number | undefined;
+  readonly isotope?: number | undefined;
+  readonly explicitHydrogenCount?: number | undefined;
+  readonly aromatic?: boolean | undefined;
+  readonly label?: string | undefined;
 }
 
-/** Input for creating a bond. */
+/** Input for creating a bond. Optionals are widened as in `AtomInit`. */
 export interface BondInit {
   readonly from: AtomId;
   readonly to: AtomId;
-  readonly order?: BondOrder;
-  readonly stereo?: BondStereo;
-  readonly doubleBondSide?: DoubleBondSide;
-  readonly aromatic?: boolean;
+  readonly order?: BondOrder | undefined;
+  readonly stereo?: BondStereo | undefined;
+  readonly doubleBondSide?: DoubleBondSide | undefined;
+  readonly aromatic?: boolean | undefined;
 }

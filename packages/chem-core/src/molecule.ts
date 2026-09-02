@@ -13,6 +13,7 @@
  * Use `MoleculeBuilder` for anything bulk — importers, templates, tests.
  */
 
+import type { ElementSymbol } from "./elements.js";
 import type {
   Atom,
   AtomId,
@@ -82,25 +83,147 @@ export function hasAtom(mol: Molecule, id: AtomId): boolean {
   return id in mol.atoms;
 }
 
-/** Build an Atom record, omitting optional keys rather than setting them
- *  to undefined (exactOptionalPropertyTypes, and it keeps JSON clean). */
-function makeAtom(id: AtomId, init: AtomInit): Atom {
+// ---------------------------------------------------------------------------
+// Atom assembly
+//
+// Every Atom record in the package is born here. Building one by hand is what
+// silently loses data: each optional key has to be OMITTED rather than set to
+// undefined (`exactOptionalPropertyTypes` forbids the assignment, and it keeps
+// JSON and deep-equality clean), and because every one of them is optional,
+// TypeScript cannot flag a hand-rolled copy that forgets a newly added field —
+// it just compiles, and the field vanishes on every copy, paste and merge.
+// ---------------------------------------------------------------------------
+
+/** All of an atom's fields except its id, with the optional ones widened so a
+ *  caller may pass `undefined` to mean "there is no such key". */
+interface AtomFields {
+  readonly element: ElementSymbol;
+  readonly pos: Vec2;
+  readonly charge: number;
+  readonly radicalElectrons: number;
+  readonly aromatic: boolean;
+  readonly isotope?: number | undefined;
+  readonly explicitHydrogenCount?: number | undefined;
+  readonly label?: string | undefined;
+}
+
+/**
+ * Compile-time guard: every optional key of `Atom` must be listed in
+ * `AtomFields`. Adding one to types.ts without teaching `assembleAtom` about
+ * it is then a type error here, rather than a field that quietly disappears
+ * from every fragment copy and every merge survivor.
+ */
+type OptionalAtomKeys = {
+  [K in keyof Atom]-?: undefined extends Atom[K] ? K : never;
+}[keyof Atom];
+type AtomFieldsAreComplete = OptionalAtomKeys extends keyof AtomFields
+  ? true
+  : never;
+const ATOM_FIELDS_ARE_COMPLETE: AtomFieldsAreComplete = true;
+void ATOM_FIELDS_ARE_COMPLETE;
+
+/** The one place an Atom record is assembled. */
+function assembleAtom(id: AtomId, fields: AtomFields): Atom {
   const atom: {
     -readonly [K in keyof Atom]: Atom[K];
   } = {
     id,
+    element: fields.element,
+    pos: fields.pos,
+    charge: fields.charge,
+    radicalElectrons: fields.radicalElectrons,
+    aromatic: fields.aromatic,
+  };
+  if (fields.isotope !== undefined) atom.isotope = fields.isotope;
+  if (fields.explicitHydrogenCount !== undefined) {
+    atom.explicitHydrogenCount = fields.explicitHydrogenCount;
+  }
+  if (fields.label !== undefined) atom.label = fields.label;
+  return atom;
+}
+
+/** Build an Atom from an `AtomInit`, filling in the defaults. */
+export function makeAtom(id: AtomId, init: AtomInit): Atom {
+  return assembleAtom(id, {
     element: init.element,
     pos: init.pos ?? ORIGIN,
     charge: init.charge ?? 0,
     radicalElectrons: init.radicalElectrons ?? 0,
     aromatic: init.aromatic ?? false,
-  };
-  if (init.isotope !== undefined) atom.isotope = init.isotope;
-  if (init.explicitHydrogenCount !== undefined) {
-    atom.explicitHydrogenCount = init.explicitHydrogenCount;
+    isotope: init.isotope,
+    explicitHydrogenCount: init.explicitHydrogenCount,
+    label: init.label,
+  });
+}
+
+/**
+ * Changes to apply while copying an atom.
+ *
+ * A key absent from the bag leaves the field alone. A key present with the
+ * value `undefined` on an OPTIONAL field deletes it, so the copy is deep-equal
+ * to an atom that never carried it. Telling those two cases apart needs
+ * `Object.hasOwn`, never `x !== undefined` — which is why the patch layer in
+ * ops.ts cannot express itself with a plain spread.
+ */
+export interface AtomOverrides {
+  readonly id?: AtomId;
+  readonly element?: ElementSymbol;
+  readonly pos?: Vec2;
+  readonly charge?: number;
+  readonly radicalElectrons?: number;
+  readonly aromatic?: boolean;
+  readonly isotope?: number | undefined;
+  readonly explicitHydrogenCount?: number | undefined;
+  readonly label?: string | undefined;
+}
+
+/**
+ * Copy an atom, applying `overrides`. Fields the overrides do not mention are
+ * carried across verbatim — including optional ones, which is the whole point:
+ * fragment extraction, paste and merge all copy atoms, and none of them should
+ * have to know which optional fields exist this week.
+ *
+ * Required fields use `??` so an `undefined` that slipped through an `any`
+ * boundary is ignored rather than written into the record.
+ */
+export function cloneAtomWith(source: Atom, overrides: AtomOverrides): Atom {
+  return assembleAtom(overrides.id ?? source.id, {
+    element: overrides.element ?? source.element,
+    pos: overrides.pos ?? source.pos,
+    charge: overrides.charge ?? source.charge,
+    radicalElectrons: overrides.radicalElectrons ?? source.radicalElectrons,
+    aromatic: overrides.aromatic ?? source.aromatic,
+    isotope: Object.hasOwn(overrides, "isotope")
+      ? overrides.isotope
+      : source.isotope,
+    explicitHydrogenCount: Object.hasOwn(overrides, "explicitHydrogenCount")
+      ? overrides.explicitHydrogenCount
+      : source.explicitHydrogenCount,
+    label: Object.hasOwn(overrides, "label") ? overrides.label : source.label,
+  });
+}
+
+/**
+ * Field-wise equality, used to decide whether an edit actually changed
+ * anything and so whether a new molecule needs allocating at all.
+ *
+ * Written over `Object.keys` rather than as a list of comparisons so that a
+ * field added to `Atom` later is compared automatically; a forgotten field
+ * would otherwise make an edit look like a no-op and be dropped. `pos` is
+ * compared by value because a fresh Vec2 with the same coordinates has not
+ * moved the atom anywhere.
+ */
+export function atomsEqual(a: Atom, b: Atom): boolean {
+  const keys = Object.keys(a) as (keyof Atom)[];
+  if (keys.length !== Object.keys(b).length) return false;
+  for (const key of keys) {
+    if (key === "pos") {
+      if (a.pos.x !== b.pos.x || a.pos.y !== b.pos.y) return false;
+      continue;
+    }
+    if (a[key] !== b[key]) return false;
   }
-  if (init.label !== undefined) atom.label = init.label;
-  return atom;
+  return true;
 }
 
 function makeBond(id: BondId, init: BondInit): Bond {

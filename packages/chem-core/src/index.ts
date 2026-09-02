@@ -14,3 +14,6 @@ export * from "./molecule.js";
 export * from "./valence.js";
 export * from "./formula.js";
 export * from "./builders.js";
+export * from "./ops.js";
+export * from "./transform.js";
+export * from "./fragment.js";

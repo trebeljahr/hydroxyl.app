@@ -9,7 +9,7 @@
  * Used by the tests, the ring/functional-group templates, and file importers.
  */
 
-import { emptyMolecule } from "./molecule.js";
+import { emptyMolecule, makeAtom } from "./molecule.js";
 import type {
   Atom,
   AtomId,
@@ -47,19 +47,11 @@ export class MoleculeBuilder {
 
   atom(element: string, pos: Vec2 = ORIGIN, extra: Partial<AtomInit> = {}): AtomId {
     const id = `a${this.nextId++}`;
-    const atom: { -readonly [K in keyof Atom]: Atom[K] } = {
-      id,
-      element,
-      pos,
-      charge: extra.charge ?? 0,
-      radicalElectrons: extra.radicalElectrons ?? 0,
-      aromatic: extra.aromatic ?? false,
-    };
-    if (extra.isotope !== undefined) atom.isotope = extra.isotope;
-    if (extra.explicitHydrogenCount !== undefined) {
-      atom.explicitHydrogenCount = extra.explicitHydrogenCount;
-    }
-    if (extra.label !== undefined) atom.label = extra.label;
+    // Through `makeAtom` rather than assembled here: that is the one place
+    // that knows to omit an absent optional key instead of storing undefined,
+    // and a second copy of the rule would drift the first time `Atom` grows a
+    // field. It is O(1), so it costs the linear build nothing.
+    const atom = makeAtom(id, { ...extra, element, pos });
     this.atomRecords[id] = atom;
     this.atomIds.push(id);
     return id;
