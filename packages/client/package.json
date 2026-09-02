@@ -3,11 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --port ${PORT:-6337}",
-    "build": "next build",
+    "dev": "node scripts/copy-rdkit.mjs && next dev --port ${PORT:-6337}",
+    "build": "node scripts/copy-rdkit.mjs && next build",
     "start": "next start --port ${PORT:-6337}",
     "lint": "eslint .",
-    "test": "vitest run",
+    "test": "node scripts/copy-rdkit.mjs && vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -26,12 +26,14 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@rdkit/rdkit": "2025.3.4-1.0.0",
     "@tailwindcss/postcss": "^4.3.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^25.8.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "esbuild": "^0.28.0",
     "eslint": "^9.39.4",
     "eslint-config-next": "^16.2.6",
     "jsdom": "^29.1.1",

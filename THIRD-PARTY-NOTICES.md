@@ -4,6 +4,52 @@ Components redistributed with chemistry-sketcher, and — because this tool's
 whole output is a file someone else opens — the terms that apply when that
 output travels.
 
+## RDKit MinimalLib (the chemistry oracle)
+
+- **Files:** `packages/client/public/rdkit/RDKit_minimal.wasm` (6.9 MB) and
+  `RDKit_minimal.js` (128 kB), staged out of `node_modules/@rdkit/rdkit` by
+  `packages/client/scripts/copy-rdkit.mjs` on every dev, build and test run.
+  They are gitignored, not committed: the same script writes
+  `packages/client/public/rdkit/THIRD-PARTY-NOTICES.txt` beside them, carrying
+  the RDKit `LICENSE` file verbatim, so the notice travels with the binary
+  into `out/` and into the Docker image rather than living only here.
+- **Version:** `@rdkit/rdkit` 2025.3.4-1.0.0, wrapping RDKit 2025.03.4.
+- **Copyright:** Copyright (c) 2006-2024, Rational Discovery LLC, Google Inc.,
+  and others. See the shipped `LICENSE`.
+- **Licence:** BSD 3-Clause.
+
+### Why RDKit, and why only at the edges
+
+RDKit is this project's stated import/export ORACLE, and `chem-core`'s valence
+table is calibrated against its default table on purpose — divergence shows up
+as a hydrogen appearing or vanishing across a SMILES round trip. But chem-core
+must never depend on it, directly or in a type: the editor has to draw, edit
+and export a structure with the wasm never having loaded, on a laptop with no
+network. So RDKit lives entirely behind `packages/client/src/lib/rdkit/`, in a
+worker, loaded on the first import or export and never before.
+
+### What is actually inside the wasm
+
+The 6.9 MB file statically links more than RDKit, and two of those components
+are not BSD. All four are named in the shipped `THIRD-PARTY-NOTICES.txt`:
+
+- **RDKit** — BSD 3-Clause.
+- **IUPAC InChI Software, version 1.07.3** — the IUPAC/InChI-Trust Licence,
+  which is NOT BSD. Linked because `RDK_BUILD_INCHI_SUPPORT` is on, which is
+  what makes `toInchi` possible.
+- **Boost** — Boost Software License 1.0.
+- **coordgenlibs** (Schrödinger, Inc.) — BSD 3-Clause. What
+  `generate2DCoords` actually runs.
+
+A notice carrying only the RDKit text would be incomplete, which is why the
+generated file reproduces the Boost licence in full and points at the InChI
+Trust's terms by name and version.
+
+### Obligations that reach an exported figure
+
+None. BSD 3-Clause governs redistribution of the software, and a molfile or an
+SVG this tool produces is neither the software nor a derivative work of it.
+
 ## Arimo (the figure font)
 
 - **Files:** `packages/chem-render/assets/arimo-latin-400-normal.woff`,

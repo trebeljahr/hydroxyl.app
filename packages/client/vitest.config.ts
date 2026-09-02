@@ -25,7 +25,7 @@ export default defineConfig({
           // into the next assertion.
           globals: true,
           include: ["src/**/*.test.{ts,tsx}", "test/**/*.test.{ts,tsx}"],
-          exclude: [...configDefaults.exclude, "src/state/**"],
+          exclude: [...configDefaults.exclude, "src/state/**", "src/**/*.node.test.ts"],
           setupFiles: ["./test/setup.ts"],
         },
       },
@@ -35,6 +35,21 @@ export default defineConfig({
           name: "node",
           environment: "node",
           include: ["src/state/**/*.test.ts"],
+        },
+      },
+      {
+        resolve: { alias },
+        test: {
+          // *.node.test.ts: everything that needs a real filesystem or the
+          // real RDKit wasm. jsdom has no Worker and cannot fetch the wasm,
+          // so the fidelity harness runs here instead — against @rdkit/rdkit
+          // loaded directly, with the worker treated as the transport shell
+          // it is. Slower than the other two projects by an order of
+          // magnitude, hence its own name.
+          name: "rdkit",
+          environment: "node",
+          include: ["src/**/*.node.test.ts"],
+          testTimeout: 30_000,
         },
       },
     ],

@@ -34,6 +34,12 @@ android/
 # Next.js static export output (produced by `NEXT_FILE_EXPORT=1 pnpm build`)
 packages/client/out/
 
+# RDKit staged into public/ by packages/client/scripts/copy-rdkit.mjs: a
+# 6.9 MB wasm, the emscripten glue, the esbuild-bundled worker and the
+# generated licence notice. All four are derived from node_modules and
+# regenerate on every dev/build/test run.
+packages/client/public/rdkit/
+
 # Environment (committed: .env.example, .env.development, AND
 #              .env.production — because production values are
 #              encrypted via dotenvx, not plaintext).

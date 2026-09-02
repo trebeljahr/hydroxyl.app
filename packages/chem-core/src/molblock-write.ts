@@ -78,8 +78,36 @@ const MAX_ENCODABLE_HYDROGENS = 4;
 /** `vvv` holds 1..14, with 15 meaning "valence zero" (0 means unspecified). */
 const MAX_ENCODABLE_VALENCE = 14;
 
+/** `vvv` of 15 means "valence zero", since 0 already means "unspecified". */
+const VALENCE_ZERO_CODE = 15;
+
 /** Every coordinate field is `%10.4f`: ten columns, no separator. */
 const COORD_WIDTH = 10;
+
+/**
+ * Which molfile field carries the hydrogen count.
+ *
+ * `hhh` is what the CTfile spec calls a QUERY field, and readers are entitled
+ * to treat it that way. RDKit does: a nonzero `hhh` turns the atom into a
+ * query atom with `setNoImplicit(true)` and an implicit-H-count QUERY, and
+ * never sets a real hydrogen count — so a molblock written with `hhh` reaches
+ * RDKit as a molecule with NO hydrogens at all, silently and with nothing
+ * logged. Measured: chem-core benzene arrives as `[c]1[c][c][c][c][c]1`, C6
+ * rather than C6H6, and ethanol as C2O.
+ *
+ * `"hhh"` is the default because it is what this writer has always emitted and
+ * what its own reader inverts; it is the right choice for a file this package
+ * will read back, and for readers that treat `hhh` as an assertion.
+ *
+ * `"valence"` says nothing at all about an atom whose hydrogens the reader can
+ * derive, and states `vvv` (the TOTAL valence, which is not a query field) for
+ * an atom whose count is PINNED — the one case no valence table can recover,
+ * pyrrole's N-H and stannabenzene's being the standing examples. Silence is
+ * the higher-fidelity choice for a reader with its own valence table, because
+ * this package's table is calibrated to RDKit's on purpose; an assertion can
+ * only ever disagree with it.
+ */
+export type HydrogenAssertion = "hhh" | "valence";
 
 export interface MolblockWriteOptions {
   /** Line 1 of the header. Newlines are stripped; clipped to 80 characters. */
@@ -88,6 +116,8 @@ export interface MolblockWriteOptions {
   readonly comment?: string | undefined;
   /** Overrides `MOLFILE_BOND_LENGTH`. Model coordinates are multiplied by it. */
   readonly coordinateScale?: number | undefined;
+  /** See `HydrogenAssertion`. Defaults to `"hhh"`. */
+  readonly hydrogenAssertion?: HydrogenAssertion | undefined;
 }
 
 /**
@@ -221,6 +251,7 @@ function radicalCode(electrons: number): number {
  */
 export function writeMolblock(mol: Molecule, options: MolblockWriteOptions = {}): string {
   const scale = options.coordinateScale ?? MOLFILE_BOND_LENGTH;
+  const assertion = options.hydrogenAssertion ?? "hhh";
 
   // Collected across the whole molecule and reported in one go: a user who
   // abbreviated six groups wants one dialog listing six, not six dialogs.
@@ -337,7 +368,28 @@ export function writeMolblock(mol: Molecule, options: MolblockWriteOptions = {})
     const hydrogens = Math.max(implicitHydrogenCount(hSource, atomId), 0);
     let hydrogenField = 0;
     let valenceField = 0;
-    if (hydrogens <= MAX_ENCODABLE_HYDROGENS) {
+    // In "valence" mode an unpinned atom is left unstated, so the reader
+    // derives with its own table. Only a PIN is worth a field: it is the
+    // model saying "do not derive", and it is the one thing a valence table
+    // cannot recover.
+    const stateIt = assertion === "hhh" || atom.explicitHydrogenCount !== undefined;
+    if (!stateIt) {
+      // nothing to say
+    } else if (assertion !== "hhh") {
+      // `vvv` is the total valence, not a query field, and the reader already
+      // subtracts the drawn bonds back off it. 15 is the spec's "valence
+      // zero", since 0 already means "unspecified".
+      const total = Math.round(bondOrderSum(hSource, atomId) + hydrogens);
+      if (total > MAX_ENCODABLE_VALENCE) {
+        throw new Error(
+          `Atom ${atomId} carries ${hydrogens} hydrogens, and its total ` +
+            `valence of ${total} exceeds the ${MAX_ENCODABLE_VALENCE} the ` +
+            `V2000 valence field can express. Reduce the hydrogen count or ` +
+            `use V3000.`,
+        );
+      }
+      valenceField = total === 0 ? VALENCE_ZERO_CODE : total;
+    } else if (hydrogens <= MAX_ENCODABLE_HYDROGENS) {
       hydrogenField = hydrogens + 1;
     } else {
       // Past H4 the `hhh` field is out of room, so the count goes out as a
@@ -379,7 +431,9 @@ export function writeMolblock(mol: Molecule, options: MolblockWriteOptions = {})
         `${int(hydrogenField, 3)}` +
         // bbb stereo care box (a query feature), then vvv valence. vvv is 0 —
         // "use the element's default" — for every atom whose hydrogens fit in
-        // hhh above, which is all of them bar the extreme cases handled there.
+        // hhh above, which under the default assertion is all of them bar the
+        // extreme cases handled there, and under "valence" is every atom that
+        // is not pinned.
         `  0${int(valenceField, 3)}` +
         // HHH rrr iii mmm nnn eee — obsolete or reaction-only.
         `  0  0  0  0  0  0`,

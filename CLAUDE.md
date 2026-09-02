@@ -89,6 +89,33 @@ Invariants to preserve when editing it:
   when an element has no verified monoisotopic value. Do not "fix" this by
   falling back — a plausible wrong mass is worse than an error.
 
+### RDKit lives behind a worker, and only at the edges
+
+RDKit-WASM is the import/export oracle (`@rdkit/rdkit`, BSD-3, 6.9 MB), and
+the entire dependency is confined to `packages/client/src/lib/rdkit/`.
+
+- **chem-core must never depend on it**, not even in a type. The editor has to
+  draw, edit and export with the wasm never loaded.
+- **`packages/client/scripts/copy-rdkit.mjs` stages it into
+  `public/rdkit/`** — the wasm, the emscripten glue, an esbuild bundle of
+  `worker.ts`, and a generated `THIRD-PARTY-NOTICES.txt`. All four are
+  gitignored and regenerate on every `dev`, `build` and `test`. Do NOT route
+  the wasm or the worker through Turbopack: `new Worker(new URL("./worker.ts",
+  import.meta.url))` resolves the emitted chunk against `location.origin`,
+  which drops any subpath the static export is served under, 404s, and reports
+  it as an error event with an EMPTY message.
+- **chem-core's molblock codec is the only translation layer.** RDKit never
+  sees a chem-core type and chem-core never sees a JSMol; text is the whole
+  interface, which is what lets the fidelity harness run with no worker.
+- **Write molblocks for RDKit with `hydrogenAssertion: "valence"`.** The
+  default `hhh` field is a QUERY field per the CTfile spec and RDKit treats it
+  as one — benzene written with it arrives as C6, silently, with an empty log.
+- **The fidelity harness never asserts on a SMILES string**, because RDKit
+  canonicalises the right and the wrong answer to the same one. It asserts on
+  chem-core's own queries, and on more than `elementCounts` and `netCharge`:
+  those two are identical for a sulfone and its charge-separated form, for
+  glycine's neutral and zwitterionic forms, and for 13-C methane and 12-C.
+
 ## How to Run
 
 ```bash

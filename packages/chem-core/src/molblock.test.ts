@@ -379,6 +379,80 @@ describe("hydrogen assertions", () => {
   });
 });
 
+describe('hydrogenAssertion: "valence"', () => {
+  // Why this mode exists: `hhh` is a QUERY field per the CTfile spec, and
+  // RDKit reads it as one — a nonzero hhh makes the atom a query atom with
+  // noImplicit set and no real hydrogen count, so a molblock written the
+  // default way reaches RDKit as C6 rather than C6H6. Measured against
+  // RDKit 2025.03.4. The client's RDKit bridge writes in this mode.
+  const hCol = (line: string) => line.slice(42, 45);
+  const vCol = (line: string) => line.slice(48, 51);
+  const atomLines = (text: string) => {
+    const lines = text.split("\n");
+    const count = Number.parseInt(lines[3]?.slice(0, 3) ?? "0", 10);
+    return lines.slice(4, 4 + count);
+  };
+
+  it("says nothing about an atom whose hydrogens a valence table can derive", () => {
+    const text = writeMolblock(pyrrole(), { hydrogenAssertion: "valence" });
+    for (const line of atomLines(text)) {
+      expect(hCol(line)).toBe("  0");
+      expect(vCol(line)).toBe("  0");
+    }
+  });
+
+  it("still round-trips through this package's own reader", () => {
+    for (const mol of [ethanol(), acetate(), dimethylSulfone(), pyrrole(), benzene()]) {
+      const restored = readMolblock(
+        writeMolblock(mol, { hydrogenAssertion: "valence" }),
+      ).molecule;
+      expect(elementCounts(restored)).toEqual(elementCounts(mol));
+      expect(netCharge(restored)).toBe(netCharge(mol));
+    }
+  });
+
+  it("states vvv for a PINNED count, which no valence table can recover", () => {
+    // A carbanion-shaped carbon: three drawn bonds, zero hydrogens. Valence
+    // would derive one, so the pin has to travel.
+    const pinned = buildMolecule((b) => {
+      const c = b.atom("C", vec(0, 0), { explicitHydrogenCount: 0 });
+      const m1 = b.atom("C", vec(1, 0));
+      const m2 = b.atom("C", vec(-0.5, 0.87));
+      const m3 = b.atom("C", vec(-0.5, -0.87));
+      b.bond(c, m1, 1);
+      b.bond(c, m2, 1);
+      b.bond(c, m3, 1);
+    });
+    const text = writeMolblock(pinned, { hydrogenAssertion: "valence" });
+    const lines = atomLines(text);
+    // 3 sigma bonds + 0 H = total valence 3.
+    expect(vCol(lines[0] ?? "")).toBe("  3");
+    expect(hCol(lines[0] ?? "")).toBe("  0");
+    for (const line of lines.slice(1)) expect(vCol(line)).toBe("  0");
+    expect(elementCounts(readMolblock(text).molecule)).toEqual({ C: 4, H: 9 });
+  });
+
+  it("encodes a pinned zero-valence atom as vvv 15, not as silence", () => {
+    // vvv 0 means "unspecified", so a lone pinned-to-nothing atom needs the
+    // spec's dedicated code or the pin evaporates.
+    const lone = buildMolecule((b) => {
+      b.atom("C", vec(0, 0), { explicitHydrogenCount: 0 });
+    });
+    const text = writeMolblock(lone, { hydrogenAssertion: "valence" });
+    expect(vCol(atomLines(text)[0] ?? "")).toBe(" 15");
+    expect(elementCounts(readMolblock(text).molecule)).toEqual({ C: 1 });
+  });
+
+  it("leaves the default alone", () => {
+    // The default is load-bearing for every other caller and for this
+    // package's own fixtures; adding the option must not have moved it.
+    expect(writeMolblock(pyrrole())).toBe(
+      writeMolblock(pyrrole(), { hydrogenAssertion: "hhh" }),
+    );
+    expect(hCol(atomLines(writeMolblock(pyrrole()))[0] ?? "")).toBe("  2");
+  });
+});
+
 describe("aromatic bond type 4", () => {
   it("imports kekulised, with no aromatic flags left", () => {
     const { molecule, warnings } = readMolblock(AROMATIC_BENZENE);
