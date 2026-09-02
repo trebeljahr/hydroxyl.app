@@ -14,6 +14,7 @@ import {
   fromPolar,
   getAtom,
   ORIGIN,
+  setAtomPosition,
 } from "@starter/chem-core";
 import type { Molecule, Vec2 } from "@starter/chem-core";
 import { describe, expect, it } from "vitest";
@@ -23,7 +24,7 @@ import { representation } from "../src/representation.js";
 import { buildScene } from "../src/scene/build.js";
 import { detectCollisions } from "../src/scene/collide.js";
 import type { CollisionKind } from "../src/scene/collide.js";
-import { PUBLICATION_STYLE } from "../src/style.js";
+import { PUBLICATION_STYLE, SCREEN_STYLE } from "../src/style.js";
 
 const SKELETAL = representation("skeletal");
 
@@ -35,6 +36,45 @@ function step(from: Vec2, degrees: number): Vec2 {
 function kindsFor(mol: Molecule): CollisionKind[] {
   const scene = buildScene(mol, PUBLICATION_STYLE, SKELETAL);
   return detectCollisions(scene, mol).collisions.map((c) => c.kind);
+}
+
+/** Every structural view at both presets, with and without the circle. */
+const VIEWS = ["skeletal", "kekule", "explicitH", "lewis"] as const;
+const PRESETS = [
+  ["publication", PUBLICATION_STYLE],
+  ["screen", SCREEN_STYLE],
+] as const;
+
+function* everyRendering(
+  mol: Molecule,
+): Generator<readonly [string, ReturnType<typeof detectCollisions>]> {
+  for (const [presetName, style] of PRESETS) {
+    for (const view of VIEWS) {
+      for (const circles of [false, true]) {
+        const scene = buildScene(
+          mol,
+          style,
+          representation(view, { aromaticCircles: circles }),
+        );
+        yield [
+          `${view}/${presetName}${circles ? "/circles" : ""}`,
+          detectCollisions(scene, mol),
+        ];
+      }
+    }
+  }
+}
+
+/** Every atom position turned `degrees` about the origin. */
+function rotated(mol: Molecule, degrees: number): Molecule {
+  const c = Math.cos(degrees * DEG);
+  const s = Math.sin(degrees * DEG);
+  let out = mol;
+  for (const id of mol.atomIds) {
+    const { x, y } = getAtom(out, id)!.pos;
+    out = setAtomPosition(out, id, { x: x * c - y * s, y: x * s + y * c });
+  }
+  return out;
 }
 
 describe("detectCollisions", () => {
@@ -56,6 +96,31 @@ describe("detectCollisions", () => {
       // nothing in common — that is `label-over-bond`, reported below.
       if (fixture.name === "unmergedDropOverlap") continue;
       expect(kindsFor(fixture.molecule), fixture.name).toEqual([]);
+    }
+  });
+
+  it("never reports one, in ANY view, at ANY preset, at ANY angle", () => {
+    // The version above is skeletal at one preset, and that is a weaker claim
+    // than the kind's own definition makes: skeletal draws no carbon labels,
+    // so most of the trimming in the app is not exercised by it at all. The
+    // bug this widening caught was a chrysene ring-fusion double bond whose
+    // second line re-entered a carbon label — invisible at skeletal, and
+    // invisible at every angle the fixtures happen to be drawn at.
+    //
+    // The rotations are the point. A trim failure that only shows up off the
+    // 30-degree grid is still a line through a glyph the moment an author
+    // rotates the structure.
+    for (const fixture of FIXTURES) {
+      if (fixture.name === "unmergedDropOverlap") continue;
+      for (const degrees of [0, 7, 23, 45, 61, 118, 197, 284, 331]) {
+        const mol = rotated(fixture.molecule, degrees);
+        for (const [label, report] of everyRendering(mol)) {
+          const own = report.collisions.filter(
+            (c) => c.kind === "label-over-own-bond",
+          );
+          expect(own, `${fixture.name} ${label} rotated ${degrees}`).toEqual([]);
+        }
+      }
     }
   });
 

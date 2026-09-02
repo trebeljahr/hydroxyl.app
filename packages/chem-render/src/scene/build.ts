@@ -287,7 +287,17 @@ function pushBondPrimitives(
   if (axis === undefined) return;
 
   const stroke = { color: style.colors.bond, width: style.bondLineWidthPx };
-  const line = (suffix: string, ends: { a: ScenePoint; b: ScenePoint }): void => {
+  const line = (
+    suffix: string,
+    ends: { a: ScenePoint; b: ScenePoint } | undefined,
+  ): void => {
+    // `undefined` is a parallel copy that its own trimming left with nothing:
+    // the axis cleared both labels but this line, running a gap to one side,
+    // did not. Drawing the stub anyway would put a dash inside a glyph, which
+    // is the exact failure trimming exists to prevent — and a single-looking
+    // double bond at least matches what a reader can see is crowded. The bond
+    // losing EVERY line is reported as `bond-swallowed-by-labels`.
+    if (ends === undefined) return;
     const primitive: LinePrimitive = {
       id: `bond:${bondId}:${suffix}`,
       source: { kind: "bond", bondId },
@@ -300,15 +310,18 @@ function pushBondPrimitives(
   };
 
   const gap = style.doubleBondGapPx;
+  // The same floor the axis was held to: below its own stroke width a line is
+  // a blob, not a segment.
+  const minimum = style.bondLineWidthPx;
 
   // A TRIPLE BOND IS ALWAYS CENTRED, and its outer pair sits a FULL gap out,
   // not half of one: a centred double's two lines are a gap apart, so half a
   // gap here would make every alkyne read as a slightly thick double bond.
   if (bond.order === 3) {
     const normal = leftNormal(axis.unit);
-    line("line", offsetSegment(axis, normal, 0));
-    line("line2", offsetSegment(axis, normal, gap));
-    line("line3", offsetSegment(axis, normal, -gap));
+    line("line", offsetSegment(axis, normal, 0, 0, 0, minimum));
+    line("line2", offsetSegment(axis, normal, gap, 0, 0, minimum));
+    line("line3", offsetSegment(axis, normal, -gap, 0, 0, minimum));
     return;
   }
 
@@ -320,11 +333,16 @@ function pushBondPrimitives(
   const resolution = resolveDoubleBondSide(mol, bondId);
   if (resolution.kind === "centered") {
     const normal = leftNormal(axis.unit);
-    // Both lines full length and symmetric about the axis, which is how a
-    // centred double bond is drawn. There is deliberately NO line on the axis
-    // itself; `bond:<id>:line` is the first line drawn, not the centreline.
-    line("line", offsetSegment(axis, normal, gap / 2));
-    line("line2", offsetSegment(axis, normal, -gap / 2));
+    // Both lines symmetric about the axis, which is how a centred double bond
+    // is drawn. There is deliberately NO line on the axis itself;
+    // `bond:<id>:line` is the first line drawn, not the centreline.
+    //
+    // They are NOT necessarily the same length. Each is trimmed against the
+    // labels it actually runs into, so at a diagonal "OH" the two stop on the
+    // box outline at different distances — which is the label's shape showing
+    // through, not an asymmetry bug.
+    line("line", offsetSegment(axis, normal, gap / 2, 0, 0, minimum));
+    line("line2", offsetSegment(axis, normal, -gap / 2, 0, 0, minimum));
     return;
   }
 
@@ -354,6 +372,7 @@ function pushBondPrimitives(
         gap,
         { x: -axis.unit.x, y: -axis.unit.y },
       ),
+      minimum,
     ),
   );
 }

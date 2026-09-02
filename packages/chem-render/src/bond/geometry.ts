@@ -12,8 +12,10 @@
  *   bounding box of an "O" with a superscript charge is mostly empty air, and
  *   a bond arriving from below would stop as though the charge were in its way.
  *
- *   THE SECOND AND THIRD LINES. Where they sit relative to the axis, and how
- *   far short of the vertices the leaning one stops.
+ *   THE SECOND AND THIRD LINES. Where they sit relative to the axis, how far
+ *   short of the vertices the leaning one stops, and — the part that is easy
+ *   to get wrong — their OWN trimming. A parallel copy is not the trimmed axis
+ *   translated sideways; see `offsetSegment`.
  *
  * `style.labelPaddingPx` IS NOT APPLIED HERE. placement.ts applies it to every
  * span rect and every dot disc, once, and says so on `spanBox`: a trimmer that
@@ -60,6 +62,23 @@ export interface BondAxis {
   readonly unit: ScenePoint;
   /** Length of the DRAWN segment, `a` to `b`. */
   readonly length: number;
+  /**
+   * The two ATOM CENTRES and their labels, kept so that a parallel copy can
+   * repeat the trim from its own origin rather than inherit the axis's.
+   *
+   * Carried on the axis rather than passed alongside it because the two are
+   * only ever correct together: an offset copy trimmed against a different
+   * bond's labels is nonsense, and the type should not let it be spelled.
+   */
+  readonly untrimmed: BondEnds;
+}
+
+/** The untrimmed geometry an offset copy needs to trim itself. */
+export interface BondEnds {
+  readonly from: ScenePoint;
+  readonly to: ScenePoint;
+  readonly placementFrom: AtomLabelPlacement | undefined;
+  readonly placementTo: AtomLabelPlacement | undefined;
 }
 
 /**
@@ -114,6 +133,7 @@ export function bondAxis(
     b: { x: to.x + back.x * trimTo, y: to.y + back.y * trimTo },
     unit,
     length,
+    untrimmed: { from, to, placementFrom, placementTo },
   };
 }
 
@@ -137,16 +157,54 @@ function shift(point: ScenePoint, direction: ScenePoint, distance: number): Scen
   };
 }
 
-/** A parallel copy of `axis`'s segment, `offset` px along `normal`. */
+/**
+ * A parallel copy of the bond, `offset` px along `normal`, TRIMMED IN ITS OWN
+ * RIGHT — or undefined when nothing is left of it.
+ *
+ * The obvious implementation, translating the already-trimmed axis sideways,
+ * is wrong and the error is one-sided: it always pushes the copy back TOWARD
+ * the label. The axis stops exactly on the face of the clear box it exits, and
+ * a perpendicular shift off a face re-enters the box whenever the bond is not
+ * axis-aligned — up to `offset` px deep at 45 degrees. That is the whole of the
+ * `label-over-own-bond` report the collision pass used to fire on any rotated
+ * carbonyl. So the copy starts at the offset ATOM CENTRE and runs its own
+ * ray-exit against the same obstacle union.
+ *
+ * With `offset` 0 this reproduces `axis.a`/`axis.b` exactly, and for a bond
+ * between two bare vertices it reproduces the plain translation, which is why
+ * skeletal benzene is untouched by any of this.
+ *
+ * `insetStart`/`insetEnd` are applied ON TOP of the trim, both measured inward
+ * from the same vertex: the trim clears the label and the inset clears the
+ * neighbouring bond, and a vertex can need both.
+ */
 export function offsetSegment(
   axis: BondAxis,
   normal: ScenePoint,
   offset: number,
   insetStart = 0,
   insetEnd = 0,
-): { readonly a: ScenePoint; readonly b: ScenePoint } {
-  const a = shift(shift(axis.a, normal, offset), axis.unit, insetStart);
-  const b = shift(shift(axis.b, normal, offset), axis.unit, -insetEnd);
+  minimumLengthPx = 0,
+): { readonly a: ScenePoint; readonly b: ScenePoint } | undefined {
+  const { from, to, placementFrom, placementTo } = axis.untrimmed;
+  const back: ScenePoint = { x: -axis.unit.x, y: -axis.unit.y };
+
+  const start = shift(from, normal, offset);
+  const end = shift(to, normal, offset);
+
+  const trimStart =
+    placementFrom === undefined ? 0 : trimDistance(placementFrom, axis.unit, start);
+  const trimEnd =
+    placementTo === undefined ? 0 : trimDistance(placementTo, back, end);
+
+  const a = shift(start, axis.unit, trimStart + insetStart);
+  const b = shift(end, back, trimEnd + insetEnd);
+
+  // Signed along the axis, so a copy whose two ends crossed over comes out
+  // negative rather than as a short line pointing backwards.
+  const length = (b.x - a.x) * axis.unit.x + (b.y - a.y) * axis.unit.y;
+  if (length < minimumLengthPx) return undefined;
+
   return { a, b };
 }
 

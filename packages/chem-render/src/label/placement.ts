@@ -794,21 +794,31 @@ function placeRadicalDots(
 }
 
 /**
- * How far from the atom centre the label's occupied region extends along
- * `direction` — where a bond arriving from that direction should stop.
+ * How far from `origin` the label's occupied region extends along `direction`
+ * — where a line running that way should stop.
  *
  * Queries the obstacle UNION exactly, not the bounding box. `direction` is
  * taken as a unit vector and is not renormalised.
  *
- * The padded symbol rect always contains the atom centre, which is what
- * guarantees a ray from any neighbour hits something and comes back with a
- * sensible distance rather than 0.
+ * `origin` DEFAULTS TO THE ATOM CENTRE, which is the bond-axis case: the
+ * padded symbol rect always contains the centre, so a ray from any neighbour
+ * hits something and comes back with a sensible distance rather than 0.
+ *
+ * It is a parameter because the parallel copies of a multiple bond do NOT
+ * start at the centre. Shifting the axis's answer sideways is not the same
+ * number: a ray leaving a rectangle through a vertical face and then displaced
+ * perpendicular re-enters the slab, which is how the second line of a diagonal
+ * C=O ended up inside the "O" it had just been trimmed clear of. Each parallel
+ * copy runs its OWN ray-exit from its own origin. Off-centre origins are
+ * handled by the same slab test: a ray that misses every obstacle trims 0, one
+ * that crosses from outside trims to the far exit.
  */
 export function trimDistance(
   placement: AtomLabelPlacement,
   direction: ScenePoint,
+  origin: ScenePoint = placement.centre,
 ): number {
-  return rayExit(placement.obstacles, placement.centre, direction);
+  return rayExit(placement.obstacles, origin, direction);
 }
 
 /**

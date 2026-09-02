@@ -45,7 +45,12 @@ import type { LinePrimitive, RenderScene, ScenePoint, SceneSource } from "./type
 export type CollisionKind =
   /** A label lying across a bond it is not an endpoint of. The fused-ring case. */
   | "label-over-bond"
-  /** A label lying across its OWN bond. Trimming regressed; this must never fire. */
+  /**
+   * A label lying across its OWN bond. Trimming regressed; this must never
+   * fire. EVERY line of the bond counts, not just the axis — the second line
+   * of a double bond is trimmed in its own right precisely so that this stays
+   * true off the drawing grid.
+   */
   | "label-over-own-bond"
   | "label-over-label"
   /** Two atoms drawn on the same spot — a template drop that did not merge. */

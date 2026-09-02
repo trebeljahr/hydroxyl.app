@@ -31,6 +31,7 @@ import type { BondId, Molecule, Vec2 } from "@starter/chem-core";
 import { describe, expect, it } from "vitest";
 
 import { insetForVertex, leftNormal } from "../src/bond/geometry.js";
+import type { LabelObstacle } from "../src/label/placement.js";
 import { inscribedCircle } from "../src/bond/aromatic.js";
 import { resolveDoubleBondSide } from "../src/bond/doubleBond.js";
 import {
@@ -54,6 +55,46 @@ function linesOf(scene: RenderScene, bondId: BondId): LinePrimitive[] {
     (p): p is LinePrimitive =>
       p.type === "line" && p.source.kind === "bond" && p.source.bondId === bondId,
   );
+}
+
+/**
+ * How far the deepest sampled point of `line` sits inside the obstacle union,
+ * px — 0 when the line stays clear.
+ *
+ * Sampled, because the claim is about the whole drawn segment and not only its
+ * ends: a line can clear both boxes at its endpoints and still cut a corner.
+ * Strictly inside by a hairline, since a correctly trimmed end lands exactly
+ * ON the face it exited.
+ */
+function deepestPointInside(
+  obstacles: readonly LabelObstacle[],
+  line: LinePrimitive,
+): number {
+  const epsilon = 1e-9;
+  let deepest = 0;
+  for (let k = 0; k <= 64; k++) {
+    const t = k / 64;
+    const p: ScenePoint = {
+      x: line.a.x + (line.b.x - line.a.x) * t,
+      y: line.a.y + (line.b.y - line.a.y) * t,
+    };
+    for (const obstacle of obstacles) {
+      const box =
+        obstacle.kind === "rect"
+          ? obstacle.box
+          : {
+              minX: obstacle.centre.x - obstacle.radius,
+              minY: obstacle.centre.y - obstacle.radius,
+              maxX: obstacle.centre.x + obstacle.radius,
+              maxY: obstacle.centre.y + obstacle.radius,
+            };
+      const dx = Math.min(p.x - box.minX, box.maxX - p.x);
+      const dy = Math.min(p.y - box.minY, box.maxY - p.y);
+      const depth = Math.min(dx, dy);
+      if (depth > epsilon && depth > deepest) deepest = depth;
+    }
+  }
+  return deepest;
 }
 
 function midpoint(line: LinePrimitive): ScenePoint {
@@ -391,6 +432,40 @@ describe("trimming against a label", () => {
     expect(distance(up!.line.b, up!.to)).toBeGreaterThan(
       PUBLICATION_STYLE.labelPaddingPx,
     );
+  });
+
+  it("trims EVERY line of a multiple bond, not just the axis", () => {
+    // The regression this exists for: the second and third lines used to be
+    // the trimmed axis translated sideways. The axis stops exactly ON the face
+    // of the clear box it exits, and a perpendicular shift off a face lands
+    // back INSIDE the box on any bond that is not axis-aligned — so a rotated
+    // C=O drew its second line through the "O" it had just cleared.
+    //
+    // Swept rather than spot-checked. The failure is invisible on the axes and
+    // appears at a different angle for each face of the box, which is exactly
+    // why it survived a fixture set drawn on a tidy 30-degree grid.
+    for (const [element, order] of [
+      ["O", 2],
+      ["N", 3],
+    ] as const) {
+      for (const style of [PUBLICATION_STYLE, SCREEN_STYLE]) {
+        for (let degrees = 0; degrees < 360; degrees += 5) {
+          const mol = buildMolecule((b) => {
+            const carbon = b.atom("C", ORIGIN);
+            b.bond(carbon, b.atom(element, fromPolar(degrees * DEG, 1)), order);
+          });
+          const bondId = mol.bondIds[0]!;
+          const lines = linesOf(buildScene(mol, style, SKELETAL), bondId);
+          expect(lines.length, `${element} ${order} at ${degrees}`).toBe(order);
+          const placement = atomLabelPlacement(mol, mol.bonds[bondId]!.to, style, SKELETAL);
+          expect(placement).toBeDefined();
+          for (const line of lines) {
+            const worst = deepestPointInside(placement!.obstacles, line);
+            expect(worst, `${element} ${order} at ${degrees}, ${line.id}`).toBe(0);
+          }
+        }
+      }
+    }
   });
 
   it("does not trim at a bare vertex", () => {
