@@ -21,6 +21,7 @@ import { NO_COORDS } from "./ops.js";
 import { isReady, type WorkerMessage, type WorkerPayload, type WorkerRequest } from "./protocol.js";
 import {
   buildReport,
+  describeError,
   hasMeaningfulCoordinates,
   moleculeToMolblock,
   molblockToMolecule,
@@ -34,6 +35,7 @@ import {
   type CoordinateOutcome,
   type ImportedStructure,
   type InchiResult,
+  type Verification,
 } from "./types.js";
 
 /**
@@ -81,7 +83,22 @@ function ensureWorker(): Worker | undefined {
   // emitted chunk against `location.origin` and drops any subpath in the
   // static export — a 404 whose error event carries an empty message. See the
   // header of worker.ts.
-  const created = new Worker(`${rdkitAssetBase()}rdkit.worker.js`);
+  const url = `${rdkitAssetBase()}rdkit.worker.js`;
+  let created: Worker;
+  try {
+    created = new Worker(url);
+  } catch (error) {
+    // `new Worker` throws SYNCHRONOUSLY — it does not fire `onerror` — when
+    // the script URL is not same-origin. Every `file://` document counts:
+    // its origin is the string "null", so a script beside it is cross-origin
+    // and the constructor raises SecurityError. That is precisely the shell
+    // the static export exists for (an Electron or Capacitor build before a
+    // custom protocol is wired), where the page otherwise loads and hydrates
+    // perfectly, so an escaping exception here would break the boundary's
+    // never-throws contract in the one place it is least expected.
+    workerBroken = `The RDKit worker at ${url} could not be started: ${describeError(error)}`;
+    return undefined;
+  }
   created.onmessage = (event: MessageEvent<WorkerMessage>) => {
     const message = event.data;
     if (isReady(message)) return;
@@ -94,7 +111,7 @@ function ensureWorker(): Worker | undefined {
   created.onerror = () => {
     // The event's `.message` is empty for a 404 on the worker script itself,
     // so there is nothing useful to forward — say where it looked instead.
-    workerBroken = `The RDKit worker at ${rdkitAssetBase()}rdkit.worker.js could not be started.`;
+    workerBroken = `The RDKit worker at ${url} could not be started.`;
     failAll(workerBroken);
   };
   worker = created;
@@ -160,9 +177,37 @@ function opError(result: Extract<OpResult<WorkerPayload>, { ok: false }>): ChemI
  * drawing). The UI says different things about the two: one is expected, the
  * other threw away work someone may have done by hand.
  */
-function coordinateOutcome(hadCoords: number, generated: boolean): CoordinateOutcome {
+function coordinateOutcome(
+  hadCoords: number,
+  generated: boolean,
+  sourceHadLayout: boolean,
+): CoordinateOutcome {
   if (!generated) return "preserved";
-  return hadCoords === NO_COORDS ? "generated" : "regenerated";
+  // `hadCoords` alone is not enough. RDKit answers `has_coords() === 2` for a
+  // conformer whose every atom sits at 0,0,0 — measured — and chem-core's own
+  // `writeMolblock` of a molecule built at the origin produces exactly that
+  // file. Nothing was thrown away there, so it is `generated`, not
+  // `regenerated`.
+  return hadCoords === NO_COORDS || !sourceHadLayout ? "generated" : "regenerated";
+}
+
+/**
+ * How a re-read of RDKit's output turned out, as something the report can
+ * state rather than something an empty `diffs` implies.
+ */
+function verificationOf(ok: boolean): Verification {
+  return ok ? "verified" : "unavailable";
+}
+
+/**
+ * The note that goes with an `unavailable` verification.
+ *
+ * Without it the caller is told only that nothing is known; with it they are
+ * told why, which for the common case is "RDKit answered in V3000 and the
+ * codec here is V2000-only".
+ */
+function unverifiedNote(message: string): string {
+  return `RDKit's output could not be read back for checking, so this report does not say what changed: ${message}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -183,8 +228,9 @@ export async function toSmiles(mol: Molecule, title = ""): Promise<ChemIoResult<
     payload.smiles,
     buildReport(mol, round.ok ? round.value.molecule : undefined, {
       coordinates: "not-applicable",
+      verification: verificationOf(round.ok),
       warnings: round.ok ? round.report.warnings : [],
-      notes: result.notes,
+      notes: round.ok ? result.notes : [...result.notes, unverifiedNote(round.error.message)],
     }),
   );
 }
@@ -205,15 +251,20 @@ export async function fromSmiles(smiles: string): Promise<ChemIoResult<ImportedS
   if (!read.ok) return read;
   // No "before" to diff against — a SMILES is the input, not a molecule — so
   // the report carries the reader's warnings and RDKit's own log and nothing
-  // else. `read.report.diffs` still contributes the storage-form check.
-  return ok(read.value, {
-    ...buildReport(undefined, undefined, {
-      coordinates: coordinateOutcome(payload.hadCoords, payload.coordsGenerated),
+  // else. The storage-form check is not lost by that: `molblockToMolecule`
+  // now REFUSES a reading whose aromatic flags survived, so reaching here at
+  // all means the molecule is Kekule.
+  return ok(
+    read.value,
+    buildReport(undefined, undefined, {
+      coordinates: coordinateOutcome(payload.hadCoords, payload.coordsGenerated, false),
+      // Not `unavailable`: the input was a STRING, so there was never a
+      // molecule to diff against. Nothing went unchecked here.
+      verification: "not-applicable",
       warnings: read.report.warnings,
       notes: result.notes,
     }),
-    diffs: read.report.diffs,
-  });
+  );
 }
 
 /** InChI and its key. An empty key means the InChI layer refused the input. */
@@ -235,8 +286,9 @@ export async function toInchi(mol: Molecule, title = ""): Promise<ChemIoResult<I
     { inchi: payload.inchi, inchiKey: payload.inchiKey },
     buildReport(mol, round.ok ? round.value.molecule : undefined, {
       coordinates: "not-applicable",
+      verification: verificationOf(round.ok),
       warnings: round.ok ? round.report.warnings : [],
-      notes: result.notes,
+      notes: round.ok ? result.notes : [...result.notes, unverifiedNote(round.error.message)],
     }),
   );
 }
@@ -251,6 +303,7 @@ export async function toInchi(mol: Molecule, title = ""): Promise<ChemIoResult<I
 export async function toMolblock(mol: Molecule, title = ""): Promise<ChemIoResult<string>> {
   const written = moleculeToMolblock(mol, title);
   if (!written.ok) return written;
+  const hadLayout = hasMeaningfulCoordinates(mol);
   const result = await call({ op: "normalize", text: written.value, layout: layoutFor(mol) });
   if (!result.ok) return fail(opError(result));
   const payload = result.value as WorkerPayload;
@@ -258,9 +311,10 @@ export async function toMolblock(mol: Molecule, title = ""): Promise<ChemIoResul
   return ok(
     payload.molblock,
     buildReport(mol, round.ok ? round.value.molecule : undefined, {
-      coordinates: coordinateOutcome(payload.hadCoords, payload.coordsGenerated),
+      coordinates: coordinateOutcome(payload.hadCoords, payload.coordsGenerated, hadLayout),
+      verification: verificationOf(round.ok),
       warnings: round.ok ? round.report.warnings : [],
-      notes: result.notes,
+      notes: round.ok ? result.notes : [...result.notes, unverifiedNote(round.error.message)],
     }),
   );
 }
@@ -274,23 +328,38 @@ export async function toMolblock(mol: Molecule, title = ""): Promise<ChemIoResul
  * 3D file, whose flat projection would stack atoms on top of each other.
  */
 export async function fromMolblock(text: string): Promise<ChemIoResult<ImportedStructure>> {
-  const result = await call({ op: "normalize", text, layout: "preserve" });
+  // Read the FILE with chem-core FIRST. It is two things at once: the
+  // baseline the report diffs against, and the only thing that can tell an
+  // all-zero conformer from a real layout — RDKit cannot, it answers
+  // `has_coords() === 2` for a file whose every atom sits at 0,0,0, so
+  // "preserve" would import the structure stacked on the origin and call it
+  // preserved. A conformer that carries no layout is a conformer that is
+  // absent for our purposes, and the contract says absent means generate.
+  const source = molblockToMolecule(text);
+  const before = source.ok ? source.value.molecule : undefined;
+  const sourceHadLayout = before === undefined || hasMeaningfulCoordinates(before);
+
+  const result = await call({
+    op: "normalize",
+    text,
+    layout: sourceHadLayout ? "preserve" : "generate",
+  });
   if (!result.ok) return fail(opError(result));
   const payload = result.value as WorkerPayload;
   const read = molblockToMolecule(payload.molblock);
   if (!read.ok) return read;
-  // The "before" for the diff is chem-core's own reading of the FILE, so the
-  // report says what RDKit — and not the codec — changed. Best
-  // effort: a file chem-core refuses is still a legitimate RDKit import, and
-  // then there is simply nothing to diff against.
-  const source = molblockToMolecule(text);
-  const before = source.ok ? source.value.molecule : undefined;
   return ok(
     read.value,
     buildReport(before, before ? read.value.molecule : undefined, {
-      coordinates: coordinateOutcome(payload.hadCoords, payload.coordsGenerated),
+      coordinates: coordinateOutcome(payload.hadCoords, payload.coordsGenerated, sourceHadLayout),
+      // A file chem-core refuses — a V3000 block, say — is still a legitimate
+      // RDKit import, but it leaves nothing to diff against, and that is a
+      // different statement from "nothing changed". Measured: RDKit
+      // charge-separates the nitro group in a V3000 `CN(=O)=O` and the old
+      // report called it clean.
+      verification: verificationOf(source.ok),
       warnings: [...read.report.warnings, ...(source.ok ? source.report.warnings : [])],
-      notes: result.notes,
+      notes: source.ok ? result.notes : [...result.notes, unverifiedNote(source.error.message)],
     }),
   );
 }
@@ -307,7 +376,12 @@ export async function generate2DCoords(mol: Molecule): Promise<ChemIoResult<Mole
   return ok(
     read.value.molecule,
     buildReport(mol, read.value.molecule, {
-      coordinates: coordinateOutcome(payload.hadCoords, payload.coordsGenerated),
+      coordinates: coordinateOutcome(
+        payload.hadCoords,
+        payload.coordsGenerated,
+        hasMeaningfulCoordinates(mol),
+      ),
+      verification: "verified",
       warnings: read.report.warnings,
       notes: result.notes,
     }),
@@ -336,7 +410,12 @@ export async function canonicalize(
   return ok(
     { smiles: payload.smiles, molecule: read.value.molecule },
     buildReport(mol, read.value.molecule, {
-      coordinates: coordinateOutcome(payload.hadCoords, payload.coordsGenerated),
+      coordinates: coordinateOutcome(
+        payload.hadCoords,
+        payload.coordsGenerated,
+        hasMeaningfulCoordinates(mol),
+      ),
+      verification: "verified",
       warnings: read.report.warnings,
       notes: result.notes,
     }),

@@ -2,11 +2,11 @@
 # client-only surface this repo actually has.
 #
 #   1. verify        — install, typecheck, unit tests, production build,
-#                      and a static-export build. NEXT_FILE_EXPORT=1 is a
-#                      recorded binding decision (no route may use a
-#                      dynamic segment, no server may be added), so CI
-#                      guards it rather than discovering a break at
-#                      packaging time.
+#                      and a static-export build plus a shape check on its
+#                      output. NEXT_FILE_EXPORT=1 is a recorded binding
+#                      decision (no route may use a dynamic segment, no
+#                      server may be added), so CI guards it rather than
+#                      discovering a break at packaging time.
 #   2. e2e           — Playwright smoke run. playwright.config.ts's
 #                      webServer builds and serves the app on 6337; there
 #                      is no database, cache or object store to start.
@@ -64,6 +64,10 @@ jobs:
       - run: pnpm run build
       - name: Static export must keep building
         run: NEXT_FILE_EXPORT=1 pnpm run build
+      # "It built" is not "it runs": a nested page under assetPrefix "./"
+      # builds cleanly and then 404s every one of its own chunks.
+      - name: Static export must stay runnable
+        run: node packages/client/scripts/check-export.mjs
 
   e2e:
     runs-on: ubuntu-latest

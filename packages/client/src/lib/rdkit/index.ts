@@ -36,4 +36,5 @@ export type {
   ImportedStructure,
   InchiResult,
   MoleculeDiff,
+  Verification,
 } from "./types.js";

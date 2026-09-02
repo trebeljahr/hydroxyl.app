@@ -46,6 +46,11 @@ export type ChemIoErrorKind =
   | "unrepresentable"
   /** The text parsed, but atoms or bonds were dropped doing it. */
   | "lossy-import"
+  /** An aromatic system nothing could Kekulise. Refused rather than returned,
+   *  because Kekule IS the storage form: a molecule that still carries the
+   *  importer's aromatic flags is not a value this model may hold, and bond
+   *  type 4 is not a value that may cross into RDKit. Carries `atomIds`. */
+  | "unkekulizable"
   /** No Worker, or the wasm never loaded. */
   | "worker-unavailable"
   /** The worker accepted the request and never answered. */
@@ -86,7 +91,29 @@ export interface ChangeReport {
   /** RDKit log lines, timestamps stripped. Failures and a few warnings only. */
   readonly notes: readonly string[];
   readonly diffs: readonly MoleculeDiff[];
+  /**
+   * WHETHER `diffs` IS AN ANSWER OR AN ABSENCE OF ONE.
+   *
+   * Every diff is computed by reading RDKit's own output back through
+   * chem-core and comparing. When that re-read fails there is nothing to
+   * compare, and an empty `diffs` then means "not checked" rather than
+   * "nothing changed" — the two are opposites and must not share a
+   * representation. The mundane trigger is a V3000 molfile: chem-core's codec
+   * is V2000-only, and RDKit switches to V3000 on its own for a structure
+   * whose coordinates overflow the V2000 field width, so a legitimate export
+   * can come back unreadable while the molecule was in fact rewritten
+   * (measured: RDKit charge-separates `CN(=O)=O` on the way through).
+   */
+  readonly verification: Verification;
 }
+
+/**
+ * `verified` RDKit's output was read back and diffed · `unavailable` it could
+ * not be read back, so `diffs` says nothing either way · `not-applicable`
+ * there was never a "before" molecule to diff against, which is the honest
+ * answer for `fromSmiles`, where the input is a string.
+ */
+export type Verification = "verified" | "unavailable" | "not-applicable";
 
 /**
  * `preserved` the source's coordinates came through untouched ·
@@ -174,4 +201,5 @@ export const CLEAN_REPORT: ChangeReport = {
   warnings: [],
   notes: [],
   diffs: [],
+  verification: "not-applicable",
 };

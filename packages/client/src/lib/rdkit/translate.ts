@@ -12,7 +12,7 @@
 import {
   elementCounts,
   hasAromaticFlags,
-  kekulize,
+  kekulizeWithReport,
   MolblockLabelError,
   MolblockParseError,
   MOLFILE_BOND_LENGTH,
@@ -37,6 +37,7 @@ import {
   type ImportedStructure,
   type MoleculeDiff,
   type StereoCounts,
+  type Verification,
 } from "./types.js";
 
 /**
@@ -106,14 +107,23 @@ export function worstSeverity(
 /**
  * Model -> molblock, ready to hand to RDKit.
  *
- * Two things happen here that a naive `writeMolblock` call would miss.
+ * Three things happen here that a naive `writeMolblock` call would miss.
  *
- * KEKULE FIRST. Aromatic flags would go out as V2000 bond type 4, and a
- * type-4 record is a request that the reader kekulize it — which RDKit
- * refuses outright for a pyrrole whose N-H is not stated, returning null.
- * Kekulising here means exactly one representation crosses the boundary, per
- * the storage decision. `kekulize` returns the molecule BY REFERENCE when it
- * carries no flags, so this is free on the common path.
+ * KEKULE FIRST, AND ENFORCED. Aromatic flags would go out as V2000 bond type
+ * 4, and a type-4 record is a request that the reader kekulize it — which
+ * RDKit refuses outright for a pyrrole whose N-H is not stated, returning
+ * null. Kekulising here means exactly one representation crosses the
+ * boundary, per the storage decision. `kekulizeWithReport` returns the
+ * molecule BY REFERENCE when it carries no flags, so this is free on the
+ * common path.
+ *
+ * Kekulisation CAN FAIL, though — a component with no perfect matching is
+ * returned untouched, flags intact — and a failure that is not checked is not
+ * an enforcement. Measured: a flagged all-single-bond five-carbon ring comes
+ * back from `kekulize` unchanged, writes five type-4 bond rows, and RDKit
+ * answers "Can't kekulize mol". So the result is checked and the operation
+ * REFUSES, with the offending atom ids, rather than emitting a bond type the
+ * storage form does not have.
  *
  * `hydrogenAssertion: "valence"`. The default `hhh` field is a QUERY field
  * per the CTfile spec and RDKit treats it as one: a nonzero hhh makes the
@@ -130,8 +140,22 @@ export function moleculeToMolblock(mol: Molecule, title = ""): ChemIoResult<stri
         `${mol.bondIds.length} bonds; the counts fields are three characters wide.`,
     });
   }
+  const kekulised = kekulizeWithReport(mol);
+  if (kekulised.unkekulizedAtomIds.length > 0 || hasAromaticFlags(kekulised.molecule)) {
+    return fail({
+      kind: "unkekulizable",
+      message:
+        "This structure carries aromatic flags that no Kekule structure resolves, " +
+        "so it cannot be written without emitting bond type 4 — which is not the " +
+        "storage form and which RDKit refuses to read back.",
+      atomIds:
+        kekulised.unkekulizedAtomIds.length > 0
+          ? kekulised.unkekulizedAtomIds
+          : aromaticFlaggedAtomIds(kekulised.molecule),
+    });
+  }
   try {
-    const text = writeMolblock(kekulize(mol), {
+    const text = writeMolblock(kekulised.molecule, {
       title,
       coordinateScale: COORDINATE_SCALE,
       hydrogenAssertion: "valence",
@@ -180,18 +204,33 @@ export function molblockToMolecule(text: string): ChemIoResult<ImportedStructure
     });
   }
 
+  // A flag that survived the reader's own kekulisation is not a caveat, it is
+  // a storage-form violation: the model would then hold a perception it is
+  // not allowed to hold, and a five-carbon flagged ring derives C5H5 where
+  // its Kekule reading is C5H6 — genuinely a different molecule. Returning it
+  // with a diff attached still returns it; refusing is what actually holds
+  // the contract.
   const flagged = aromaticFlaggedAtomIds(read.molecule);
-  const diffs: MoleculeDiff[] =
-    flagged.length > 0 ? [{ kind: "aromatic-flags-survived", atomIds: flagged }] : [];
+  if (flagged.length > 0) {
+    return fail({
+      kind: "unkekulizable",
+      message:
+        "The structure contains an aromatic system that could not be given a Kekule " +
+        "structure, and Kekule is the only form this editor stores.",
+      atomIds: flagged,
+      warnings: read.warnings,
+    });
+  }
 
   return ok(
     { molecule: read.molecule, title: read.title },
     {
-      severity: worstSeverity(severity, diffs.length > 0 ? "changed" : "clean"),
+      severity,
       coordinates: "not-applicable",
       warnings: read.warnings,
       notes: [],
-      diffs,
+      diffs: [],
+      verification: "not-applicable",
     },
   );
 }
@@ -381,11 +420,21 @@ export function diffMolecules(before: Molecule, after: Molecule): MoleculeDiff[]
  */
 export const COORDINATE_TOLERANCE = 1e-4;
 
+/**
+ * `verification` is REQUIRED, and deliberately not inferred from whether
+ * `before` and `after` happen to be present.
+ *
+ * Inferring it is the bug this parameter exists to prevent: a re-read that
+ * failed and an operation that never had a "before" both arrive here as
+ * `undefined`, and collapsing them makes an unchecked result read exactly
+ * like a verified-clean one. Only the caller knows which it was.
+ */
 export function buildReport(
   before: Molecule | undefined,
   after: Molecule | undefined,
   options: {
     readonly coordinates: CoordinateOutcome;
+    readonly verification: Verification;
     readonly warnings?: readonly MolblockWarning[];
     readonly notes?: readonly string[];
   },
@@ -404,8 +453,18 @@ export function buildReport(
     diffs.length > 0 ? "changed" : "clean",
     notes.length > 0 ? "info" : "clean",
     options.coordinates === "generated" || options.coordinates === "regenerated" ? "info" : "clean",
+    // Never `clean`: an unverified result is not a result that says nothing
+    // changed, and a banner-less UI would present it as one.
+    options.verification === "unavailable" ? "info" : "clean",
   );
-  return { severity, coordinates: options.coordinates, warnings, notes, diffs };
+  return {
+    severity,
+    coordinates: options.coordinates,
+    warnings,
+    notes,
+    diffs,
+    verification: options.verification,
+  };
 }
 
 export function describeError(error: unknown): string {

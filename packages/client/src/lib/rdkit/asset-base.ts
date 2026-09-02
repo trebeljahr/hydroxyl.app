@@ -19,11 +19,14 @@
  * it would be right for the export and wrong for a standalone deployment
  * whose page happens to sit at `/editor/`.
  *
- * KNOWN LIMIT, and not this module's to fix: under `assetPrefix:"./"` Next
- * writes the same relative `./_next/…` into NESTED pages too, so a document
- * served from `/editor/` resolves its own chunks to `/editor/_next/…` and
- * never hydrates. Where that is broken, this function is wrong in exactly the
- * same way and for the same reason.
+ * DEPENDS ON A FLAT EXPORT, and cannot fix it from here: under
+ * `assetPrefix:"./"` Next writes the same relative `./_next/…` into NESTED
+ * pages too, so a document served from `/editor/` would resolve its own
+ * chunks to `/editor/_next/…`, never hydrate, and make this function compute
+ * an equally dead `/editor/rdkit/`. `next.config.ts` therefore drops
+ * `trailingSlash` in export mode so every page is written at the export root
+ * — `out/editor.html`, not `out/editor/index.html` — and
+ * `scripts/check-export.mjs` fails the build if a nested page ever reappears.
  */
 
 const ASSET_MARKER = "/_next/static/";

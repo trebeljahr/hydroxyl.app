@@ -21,6 +21,7 @@ import {
   type RDKitModuleLike,
 } from "./ops.js";
 import {
+  hasMeaningfulCoordinates,
   maxCoordinateDelta,
   moleculeToMolblock,
   molblockToMolecule,
@@ -362,6 +363,42 @@ describe("coordinates", () => {
       (id) => requireAtom(read.value.molecule, id).pos,
     );
     expect(new Set(positions.map((p) => `${p.x},${p.y}`)).size).toBe(6);
+  });
+
+  it("cannot tell an all-zero conformer from a real one, which is why the caller must", () => {
+    // The measurement behind `fromMolblock` reading the source with chem-core
+    // BEFORE it asks RDKit for anything. A conformer that is present and
+    // entirely on the origin carries no layout, but `has_coords()` answers 2
+    // for it exactly as it does for a drawing, so "preserve" here would
+    // import every atom stacked on one point and call it preserved. Nothing
+    // on this side of the boundary can distinguish the two.
+    const zero = [
+      "stacked",
+      "  chemcore          2D",
+      "",
+      "  2  1  0  0  0  0  0  0  0  0999 V2000",
+      "    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0",
+      "    0.0000    0.0000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0",
+      "  1  2  1  0  0  0  0",
+      "M  END",
+      "",
+    ].join("\n");
+    const preserved = normalizeMolblock(RDKit, zero, "preserve");
+    expect(preserved).toMatchObject({ ok: true, value: { hadCoords: 2, coordsGenerated: false } });
+    if (!preserved.ok) return;
+    const stacked = molblockToMolecule(preserved.value.molblock);
+    expect(stacked.ok).toBe(true);
+    if (!stacked.ok) return;
+    expect(hasMeaningfulCoordinates(stacked.value.molecule)).toBe(false);
+
+    // And that "generate" — which is what the boundary now asks for — fixes it.
+    const generated = normalizeMolblock(RDKit, zero, "generate");
+    expect(generated).toMatchObject({ ok: true, value: { coordsGenerated: true } });
+    if (!generated.ok) return;
+    const laidOut = molblockToMolecule(generated.value.molblock);
+    expect(laidOut.ok).toBe(true);
+    if (!laidOut.ok) return;
+    expect(hasMeaningfulCoordinates(laidOut.value.molecule)).toBe(true);
   });
 
   it("re-lays-out a 3D conformer instead of flattening it onto itself", () => {

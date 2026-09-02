@@ -41,6 +41,29 @@ function chargeSeparatedSulfone(): Molecule {
   });
 }
 
+/**
+ * A five-carbon ring, every bond single, every atom and bond flagged
+ * aromatic. There is no perfect matching over an odd cycle, so `kekulize`
+ * gives up and hands the molecule back exactly as it arrived — flags intact.
+ */
+function unkekulizableRing(): Molecule {
+  const flagged = buildMolecule((b) => {
+    const ids = Array.from({ length: 5 }, (_, i) =>
+      b.atom("C", vec(Math.cos((i * 2 * Math.PI) / 5), Math.sin((i * 2 * Math.PI) / 5))),
+    );
+    for (let i = 0; i < 5; i++) b.bond(ids[i] as string, ids[(i + 1) % 5] as string, 1);
+  });
+  return {
+    ...flagged,
+    atoms: Object.fromEntries(
+      Object.entries(flagged.atoms).map(([id, atom]) => [id, { ...atom, aromatic: true }]),
+    ),
+    bonds: Object.fromEntries(
+      Object.entries(flagged.bonds).map(([id, bond]) => [id, { ...bond, aromatic: true }]),
+    ),
+  };
+}
+
 /** Benzene with every atom and bond carrying an importer's aromatic flags. */
 function flaggedBenzene(): Molecule {
   const kekule = benzene();
@@ -66,6 +89,19 @@ describe("moleculeToMolblock", () => {
     if (!written.ok) return;
     const bondLines = written.value.split("\n").slice(4 + 6, 4 + 12);
     expect(bondLines.every((line) => line.slice(6, 9) !== "  4")).toBe(true);
+  });
+
+  it("refuses a structure kekulisation could not resolve, rather than emitting bond type 4", () => {
+    // `kekulize` returns the molecule UNCHANGED when a component has no
+    // perfect matching, so calling it is not the same as enforcing it.
+    // Unchecked, this writes five type-4 bond rows and RDKit answers
+    // "Can't kekulize mol" — and on the way back the flags would be stored,
+    // which the storage form does not permit at all.
+    const written = moleculeToMolblock(unkekulizableRing());
+    expect(written.ok).toBe(false);
+    if (written.ok) return;
+    expect(written.error.kind).toBe("unkekulizable");
+    expect(written.error.atomIds).toHaveLength(5);
   });
 
   it("says nothing about hydrogens a valence table can derive", () => {
@@ -133,6 +169,31 @@ describe("molblockToMolecule", () => {
     if (read.ok) return;
     expect(read.error.kind).toBe("lossy-import");
     expect(read.error.warnings?.map((w) => w.kind)).toContain("unknown-element");
+  });
+
+  it("refuses a file whose aromatic flags survive the reader's own kekulisation", () => {
+    // A type-4 bond on an ACYCLIC bond: chem-core reads it, fails to
+    // kekulise it and keeps the flags. Returning that molecule would store an
+    // importer's perception permanently, and a flagged system genuinely
+    // derives a different formula from its Kekule reading.
+    const acyclicAromatic = [
+      "acyclic aromatic",
+      "  chemcore          2D",
+      "",
+      "  3  2  0  0  0  0  0  0  0  0999 V2000",
+      "    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0",
+      "    1.5000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0",
+      "    2.2500    1.2990    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0",
+      "  1  2  4  0  0  0  0",
+      "  2  3  2  0  0  0  0",
+      "M  END",
+      "",
+    ].join("\n");
+    const read = molblockToMolecule(acyclicAromatic);
+    expect(read.ok).toBe(false);
+    if (read.ok) return;
+    expect(read.error.kind).toBe("unkekulizable");
+    expect(read.error.atomIds).toEqual(["a1", "a2"]);
   });
 
   it("reports text that is not a molblock at all as a parse failure", () => {
