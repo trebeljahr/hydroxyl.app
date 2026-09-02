@@ -3,6 +3,7 @@ import type { Molecule } from "@starter/chem-core";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PANELS,
+  defaultPanelsFor,
   SCHEMA_VERSION,
   createDocument,
   createPanel,
@@ -412,6 +413,39 @@ describe("factories", () => {
     expect(defaultRepresentation("sumFormula").display.showCarbonLabels).toBe(
       false,
     );
+  });
+
+  it("takes the aromatic-circle default from the style preset", () => {
+    // Circle-versus-Kekule is a PER-PANEL choice — a figure has to be able to
+    // say "this one draws the circle" — and the preset supplies only its
+    // initial value. Both shipped presets seed `false`, because ACS and the
+    // house styles this project is calibrated against print the alternation
+    // and the circle is what a chemist turns on for a particular figure.
+    //
+    // The point of the assertion is that the parameter is WIRED, not that the
+    // two answers differ today: a third preset with the opposite convention
+    // adds a row to the table and this test is where it would show.
+    for (const preset of ["publication", "screen"] as const) {
+      expect(defaultRepresentation("skeletal", preset).display.aromaticCircles).toBe(
+        false,
+      );
+      expect(
+        createPanel("skeletal", undefined, preset).representation.display
+          .aromaticCircles,
+      ).toBe(false);
+      expect(
+        defaultPanelsFor(preset).every(
+          (panel) => panel.representation.display.aromaticCircles === false,
+        ),
+      ).toBe(true);
+    }
+    // A document created under a preset gets panels seeded from it, rather
+    // than from a constant frozen before any preset was chosen.
+    const doc = createDocument({ stylePreset: "publication" });
+    expect(doc.panels.map((panel) => panel.representation.kind)).toEqual([
+      "skeletal",
+      "sumFormula",
+    ]);
   });
 
   it("gives every created panel its own id", () => {

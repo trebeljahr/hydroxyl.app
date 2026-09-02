@@ -191,18 +191,24 @@ void ASSEMBLERS_ARE_COMPLETE;
  *   skeletal drawing.
  * - Lone pairs are shown only for `lewis`, because a Lewis structure without
  *   them is just a Kekule structure.
- * - Aromatic circles default off even on `skeletal`: chem-core builds benzene
- *   as an explicit Kekule ring, and drawing a circle over alternating double
- *   bonds would state the delocalisation twice.
+ * - Aromatic circles come from the STYLE PRESET, via the table below. The
+ *   renderer no longer draws a circle on top of the alternation — switching
+ *   the flag on suppresses the second lines and draws one circle instead — so
+ *   the old "it would state the delocalisation twice" reasoning no longer
+ *   applies, and the default is a house-style question rather than a
+ *   correctness one.
  * - Stereo descriptors (R/S, E/Z) default off — they are an annotation the
  *   chemist opts into per figure, and a wrong one is worse than none.
  */
-export function defaultRepresentation(kind: RepresentationKind): Representation {
+export function defaultRepresentation(
+  kind: RepresentationKind,
+  preset: StylePresetId = "screen",
+): Representation {
   return {
     kind,
     display: {
       showCarbonLabels: kind === "explicitH",
-      aromaticCircles: false,
+      aromaticCircles: AROMATIC_CIRCLES_BY_PRESET[preset],
       showLonePairs: kind === "lewis",
       showStereoDescriptors: false,
     },
@@ -210,17 +216,56 @@ export function defaultRepresentation(kind: RepresentationKind): Representation 
 }
 
 /**
+ * Where the circle-versus-Kekule choice gets its INITIAL value.
+ *
+ * The choice itself is per panel — `RepresentationDisplay.aromaticCircles` —
+ * because a figure has to be able to say "this one draws the circle", which a
+ * preset-wide setting cannot express. The preset only seeds it, and a saved
+ * document keeps whatever it stored.
+ *
+ * Both shipped presets seed `false` today: ACS and every house style this
+ * project has been calibrated against print the Kekule alternation, and the
+ * circle is what a chemist turns on for a particular figure. The table exists
+ * anyway rather than a bare literal, because it is the declared home of that
+ * decision — a third preset with the opposite convention adds a row here and
+ * changes nothing else.
+ *
+ * The mapping lives in `shared` rather than on `RenderStyle` because `shared`
+ * depends on chem-core and zod only; it cannot see chem-render at all, and a
+ * `RenderStyle.aromaticCirclesDefault` that the render pass fell back to would
+ * put the flag in two places and make "per structure" a lie.
+ */
+const AROMATIC_CIRCLES_BY_PRESET: Readonly<Record<StylePresetId, boolean>> =
+  Object.freeze({
+    publication: false,
+    screen: false,
+  });
+
+/**
  * The panels a fresh document opens with: the structure you draw into, and
  * the formula that tells you at a glance whether it is the compound you meant.
  */
-export const DEFAULT_PANELS: readonly Panel[] = Object.freeze([
-  assemblePanel("panel-skeletal", {
-    representation: defaultRepresentation("skeletal"),
-  }),
-  assemblePanel("panel-sum-formula", {
-    representation: defaultRepresentation("sumFormula"),
-  }),
-]);
+export const DEFAULT_PANELS: readonly Panel[] = defaultPanelsFor("screen");
+
+/**
+ * The opening panels seeded from a style preset.
+ *
+ * `DEFAULT_PANELS` is the "screen" case, kept as a named constant because
+ * plenty of code and several tests compare against it by value. A document
+ * created under another preset gets its own set, so the preset's
+ * circle-versus-Kekule convention actually reaches the panels rather than
+ * being applied to a constant that was frozen before the preset was chosen.
+ */
+export function defaultPanelsFor(preset: StylePresetId): readonly Panel[] {
+  return Object.freeze([
+    assemblePanel("panel-skeletal", {
+      representation: defaultRepresentation("skeletal", preset),
+    }),
+    assemblePanel("panel-sum-formula", {
+      representation: defaultRepresentation("sumFormula", preset),
+    }),
+  ]);
+}
 
 /**
  * Monotonic within the process, and mixed with randomness so two tabs editing
@@ -241,9 +286,13 @@ function generateId(prefix: string): string {
 /** A new panel with a fresh unique id. Panel ids only need to be unique
  *  within one document, but a generated one keeps a second `skeletal` panel
  *  from colliding with `DEFAULT_PANELS`. */
-export function createPanel(kind: RepresentationKind, caption?: string): Panel {
+export function createPanel(
+  kind: RepresentationKind,
+  caption?: string,
+  preset: StylePresetId = "screen",
+): Panel {
   return assemblePanel(generateId("panel"), {
-    representation: defaultRepresentation(kind),
+    representation: defaultRepresentation(kind, preset),
     caption,
   });
 }
@@ -261,12 +310,17 @@ export interface CreateDocumentInit {
 
 export function createDocument(init: CreateDocumentInit = {}): SketchDocument {
   const now = init.now ?? new Date().toISOString();
+  const stylePreset = init.stylePreset ?? "screen";
   return {
     schemaVersion: SCHEMA_VERSION,
     id: init.id ?? generateId("doc"),
     molecule: init.molecule ?? emptyMolecule(),
-    stylePreset: init.stylePreset ?? "screen",
-    panels: init.panels ?? DEFAULT_PANELS,
+    stylePreset,
+    // Seeded from the preset, so a display default the preset owns — the
+    // aromatic circle — reaches the panels a document opens with.
+    panels:
+      init.panels ??
+      (stylePreset === "screen" ? DEFAULT_PANELS : defaultPanelsFor(stylePreset)),
     metadata: assembleMetadata({
       title: init.title ?? "Untitled",
       createdAt: now,

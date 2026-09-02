@@ -83,6 +83,34 @@ function representationFor(kind: ViewKind): Representation {
   return isStructuralViewKind(kind) ? representation(kind) : representation(kind);
 }
 
+interface Row {
+  readonly label: string;
+  readonly note: string | undefined;
+  readonly representation: Representation;
+}
+
+/**
+ * The rows of one fixture's section.
+ *
+ * The six view kinds, plus a seventh for the aromatic circle. The circle is a
+ * FLAG rather than a kind, so it would otherwise be invisible on the sheet —
+ * and the sheet is the only artefact that can catch a delocalisation circle
+ * drawn at the wrong radius, or drawn while the Kekule alternation is still
+ * underneath it.
+ */
+const ROWS: readonly Row[] = Object.freeze([
+  ...VIEW_KINDS.map((kind) => ({
+    label: kind,
+    note: isStructuralViewKind(kind) ? undefined : "text view",
+    representation: representationFor(kind),
+  })),
+  Object.freeze({
+    label: "skeletal",
+    note: "aromatic circles",
+    representation: representation("skeletal", { aromaticCircles: true }),
+  }),
+]);
+
 /** Counts primitives the way a reader would: groups count as their contents. */
 function countPrimitives(scene: RenderScene): number {
   const walk = (primitives: RenderScene["primitives"]): number =>
@@ -95,12 +123,12 @@ function countPrimitives(scene: RenderScene): number {
 
 function buildCell(
   fixtureIndex: number,
-  kind: ViewKind,
+  rep: Representation,
   style: RenderStyle,
 ): Cell {
   const fixture = FIXTURES[fixtureIndex];
   if (fixture === undefined) throw new Error(`No fixture ${fixtureIndex}`);
-  const scene = buildScene(fixture.molecule, style, representationFor(kind));
+  const scene = buildScene(fixture.molecule, style, rep);
   return {
     // `standalone: false` drops the XML declaration, which is invalid inside
     // an HTML document and makes browsers refuse the whole page.
@@ -125,9 +153,9 @@ function round(n: number): string {
 
 export function renderContactSheet(): string {
   const sections = FIXTURES.map((fixture, index) => {
-    const rows = VIEW_KINDS.map((kind) => {
+    const rows = ROWS.map((row) => {
       const cells = PRESET_NAMES.map((presetName) => {
-        const cell = buildCell(index, kind, RENDER_STYLES[presetName]);
+        const cell = buildCell(index, row.representation, RENDER_STYLES[presetName]);
         return [
           `        <figure class="cell">`,
           `          <div class="stage stage--${presetName}">${cell.svg}</div>`,
@@ -142,8 +170,8 @@ export function renderContactSheet(): string {
 
       return [
         `      <div class="row">`,
-        `        <h3 class="kind">${escapeHtml(kind)}${
-          isStructuralViewKind(kind) ? "" : ` <em>text view</em>`
+        `        <h3 class="kind">${escapeHtml(row.label)}${
+          row.note === undefined ? "" : ` <em>${escapeHtml(row.note)}</em>`
         }</h3>`,
         cells,
         `      </div>`,

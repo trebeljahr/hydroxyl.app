@@ -116,11 +116,12 @@ describe("OverlayLayer — the export boundary", () => {
     expect(svg).not.toContain("#3b82f6");
     expect(svg).not.toContain("#2563eb");
 
-    // And exactly the primitive count the scene has: six lines, six dots. The
-    // one extra element is the screen preset's background rect, which the
-    // scene's own style asks for.
-    expect(SCENE.primitives).toHaveLength(12);
-    expect(svg.match(/<line /g)).toHaveLength(6);
+    // And exactly the primitive count the scene has: nine lines (six ring
+    // edges plus the inner line of each of benzene's three double bonds) and
+    // six dots. The one extra element is the screen preset's background rect,
+    // which the scene's own style asks for.
+    expect(SCENE.primitives).toHaveLength(15);
+    expect(svg.match(/<line /g)).toHaveLength(9);
     expect(svg.match(/<circle /g)).toHaveLength(6);
     expect(svg.match(/<rect /g)).toHaveLength(1);
     expect(svg).toContain('data-bond="b7"');
@@ -136,10 +137,11 @@ describe("OverlayLayer — the export boundary", () => {
     expect(INDEX.scene).toBe(SCENE);
   });
 
-  it("keeps the six-and-six count intact when drawn alongside the scene", () => {
+  it("keeps the scene's own element count intact when drawn alongside it", () => {
     // The whole DOM contract in one assertion: the page must contain exactly
-    // six `[data-atom-id]` and six `[data-bond-id]` however much is hovered
-    // or selected.
+    // the scene's six `[data-atom-id]` and nine `[data-bond-id]` however much
+    // is hovered or selected. The overlay adds `[data-overlay]` elements and
+    // never a source attribute of its own.
     const { container } = render(
       <svg data-canvas-root="true">
         <g>
@@ -155,7 +157,7 @@ describe("OverlayLayer — the export boundary", () => {
     );
 
     expect(container.querySelectorAll("[data-atom-id]")).toHaveLength(6);
-    expect(container.querySelectorAll("[data-bond-id]")).toHaveLength(6);
+    expect(container.querySelectorAll("[data-bond-id]")).toHaveLength(9);
     // Every atom and bond selected, plus one hovered atom and one hovered bond.
     expect(container.querySelectorAll("[data-overlay]")).toHaveLength(14);
     // Two sibling layers, both inert to pointers.

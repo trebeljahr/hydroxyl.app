@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-29.685 -32.9 163.292 101.8" width="163.292px" height="101.8px">
+  <line id="bond:b7:line" data-bond="b7" x1="0" y1="24" x2="20.785" y2="12" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b8:line" data-bond="b8" x1="18.685" y1="12" x2="18.685" y2="-12" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b8:line2" data-bond="b8" x1="22.885" y1="12" x2="22.885" y2="-12" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b9:line" data-bond="b9" x1="20.785" y1="-12" x2="0" y2="-24" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b10:line" data-bond="b10" x1="0" y1="-24" x2="-20.785" y2="-12" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b10:line2" data-bond="b10" x1="0" y1="-19.15" x2="-16.585" y2="-9.575" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b11:line" data-bond="b11" x1="-20.785" y1="-12" x2="-20.785" y2="12" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b12:line" data-bond="b12" x1="-20.785" y1="12" x2="0" y2="24" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b12:line2" data-bond="b12" x1="-16.585" y1="9.575" x2="0" y2="19.15" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b17:line" data-bond="b17" x1="20.785" y1="-12" x2="41.569" y2="-24" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b18:line" data-bond="b18" x1="41.569" y1="-24" x2="62.354" y2="-12" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b18:line2" data-bond="b18" x1="41.569" y1="-19.15" x2="58.154" y2="-9.575" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b19:line" data-bond="b19" x1="62.354" y1="-12" x2="62.354" y2="12" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b20:line" data-bond="b20" x1="63.404" y1="13.819" x2="42.619" y2="25.819" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b20:line2" data-bond="b20" x1="61.304" y1="10.181" x2="40.519" y2="22.181" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b21:line" data-bond="b21" x1="41.569" y1="24" x2="20.785" y2="12" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b26:line" data-bond="b26" x1="41.569" y1="24" x2="41.569" y2="48" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b27:line" data-bond="b27" x1="41.569" y1="48" x2="62.354" y2="60" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b27:line2" data-bond="b27" x1="45.769" y1="45.575" x2="62.354" y2="55.15" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b28:line" data-bond="b28" x1="62.354" y1="60" x2="83.138" y2="48" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b29:line" data-bond="b29" x1="81.038" y1="48" x2="81.038" y2="24" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b29:line2" data-bond="b29" x1="85.238" y1="48" x2="85.238" y2="24" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b30:line" data-bond="b30" x1="83.138" y1="24" x2="62.354" y2="12" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b35:line" data-bond="b35" x1="83.138" y1="24" x2="103.923" y2="12" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b36:line" data-bond="b36" x1="103.923" y1="12" x2="124.708" y2="24" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b36:line2" data-bond="b36" x1="103.923" y1="16.85" x2="120.508" y2="26.425" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b37:line" data-bond="b37" x1="124.708" y1="24" x2="124.708" y2="48" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b38:line" data-bond="b38" x1="124.708" y1="48" x2="103.923" y2="60" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b38:line2" data-bond="b38" x1="120.508" y1="45.575" x2="103.923" y2="55.15" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b39:line" data-bond="b39" x1="103.923" y1="60" x2="83.138" y2="48" stroke="#000000" stroke-width="1.4"/>
+  <circle id="atom:a1:dot" data-atom="a1" cx="0" cy="24" r="0.9" fill="#000000"/>
+  <circle id="atom:a2:dot" data-atom="a2" cx="20.785" cy="12" r="0.9" fill="#000000"/>
+  <circle id="atom:a3:dot" data-atom="a3" cx="20.785" cy="-12" r="0.9" fill="#000000"/>
+  <circle id="atom:a4:dot" data-atom="a4" cx="0" cy="-24" r="0.9" fill="#000000"/>
+  <circle id="atom:a5:dot" data-atom="a5" cx="-20.785" cy="-12" r="0.9" fill="#000000"/>
+  <circle id="atom:a6:dot" data-atom="a6" cx="-20.785" cy="12" r="0.9" fill="#000000"/>
+  <circle id="atom:a13:dot" data-atom="a13" cx="41.569" cy="-24" r="0.9" fill="#000000"/>
+  <circle id="atom:a14:dot" data-atom="a14" cx="62.354" cy="-12" r="0.9" fill="#000000"/>
+  <circle id="atom:a15:dot" data-atom="a15" cx="62.354" cy="12" r="0.9" fill="#000000"/>
+  <circle id="atom:a16:dot" data-atom="a16" cx="41.569" cy="24" r="0.9" fill="#000000"/>
+  <circle id="atom:a22:dot" data-atom="a22" cx="41.569" cy="48" r="0.9" fill="#000000"/>
+  <circle id="atom:a23:dot" data-atom="a23" cx="62.354" cy="60" r="0.9" fill="#000000"/>
+  <circle id="atom:a24:dot" data-atom="a24" cx="83.138" cy="48" r="0.9" fill="#000000"/>
+  <circle id="atom:a25:dot" data-atom="a25" cx="83.138" cy="24" r="0.9" fill="#000000"/>
+  <circle id="atom:a31:dot" data-atom="a31" cx="103.923" cy="12" r="0.9" fill="#000000"/>
+  <circle id="atom:a32:dot" data-atom="a32" cx="124.708" cy="24" r="0.9" fill="#000000"/>
+  <circle id="atom:a33:dot" data-atom="a33" cx="124.708" cy="48" r="0.9" fill="#000000"/>
+  <circle id="atom:a34:dot" data-atom="a34" cx="103.923" cy="60" r="0.9" fill="#000000"/>
+</svg>

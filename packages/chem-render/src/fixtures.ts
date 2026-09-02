@@ -29,11 +29,13 @@ import {
   DEG,
   flipAtoms,
   fromPolar,
+  fuseRingOnBond,
+  isFusionBond,
   ORIGIN,
   singleAtom,
   verticalMirror,
 } from "@starter/chem-core";
-import type { Molecule, Vec2 } from "@starter/chem-core";
+import type { BondId, Molecule, Vec2 } from "@starter/chem-core";
 
 /** One unit-length step from `from`, at `degrees` counter-clockwise from +x. */
 function step(from: Vec2, degrees: number): Vec2 {
@@ -290,6 +292,146 @@ export function butan2olWedged(): Molecule {
   });
 }
 
+/**
+ * Naphthalene, drawn the sanctioned way: a benzene fused onto one of benzene's
+ * own DOUBLE bonds.
+ *
+ * The flagship double-bond fixture, and the hard case rather than mere
+ * coverage. `fuseRingOnBond` across a double bond leaves the SHARED bond a
+ * double sitting in TWO rings, each pulling the second line the opposite way —
+ * the ambiguous fusion that any tiebreak keyed on a ring index, a walk
+ * direction or a centroid DISTANCE gets wrong. Both rings are aromatic
+ * six-rings, so the topological key ties and the fusion bond draws centred,
+ * while the four peripheral double bonds each lean into their own ring.
+ *
+ * Fusing across a SINGLE bond would draw the ring and put the two shared
+ * carbons in `valenceIssues()` — Kekule alternation is strict and never dodges
+ * — so the choice of bond here is chemistry, not convenience.
+ */
+export function naphthalene(): Molecule {
+  return fuseRingOnBond(coreBenzene(), rightmostDoubleBond(coreBenzene()), "benzene")
+    .molecule;
+}
+
+/**
+ * Chrysene, C18H12: four benzo rings fused in a zig-zag.
+ *
+ * The fused tetracycle. Built by fusing three more rings onto benzene, each on
+ * the rightmost double bond still free, which turns the chain twice in
+ * opposite directions — the angular arrangement that distinguishes chrysene
+ * from linear tetracene and from one-turn benz[a]anthracene. All four rings
+ * perceive as aromatic and the structure carries no valence issue.
+ *
+ * A LINEAR acene cannot be built this way at all, and the reason is chemistry
+ * rather than an API gap: naphthalene's Kekule structure leaves its far edge
+ * SINGLE, and fusing a benzo across a single bond puts the two shared carbons
+ * in `valenceIssues()`. That is the strictness working, not a defect.
+ *
+ * What it is here to catch: four rings means four centroids and five fusion
+ * bonds, so almost every double bond has a neighbour on both sides, and an
+ * inner line inset that gets the vertex half-angle wrong produces lines poking
+ * through the ring edges everywhere at once.
+ */
+export function chrysene(): Molecule {
+  let mol = coreBenzene();
+  for (let i = 0; i < 3; i++) {
+    mol = fuseRingOnBond(mol, rightmostDoubleBond(mol), "benzene").molecule;
+  }
+  return mol;
+}
+
+/**
+ * The free double bond whose midpoint is furthest EAST, ties going SOUTH.
+ *
+ * A total order over positions, deliberately: `bondIds` order is insertion
+ * order and would make this fixture's shape depend on how the previous fusion
+ * happened to mint its bonds. Two of chrysene's fusions land on a genuine tie
+ * in x, and without the second key the ring would go up or down depending on
+ * nothing.
+ */
+function rightmostDoubleBond(mol: Molecule): BondId {
+  let best: BondId | undefined;
+  let bestX = -Infinity;
+  let bestY = Infinity;
+  for (const bondId of mol.bondIds) {
+    const bond = mol.bonds[bondId];
+    if (bond === undefined || bond.order !== 2) continue;
+    if (isFusionBond(mol, bondId)) continue;
+    const from = mol.atoms[bond.from];
+    const to = mol.atoms[bond.to];
+    if (from === undefined || to === undefined) continue;
+    const x = (from.pos.x + to.pos.x) / 2;
+    const y = (from.pos.y + to.pos.y) / 2;
+    if (x > bestX + 1e-9 || (Math.abs(x - bestX) < 1e-9 && y < bestY - 1e-9)) {
+      bestX = x;
+      bestY = y;
+      best = bondId;
+    }
+  }
+  if (best === undefined) throw new Error("no free double bond to fuse onto");
+  return best;
+}
+
+/**
+ * Dimethyl sulfone, (CH3)2SO2 — the hypervalent fixture.
+ *
+ * Sulfur's valence list is [2, 4, 6], and here all six are used: two S-C and
+ * two S=O, so the sulfur carries no hydrogen and the label is a bare "S" that
+ * all four bonds have to stop short of. Both S=O go down the substituent
+ * branch of the double-bond rule and both come out CENTRED, because the oxygen
+ * end is terminal — which is what a sulfone, and every carbonyl, should draw.
+ *
+ * A cross rather than a zig-zag: the two S=O straight up and down, the two
+ * methyls straight out to the sides. It is how the group is drawn, and it puts
+ * a double bond on a perfectly vertical axis, where a trimmer with a divide-
+ * by-zero in its slab test would show up.
+ */
+export function dimethylSulfone(): Molecule {
+  return buildMolecule((b) => {
+    const sulfur = b.atom("S", ORIGIN);
+    b.bond(sulfur, b.atom("O", step(ORIGIN, 90)), 2);
+    b.bond(sulfur, b.atom("O", step(ORIGIN, -90)), 2);
+    b.bond(sulfur, b.atom("C", step(ORIGIN, 180)), 1);
+    b.bond(sulfur, b.atom("C", step(ORIGIN, 0)), 1);
+  });
+}
+
+/**
+ * A methanol dropped onto an ethanol's hydroxyl and never merged.
+ *
+ * NOT a molecule anyone would draw on purpose — it is the drawing state the
+ * collision pass exists to name: a template or a paste landed on an existing
+ * fragment, the merge radius was missed, and two atoms now sit on the same
+ * spot with a bond running through a label that belongs to neither of its
+ * ends.
+ *
+ * It is a fixture rather than a test-local graph because the whole point of
+ * the collision pass is that it REPORTS and never repairs, and the only
+ * convincing evidence of that is the picture: the contact sheet shows the
+ * overlap exactly as drawn, coordinates untouched.
+ *
+ * The offset is 0.03 bond lengths — well inside chem-core's
+ * `DEFAULT_MERGE_RADIUS` of 0.4, so a gesture that had merged would have, and
+ * two atoms still this close were left this close by a bug.
+ */
+export function unmergedDropOverlap(): Molecule {
+  return buildMolecule((b) => {
+    const methyl = b.atom("C", ORIGIN);
+    const methylenePos = step(ORIGIN, 30);
+    const methylene = b.atom("C", methylenePos);
+    const hydroxylPos = step(methylenePos, -30);
+    const hydroxyl = b.atom("O", hydroxylPos);
+    b.bond(methyl, methylene, 1);
+    b.bond(methylene, hydroxyl, 1);
+
+    // The dropped fragment. Its carbon lands on the hydroxyl oxygen, and its
+    // own C-O bond then leaves straight through that oxygen's label.
+    const droppedPos: Vec2 = { x: hydroxylPos.x, y: hydroxylPos.y + 0.03 };
+    const dropped = b.atom("C", droppedPos);
+    b.bond(dropped, b.atom("O", step(droppedPos, 90)), 1);
+  });
+}
+
 export interface Fixture {
   readonly name: string;
   readonly molecule: Molecule;
@@ -321,5 +463,12 @@ export const FIXTURES: readonly Fixture[] = Object.freeze([
   }),
   Object.freeze({ name: "methanol13C", molecule: methanol13C() }),
   Object.freeze({ name: "butan2olWedged", molecule: butan2olWedged() }),
+  Object.freeze({ name: "naphthalene", molecule: naphthalene() }),
+  Object.freeze({ name: "dimethylSulfone", molecule: dimethylSulfone() }),
+  Object.freeze({ name: "chrysene", molecule: chrysene() }),
+  Object.freeze({
+    name: "unmergedDropOverlap",
+    molecule: unmergedDropOverlap(),
+  }),
 ]);
 

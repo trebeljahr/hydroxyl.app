@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-25.79 -40 135.77 64.89" width="135.77px" height="64.89px">
   <rect data-decoration="background" x="-25.79" y="-40" width="135.77" height="64.89" fill="#ffffff"/>
-  <line id="bond:b4:line" data-bond="b4" x1="0" y1="0" x2="38.11" y2="-22" stroke="#1f2937" stroke-width="2"/>
-  <line id="bond:b5:line" data-bond="b5" x1="38.11" y1="-22" x2="76.21" y2="0" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b4:line" data-bond="b4" x1="12.79" y1="-7.38" x2="38.11" y2="-22" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b5:line" data-bond="b5" x1="38.11" y1="-22" x2="66.99" y2="-5.32" stroke="#1f2937" stroke-width="2"/>
   <text id="atom:a1:label" data-atom="a1" x="-9.79" y="5.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start" dominant-baseline="alphabetic"><tspan>Ph</tspan></text>
   <circle id="atom:a2:dot" data-atom="a2" cx="38.11" cy="-22" r="2" fill="#111827"/>
   <text id="atom:a3:label" data-atom="a3" x="69.99" y="5.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start" dominant-baseline="alphabetic"><tspan>O</tspan><tspan>H</tspan></text>

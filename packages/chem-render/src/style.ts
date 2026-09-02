@@ -52,13 +52,28 @@ export interface RenderStyle {
    * notation for an unpaired electron, so a methyl radical and a plain methyl
    * would differ only in a dot's position.
    *
-   * Both presets keep a non-zero radius for now. Once bond trimming lands, a
-   * bare carbon vertex is fully described by the two lines meeting at it and
-   * this can go to 0 — at which point the only thing it still buys is a
-   * visible marker for the editor's own hit target, which belongs on an
-   * overlay rather than in the figure.
+   * Both presets keep a non-zero radius. Bond trimming has landed, so a bare
+   * carbon vertex IS now fully described by the two lines meeting at it and
+   * this could go to 0 — but that is a visible change to every skeletal
+   * figure in the repo and a decision of its own, not something to fold into
+   * the pass that made it possible. What it would still buy afterwards is a
+   * marker for the editor's own hit target, which belongs on an overlay
+   * rather than in the figure.
    */
   readonly atomDotRadiusPx: number;
+  /**
+   * The inscribed circle of an aromatic ring, as a fraction of the ring's
+   * APOTHEM — its centroid-to-nearest-edge distance.
+   *
+   * Calibrated on benzene: a regular hexagon of unit bonds has an apothem of
+   * sqrt(3)/2, so 0.75 puts the circle at 0.65 bond lengths, which is where
+   * the convention draws it and just inside where the inner line of a Kekule
+   * ring double bond would sit. Being a fraction of the apothem rather than
+   * of the circumradius is what makes it degrade correctly on a ring the user
+   * has dragged out of shape: the circle shrinks to stay clear of the nearest
+   * bond instead of crossing it.
+   */
+  readonly aromaticCircleRatio: number;
   readonly colors: RenderColors;
   /** Decimal places emitted for every coordinate. Fixed so output is byte-deterministic. */
   readonly coordinatePrecision: number;
@@ -103,6 +118,7 @@ export const PUBLICATION_STYLE: RenderStyle = Object.freeze({
   labelPaddingPx: 1.6,
   marginPx: 8,
   atomDotRadiusPx: 0.9,
+  aromaticCircleRatio: 0.75,
   colors: Object.freeze({ bond: "#000000", label: "#000000" }),
   coordinatePrecision: 3,
 });
@@ -129,6 +145,7 @@ export const SCREEN_STYLE: RenderStyle = Object.freeze({
   labelPaddingPx: 3,
   marginPx: 16,
   atomDotRadiusPx: 2,
+  aromaticCircleRatio: 0.75,
   colors: Object.freeze({
     bond: "#1f2937",
     label: "#111827",

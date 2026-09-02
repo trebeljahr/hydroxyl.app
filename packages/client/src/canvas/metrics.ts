@@ -174,10 +174,13 @@ export function createSceneIndex(
   ): { readonly a: ScenePoint; readonly b: ScenePoint } | undefined {
     const primitives = bondPrimitives.get(id);
     const line = primitives?.find(isLine);
-    // The DRAWN line wins where there is one. A later rendering task trims
-    // bond lines back so they stop clear of an atom label, and a selection
-    // highlight drawn over the untrimmed geometry would stick out past both
-    // ends of the line it is meant to be highlighting.
+    // The DRAWN line wins where there is one, and the FIRST of them: the
+    // renderer trims bond lines back so they stop clear of an atom label, and
+    // a highlight over the untrimmed geometry would stick out past both ends
+    // of the line it is meant to be highlighting. A double or triple bond
+    // emits several lines and the first is taken: the axis for a leaning
+    // double and for a triple, and one of the pair for a centred double,
+    // which sits half a gap off the axis — inside the halo's own width.
     if (line !== undefined) return { a: line.a, b: line.b };
 
     // No line primitive: a text view, or a bond whose whole rendering is
@@ -201,9 +204,9 @@ export function createSceneIndex(
    * at the screen one, which converts to roughly 0.04-0.09 bond lengths. Handed
    * to `hitTest` literally, that is a pick target a twentieth of a bond wide,
    * and a vertex carbon becomes something you have to aim at. The dot is a
-   * stand-in for a label that a later rendering pass will draw, not a statement
-   * about how big the atom is to click — measuring it as if it were confuses a
-   * missing feature with a small one. 0.18 is chem-core's documented bare-vertex
+   * stand-in for a label the renderer draws only where there is one, not a
+   * statement about how big the atom is to click — measuring it as if it were
+   * confuses a missing feature with a small one. 0.18 is chem-core's documented bare-vertex
    * target, chosen so the target reaches 0.30 along a standard bond and leaves
    * the middle 40% of every bond clickable.
    *

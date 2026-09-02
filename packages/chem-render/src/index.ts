@@ -43,7 +43,15 @@ export * from "./text/measurer.js";
 export * from "./label/visibility.js";
 export * from "./label/compose.js";
 export * from "./label/placement.js";
+// The bond pass: trimming, the second and third lines, and the aromatic
+// circle. It consumes the label layer's clear space and produces geometry.
+export * from "./bond/geometry.js";
+export * from "./bond/doubleBond.js";
+export * from "./bond/aromatic.js";
 export * from "./scene/build.js";
 export * from "./scene/bounds.js";
+// Reports overlaps over an already-built scene. Never called by `buildScene`:
+// a report on the scene is a field somebody eventually serialises.
+export * from "./scene/collide.js";
 export * from "./svg/serialize.js";
 export * from "./fixtures.js";

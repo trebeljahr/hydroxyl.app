@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-62 -68.98 124 137.88" width="124px" height="137.88px">
+  <rect data-decoration="background" x="-62" y="-68.98" width="124" height="137.88" fill="#ffffff"/>
+  <line id="bond:b3:line" data-bond="b3" x1="-3.5" y1="-8.5" x2="-3.5" y2="-35.5" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b3:line2" data-bond="b3" x1="3.5" y1="-8.5" x2="3.5" y2="-35.5" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b5:line" data-bond="b5" x1="3.5" y1="8.5" x2="3.5" y2="35.5" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b5:line2" data-bond="b5" x1="-3.5" y1="8.5" x2="-3.5" y2="35.5" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b7:line" data-bond="b7" x1="-8.34" y1="0" x2="-44" y2="0" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b9:line" data-bond="b9" x1="8.34" y1="0" x2="44" y2="0" stroke="#1f2937" stroke-width="2"/>
+  <text id="atom:a1:label" data-atom="a1" x="-5.34" y="5.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start" dominant-baseline="alphabetic"><tspan>S</tspan></text>
+  <text id="atom:a2:label" data-atom="a2" x="-6.22" y="-38.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start" dominant-baseline="alphabetic"><tspan>O</tspan></text>
+  <text id="atom:a4:label" data-atom="a4" x="-6.22" y="49.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start" dominant-baseline="alphabetic"><tspan>O</tspan></text>
+  <circle id="atom:a6:dot" data-atom="a6" cx="-44" cy="0" r="2" fill="#111827"/>
+  <circle id="atom:a8:dot" data-atom="a8" cx="44" cy="0" r="2" fill="#111827"/>
+</svg>

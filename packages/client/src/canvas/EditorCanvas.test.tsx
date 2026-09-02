@@ -107,10 +107,19 @@ describe("EditorCanvas — the DOM contract", () => {
     expect(scene?.parentElement).toBe(overlay?.parentElement);
   });
 
-  it("renders benzene as exactly six atoms and six bonds", () => {
+  it("renders benzene as six atoms and nine bond elements", () => {
+    // Nine, not six: a Kekule benzene's three double bonds each draw a second
+    // line, and both lines carry the same `data-bond-id`.
     render(<EditorCanvas />);
     expect(document.querySelectorAll("[data-atom-id]")).toHaveLength(6);
-    expect(document.querySelectorAll("[data-bond-id]")).toHaveLength(6);
+    expect(document.querySelectorAll("[data-bond-id]")).toHaveLength(9);
+    expect(
+      new Set(
+        [...document.querySelectorAll("[data-bond-id]")].map((el) =>
+          el.getAttribute("data-bond-id"),
+        ),
+      ).size,
+    ).toBe(6);
   });
 
   it("paints through the viewport's own affine map, not a second one", () => {
@@ -177,7 +186,7 @@ describe("EditorCanvas — selection", () => {
         "data-overlay-target",
       ),
     ).toBe("b9");
-    expect(document.querySelectorAll("[data-bond-id]")).toHaveLength(6);
+    expect(document.querySelectorAll("[data-bond-id]")).toHaveLength(9);
   });
 
   it("extends the selection to two bonds on a shift-click", () => {

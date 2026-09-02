@@ -84,6 +84,11 @@ function sourceAttr(source: SceneSource): string {
       return attr("data-atom", source.atomId);
     case "bond":
       return attr("data-bond", source.bondId);
+    case "ring":
+      // Space-separated, which is how SVG spells a list of ids everywhere
+      // else. The set IS the ring's name: chem-core gives a ring no id of its
+      // own, only an index into a list whose order is insertion order.
+      return attr("data-ring", source.atomIds.join(" "));
     case "decoration":
       // No model entity to point at; the flag exists so hit-testing can skip it.
       return attr("data-decoration", "true");

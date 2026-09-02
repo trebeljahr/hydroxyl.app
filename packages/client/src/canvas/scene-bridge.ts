@@ -26,24 +26,24 @@
  * honour it — without that being a file-format change. Translating between
  * them is a real, lossy step, and this is where it happens once.
  *
- * Only `showCarbonLabels` and `showLonePairs` exist on both sides. They are
- * mapped; everything else in `DisplayFlags` comes from chem-render's per-kind
- * defaults via the `representation(kind, partialFlags)` factory, which layers
- * over `DEFAULT_FLAGS_BY_KIND`.
+ * `showCarbonLabels`, `aromaticCircles` and `showLonePairs` exist on both
+ * sides and are mapped; everything else in `DisplayFlags` comes from
+ * chem-render's per-kind defaults via the `representation(kind, partialFlags)`
+ * factory, which layers over `DEFAULT_FLAGS_BY_KIND`.
  *
- * DROPPED, deliberately, because chem-render has no counterpart today:
+ * `aromaticCircles` was dropped here until `chem-render-bond-geometry` gave
+ * the renderer a circle to draw. It is mapped now, and it cost exactly the one
+ * line this header predicted.
  *
- *   - `aromaticCircles` — the delocalisation circle inside an aromatic ring.
- *     Nothing draws one yet; chem-core builds benzene as an explicit Kekule
- *     ring, so honouring it needs ring perception feeding a new primitive.
+ * DROPPED, deliberately, because chem-render still has no counterpart:
+ *
  *   - `showStereoDescriptors` — the R/S and E/Z letters set beside a centre.
  *     `DisplayFlags.showStereoBonds` is a different thing entirely: wedges are
- *     geometry, descriptors are computed annotations.
- *
- * Both are what a later rendering task has to grow, at which point they become
- * two more lines in `toRenderRepresentation` and nothing else moves. Until
- * then, setting either in the document is silently a no-op on screen, which is
- * a truthful "not implemented yet" rather than a wrong picture.
+ *     geometry, descriptors are computed annotations. It belongs to
+ *     `stereochemistry-perception-and-marks`, at which point it becomes one
+ *     more line below and nothing else moves. Until then, setting it in the
+ *     document is silently a no-op on screen, which is a truthful "not
+ *     implemented yet" rather than a wrong picture.
  *
  * The two `Representation` types are imported under explicit aliases below.
  * A bare import of both is a collision waiting for whoever edits this file
@@ -128,6 +128,7 @@ export function toRenderRepresentation(
   return representation(kind, {
     showCarbonLabels: display.showCarbonLabels,
     showLonePairs: display.showLonePairs,
+    aromaticCircles: display.aromaticCircles,
   });
 }
 

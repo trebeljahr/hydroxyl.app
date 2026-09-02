@@ -18,7 +18,9 @@ import { fileURLToPath } from "node:url";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { acetate, FIXTURES } from "../src/fixtures.js";
+import { benzene } from "@starter/chem-core";
+
+import { acetate, FIXTURES, naphthalene } from "../src/fixtures.js";
 import { representation } from "../src/representation.js";
 import { buildScene } from "../src/scene/build.js";
 import { RENDER_STYLES } from "../src/style.js";
@@ -77,6 +79,26 @@ describe("golden SVG", () => {
         await expectMatchesGolden(svg, `${fixture.name}-skeletal-${preset}.svg`);
       });
     }
+  }
+
+  // The circle is a display FLAG, not a view kind, so the loop above never
+  // reaches it. Two rings and one, because naphthalene's two circles have to
+  // come out the same size and symmetric about the bond they share — which is
+  // what an apothem-derived radius buys and a hand-picked one does not.
+  for (const [name, molecule] of [
+    ["benzene", benzene()],
+    ["naphthalene", naphthalene()],
+  ] as const) {
+    it(`renders ${name} with aromatic circles instead of the alternation`, async () => {
+      const svg = serializeScene(
+        buildScene(
+          molecule,
+          RENDER_STYLES.publication,
+          representation("skeletal", { aromaticCircles: true }),
+        ),
+      );
+      await expectMatchesGolden(svg, `${name}-aromaticCircles-publication.svg`);
+    });
   }
 
   it("renders acetate's sum formula with its charge superscript", async () => {

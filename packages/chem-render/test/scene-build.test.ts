@@ -10,7 +10,14 @@
 
 import { describe, expect, it } from "vitest";
 
-import { benzene, getAtom, molecularFormula } from "@starter/chem-core";
+import {
+  aromaticRings,
+  benzene,
+  getAtom,
+  molecularFormula,
+  rings,
+  valenceIssues,
+} from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
 
 import {
@@ -18,6 +25,8 @@ import {
   benzylAlcoholAbbreviated,
   bromomethane,
   butan2olWedged,
+  chrysene,
+  dimethylSulfone,
   ethanol,
   ethanolMirrored,
   FIXTURES,
@@ -27,7 +36,9 @@ import {
   methanol13C,
   methyleneCarbene,
   methylRadical,
+  naphthalene,
   tertButylCation,
+  unmergedDropOverlap,
 } from "../src/fixtures.js";
 import {
   composeAtomLabel,
@@ -111,6 +122,10 @@ describe("fixtures", () => {
       "benzylAlcoholAbbreviated",
       "methanol13C",
       "butan2olWedged",
+      "naphthalene",
+      "dimethylSulfone",
+      "chrysene",
+      "unmergedDropOverlap",
     ]);
     expect(molecularFormula(benzene())).toBe("C6H6");
     expect(molecularFormula(ethanol())).toBe("C2H6O");
@@ -130,6 +145,24 @@ describe("fixtures", () => {
     expect(molecularFormula(butan2olWedged())).toBe("C4H10O");
     // The mirror is a rigid motion: same compound, opposite side of the page.
     expect(molecularFormula(ethanolMirrored())).toBe("C2H6O");
+
+    // The bond-geometry fixtures. Naphthalene and chrysene are checked as
+    // chemistry rather than as pictures because `fuseRingOnBond` is strict
+    // about Kekule alternation: fusing across a single bond would still draw
+    // the ring, and the only visible symptom would be a valence issue nobody
+    // is looking at.
+    expect(molecularFormula(naphthalene())).toBe("C10H8");
+    expect(valenceIssues(naphthalene())).toHaveLength(0);
+    expect(molecularFormula(chrysene())).toBe("C18H12");
+    expect(valenceIssues(chrysene())).toHaveLength(0);
+    expect(rings(chrysene())).toHaveLength(4);
+    expect(aromaticRings(chrysene())).toHaveLength(4);
+    // All six of sulfur's valences used: two S-C and two S=O, no hydrogen.
+    expect(molecularFormula(dimethylSulfone())).toBe("C2H6O2S");
+    expect(valenceIssues(dimethylSulfone())).toHaveLength(0);
+    // Two disconnected fragments, which is what "a drop that never merged"
+    // means: an ethanol and a methanol sitting on top of each other.
+    expect(molecularFormula(unmergedDropOverlap())).toBe("C3H10O2");
   });
 
   it("gives the benchmark subject exactly the heavy-atom count it advertises", () => {
@@ -141,21 +174,24 @@ describe("fixtures", () => {
 });
 
 describe("buildScene, structural views", () => {
-  it("draws benzene as exactly six lines", () => {
+  it("draws benzene as nine lines: six edges and three inner", () => {
     const scene = buildScene(benzene(), PUBLICATION_STYLE, SKELETAL);
-    // Six, not nine. A Kekule benzene has three double bonds, and the second
-    // line of each is a later task; a scene that suddenly has nine lines means
-    // bond geometry landed here rather than in its own pass.
-    expect(ofType(scene.primitives, "line")).toHaveLength(6);
+    // Nine, because a Kekule benzene has three double bonds and each draws a
+    // second line. Six would mean bond order is being ignored again.
+    expect(ofType(scene.primitives, "line")).toHaveLength(9);
     expect(ofType(scene.primitives, "circle")).toHaveLength(6);
-    expect(scene.primitives).toHaveLength(12);
+    expect(scene.primitives).toHaveLength(15);
   });
 
   it("emits bonds before atoms, each in the molecule's insertion order", () => {
     const mol = benzene();
     const scene = buildScene(mol, PUBLICATION_STYLE, SKELETAL);
     expect(scene.primitives.map((p) => p.id)).toEqual([
-      ...mol.bondIds.map((id) => `bond:${id}:line`),
+      ...mol.bondIds.flatMap((id) =>
+        mol.bonds[id]?.order === 2
+          ? [`bond:${id}:line`, `bond:${id}:line2`]
+          : [`bond:${id}:line`],
+      ),
       ...mol.atomIds.map((id) => `atom:${id}:dot`),
     ]);
   });
@@ -206,7 +242,13 @@ describe("buildScene, structural views", () => {
         // select the right bond.
         expect(primitive.source.kind).not.toBe("decoration");
         if (primitive.source.kind === "bond") {
-          expect(primitive.id).toBe(`bond:${primitive.source.bondId}:line`);
+          // The extra lines of a double or triple bond are named from the
+          // SOURCE too — `line2`, `line3` — never from a counter over the
+          // emitted list, which would renumber the whole scene when one bond
+          // changed order.
+          expect(primitive.id).toMatch(
+            new RegExp(`^bond:${primitive.source.bondId}:line[23]?$`),
+          );
         } else if (primitive.source.kind === "atom") {
           // Every id is a pure function of the atom it came from. The trailing
           // index on a radical dot indexes ONE ATOM'S OWN cluster, so it is
@@ -242,7 +284,7 @@ describe("buildScene, structural views", () => {
   it("suppresses the placeholder dots when the style asks for none", () => {
     const style = withStyle(PUBLICATION_STYLE, { atomDotRadiusPx: 0 });
     const scene = buildScene(benzene(), style, SKELETAL);
-    expect(scene.primitives).toHaveLength(6);
+    expect(scene.primitives).toHaveLength(9);
     expect(ofType(scene.primitives, "circle")).toHaveLength(0);
   });
 
@@ -261,8 +303,9 @@ describe("buildScene, structural views", () => {
     };
 
     const scene = buildScene(mangled, PUBLICATION_STYLE, SKELETAL);
-    // The dropped atom was in two of the six ring bonds.
-    expect(ofType(scene.primitives, "line")).toHaveLength(4);
+    // The dropped atom was in two of the six ring bonds — one single and one
+    // double, so three of benzene's nine lines go with it.
+    expect(ofType(scene.primitives, "line")).toHaveLength(6);
     expect(ofType(scene.primitives, "circle")).toHaveLength(5);
   });
 
@@ -270,15 +313,16 @@ describe("buildScene, structural views", () => {
     // This is the first pass at which the four structural views stop being the
     // same picture. Skeletal leaves benzene's carbons as bare vertices;
     // kekule, explicitH and lewis all set `showCarbonLabels`, so every vertex
-    // becomes a "CH". Bond ORDER still does not differ — six lines throughout,
-    // because the second line of a double bond is the next task.
+    // becomes a "CH". Bond ORDER is the same in all four — nine lines
+    // throughout — because it is the molecule's, not the view's; what the
+    // aromaticCircles flag changes is a separate test.
     const bare = buildScene(benzene(), PUBLICATION_STYLE, SKELETAL);
     expect(ofType(bare.primitives, "circle")).toHaveLength(6);
     expect(ofType(bare.primitives, "textRun")).toHaveLength(0);
 
     for (const kind of ["kekule", "explicitH", "lewis"] as const) {
       const scene = buildScene(benzene(), PUBLICATION_STYLE, representation(kind));
-      expect(ofType(scene.primitives, "line")).toHaveLength(6);
+      expect(ofType(scene.primitives, "line")).toHaveLength(9);
       expect(ofType(scene.primitives, "circle")).toHaveLength(0);
       const runs = ofType(scene.primitives, "textRun");
       expect(runs).toHaveLength(6);

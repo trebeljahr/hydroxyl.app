@@ -46,12 +46,16 @@ describe("contact sheet", () => {
       expect(html).toContain(`<h2>${fixture.name}</h2>`);
     }
     for (const kind of VIEW_KINDS) {
-      // One row per kind per fixture.
+      // One row per kind per fixture, plus a second `skeletal` row carrying
+      // the aromatic-circle flag — the circle is a FLAG rather than a kind and
+      // would be invisible on the sheet otherwise, which is where a circle at
+      // the wrong radius would go unnoticed forever.
       const rows = html.split(`class="kind">${kind}`).length - 1;
-      expect(rows, kind).toBe(FIXTURES.length);
+      expect(rows, kind).toBe(FIXTURES.length * (kind === "skeletal" ? 2 : 1));
     }
+    expect(html).toContain("<em>aromatic circles</em>");
     const cells = html.split('class="cell"').length - 1;
-    expect(cells).toBe(FIXTURES.length * VIEW_KINDS.length * 2);
+    expect(cells).toBe(FIXTURES.length * (VIEW_KINDS.length + 1) * 2);
   });
 
   it("embeds the SVG rather than linking it", () => {

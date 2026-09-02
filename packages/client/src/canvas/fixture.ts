@@ -20,10 +20,10 @@
  * not merely legible at figure size.
  *
  * Note that benzene arrives as an explicit Kekule ring — alternating single
- * and double bonds — and that today every structural view draws it as six
- * plain lines and six dots, because the second line of a double bond is a
- * later rendering pass. That is expected, and nothing in the canvas should
- * compensate for it.
+ * and double bonds — so a structural view draws NINE lines for six bonds, the
+ * inner line of each double bond included, and both lines of one bond carry
+ * the same `data-bond-id`. Anything in the canvas counting elements to count
+ * bonds is counting the wrong thing.
  */
 
 import { benzene } from "@starter/chem-core";

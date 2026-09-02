@@ -12,9 +12,9 @@
  *
  * GEOMETRY COMES FROM THE INDEX, never from the molecule. `atomCentre`,
  * `atomRadiusPx` and `bondSegment` report where the ink actually is, which is
- * the point: once a later rendering pass trims bond lines back to clear an
- * atom label, a highlight drawn over the untrimmed model geometry sticks out
- * past both ends of the line it is meant to be highlighting. No `modelToPx`
+ * the point: the renderer trims bond lines back to clear an atom label, so a
+ * highlight drawn over the untrimmed model geometry sticks out past both ends
+ * of the line it is meant to be highlighting. No `modelToPx`
  * call of our own, no scaling, no flip — those live in chem-render's style.ts
  * and nowhere else, and the index has already been through them.
  *

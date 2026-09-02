@@ -108,12 +108,21 @@ describe("toRenderRepresentation", () => {
     expect(Object.keys(rendered)).toEqual(["kind"]);
   });
 
-  it("drops aromaticCircles and showStereoDescriptors, which have no counterpart", () => {
-    // A truthful "not implemented yet" rather than a wrong picture. When a
-    // later pass grows them this test is the one that has to change.
+  it("carries aromaticCircles across and still drops showStereoDescriptors", () => {
+    // `aromaticCircles` used to be dropped here because nothing drew a circle.
+    // `chem-render-bond-geometry` gave the renderer one, so it is mapped now,
+    // and it cost the one line the header predicted.
+    //
+    // `showStereoDescriptors` stays dropped: the R/S and E/Z letters are a
+    // different thing from `showStereoBonds`, and they belong to
+    // `stereochemistry-perception-and-marks`. Setting it in the document is a
+    // truthful "not implemented yet" rather than a wrong picture, and when
+    // that pass lands this test is the one that has to change again.
     const rendered = toRenderRepresentation(allDisplayOn("kekule"));
     if (!isStructural(rendered)) throw new Error("kekule must be structural");
+    expect(rendered.flags.aromaticCircles).toBe(true);
     expect(Object.keys(rendered.flags).sort()).toEqual([
+      "aromaticCircles",
       "showAtomIndices",
       "showCarbonLabels",
       "showCharges",
@@ -121,6 +130,7 @@ describe("toRenderRepresentation", () => {
       "showLonePairs",
       "showStereoBonds",
     ]);
+    expect(Object.hasOwn(rendered.flags, "showStereoDescriptors")).toBe(false);
   });
 });
 
@@ -153,7 +163,7 @@ describe("buildDocumentScene", () => {
     const doc = fixtureDocument("2024-01-01T00:00:00.000Z");
     const scene = buildDocumentScene(doc, "panel-that-was-removed");
     expect(scene.representation.kind).toBe("skeletal");
-    expect(scene.primitives).toHaveLength(12);
+    expect(scene.primitives).toHaveLength(15);
   });
 
   it("draws a skeletal molecule for a document with no panels at all", () => {
@@ -162,23 +172,26 @@ describe("buildDocumentScene", () => {
     const doc = docWithPanels([]);
     const scene = buildDocumentScene(doc);
     expect(scene.representation.kind).toBe("skeletal");
-    expect(scene.primitives.filter((p) => p.type === "line")).toHaveLength(6);
+    expect(scene.primitives.filter((p) => p.type === "line")).toHaveLength(9);
   });
 
   it("draws benzene through the document's own style preset", () => {
     const doc = fixtureDocument("2024-01-01T00:00:00.000Z");
     const scene = buildDocumentScene(doc);
-    // Six ring bonds as six plain lines and six placeholder dots: benzene is
-    // an explicit Kekule ring, and the second line of a double bond is a later
-    // rendering pass. Nothing in the canvas compensates for that.
+    // Six ring bonds as nine lines and six placeholder dots: benzene is an
+    // explicit Kekule ring, and each of its three double bonds now draws a
+    // second line named from its own bond id rather than from a counter.
     expect(scene.style).toBe(SCREEN_STYLE);
     expect(scene.primitives.map((p) => p.id)).toEqual([
       "bond:b7:line",
       "bond:b8:line",
+      "bond:b8:line2",
       "bond:b9:line",
       "bond:b10:line",
+      "bond:b10:line2",
       "bond:b11:line",
       "bond:b12:line",
+      "bond:b12:line2",
       "atom:a1:dot",
       "atom:a2:dot",
       "atom:a3:dot",

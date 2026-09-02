@@ -104,9 +104,15 @@ describe("createSceneIndex — geometry", () => {
     const segment = index.bondSegment("b7");
     expect(segment?.a).toEqual(modelToPx(SCREEN_STYLE, MOL.atoms[bond.from]!.pos));
     expect(segment?.b).toEqual(modelToPx(SCREEN_STYLE, MOL.atoms[bond.to]!.pos));
-    // Untrimmed today, and the overlay draws over whatever the line reports —
-    // which is the point of reading it off the primitive rather than the model.
-    expect(scene.primitives.filter((p) => p.type === "line")).toHaveLength(6);
+    // b7 is a single bond between two BARE carbons, so nothing trims it and
+    // it still runs centre to centre. The segment is read off the drawn line
+    // rather than off the model precisely so that a bond which IS trimmed —
+    // one ending at a label — reports where the ink actually is, and a
+    // selection halo does not stick out past both ends of it.
+    //
+    // Nine lines for six bonds: each of benzene's three double bonds draws a
+    // second, and `bondSegment` takes the FIRST, which is the axis.
+    expect(scene.primitives.filter((p) => p.type === "line")).toHaveLength(9);
   });
 
   it("still reports a centre for an atom the style draws nothing for", () => {

@@ -23,6 +23,24 @@ export interface DisplayFlags {
   readonly showCharges: boolean;
   readonly showStereoBonds: boolean;
   readonly showAtomIndices: boolean;
+  /**
+   * Draw a perceived aromatic ring as one inscribed circle instead of the
+   * stored Kekule alternation.
+   *
+   * PER STRUCTURE, not per style preset. Both benzene.svg and
+   * circular-benzene.svg were wanted in the toolbar, so a figure has to be
+   * able to say "this one draws the circle" — a preset-wide choice cannot
+   * express that. The preset only supplies the INITIAL value, which
+   * `defaultRepresentation` in @starter/shared reads when a document is
+   * created.
+   *
+   * It is a display flag and nothing more: the bond orders in the model stay
+   * Kekule, which is the storage form. Turning it on suppresses the second
+   * line of every bond in a ring that actually got a circle — a ring below the
+   * geometry floor draws no circle and therefore keeps its alternation, rather
+   * than coming out as a bare hexagon with nothing inside it.
+   */
+  readonly aromaticCircles: boolean;
 }
 
 export interface StructuralRepresentation {
@@ -79,6 +97,11 @@ export const DEFAULT_DISPLAY_FLAGS: DisplayFlags = Object.freeze({
   showCharges: true,
   showStereoBonds: true,
   showAtomIndices: false,
+  // Off by default even on skeletal: chem-core stores benzene as an explicit
+  // Kekule ring, so a circle drawn ON TOP of the alternation would state the
+  // delocalisation twice. Switching the flag on is what makes the renderer
+  // suppress the alternation and draw the circle instead.
+  aromaticCircles: false,
 });
 
 /**

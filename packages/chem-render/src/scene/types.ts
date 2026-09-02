@@ -31,6 +31,13 @@ export interface ScenePoint {
 /**
  * What a primitive was drawn for.
  *
+ * `ring` exists for the one thing a molecule draws that is neither an atom nor
+ * a bond: the inscribed circle of an aromatic ring. A ring has no id in
+ * chem-core — it is an index into `rings(mol)`, and an index is exactly the
+ * iteration counter the determinism note below forbids — so the ring names
+ * itself by its ATOM SET, ordered by index in `mol.atomIds`. Clicking the
+ * circle can then select the ring the delocalisation belongs to.
+ *
  * `decoration` covers the things that belong to no model entity — the
  * background rect, a frame, the glyph run of a sum formula. Hit-testing
  * ignores them, and they must never be handed an atom or bond id just to make
@@ -39,6 +46,7 @@ export interface ScenePoint {
 export type SceneSource =
   | { readonly kind: "atom"; readonly atomId: AtomId }
   | { readonly kind: "bond"; readonly bondId: BondId }
+  | { readonly kind: "ring"; readonly atomIds: readonly AtomId[] }
   | { readonly kind: "decoration" };
 
 export interface SceneStroke {

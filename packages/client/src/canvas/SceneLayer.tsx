@@ -35,7 +35,7 @@
 
 import type { ReactElement } from "react";
 
-import { formatNumber } from "@starter/chem-render";
+import { formatNumber, scriptDyPx } from "@starter/chem-render";
 import type {
   RenderScene,
   SceneFill,
@@ -50,20 +50,6 @@ export interface SceneLayerProps {
   readonly scene: RenderScene;
 }
 
-/**
- * Sub/superscript offsets, as a fraction of the run's font size.
- *
- * DUPLICATED FROM serialize.ts, which keeps them module-private. Two copies of
- * a typographic constant is a real seam: change the exporter's and a formula
- * sets its subscripts one place on screen and another in the exported figure,
- * with nothing to catch it. The honest fix is for chem-render to export them
- * (or better, to resolve the shifts into the scene IR so both backends read
- * the same numbers off the primitive) — a later task. Until then, if you touch
- * one of these, touch the other.
- */
-const SUBSCRIPT_DY_FACTOR = 0.25;
-const SUPERSCRIPT_DY_FACTOR = -0.35;
-
 /** The per-scene formatting decisions, threaded down instead of re-read. */
 interface Format {
   readonly precision: number;
@@ -75,6 +61,7 @@ interface SourceAttrs {
   readonly "data-primitive-id": string;
   readonly "data-atom-id"?: string;
   readonly "data-bond-id"?: string;
+  readonly "data-ring-atom-ids"?: string;
   readonly "data-decoration"?: string;
 }
 
@@ -245,12 +232,13 @@ function textRunElement(
       dominantBaseline={p.baseline}
     >
       {p.spans.map((span, index) => {
-        const target =
-          span.script === "sub"
-            ? p.fontSizePx * SUBSCRIPT_DY_FACTOR
-            : span.script === "super"
-              ? p.fontSizePx * SUPERSCRIPT_DY_FACTOR
-              : 0;
+        // Through chem-render's own `scriptDyPx`, never a local copy of the
+        // factors. Two copies of a typographic constant is a real seam: change
+        // the exporter's and a formula sets its subscripts one place on screen
+        // and another in the exported figure, with nothing to catch it. This
+        // file used to hold the second copy; chem-render exports the shift
+        // beside the font metrics the measurer uses, so there is one.
+        const target = scriptDyPx(span.script, p.fontSizePx);
         const dy = target - shift;
         shift = target;
 
@@ -292,6 +280,13 @@ function sourceAttrs(id: string, source: SceneSource): SourceAttrs {
       return { "data-primitive-id": id, "data-atom-id": source.atomId };
     case "bond":
       return { "data-primitive-id": id, "data-bond-id": source.bondId };
+    case "ring":
+      // A ring has no id of its own in chem-core, only an index into a list
+      // whose order is insertion order, so it names itself by its atom set.
+      return {
+        "data-primitive-id": id,
+        "data-ring-atom-ids": source.atomIds.join(" "),
+      };
     case "decoration":
       // No model entity to point at; the flag exists so a consumer walking the
       // DOM can skip the background rect and the frame the way hit-testing

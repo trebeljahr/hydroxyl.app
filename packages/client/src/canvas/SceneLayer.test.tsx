@@ -52,16 +52,23 @@ function tagsOf(container: HTMLElement, selector: string): string[] {
 }
 
 describe("SceneLayer", () => {
-  it("draws benzene as exactly six bond elements and six atom elements", () => {
+  it("draws benzene as nine bond elements and six atom elements", () => {
     const container = renderScene(SCENE);
 
-    expect(container.querySelectorAll("[data-bond-id]")).toHaveLength(6);
+    // Nine lines for six bonds: benzene is an explicit Kekule ring, and each
+    // of its three double bonds draws a second line carrying the same
+    // `data-bond-id` as the first.
+    expect(container.querySelectorAll("[data-bond-id]")).toHaveLength(9);
     expect(container.querySelectorAll("[data-atom-id]")).toHaveLength(6);
-    // Six plain lines and six dots, because bond order is ignored until the
-    // second line of a double bond is a real rendering pass. Benzene is an
-    // explicit Kekule ring and nothing in the view compensates for that.
-    expect(tagsOf(container, "[data-bond-id]")).toEqual(Array(6).fill("line"));
+    expect(tagsOf(container, "[data-bond-id]")).toEqual(Array(9).fill("line"));
     expect(tagsOf(container, "[data-atom-id]")).toEqual(Array(6).fill("circle"));
+    expect(
+      new Set(
+        [...container.querySelectorAll("[data-bond-id]")].map((el) =>
+          el.getAttribute("data-bond-id"),
+        ),
+      ).size,
+    ).toBe(6);
   });
 
   it("names each element by its primitive's own id, not by an index", () => {
@@ -136,7 +143,8 @@ describe("SceneLayer", () => {
     expect(container.querySelector('[data-primitive-id="bond:b8:line"]')).toBe(
       nodeB8,
     );
-    expect(container.querySelectorAll("[data-bond-id]")).toHaveLength(5);
+    // b7 was a single bond, so one of the nine lines went with it.
+    expect(container.querySelectorAll("[data-bond-id]")).toHaveLength(8);
     expect(container.querySelectorAll("[data-atom-id]")).toHaveLength(6);
   });
 
@@ -182,6 +190,6 @@ describe("SceneLayer", () => {
       buildScene(MOL, withStyle(SCREEN_STYLE, { atomDotRadiusPx: 0 }), SKELETAL),
     );
     expect(container.querySelectorAll("[data-atom-id]")).toHaveLength(0);
-    expect(container.querySelectorAll("[data-bond-id]")).toHaveLength(6);
+    expect(container.querySelectorAll("[data-bond-id]")).toHaveLength(9);
   });
 });
