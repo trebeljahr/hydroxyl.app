@@ -10,8 +10,22 @@ export type BondOrder = 1 | 2 | 3;
  * Stereo annotation on a bond. Direction is always "narrow end at `from`",
  * matching the molfile convention where the wedge begins at the first atom.
  * Swapping `from`/`to` therefore inverts a wedge — see `flipBond` in ops.ts.
+ *
+ * `wedge`, `hash` and `wavy` describe a SINGLE bond: out of the page, into the
+ * page, and "configuration unknown at this centre". `either` describes a
+ * DOUBLE bond — the crossed double bond, meaning cis/trans unspecified.
+ * They are separate members rather than one "unknown" because they are two
+ * different statements about two different kinds of uncertainty, and because
+ * the model has to be able to hold one: V2000 bond stereo code 3 is `either`,
+ * and a real SDF hands you one on any double bond whose geometry was never
+ * determined. Folding it into `wavy` would export code 4 on a double bond,
+ * which readers interpret as a stereocentre rather than a geometry.
+ *
+ * A MIRROR (flipAtoms in transform.ts) exchanges `wedge` and `hash` and leaves
+ * `wavy` and `either` alone: an undetermined configuration has no handedness
+ * to reverse.
  */
-export type BondStereo = "none" | "wedge" | "hash" | "wavy";
+export type BondStereo = "none" | "wedge" | "hash" | "wavy" | "either";
 
 /**
  * Which side of the bond axis the second line of a double bond sits on.

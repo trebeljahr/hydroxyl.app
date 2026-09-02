@@ -60,6 +60,14 @@ function stereocentre(): Molecule {
     b.bond(c, br, 1, "wedge");
     b.bond(c, cl, 1, "hash");
     b.bond(c, r, 1, "wavy");
+    // Added after the bonds so the existing ids below keep their numbers:
+    // atoms and bonds share one monotonic counter.
+    const alkene = b.atom("C", { x: 1.5, y: 1 });
+    // `either` — the crossed double bond, cis/trans unspecified. Added when
+    // chem-core's molblock reader started producing it from V2000 stereo code
+    // 3: the enum here had never heard of it, so a sketch holding one encoded
+    // silently and then failed to decode, taking the whole document with it.
+    b.bond(br, alkene, 2, "either");
   });
 }
 
@@ -221,6 +229,7 @@ describe("no undefined-valued keys", () => {
     expect(decoded.molecule.bonds.b5?.stereo).toBe("wedge");
     expect(decoded.molecule.bonds.b6?.stereo).toBe("hash");
     expect(decoded.molecule.bonds.b7?.stereo).toBe("wavy");
+    expect(decoded.molecule.bonds.b9?.stereo).toBe("either");
   });
 });
 

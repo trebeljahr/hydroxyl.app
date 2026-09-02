@@ -36,6 +36,7 @@ import {
   type AtomId,
   type Bond,
   type BondId,
+  type BondStereo,
   type Molecule,
 } from "@starter/chem-core";
 import { z } from "zod";
@@ -325,12 +326,40 @@ const atomSchema = z.object({
   label: z.string().optional(),
 });
 
+/**
+ * Every `BondStereo` member, listed once and checked against the union.
+ *
+ * The list used to be inlined in `bondSchema` and drifted the moment chem-core
+ * gained `either` (the crossed double bond, which the molblock reader produces
+ * from V2000 stereo code 3): `encodeBond` returns a `JsonObject`, so writing
+ * the new member was not a type error, and `SchemasCoverModel` below checks
+ * that the schema mentions every KEY of `Bond`, not every member of a union.
+ * The result encoded silently and then failed to decode — one imported bond
+ * made the whole sketch unopenable.
+ *
+ * `satisfies` catches a member removed from the union; `StereoListIsTotal`
+ * catches one added to it. Between them the next member is a compile error
+ * here rather than a runtime rejection in the user's saved file.
+ */
+const BOND_STEREO_VALUES = [
+  "none",
+  "wedge",
+  "hash",
+  "wavy",
+  "either",
+] as const satisfies readonly BondStereo[];
+
+type StereoListIsTotal =
+  BondStereo extends (typeof BOND_STEREO_VALUES)[number] ? true : never;
+const STEREO_LIST_IS_TOTAL: StereoListIsTotal = true;
+void STEREO_LIST_IS_TOTAL;
+
 const bondSchema = z.object({
   id: nonEmptyString,
   from: nonEmptyString,
   to: nonEmptyString,
   order: z.union([z.literal(1), z.literal(2), z.literal(3)]),
-  stereo: z.enum(["none", "wedge", "hash", "wavy"]),
+  stereo: z.enum(BOND_STEREO_VALUES),
   doubleBondSide: z.enum(["auto", "left", "right", "centered"]),
   aromatic: z.boolean(),
 });
@@ -462,8 +491,8 @@ function checkMoleculeIntegrity(mol: MoleculeShape, ctx: z.RefinementCtx): void 
     }
     const pair =
       bond.from < bond.to
-        ? `${bond.from} ${bond.to}`
-        : `${bond.to} ${bond.from}`;
+        ? `${bond.from}\u0000${bond.to}`
+        : `${bond.to}\u0000${bond.from}`;
     if (bondedPairs.has(pair)) {
       ctx.addIssue({
         code: "custom",
