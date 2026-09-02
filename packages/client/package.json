@@ -5,14 +5,12 @@
   "scripts": {
     "dev": "next dev --port ${PORT:-6337}",
     "build": "next build",
-    "start": "next start",
+    "start": "next start --port ${PORT:-6337}",
     "lint": "eslint .",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@openpanel/nextjs": "^1.5.1",
-    "@sentry/nextjs": "^10.53.1",
     "@starter/chem-core": "workspace:*",
     "@starter/shared": "workspace:*",
     "class-variance-authority": "^0.7.1",

@@ -1,0 +1,20 @@
+# Keep the build context to source. Without this the context is ~844 MB
+# (739 MB of the host's macOS node_modules plus a ~104 MB stale
+# packages/client/.next), and the per-package COPY steps in ./Dockerfile
+# would overlay the container's linux install with darwin binaries.
+.git
+.github
+.claude
+**/node_modules
+**/.next
+**/dist
+**/out
+**/*.tsbuildinfo
+e2e
+playwright-report
+test-results
+coverage
+Dockerfile
+.dockerignore
+docker-compose*.yml
+*.md

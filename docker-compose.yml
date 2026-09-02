@@ -4,14 +4,11 @@
 
 services:
   client:
-    image: ${CLIENT_IMAGE:-ghcr.io/trebeljahr/chemistry-sketcher-client:main}
+    image: ${CLIENT_IMAGE:-ghcr.io/trebeljahr/chemistry-sketcher-client:master}
     environment:
-      # Pin client port — Coolify's app-level PORT (set for the server)
-      # would otherwise bleed into every service.
+      # Pin the client port explicitly so a Coolify app-level PORT cannot
+      # bleed into this service. Must stay in step with ENV PORT / EXPOSE
+      # / HEALTHCHECK in ./Dockerfile.
       PORT: "6337"
-      # Deliberately NO NEXT_PUBLIC_* here: Next.js inlines those into
-      # the browser bundle when the image is BUILT, so runtime env on
-      # this prebuilt container cannot affect them. They are passed as
-      # Docker build args in .github/workflows/build-and-deploy.yml.
     restart: unless-stopped
 

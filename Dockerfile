@@ -1,107 +1,79 @@
 # syntax=docker/dockerfile:1
 #
-# Next.js + Coolify image for chemistry-sketcher (pnpm/yarn workspace monorepo
-# variant). The Next app lives at `packages/client/` and is built
-# from the workspace root so the lockfile / hoisted node_modules stay
-# coherent with what `pnpm install` produces on the developer's machine.
+# Production image for chemistry-sketcher. There is no server package:
+# this repo is a client-only surface, so the image builds exactly one
+# thing — the Next.js app at packages/client — and serves it from Next's
+# standalone output on PORT (6337 by default).
 #
-# Why a separate template from Dockerfile.nextjs.hbs:
-#   - `pnpm install --frozen-lockfile` must run at the WORKSPACE ROOT,
-#     not inside the sub-package, or pnpm refuses to resolve the lockfile.
-#   - `pnpm --filter <name> build` keys off the package `name` field
-#     (not the directory), which is why we pass `packageName` separately
-#     from `monorepoPackage`.
-#   - `next start` needs WORKDIR to be the sub-package so it can find
-#     `.next/` and `next.config.*` where Next.js expects them on disk.
+# Why the staged COPY set rather than `COPY . .`: `pnpm install
+# --frozen-lockfile` must run at the workspace ROOT with EVERY package
+# manifest present. With manifests missing, pnpm's `packages/*` glob
+# matches nothing, the install "succeeds" having installed only the root
+# devDependencies, and the build then fails far downstream. Copying the
+# manifests first also keeps the install layer cached across source-only
+# changes.
 #
-# dotenvx decrypts the committed encrypted .env.production at TWO points:
+# Why `pnpm run build` and not `pnpm --filter @starter/client build`: the
+# root script chains build:deps (chem-core tsc, then shared tsc) before
+# `next build`. The client consumes both from their built dist/, so
+# skipping the chain leaves @starter/chem-core unresolvable.
 #
-#   1. Build stage — uses the dotenvx_private_key BuildKit secret
-#      (passed by the workflow from the GH Actions secret
-#      DOTENV_PRIVATE_KEY_PRODUCTION) to decrypt in-memory before
-#      running the build. Required so NEXT_PUBLIC_* values get inlined
-#      into the static client bundle. The secret is mounted as tmpfs
-#      and never lands in `docker history` or any image layer.
+# The install deliberately keeps devDependencies. `next build` typechecks
+# the whole client project, which now includes vitest.config.ts and the
+# *.test.tsx files — adding --prod here breaks the build on unresolved
+# test imports.
 #
-#   2. Runtime CMD — `dotenvx run` reads the same .env.production and
-#      decrypts again, this time using DOTENV_PRIVATE_KEY_PRODUCTION
-#      from the container env (forwarded by docker-compose.yml from
-#      Coolify's app env). This covers server-side values the runtime
-#      reads with `process.env.X` — Server Action handlers, route
-#      handlers, etc.
-#
-# Image base is bookworm-slim (not alpine) because Next's optional
-# native deps (sharp for image optimisation) ship glibc binaries that
-# don't run on Alpine's musl without a rebuild.
+# bookworm-slim, not alpine: Next's optional native deps (sharp) ship
+# glibc binaries that do not run on musl without a rebuild.
 ARG NODE_VERSION=24
 
-# ---------------------------------------------------------------------------
-# Build
-# ---------------------------------------------------------------------------
-FROM node:${NODE_VERSION}-bookworm-slim AS build
-WORKDIR /app
-
+# ── Stage 1: install workspace dependencies ─────────────────────────
+FROM node:${NODE_VERSION}-bookworm-slim AS deps
 RUN corepack enable
-
-# Bring in the workspace manifests first so `pnpm install` can hit the
-# Docker layer cache when only source files (not deps) change.
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY packages/client/package.json ./packages/client/package.json
+WORKDIR /app
+# pnpm-workspace.yaml belongs in this layer: it carries the allowBuilds
+# approvals for esbuild / sharp / unrs-resolver.
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY packages/chem-core/package.json packages/chem-core/
+COPY packages/client/package.json packages/client/
+COPY packages/shared/package.json packages/shared/
 RUN pnpm install --frozen-lockfile
 
-COPY . .
+# ── Stage 2: build ─────────────────────────────────────────────────
+FROM deps AS build
+# packages/chem-core/tsconfig.json and packages/shared/tsconfig.json both
+# extend ../../tsconfig.base.json.
+COPY tsconfig.base.json ./
+COPY packages/chem-core packages/chem-core
+COPY packages/shared packages/shared
+COPY packages/client packages/client
+RUN pnpm run build
 
-# Two separate RUN steps on purpose: BuildKit echoes the entire RUN
-# body into any failure log, so splitting the secret-presence check
-# off means the "secret not supplied" message only surfaces when
-# that's actually what failed — a downstream `next build` error
-# won't drag the misleading echo into its context.
-RUN --mount=type=secret,id=dotenvx_private_key,env=DOTENV_PRIVATE_KEY_PRODUCTION \
-    test -n "$DOTENV_PRIVATE_KEY_PRODUCTION" || { \
-      echo "ERROR: dotenvx_private_key build secret not supplied. The workflow at .github/workflows/deploy.yml should pass it via 'secrets:' from the GH Actions secret DOTENV_PRIVATE_KEY_PRODUCTION." >&2; \
-      exit 1; \
-    }
-
-# dotenvx decrypts .env.production in memory and re-exports each
-# KEY=VALUE for `pnpm build`. next build sees the plain values and
-# bakes NEXT_PUBLIC_* into the static client bundle. The --filter
-# targets the package by its `name` field, not its directory.
-RUN --mount=type=secret,id=dotenvx_private_key,env=DOTENV_PRIVATE_KEY_PRODUCTION \
-    pnpm dlx @dotenvx/dotenvx run -- pnpm --filter @starter/client build
-
-# ---------------------------------------------------------------------------
-# Runtime — `next start` on PORT=3000, WORKDIR'd into the sub-package.
-# ---------------------------------------------------------------------------
+# ── Stage 3: production runtime ────────────────────────────────────
 FROM node:${NODE_VERSION}-bookworm-slim AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production
-ENV PORT=3000
+ENV PORT=6337
+# next standalone's server.js does `process.env.HOSTNAME || "0.0.0.0"`.
+# Pin it so an orchestrator that injects a container name cannot make the
+# server bind to that name instead of every interface.
+ENV HOSTNAME=0.0.0.0
 
-# dotenvx is rarely a direct dep of the Next sub-package; install it
-# globally in the runtime stage so the CMD always finds it.
-RUN npm install -g @dotenvx/dotenvx@latest && npm cache clean --force
+# next.config.ts sets outputFileTracingRoot to the monorepo root, so the
+# standalone tree is re-rooted there: server.js lands at
+# packages/client/server.js with its traced deps in node_modules/.pnpm.
+# Deliberately NO `COPY --from=build /app/node_modules` — tracing already
+# shipped what is needed (~36 MB against 702 MB for the full store), and
+# the relative symlinks survive COPY --from intact.
+COPY --from=build /app/packages/client/.next/standalone ./
+COPY --from=build /app/packages/client/.next/static ./packages/client/.next/static
+COPY --from=build /app/packages/client/public ./packages/client/public
 
-# Workspace skeleton: pnpm refuses to resolve when the lockfile or
-# workspace manifest is missing, and `next start` walks up looking for
-# `next.config.*` so the sub-package manifest has to be in place too.
-COPY --from=build /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml ./
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/.env.production ./
-COPY --from=build /app/packages/client/package.json ./packages/client/package.json
-COPY --from=build /app/packages/client/next.config.* ./packages/client/
-COPY --from=build /app/packages/client/node_modules ./packages/client/node_modules
-COPY --from=build /app/packages/client/.next ./packages/client/.next
+USER node
+EXPOSE 6337
 
-WORKDIR /app/packages/client
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=5 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||'6337')).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 
-EXPOSE 3000
-
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=5 \
-  CMD node -e "require('http').get('http://127.0.0.1:3000/',r=>{process.exit(r.statusCode<400?0:1)}).on('error',()=>process.exit(1))"
-
-# dotenvx decrypts /app/.env.production at startup using
-# DOTENV_PRIVATE_KEY_PRODUCTION from the container env (forwarded by
-# Coolify via docker-compose.yml). The -f flag is required because
-# WORKDIR is the sub-package, not the workspace root.
-CMD ["dotenvx", "run", "-f", "/app/.env.production", "--", "./node_modules/.bin/next", "start", "--port", "3000"]
+CMD ["node", "packages/client/server.js"]

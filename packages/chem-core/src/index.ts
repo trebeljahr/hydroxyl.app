@@ -3,8 +3,9 @@
  *
  * Pure TypeScript: no React, no DOM, no dependencies. Everything the editor
  * knows about molecules lives here so it can be unit-tested without a
- * browser, reused by the server for headless rendering, and swapped between
- * renderers without touching chemistry logic.
+ * browser, reused headlessly, and swapped between renderers without
+ * touching chemistry logic. (There is no server package — this repo is a
+ * client-only surface.)
  */
 
 export * from "./elements.js";

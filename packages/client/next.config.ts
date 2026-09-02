@@ -18,9 +18,12 @@ const nextConfig: NextConfig = {
           assetPrefix: "./",
         }
       : {
-          // Standalone build for the web server image (Coolify Dockerfile).
-          // Trace from the monorepo root so the standalone bundle includes
-          // workspace deps (@starter/shared, @starter/server).
+          // Standalone build for the web image (the root ./Dockerfile).
+          // Trace from the monorepo root so the standalone tree is
+          // re-rooted there — server.js lands at
+          // packages/client/server.js. The workspace deps
+          // (@starter/chem-core, @starter/shared) are inlined by
+          // transpilePackages below rather than traced into node_modules.
           // process.cwd() is `<repo>/packages/client` during `next build`.
           output: "standalone" as const,
           outputFileTracingRoot: path.join(process.cwd(), "..", ".."),

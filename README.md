@@ -35,7 +35,8 @@ packages/
 ```
 
 `chem-core` is deliberately framework-free so the chemistry can be tested
-without a browser and reused server-side for headless rendering.
+without a browser and reused headlessly. There is no server package — the
+editor runs entirely in the browser.
 
 ### Design decisions worth knowing
 
@@ -56,9 +57,15 @@ without a browser and reused server-side for headless rendering.
 ```bash
 pnpm install
 pnpm dev          # client at http://localhost:6337
-pnpm test         # chem-core + client
+pnpm test         # chem-core + client unit tests
 pnpm typecheck
 pnpm build
+
+# End-to-end (Playwright). Browsers are NOT downloaded by `pnpm install`
+# — pnpm-workspace.yaml's allowBuilds allowlist omits playwright on
+# purpose. Install them once:
+pnpm exec playwright install chromium
+pnpm test:e2e
 ```
 
 ## Deployment

@@ -1,0 +1,21 @@
+{
+  // Covers the TypeScript that lives at the repo ROOT — playwright.config.ts
+  // and the e2e specs. Without this they are typechecked by nothing:
+  // `pnpm typecheck` runs `pnpm -r run typecheck`, which visits only the
+  // three packages, and Playwright transpiles specs without type errors
+  // ever failing the run. A broken locator type would have shipped silently.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    // Bundler resolution, not the base's NodeNext: Playwright resolves
+    // specs itself and these files use extensionless relative imports.
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["playwright.config.ts", "e2e/**/*.ts"]
+}

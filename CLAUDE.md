@@ -108,10 +108,19 @@ to resolve.
 ## How to Test
 
 ```bash
-pnpm test              # chem-core + client
+pnpm test              # chem-core + client unit tests
 pnpm test:core         # chem-core only
+pnpm test:client       # client only (Vitest, jsdom — packages/client/vitest.config.ts)
 pnpm --filter @starter/chem-core test:watch
+
+# Playwright. Browsers are not downloaded by `pnpm install` (allowBuilds in
+# pnpm-workspace.yaml omits playwright), so install them once:
+pnpm exec playwright install chromium
+pnpm test:e2e          # root playwright.config.ts, specs in e2e/, baseURL :6337
 ```
+
+`*.test.ts(x)` is Vitest, `*.spec.ts` is Playwright — the split is what keeps
+each runner from collecting the other's files.
 
 New chemistry behaviour needs a `chem-core` unit test. Prefer real molecules
 over synthetic graphs in assertions — benzene, ethanol, acetate, a sulfone —

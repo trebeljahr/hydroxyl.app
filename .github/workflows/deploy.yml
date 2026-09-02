@@ -1,41 +1,36 @@
-# Build → push → deploy pipeline scaffolded by hatchkit.
+# Build → push → deploy pipeline scaffolded by hatchkit, pruned to the
+# client-only surface this repo actually has.
 #
-#   1. verify        — install deps, build, run unit + client tests.
-#   2. e2e           — full Playwright E2E run against Docker services.
-#   3. build-server  — build packages/server image, push to GHCR as
-#                       `ghcr.io/<owner>/<repo>-server:<branch>` +
-#                       `:<sha>`.
-#   4. build-client  — build packages/client image, push to GHCR as
-#                       `ghcr.io/<owner>/<repo>-client:<branch>` +
-#                       `:<sha>`.
-#   5. deploy        — after BOTH image jobs succeed, trigger Coolify
-#                       to redeploy via its API (or webhook fallback).
+#   1. verify        — install, typecheck, unit tests, production build,
+#                      and a static-export build. NEXT_FILE_EXPORT=1 is a
+#                      recorded binding decision (no route may use a
+#                      dynamic segment, no server may be added), so CI
+#                      guards it rather than discovering a break at
+#                      packaging time.
+#   2. e2e           — Playwright smoke run. playwright.config.ts's
+#                      webServer builds and serves the app on 6337; there
+#                      is no database, cache or object store to start.
+#   3. build-client  — build ./Dockerfile, push to GHCR as
+#                      `ghcr.io/<owner>/<repo>-client:master` + `:<sha>`.
+#   4. deploy        — once the image is pushed, tell Coolify to redeploy
+#                      via its API (webhook fallback).
 #
-# Required repo secrets (hatchkit sets these via `gh secret set`
-# during adopt / create; rotate via the GitHub UI / `gh` whenever
-# needed):
-#   COOLIFY_BASE_URL              — base URL of the Coolify install
-#                                   (e.g. https://coolify.example.com)
-#   COOLIFY_RESOURCE_UUID         — uuid of the application resource
-#                                   in Coolify to redeploy
-#   COOLIFY_API_TOKEN             — bearer token for the Coolify API
-#   COOLIFY_WEBHOOK_URL           — (optional fallback) per-app deploy
-#                                   webhook URL, used only when
-#                                   COOLIFY_BASE_URL is unset
-#   DOTENV_PRIVATE_KEY_PRODUCTION — dotenvx private key; passed to the
-#                                   docker build as a BuildKit secret
-#                                   (mounted as tmpfs, never written
-#                                   to a layer or `docker history`).
-#                                   The Dockerfile uses it to decrypt
-#                                   .env.production in memory and bake
-#                                   build-time values (NEXT_PUBLIC_*
-#                                   etc.) into the output. Stored in
-#                                   your OS keychain under
-#                                   `dotenvx:<project>:production-private-key`
-#                                   — `hatchkit keys show <project>` to retrieve.
+# Required repo secrets (hatchkit sets these via `gh secret set` during
+# adopt / create; rotate via the GitHub UI / `gh`):
+#   COOLIFY_BASE_URL      — base URL of the Coolify install
+#                           (e.g. https://coolify.example.com)
+#   COOLIFY_RESOURCE_UUID — uuid of the Coolify application resource to
+#                           redeploy
+#   COOLIFY_API_TOKEN     — bearer token for the Coolify API
+#   COOLIFY_WEBHOOK_URL   — (optional fallback) per-app deploy webhook,
+#                           used only when COOLIFY_BASE_URL is unset
 #
-# GHCR auth uses the workflow's built-in GITHUB_TOKEN. For Coolify
-# to pull a private package, SSH into the Coolify host once and run
+# No dotenvx BuildKit secret any more: .env.production carries no value
+# the app reads, and requiring the key made `docker build .` impossible
+# from a clean checkout. DOTENV_PRIVATE_KEY_PRODUCTION is now unused.
+#
+# GHCR auth uses the workflow's built-in GITHUB_TOKEN. For Coolify to
+# pull a private package, SSH into the Coolify host once and run
 # `docker login ghcr.io` — Coolify reads ~/.docker/config.json
 # automatically. See:
 # https://coolify.io/docs/knowledge-base/custom-docker-registry
@@ -64,27 +59,15 @@ jobs:
           node-version-file: .nvmrc
       - uses: pnpm/action-setup@v4
       - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck
+      - run: pnpm run test
       - run: pnpm run build
-      - run: pnpm run test:unit
-      - run: pnpm run test:client
+      - name: Static export must keep building
+        run: NEXT_FILE_EXPORT=1 pnpm run build
 
   e2e:
     runs-on: ubuntu-latest
     needs: [verify]
-    services:
-      mongo-e2e:
-        image: mongo:7
-        ports:
-          - 27018:27017
-      redis-e2e:
-        image: redis:7-alpine
-        ports:
-          - 6380:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -92,72 +75,26 @@ jobs:
           node-version-file: .nvmrc
       - uses: pnpm/action-setup@v4
       - run: pnpm install --frozen-lockfile
-      - run: pnpm run build
-
-      - name: Start MinIO
-        run: |
-          docker run -d --name e2e-minio -p 9002:9000 \
-            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
-            --tmpfs /data minio/minio:latest server /data
-          for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:9002/minio/health/live && break
-            sleep 1
-          done
-          docker run --rm --network host \
-            --entrypoint sh minio/mc:latest -c \
-            "mc alias set local http://127.0.0.1:9002 minioadmin minioadmin && \
-             mc mb --ignore-existing local/starter-e2e && \
-             mc anonymous set download local/starter-e2e"
-
-      - run: npx playwright install --with-deps chromium
-
+      # pnpm-workspace.yaml's allowBuilds allowlist deliberately omits
+      # playwright, so `pnpm install` never downloads browsers.
+      - run: pnpm exec playwright install --with-deps chromium
+      # No separate build step: playwright.config.ts's webServer runs
+      # `pnpm run build:client` itself, which is what keeps a bare
+      # `pnpm exec playwright test` working on a clean checkout too.
       - name: Run E2E tests
-        run: npx playwright test
+        run: pnpm exec playwright test
         env:
           CI: "true"
-          MONGODB_URI: mongodb://127.0.0.1:27018/starter-e2e
-          REDIS_URL: redis://127.0.0.1:6380
-          BETTER_AUTH_SECRET: e2e-test-secret
-          BETTER_AUTH_URL: http://127.0.0.1:5006
-          FRONTEND_URL: http://127.0.0.1:3001
-          S3_ENDPOINT: http://127.0.0.1:9002
-          S3_FORCE_PATH_STYLE: "true"
-          S3_BUCKET_NAME: starter-e2e
-          S3_PUBLIC_URL: http://127.0.0.1:9002/starter-e2e
-          AWS_ACCESS_KEY_ID: minioadmin
-          AWS_SECRET_ACCESS_KEY: minioadmin
-          AWS_REGION: us-east-1
-
-  build-server:
-    runs-on: ubuntu-latest
-    needs: [verify]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/login-action@v3
+      - uses: actions/upload-artifact@v4
+        if: failure()
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: packages/server/Dockerfile
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository }}-server:master
-            ghcr.io/${{ github.repository }}-server:${{ github.sha }}
-          # BuildKit secret for decrypting .env.production at build
-          # time. Mounted as tmpfs inside the Dockerfile's RUN step,
-          # never written to a layer or `docker history`. The Dockerfile
-          # exposes it as the DOTENV_PRIVATE_KEY_PRODUCTION env var for
-          # `dotenvx run -- pnpm build`, which decrypts in memory and
-          # bakes NEXT_PUBLIC_* / VITE_* values into the bundle.
-          secrets: |
-            dotenvx_private_key=${{ secrets.DOTENV_PRIVATE_KEY_PRODUCTION }}
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
 
   build-client:
     runs-on: ubuntu-latest
-    needs: [verify]
+    needs: [verify, e2e]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/login-action@v3
@@ -168,17 +105,15 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
-          file: packages/client/Dockerfile
+          file: Dockerfile
           push: true
           tags: |
             ghcr.io/${{ github.repository }}-client:master
             ghcr.io/${{ github.repository }}-client:${{ github.sha }}
-          secrets: |
-            dotenvx_private_key=${{ secrets.DOTENV_PRIVATE_KEY_PRODUCTION }}
 
   deploy:
     runs-on: ubuntu-latest
-    needs: [build-server, build-client]
+    needs: [build-client]
     steps:
       - name: Deploy via Coolify API
         env:
