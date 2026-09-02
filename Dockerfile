@@ -35,16 +35,17 @@ WORKDIR /app
 # approvals for esbuild / sharp / unrs-resolver.
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY packages/chem-core/package.json packages/chem-core/
+COPY packages/chem-render/package.json packages/chem-render/
 COPY packages/client/package.json packages/client/
 COPY packages/shared/package.json packages/shared/
 RUN pnpm install --frozen-lockfile
 
 # ── Stage 2: build ─────────────────────────────────────────────────
 FROM deps AS build
-# packages/chem-core/tsconfig.json and packages/shared/tsconfig.json both
-# extend ../../tsconfig.base.json.
+# chem-core, chem-render and shared all extend ../../tsconfig.base.json.
 COPY tsconfig.base.json ./
 COPY packages/chem-core packages/chem-core
+COPY packages/chem-render packages/chem-render
 COPY packages/shared packages/shared
 COPY packages/client packages/client
 RUN pnpm run build
