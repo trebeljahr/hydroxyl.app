@@ -26,7 +26,14 @@
 
 import { getAtom, getBond, DEFAULT_LABEL_RADIUS } from "@starter/chem-core";
 import type { AtomId, BondId, Molecule } from "@starter/chem-core";
-import { modelToPx, pxPerModelUnit, sceneBounds, withStyle } from "@starter/chem-render";
+import {
+  atomLabelPlacement,
+  isStructural,
+  modelToPx,
+  pxPerModelUnit,
+  sceneBounds,
+  withStyle,
+} from "@starter/chem-render";
 import type {
   LinePrimitive,
   RenderScene,
@@ -47,6 +54,26 @@ export interface SceneIndex {
   bondSegment(id: BondId): { readonly a: ScenePoint; readonly b: ScenePoint } | undefined;
   /** MODEL UNITS (bond lengths), for chem-core's `hitTest`. */
   labelRadius(id: AtomId): number;
+}
+
+/**
+ * The furthest corner of `box` from `centre`.
+ *
+ * Circumscribed rather than inscribed because even the symbol block is not
+ * exactly centred on the atom — `labelPaddingPx` and the cap band are not
+ * symmetric about it — and a radius that stopped at the nearest edge would
+ * leave part of the drawn glyph unclickable.
+ */
+function circumscribedRadius(
+  box: { minX: number; minY: number; maxX: number; maxY: number },
+  centre: ScenePoint,
+): number {
+  return Math.max(
+    Math.hypot(box.minX - centre.x, box.minY - centre.y),
+    Math.hypot(box.maxX - centre.x, box.minY - centre.y),
+    Math.hypot(box.minX - centre.x, box.maxY - centre.y),
+    Math.hypot(box.maxX - centre.x, box.maxY - centre.y),
+  );
 }
 
 /** Sole entry point: one walk of the scene, then constant-time lookups. */
@@ -95,31 +122,51 @@ export function createSceneIndex(
   }
 
   function measureAtomRadiusPx(id: AtomId): number {
-    const primitives = atomPrimitives.get(id);
-    if (primitives === undefined || primitives.length === 0) return 0;
     const centre = atomCentre(id);
     if (centre === undefined) return 0;
 
-    // Measured with chem-render's OWN bounds pass rather than by reading the
-    // radii and font sizes back off the primitives here. chem-render is the
-    // only thing that knows how it estimates a glyph advance, an ascent, or
-    // the half-width a stroke straddles its centreline by; a second estimate
-    // in the client would agree today, when an atom is a plain circle, and
-    // drift the instant real labels land — and it would drift silently, as a
-    // pick target that no longer matches the glyph under it.
-    const box = sceneBounds(primitives, zeroMargin);
+    // A LABELLED atom is measured from its SYMBOL block, not from everything
+    // it draws.
+    //
+    // The pick radius chem-core's `hitTest` takes is a scalar, so it is the
+    // same in every direction. A label's ink box is not: "OH" hangs its
+    // hydrogen east of the oxygen the bond actually arrives at. Taking the
+    // whole box's furthest corner therefore projects the hydrogen's reach back
+    // WEST along the bond, where there is no glyph at all — and at the
+    // publication preset that came to 0.52 bond lengths, so the oxygen won the
+    // hit test at the midpoint of its own C-O bond. The symbol block is the
+    // part that is genuinely centred on the atom, measures 0.31, and leaves
+    // the middle half of the bond clickable, which is the property the floor
+    // below exists to buy.
+    //
+    // The trade is deliberate: clicking the hanging "H" of an "OH" picks the
+    // bond rather than the oxygen. A directional pick target would serve both,
+    // and is not something a single number can express.
+    if (isStructural(scene.representation)) {
+      const placement = atomLabelPlacement(
+        molecule,
+        id,
+        style,
+        scene.representation,
+      );
+      // Taken from chem-render's own placement rather than re-derived from the
+      // emitted `textRun`: the primitive carries the run's origin but not
+      // which of its spans is the atom's symbol, so re-splitting it here would
+      // be a second implementation of the block order, free to drift.
+      if (placement !== undefined) {
+        return circumscribedRadius(placement.symbolBox, centre);
+      }
+    }
 
-    // The CIRCUMSCRIBED radius: the furthest corner of the ink box from the
-    // atom's own centre. Circumscribed rather than inscribed because the box
-    // is not centred on the atom — a label like "OCH3" hangs to one side of
-    // its oxygen — and a radius that did not reach the far end of the glyph
-    // would leave the visible label unclickable.
-    return Math.max(
-      Math.hypot(box.minX - centre.x, box.minY - centre.y),
-      Math.hypot(box.maxX - centre.x, box.minY - centre.y),
-      Math.hypot(box.minX - centre.x, box.maxY - centre.y),
-      Math.hypot(box.maxX - centre.x, box.maxY - centre.y),
-    );
+    // A bare vertex, or a text view: fall back to the ink the atom actually
+    // drew. Measured with chem-render's OWN bounds pass rather than by reading
+    // the radii and font sizes back off the primitives here — chem-render is
+    // the only thing that knows the half-width a stroke straddles its
+    // centreline by, and a second estimate in the client would drift silently,
+    // as a pick target that no longer matches the mark under it.
+    const primitives = atomPrimitives.get(id);
+    if (primitives === undefined || primitives.length === 0) return 0;
+    return circumscribedRadius(sceneBounds(primitives, zeroMargin), centre);
   }
 
   function bondSegment(

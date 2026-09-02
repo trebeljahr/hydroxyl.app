@@ -14,11 +14,14 @@
  * would live.
  */
 
-import { DEFAULT_LABEL_RADIUS, benzene, singleAtom } from "@starter/chem-core";
+import { DEFAULT_LABEL_RADIUS, benzene } from "@starter/chem-core";
 import {
   PUBLICATION_STYLE,
   SCREEN_STYLE,
+  bromomethane,
   buildScene,
+  ethanol,
+  iodomethane,
   modelToPx,
   pxPerModelUnit,
   representation,
@@ -107,13 +110,21 @@ describe("createSceneIndex — geometry", () => {
   });
 
   it("still reports a centre for an atom the style draws nothing for", () => {
-    // `atomDotRadiusPx: 0` suppresses the placeholder dot. An invisible atom
-    // still has a position, and still has to be hoverable and selectable.
+    // `atomDotRadiusPx: 0` suppresses the placeholder dot, and a skeletal
+    // chain carbon draws no label either, so this atom contributes no ink at
+    // all. It still has a position, and still has to be hoverable and
+    // selectable — an invisible vertex is the normal way a carbon is drawn.
+    //
+    // It has to be a BONDED carbon: an isolated atom of any element labels
+    // itself, because a vertex with nothing meeting it is invisible rather
+    // than implied.
     const style = withStyle(SCREEN_STYLE, { atomDotRadiusPx: 0 });
-    const mol = singleAtom("O");
+    const mol = ethanol();
     const index = createSceneIndex(buildScene(mol, style, SKELETAL), mol);
     expect(index.atomCentre("a1")).toEqual({ x: 0, y: -0 });
     expect(index.atomRadiusPx("a1")).toBe(0);
+    // ...whereas the hydroxyl oxygen in the same molecule does draw.
+    expect(index.atomRadiusPx("a3")).toBeGreaterThan(0);
   });
 });
 
@@ -171,14 +182,35 @@ describe("createSceneIndex — labelRadius", () => {
   });
 
   it("lets a measured label overtake the floor once one is drawn", () => {
-    // Simulated with an enormous dot rather than waiting for real labels: the
-    // floor must be a floor, not a special case that caps the measurement.
-    const style = withStyle(SCREEN_STYLE, { atomDotRadiusPx: 44 });
-    const mol = singleAtom("O");
-    const index = createSceneIndex(buildScene(mol, style, SKELETAL), mol);
-    // A 44px dot circumscribes to 44*sqrt(2) px, i.e. sqrt(2) bond lengths.
-    expect(index.labelRadius("a1")).toBeCloseTo(Math.SQRT2, 9);
-    expect(index.labelRadius("a1")).toBeGreaterThan(DEFAULT_LABEL_RADIUS);
+    // This used to be simulated with an enormous placeholder dot, because
+    // there were no labels to measure. There are now, so it asserts the real
+    // thing: ethanol's two carbons are bare vertices and sit on the floor,
+    // while its hydroxyl oxygen draws an "OH" and measures its way past it.
+    // The floor has to be a floor, not a cap.
+    const mol = ethanol();
+    const index = createSceneIndex(buildScene(mol, SCREEN_STYLE, SKELETAL), mol);
+
+    expect(index.labelRadius("a1")).toBe(DEFAULT_LABEL_RADIUS);
+    expect(index.labelRadius("a2")).toBe(DEFAULT_LABEL_RADIUS);
+    expect(index.labelRadius("a3")).toBeGreaterThan(DEFAULT_LABEL_RADIUS);
+
+    // And it measures the SYMBOL, not the whole run. The "H" of "OH" hangs
+    // east of the oxygen the bond arrives at from the west; a radius that
+    // reached it would be projected back along the bond, where no glyph is,
+    // and would beat the bond at its own midpoint. Half a bond is the line
+    // that must not be crossed.
+    expect(index.labelRadius("a3")).toBeLessThan(0.5);
+  });
+
+  it("measures a wider symbol as a wider target", () => {
+    // The radius is a measurement, not a constant per element: "Br" is three
+    // and a half times the advance of "I", and the pick target has to follow
+    // the glyph the user is actually aiming at.
+    const br = bromomethane();
+    const i = iodomethane();
+    const brIndex = createSceneIndex(buildScene(br, SCREEN_STYLE, SKELETAL), br);
+    const iIndex = createSceneIndex(buildScene(i, SCREEN_STYLE, SKELETAL), i);
+    expect(brIndex.labelRadius("a2")).toBeGreaterThan(iIndex.labelRadius("a2"));
   });
 
   it("excludes the style's margin from the measured ink", () => {

@@ -310,14 +310,40 @@ describe("pickAt", () => {
 
   it("leaves the middle of every bond clickable, which is the property the floor buys", () => {
     // 0.18 + the tolerance reaches ~0.30 along a standard bond, so the middle
-    // 40% belongs to the bond. Ethanol's hydroxyl bond is the one to check:
-    // an O and a C, both bare vertices today.
+    // 40% belongs to the bond. b4 is the C-C bond: bare vertices at both ends,
+    // which is the case the floor was chosen for.
     const ctx = contextFor(ETHANOL, SCREEN_STYLE, viewport);
     expect(DEFAULT_LABEL_RADIUS + DEFAULT_ATOM_TOLERANCE).toBeLessThan(0.35);
     for (const t of [0.35, 0.5, 0.65]) {
-      const point = toCanvas(ctx, alongBond(ETHANOL, "b5", t));
-      expect(pickAt(ctx, point)).toMatchObject({ kind: "bond", bondId: "b5" });
+      const point = toCanvas(ctx, alongBond(ETHANOL, "b4", t));
+      expect(pickAt(ctx, point)).toMatchObject({ kind: "bond", bondId: "b4" });
     }
+  });
+
+  it("gives a labelled atom a wider target than a bare vertex, but not half a bond", () => {
+    // b5 is the C-O bond, and its oxygen draws an "OH" rather than a bare
+    // vertex. A drawn label is genuinely bigger than an implied one, so it
+    // claims more of the bond — that asymmetry is correct and is why
+    // `labelRadius` is a measurement with a floor rather than a constant.
+    //
+    // What it must NOT do is reach the midpoint. The radius is measured from
+    // the SYMBOL block for exactly this reason; taking the whole run's far
+    // corner reached 0.52 bond lengths and the oxygen won its own bond's
+    // centre.
+    const ctx = contextFor(ETHANOL, SCREEN_STYLE, viewport);
+    expect(ctx.index.labelRadius("a3")).toBeGreaterThan(
+      ctx.index.labelRadius("a1"),
+    );
+    expect(ctx.index.labelRadius("a3")).toBeLessThan(0.5);
+
+    // The midpoint still belongs to the bond...
+    expect(pickAt(ctx, toCanvas(ctx, alongBond(ETHANOL, "b5", 0.5)))).toMatchObject(
+      { kind: "bond", bondId: "b5" },
+    );
+    // ...and the oxygen end still belongs to the oxygen.
+    expect(pickAt(ctx, toCanvas(ctx, alongBond(ETHANOL, "b5", 0.95)))).toMatchObject(
+      { kind: "atom", atomId: "a3" },
+    );
   });
 
   it("picks nothing on empty space", () => {
@@ -375,9 +401,9 @@ describe("the tolerance is zoom-invariant", () => {
         makeViewport({ x: 0, y: 0 }, zoom, size),
       );
       for (const sign of [1, -1]) {
-        expect(pickAt(ctx, offBond(ctx, "b5", inside * sign))).toMatchObject({
+        expect(pickAt(ctx, offBond(ctx, "b4", inside * sign))).toMatchObject({
           kind: "bond",
-          bondId: "b5",
+          bondId: "b4",
         });
       }
     }
@@ -392,7 +418,7 @@ describe("the tolerance is zoom-invariant", () => {
         SCREEN_STYLE,
         makeViewport({ x: 0, y: 0 }, zoom, size),
       );
-      expect(pickAt(ctx, offBond(ctx, "b5", outside)).kind).toBe("none");
+      expect(pickAt(ctx, offBond(ctx, "b4", outside)).kind).toBe("none");
     }
   });
 
@@ -411,7 +437,7 @@ describe("the tolerance is zoom-invariant", () => {
       let miss = 40;
       for (let i = 0; i < 40; i++) {
         const mid = (hit + miss) / 2;
-        if (pickAt(ctx, offBond(ctx, "b5", mid)).kind === "bond") hit = mid;
+        if (pickAt(ctx, offBond(ctx, "b4", mid)).kind === "bond") hit = mid;
         else miss = mid;
       }
       return hit;
@@ -434,8 +460,8 @@ describe("the tolerance is zoom-invariant", () => {
         PUBLICATION_STYLE,
         makeViewport({ x: 0, y: 0 }, zoom, size),
       );
-      expect(pickAt(ctx, offBond(ctx, "b5", 4))).toMatchObject({ kind: "bond" });
-      expect(pickAt(ctx, offBond(ctx, "b5", 12)).kind).toBe("none");
+      expect(pickAt(ctx, offBond(ctx, "b4", 4))).toMatchObject({ kind: "bond" });
+      expect(pickAt(ctx, offBond(ctx, "b4", 12)).kind).toBe("none");
     }
   });
 
@@ -445,6 +471,8 @@ describe("the tolerance is zoom-invariant", () => {
       SCREEN_STYLE,
       makeViewport({ x: 0, y: 0 }, 1, size),
     );
+    // b5, whose midpoint lands exactly on its own axis in floating point, so a
+    // zero tolerance is a real test of the clamp rather than of rounding.
     const mid = toCanvas(ctx, midpoint(ETHANOL, "b5"));
     expect(pickAt(ctx, mid, -100)).toMatchObject({ kind: "bond", bondId: "b5" });
     expect(pickAt(ctx, offBond(ctx, "b5", 3), 0).kind).toBe("none");

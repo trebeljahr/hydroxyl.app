@@ -188,18 +188,46 @@ describe("buildDocumentScene", () => {
     ]);
   });
 
-  it("renders every structural kind identically today, and does not pretend otherwise", () => {
-    // skeletal / kekule / explicitH / lewis all produce six lines and six dots
-    // because labels, trimming, second lines and stereo are unimplemented. A
-    // view that quietly compensated for that would have to be un-compensated
-    // when the real passes land.
-    const kinds = ["skeletal", "kekule", "explicitH", "lewis"] as const;
-    const shapes = kinds.map((kind) => {
+  it("passes the representation through, rather than flattening it to one view", () => {
+    // The structural kinds used to be interchangeable here, because labels,
+    // trimming, second lines and stereo were all unimplemented and every kind
+    // produced six lines and six dots. Labels landed, so kekule / explicitH /
+    // lewis now set `showCarbonLabels` and benzene's vertices become text runs
+    // while skeletal keeps its bare dots.
+    //
+    // What is actually under test is the BRIDGE: that the panel's chosen
+    // representation reaches `buildScene` intact. A view that quietly
+    // substituted one kind for another would pass the old assertion and fail
+    // this one.
+    const idsFor = (kind: "skeletal" | "kekule" | "explicitH" | "lewis") => {
       const doc = docWithPanels([
         { id: `panel-${kind}`, representation: defaultRepresentation(kind) },
       ]);
       return buildDocumentScene(doc).primitives.map((p) => p.id);
-    });
-    for (const shape of shapes) expect(shape).toEqual(shapes[0]);
+    };
+
+    const labelled = (kind: "skeletal" | "kekule" | "explicitH" | "lewis") =>
+      idsFor(kind).filter((id) => id.endsWith(":label")).length;
+
+    // KNOWN DIVERGENCE, pinned here rather than papered over. This package's
+    // `defaultRepresentation` sets `showCarbonLabels` for explicitH ALONE,
+    // while chem-render's own `DEFAULT_FLAGS_BY_KIND` sets it for kekule,
+    // explicitH and lewis — its comment on kekule reads "spells the atoms
+    // out", and a Lewis structure without atom labels has nothing to hang its
+    // lone pairs on. So a kekule panel in the app currently renders exactly
+    // like a skeletal one.
+    //
+    // Not changed from here: the two defaults belong to the document model,
+    // and reconciling them is a decision about what the view picker MEANS, not
+    // a rendering bug. This assertion is what will fail, loudly and in the
+    // right file, when someone reconciles them.
+    expect(labelled("skeletal")).toBe(0);
+    expect(labelled("kekule")).toBe(0);
+    expect(labelled("explicitH")).toBe(6);
+    expect(labelled("lewis")).toBe(0);
+
+    // The bridge's own job, which is what this test is really for: the panel's
+    // representation reaches `buildScene` intact rather than being flattened.
+    expect(idsFor("explicitH")).not.toEqual(idsFor("skeletal"));
   });
 });
