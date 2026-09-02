@@ -154,3 +154,50 @@ describe("bounds", () => {
     expect(b.height).toBe(6);
   });
 });
+
+describe("closestPointOnSegment / distanceToSegment", () => {
+  const a = V.vec(0, 0);
+  const b = V.vec(4, 0);
+
+  it("drops a perpendicular foot inside the segment", () => {
+    const r = V.closestPointOnSegment(V.vec(1, 2), a, b);
+    expect(r.point).toEqual({ x: 1, y: 0 });
+    expect(close(r.t, 0.25)).toBe(true);
+    expect(close(V.distanceToSegment(V.vec(1, 2), a, b), 2)).toBe(true);
+  });
+
+  it("clamps to the start when the foot falls before it", () => {
+    const p = V.vec(-3, 1);
+    const r = V.closestPointOnSegment(p, a, b);
+    expect(r.t).toBe(0);
+    expect(r.point).toEqual(a);
+    expect(close(V.distanceToSegment(p, a, b), Math.hypot(3, 1))).toBe(true);
+  });
+
+  it("clamps to the end when the foot falls past it", () => {
+    const p = V.vec(7, 0);
+    const r = V.closestPointOnSegment(p, a, b);
+    expect(r.t).toBe(1);
+    expect(r.point).toEqual(b);
+    expect(close(V.distanceToSegment(p, a, b), 3)).toBe(true);
+  });
+
+  it("returns the point itself when it lies on the segment", () => {
+    const p = V.vec(2, 0);
+    const r = V.closestPointOnSegment(p, a, b);
+    expect(V.approxEqual(r.point, p)).toBe(true);
+    expect(close(r.t, 0.5)).toBe(true);
+    expect(V.distanceToSegment(p, a, b)).toBe(0);
+  });
+
+  it("returns the shared endpoint instead of NaN for a zero-length segment", () => {
+    // Two atoms sitting on the same coordinate. NaN here would make the bond
+    // silently unpickable rather than loudly wrong.
+    const degenerate = V.vec(1, 1);
+    const r = V.closestPointOnSegment(V.vec(4, 5), degenerate, degenerate);
+    expect(r.point).toEqual(degenerate);
+    expect(r.t).toBe(0);
+    expect(Number.isNaN(r.point.x)).toBe(false);
+    expect(close(V.distanceToSegment(V.vec(4, 5), degenerate, degenerate), 5)).toBe(true);
+  });
+});

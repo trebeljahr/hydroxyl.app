@@ -18,3 +18,6 @@ export * from "./builders.js";
 export * from "./ops.js";
 export * from "./transform.js";
 export * from "./fragment.js";
+export * from "./hit.js";
+export * from "./selection.js";
+export * from "./sprout.js";

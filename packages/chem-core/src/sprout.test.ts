@@ -1,0 +1,392 @@
+import { describe, expect, it } from "vitest";
+import { benzene, buildMolecule, linearChain, singleAtom } from "./builders.js";
+import * as M from "./molecule.js";
+import {
+  DEFAULT_ANGLE_STEP,
+  defaultSproutAngle,
+  defaultSproutPosition,
+  sprout,
+  sproutDrag,
+  sproutTo,
+  type SproutTarget,
+} from "./sprout.js";
+import { rotateAtoms } from "./transform.js";
+import type { AtomId, Molecule } from "./types.js";
+import { valenceIssues } from "./valence.js";
+import {
+  angleOf,
+  approxEqual,
+  cross,
+  DEG,
+  distance,
+  fromPolar,
+  normalizeAngle,
+  ORIGIN,
+  sub,
+  toDegrees,
+  vec,
+  type Vec2,
+} from "./vec.js";
+
+/**
+ * Coordinates are order 1 (one bond length), so a double resolves them to
+ * about 2e-16 and the few trig calls behind a sprout accumulate no more than a
+ * handful of ulps. 1e-9 is far tighter than any real defect here — picking the
+ * wrong 120 degree branch or dropping the snap reference moves a point by 1e-1
+ * or more, never 1e-9.
+ */
+const EPS = 1e-9;
+
+/**
+ * Ids interleave atoms and bonds — the builder mints both from one counter —
+ * so a three-atom chain is a1, a2, a4, not a1, a2, a3, and lexicographic order
+ * would put "a10" before "a9" besides. Positions in `atomIds` are the only
+ * safe way to name an atom in a test.
+ */
+function lastAtomId(mol: Molecule): AtomId {
+  return mol.atomIds[mol.atomIds.length - 1]!;
+}
+
+function posOf(mol: Molecule, id: AtomId): Vec2 {
+  return M.requireAtom(mol, id).pos;
+}
+
+/** Offset to the first bonded neighbour: the reference a drag snaps against. */
+function firstBondDirection(mol: Molecule, atomId: AtomId): Vec2 {
+  const bond = M.bondsAt(mol, atomId)[0]!;
+  return sub(posOf(mol, M.otherEnd(bond, atomId)), posOf(mol, atomId));
+}
+
+/** Unsigned separation of two bearings, in degrees. */
+function degreesBetween(a: number, b: number): number {
+  return Math.abs(toDegrees(normalizeAngle(a - b)));
+}
+
+function expectRingClosure(
+  target: SproutTarget,
+): Extract<SproutTarget, { kind: "ring-closure" }> {
+  if (target.kind !== "ring-closure") {
+    throw new Error(`expected a ring closure, got "${target.kind}"`);
+  }
+  return target;
+}
+
+/**
+ * Cyclopentane with one bond left out: five carbons on a regular pentagon, so
+ * the two open ends sit exactly one bond length apart. Dragging one end onto
+ * the other is the ring-closing gesture, and the pentagon's 108 degree
+ * interior angle is deliberately NOT on the 30 degree snap lattice, so the
+ * snapped point and the atom it merges with are not the same point.
+ */
+function pentagonChain(): Molecule {
+  const radius = 1 / (2 * Math.sin(Math.PI / 5));
+  return buildMolecule((b) => {
+    const ids: AtomId[] = [];
+    for (let i = 0; i < 5; i++) {
+      const angle = -Math.PI / 2 + (2 * Math.PI * i) / 5;
+      ids.push(b.atom("C", fromPolar(angle, radius)));
+    }
+    for (let i = 0; i < 4; i++) b.bond(ids[i]!, ids[i + 1]!, 1);
+  });
+}
+
+/** Neopentane's quaternary carbon: four bonds already, no valence left over. */
+function quaternaryCarbon(): Molecule {
+  return buildMolecule((b) => {
+    const centre = b.atom("C", ORIGIN);
+    for (let i = 0; i < 4; i++) {
+      b.bond(centre, b.atom("C", fromPolar((i * Math.PI) / 2)));
+    }
+  });
+}
+
+describe("defaultSproutAngle", () => {
+  it("grows along +x from an isolated atom", () => {
+    const mol = singleAtom("C", vec(2, -1));
+    const id = mol.atomIds[0]!;
+    expect(defaultSproutAngle(mol, id)).toBe(0);
+    expect(approxEqual(defaultSproutPosition(mol, id), vec(3, -1), EPS)).toBe(
+      true,
+    );
+  });
+
+  it("turns 120 degrees off the single bond of a two-atom molecule", () => {
+    const mol = buildMolecule((b) => {
+      b.bond(b.atom("C", ORIGIN), b.atom("C", vec(1, 0)));
+    });
+    const [head, tail] = [mol.atomIds[0]!, mol.atomIds[1]!];
+
+    // Neither end has another substituent to lean away from, so both take the
+    // counter-clockwise convention off their own bond direction.
+    expect(toDegrees(defaultSproutAngle(mol, head))).toBeCloseTo(120, 9);
+    expect(
+      degreesBetween(
+        defaultSproutAngle(mol, tail),
+        angleOf(firstBondDirection(mol, tail)),
+      ),
+    ).toBeCloseTo(120, 9);
+  });
+
+  it("continues a chain's zig-zag instead of doubling it back", () => {
+    // Propane drawn the usual way: (0,0), (0.866,0.5), (1.732,0). The terminus
+    // must grow up-and-right at +30 degrees, to (2.598, 0.5). The other 120
+    // degree branch points straight down at -90 and would coil the chain.
+    const propane = linearChain(3);
+    const terminus = lastAtomId(propane);
+    expect(approxEqual(posOf(propane, terminus), vec(1.7320508, 0), 1e-6)).toBe(
+      true,
+    );
+
+    expect(toDegrees(defaultSproutAngle(propane, terminus))).toBeCloseTo(30, 9);
+    expect(
+      approxEqual(
+        defaultSproutPosition(propane, terminus),
+        vec(2.5980762, 0.5),
+        1e-6,
+      ),
+    ).toBe(true);
+  });
+
+  it("puts the new bond opposite the neighbour's other substituent", () => {
+    const butane = linearChain(4);
+    const ids = butane.atomIds;
+    const terminus = ids[3]!;
+    const neighbor = ids[2]!;
+    const nextNearest = ids[1]!;
+
+    const axis = sub(posOf(butane, neighbor), posOf(butane, terminus));
+    const grown = sub(
+      defaultSproutPosition(butane, terminus),
+      posOf(butane, terminus),
+    );
+    const toNextNearest = sub(
+      posOf(butane, nextNearest),
+      posOf(butane, terminus),
+    );
+
+    expect(degreesBetween(angleOf(grown), angleOf(axis))).toBeCloseTo(120, 9);
+
+    // Opposite sides of the terminus->neighbour axis: that anti arrangement IS
+    // the zig-zag, and it is what the sign test in sprout.ts is choosing.
+    const grownSide = Math.sign(cross(axis, grown));
+    const chainSide = Math.sign(cross(axis, toNextNearest));
+    expect(grownSide).not.toBe(0);
+    expect(grownSide).toBe(-chainSide);
+  });
+
+  it("sprouts into the free vertex of a trigonal centre", () => {
+    // Two substituents 120 degrees apart, at 90 and 210: the sp2 skeleton of a
+    // carbonyl carbon. Exactly one vertex is left, at -30 degrees.
+    const mol = buildMolecule((b) => {
+      const centre = b.atom("C", ORIGIN);
+      b.bond(centre, b.atom("C", fromPolar(90 * DEG)));
+      b.bond(centre, b.atom("C", fromPolar(210 * DEG)));
+    });
+    const centre = mol.atomIds[0]!;
+
+    expect(toDegrees(defaultSproutAngle(mol, centre))).toBeCloseTo(-30, 9);
+    expect(
+      approxEqual(
+        defaultSproutPosition(mol, centre),
+        fromPolar(-30 * DEG),
+        EPS,
+      ),
+    ).toBe(true);
+  });
+
+  it("breaks the tie at a linear centre the same way whatever the bond order", () => {
+    // An allene's central carbon: two gaps of exactly 180 degrees, no vertex
+    // more free than the other. The first gap in sorted-angle order wins, so
+    // the answer does not depend on which bond was drawn first.
+    const build = (leftFirst: boolean): Molecule =>
+      buildMolecule((b) => {
+        const centre = b.atom("C", ORIGIN);
+        const ends: Vec2[] = leftFirst
+          ? [vec(-1, 0), vec(1, 0)]
+          : [vec(1, 0), vec(-1, 0)];
+        for (const end of ends) b.bond(centre, b.atom("C", end), 2);
+      });
+
+    const forward = build(false);
+    const reversed = build(true);
+    expect(toDegrees(defaultSproutAngle(forward, forward.atomIds[0]!))).toBeCloseTo(
+      90,
+      9,
+    );
+    expect(defaultSproutAngle(reversed, reversed.atomIds[0]!)).toBeCloseTo(
+      defaultSproutAngle(forward, forward.atomIds[0]!),
+      12,
+    );
+  });
+});
+
+describe("sproutDrag", () => {
+  it("snaps to the fragment's own bonds, not to the page", () => {
+    // The headline case. A fragment rotated to 17 degrees to fit a figure must
+    // keep growing bonds at 17 + 30k degrees so it stays internally clean.
+    // Snapping the pointer's absolute bearing would give 30k instead and put
+    // the new bond square with the page and crooked with the molecule.
+    const upright = linearChain(4);
+    const tilted = rotateAtoms(upright, upright.atomIds, ORIGIN, 17 * DEG);
+    const terminus = lastAtomId(tilted);
+    const reference = angleOf(firstBondDirection(tilted, terminus));
+
+    const target = sproutDrag(tilted, terminus, vec(6, 1));
+    expect(target.kind).toBe("new-atom");
+
+    // Relative to the fragment: a whole number of 30 degree steps.
+    const stepsFromReference =
+      normalizeAngle(target.angle - reference) / DEFAULT_ANGLE_STEP;
+    expect(stepsFromReference).toBeCloseTo(Math.round(stepsFromReference), 9);
+
+    // Relative to the page: 17 degrees off every multiple of 30, i.e. exactly
+    // the fragment's own tilt, carried through untouched.
+    const degreesPastStep = ((toDegrees(target.angle) % 30) + 30) % 30;
+    expect(degreesPastStep).toBeCloseTo(17, 6);
+  });
+
+  it("keeps the endpoint one bond length out however far the pointer is", () => {
+    const mol = singleAtom("C", vec(-3, 4));
+    const id = mol.atomIds[0]!;
+    for (const pointer of [vec(97, 40), vec(-3.02, 4.01), vec(-9, -20)]) {
+      expect(distance(posOf(mol, id), sproutDrag(mol, id, pointer).pos)).toBeCloseTo(
+        1,
+        9,
+      );
+    }
+    const longer = sproutDrag(mol, id, vec(97, 40), { bondLength: 1.5 });
+    expect(distance(posOf(mol, id), longer.pos)).toBeCloseTo(1.5, 9);
+  });
+
+  it("answers a pointer that has not moved with the click direction", () => {
+    const propane = linearChain(3);
+    const terminus = lastAtomId(propane);
+    const target = sproutDrag(propane, terminus, posOf(propane, terminus));
+    expect(target.angle).toBeCloseTo(defaultSproutAngle(propane, terminus), 12);
+  });
+
+  it("reports a ring closure when the drag lands on the far end of a chain", () => {
+    const chain = pentagonChain();
+    const head = chain.atomIds[0]!;
+    const tail = chain.atomIds[4]!;
+    expect(distance(posOf(chain, head), posOf(chain, tail))).toBeCloseTo(1, 9);
+    expect(M.areBonded(chain, head, tail)).toBe(false);
+
+    const target = expectRingClosure(
+      sproutDrag(chain, head, posOf(chain, tail)),
+    );
+    expect(target.atomId).toBe(tail);
+    expect(target.alreadyBonded).toBe(false);
+
+    // The existing atom's position, NOT the snapped point — merging is
+    // target-wins, so the structure must not jump under the cursor. The two
+    // genuinely differ here: 108 degrees snaps to 120.
+    expect(approxEqual(target.pos, posOf(chain, tail), EPS)).toBe(true);
+    const trueBearing = angleOf(sub(posOf(chain, tail), posOf(chain, head)));
+    expect(degreesBetween(target.angle, trueBearing)).toBeCloseTo(12, 6);
+  });
+
+  it("flags a drag onto an atom it is already bonded to", () => {
+    // A benzene neighbour sits exactly one bond length away, so the gesture
+    // lands on it perfectly — and merging it would collapse the bond between
+    // them into a self-bond, which is why the flag exists.
+    const ring = benzene();
+    const start = ring.atomIds[0]!;
+    const neighbor = M.neighborIds(ring, start)[0]!;
+
+    const target = expectRingClosure(
+      sproutDrag(ring, start, posOf(ring, neighbor)),
+    );
+    expect(target.atomId).toBe(neighbor);
+    expect(target.alreadyBonded).toBe(true);
+  });
+});
+
+describe("sprout and sproutTo", () => {
+  it("mints an atom and a bond for a new-atom target", () => {
+    const mol = singleAtom("C");
+    const id = mol.atomIds[0]!;
+    const target = sproutDrag(mol, id, vec(0.3, 0.6));
+
+    const result = sproutTo(mol, id, target, { element: "O", order: 2 });
+    expect(result.createdAtom).toBe(true);
+    expect(M.atomCount(result.molecule)).toBe(2);
+    expect(M.bondCount(result.molecule)).toBe(1);
+    expect(M.requireAtom(result.molecule, result.atomId).element).toBe("O");
+    const bond = M.requireBond(result.molecule, result.bondId);
+    expect(bond.order).toBe(2);
+    // Narrow end of any later wedge sits at the atom sprouted from.
+    expect(bond.from).toBe(id);
+    expect(bond.to).toBe(result.atomId);
+
+    // The input is untouched: sprouting is pure like every other edit.
+    expect(M.atomCount(mol)).toBe(1);
+  });
+
+  it("closes a ring by adding a bond and no atom", () => {
+    const chain = pentagonChain();
+    const head = chain.atomIds[0]!;
+    const tail = chain.atomIds[4]!;
+    const target = sproutDrag(chain, head, posOf(chain, tail));
+
+    const result = sproutTo(chain, head, target);
+    expect(result.createdAtom).toBe(false);
+    expect(result.atomId).toBe(tail);
+    expect(M.atomCount(result.molecule)).toBe(M.atomCount(chain));
+    expect(M.bondCount(result.molecule)).toBe(M.bondCount(chain) + 1);
+    expect(M.areBonded(result.molecule, head, tail)).toBe(true);
+    expect(M.ringCount(result.molecule)).toBe(1);
+    expect(M.bondCount(chain)).toBe(4);
+  });
+
+  it("throws rather than commit a ring closure onto a bonded atom", () => {
+    const ring = benzene();
+    const start = ring.atomIds[0]!;
+    const neighbor = M.neighborIds(ring, start)[0]!;
+    const target = sproutDrag(ring, start, posOf(ring, neighbor));
+
+    // The UI is expected to have read `alreadyBonded` on the drag frame and
+    // refused the gesture; getting here at all is a programming error.
+    expect(() => sproutTo(ring, start, target)).toThrow(/already bonded/i);
+  });
+
+  it("grows a bond in the default direction on a bare click", () => {
+    const propane = linearChain(3);
+    const terminus = lastAtomId(propane);
+
+    const result = sprout(propane, terminus);
+    expect(result.createdAtom).toBe(true);
+    expect(
+      approxEqual(
+        posOf(result.molecule, result.atomId),
+        vec(2.5980762, 0.5),
+        1e-6,
+      ),
+    ).toBe(true);
+    expect(M.requireAtom(result.molecule, result.atomId).element).toBe("C");
+    expect(distance(posOf(result.molecule, terminus), posOf(result.molecule, result.atomId))).toBeCloseTo(
+      1,
+      9,
+    );
+  });
+
+  it("never blocks a sprout on valence", () => {
+    // A quaternary carbon has no room by any valence rule, and the editor
+    // still has to let the pen move: over-valence is reported by
+    // `valenceIssues`, never prevented here. sprout.ts does not import
+    // valence.ts at all — this test is the only place the two policies meet.
+    const mol = quaternaryCarbon();
+    const centre = mol.atomIds[0]!;
+
+    const fifth = sprout(mol, centre);
+    const sixth = sprout(fifth.molecule, centre);
+    expect(fifth.createdAtom).toBe(true);
+    expect(sixth.createdAtom).toBe(true);
+    expect(M.degree(sixth.molecule, centre)).toBe(6);
+
+    const issues = valenceIssues(sixth.molecule).filter(
+      (issue) => issue.atomId === centre,
+    );
+    expect(issues.some((issue) => issue.severity === "error")).toBe(true);
+  });
+});

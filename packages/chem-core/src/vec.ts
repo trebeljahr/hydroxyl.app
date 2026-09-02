@@ -113,6 +113,37 @@ export function midpoint(a: Vec2, b: Vec2): Vec2 {
   return lerp(a, b, 0.5);
 }
 
+/**
+ * Foot of the perpendicular from `p` onto the segment a->b, clamped to the
+ * segment, plus the parameter `t` in [0, 1] that locates it.
+ *
+ * Lives here rather than in the hit-testing module because bond picking,
+ * label-collision avoidance and double-bond offset clipping all need it, and
+ * three copies of the clamp is three chances to get the degenerate case wrong.
+ */
+export function closestPointOnSegment(
+  p: Vec2,
+  a: Vec2,
+  b: Vec2,
+): { point: Vec2; t: number } {
+  const ab = sub(b, a);
+  const lenSq = lengthSq(ab);
+  // A zero-length segment is not hypothetical: two atoms dropped on the same
+  // coordinate (a paste onto itself, an import with duplicate positions) give
+  // exactly that. Dividing would produce NaN, and NaN poisons picking silently
+  // — `NaN <= tolerance` is false, so the bond would simply stop being
+  // clickable with no error anywhere. Collapse to the single point instead,
+  // the same defence `normalize` makes for a zero vector.
+  if (lenSq === 0) return { point: a, t: 0 };
+  const t = Math.min(1, Math.max(0, dot(sub(p, a), ab) / lenSq));
+  return { point: lerp(a, b, t), t };
+}
+
+/** Distance from `p` to the nearest point of the segment a->b. */
+export function distanceToSegment(p: Vec2, a: Vec2, b: Vec2): number {
+  return distance(p, closestPointOnSegment(p, a, b).point);
+}
+
 /** Signed angle from a to b, in (-PI, PI]. */
 export function angleBetween(a: Vec2, b: Vec2): number {
   return normalizeAngle(angleOf(b) - angleOf(a));

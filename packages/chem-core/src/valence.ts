@@ -107,8 +107,25 @@ export function maxValence(mol: Molecule, atomId: AtomId): number {
 }
 
 /**
- * How many more bond-order units this atom can accept. Infinite for metals,
- * which carry no default valence and so are never treated as saturated.
+ * How many more bond-order units this atom could take before it passes its
+ * highest default valence. Infinite for metals, which carry no default
+ * valence and so are never treated as saturated.
+ *
+ * A QUERY, NOT A GATE. Nothing in the editor is allowed to refuse an edit on
+ * the strength of this number. Drawing a bond from a saturated atom is a
+ * normal thing to do halfway through sketching a mechanism, and over-valence
+ * is REPORTED — once, by `valenceIssues`, as a badge — never prevented. See
+ * the note on `valenceIssues` for why.
+ *
+ * What it is actually for: status readouts ("2 free"), and template placement,
+ * where the number of open positions decides how a ring or group is oriented
+ * when it is dropped onto an existing atom.
+ *
+ * `sprout.ts` therefore does not import this function, and that omission is
+ * deliberate rather than an oversight: a second saturation rule living in the
+ * drawing tool would be a competing policy, and the two would disagree the
+ * first time one of them learned about hypervalent sulfur and the other did
+ * not.
  */
 export function freeValence(mol: Molecule, atomId: AtomId): number {
   const max = maxValence(mol, atomId);
@@ -116,7 +133,17 @@ export function freeValence(mol: Molecule, atomId: AtomId): number {
   return Math.max(0, max - explicitValence(mol, atomId));
 }
 
-/** Whether a bond of this order can be added without exceeding max valence. */
+/**
+ * Whether a bond of this order would still fit under the atom's highest
+ * default valence.
+ *
+ * Reads like a permission check and is not one. Despite the name, no caller
+ * may use it to decline an edit: sprouting a bond is never blocked by
+ * valence, and the only place an over-valent atom surfaces is
+ * `valenceIssues`. Treat it as `freeValence(...) >= order` phrased for a
+ * status badge, or as the predicate that picks which atom of a template is a
+ * plausible attachment point.
+ */
 export function canAcceptBond(mol: Molecule, atomId: AtomId, order = 1): boolean {
   return freeValence(mol, atomId) >= order;
 }
