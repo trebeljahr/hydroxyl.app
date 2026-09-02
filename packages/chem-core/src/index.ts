@@ -21,3 +21,5 @@ export * from "./fragment.js";
 export * from "./hit.js";
 export * from "./selection.js";
 export * from "./sprout.js";
+export * from "./rings.js";
+export * from "./aromatic.js";
