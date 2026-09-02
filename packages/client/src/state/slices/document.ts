@@ -1,0 +1,492 @@
+/**
+ * The document slice: the only place a `SketchDocument` is replaced, and the
+ * only place the undo history is written.
+ *
+ * THE RULE THIS FILE EXISTS TO ENFORCE
+ *
+ * Every molecule and every document is computed OUTSIDE the immer recipe,
+ * from `get()`, and assigned WHOLESALE into the draft. Nothing here ever
+ * writes `draft.document.molecule.atoms[id].pos = ...`.
+ *
+ * Reaching into the draft would hand chem-core a Proxy instead of a Molecule,
+ * and chem-core keys its adjacency and ring caches on the Molecule INSTANCE —
+ * see the header of chem-guard.ts for what that costs and why it never
+ * throws. It would also break the two things the history depends on:
+ * structural sharing (an edit returns a molecule that shares every unchanged
+ * atom with its predecessor, so a snapshot costs a pointer) and reference
+ * identity (chem-core returns the INPUT molecule when an op changes nothing,
+ * which is how a no-op edit is recognised and recorded as nothing at all).
+ *
+ * Consequently the pattern below is the same in every action:
+ *
+ *   const before = snapshot();                       // real values, never drafts
+ *   const next   = computeSomethingNew(before);      // pure, outside the recipe
+ *   if (next === before.document) return;            // no-op: record nothing
+ *   commit(label, { document: next, selection });    // one entry, one set()
+ *
+ * WHAT IS UNDOABLE HERE: everything that changes the SAVED document. Not just
+ * the molecule — the title, the style preset and the panel layout are all
+ * part of the file, so removing a panel by accident has to be recoverable the
+ * same way deleting an atom is. The viewport, the tool and the transient UI
+ * are handled by other slices precisely because they are not part of the file.
+ */
+
+import type { Molecule } from "@starter/chem-core";
+import {
+  createPanel,
+  touchDocument,
+  type Panel,
+  type Representation,
+  type RepresentationDisplay,
+  type SketchDocument,
+} from "@starter/shared";
+import { castDraft } from "immer";
+import { assertNotDraft } from "../chem-guard";
+import {
+  abortTransaction as historyAbort,
+  beginTransaction as historyBegin,
+  canRedo as historyCanRedo,
+  canUndo as historyCanUndo,
+  commitTransaction as historyCommit,
+  createHistory,
+  record as historyRecord,
+  redo as historyRedo,
+  redoLabel as historyRedoLabel,
+  undo as historyUndo,
+  undoLabel as historyUndoLabel,
+  type EqualFn,
+  type History,
+} from "../history";
+import type {
+  DocumentSlice,
+  EditorSliceCreator,
+  PanelPatch,
+  UndoableState,
+} from "../types";
+import { EMPTY_SELECTION, pruneSelection } from "./selection";
+
+/**
+ * Reference equality per field, which is exactly right here and would be
+ * wrong almost anywhere else: chem-core values are immutable and its ops
+ * return the input on a no-op, and the selection slice returns the current
+ * selection by reference when nothing changed. Two states that are `===` in
+ * both fields therefore genuinely describe the same drawing, and a deep
+ * comparison would only pay to discover that on every keystroke of a drag.
+ */
+const undoableEqual: EqualFn<UndoableState> = (a, b) =>
+  a.document === b.document && a.selection === b.selection;
+
+/**
+ * The predicate a TRANSACTION commits with, and deliberately not
+ * `undoableEqual`: it ignores the selection entirely.
+ *
+ * A canvas gesture opens its transaction on pointerdown and selects the atom
+ * under the cursor there, because a click and a drag are indistinguishable
+ * until the pointer moves. Comparing the selection too would therefore make a
+ * plain click on an atom push an undo entry — the next Ctrl+Z would deselect
+ * instead of reverting the last chemical edit, which is precisely what the
+ * "selection is never its own undo step" rule exists to prevent, and what the
+ * untransacted path already gets right by never calling `record` at all.
+ *
+ * The entry that a real edit pushes still carries the base SELECTION (the
+ * whole `UndoableState` is the snapshot), so undoing an edit restores what was
+ * selected when the gesture began.
+ */
+const documentEqual: EqualFn<UndoableState> = (a, b) => a.document === b.document;
+
+// ---------------------------------------------------------------------------
+// Panel helpers
+//
+// Panels are rebuilt field by field rather than spread, for the same reason
+// @starter/shared assembles them by hand: `caption` must be an ABSENT key when
+// there is none, never a key holding `undefined`. A document that carries
+// `{ caption: undefined }` stops being deep-equal to its own round trip, and
+// the undo entry that should have been a no-op becomes a step.
+// ---------------------------------------------------------------------------
+
+function displayEqual(
+  a: RepresentationDisplay,
+  b: RepresentationDisplay,
+): boolean {
+  return (
+    a.showCarbonLabels === b.showCarbonLabels &&
+    a.aromaticCircles === b.aromaticCircles &&
+    a.showLonePairs === b.showLonePairs &&
+    a.showStereoDescriptors === b.showStereoDescriptors
+  );
+}
+
+/** Written out key by key instead of `{ ...base, ...patch }` because a spread
+ *  of a `Partial` copies keys that are present with the value `undefined`,
+ *  which is how a flag would silently become "not a boolean". */
+function mergeDisplay(
+  base: RepresentationDisplay,
+  patch: Partial<RepresentationDisplay> | undefined,
+): RepresentationDisplay {
+  if (!patch) return base;
+  return {
+    showCarbonLabels: patch.showCarbonLabels ?? base.showCarbonLabels,
+    aromaticCircles: patch.aromaticCircles ?? base.aromaticCircles,
+    showLonePairs: patch.showLonePairs ?? base.showLonePairs,
+    showStereoDescriptors:
+      patch.showStereoDescriptors ?? base.showStereoDescriptors,
+  };
+}
+
+/**
+ * Applies a patch to one panel, returning the SAME panel when nothing moved.
+ *
+ * A kind change KEEPS the display flags. They are stored per panel so that
+ * flipping between skeletal and Kekule and back does not lose the "show lone
+ * pairs" the chemist turned on — see the note on `RepresentationDisplay` in
+ * @starter/shared.
+ */
+function patchPanel(panel: Panel, patch: PanelPatch): Panel {
+  const kind = patch.kind ?? panel.representation.kind;
+  const display = mergeDisplay(panel.representation.display, patch.display);
+  if (
+    kind === panel.representation.kind &&
+    displayEqual(display, panel.representation.display)
+  ) {
+    return panel;
+  }
+  const representation: Representation = { kind, display };
+  const next: { -readonly [K in keyof Panel]: Panel[K] } = {
+    id: panel.id,
+    representation,
+  };
+  if (panel.caption !== undefined) next.caption = panel.caption;
+  return next;
+}
+
+function panelWithCaption(panel: Panel, caption: string | null): Panel {
+  if (caption === null ? panel.caption === undefined : panel.caption === caption) {
+    return panel;
+  }
+  const next: { -readonly [K in keyof Panel]: Panel[K] } = {
+    id: panel.id,
+    representation: panel.representation,
+  };
+  // Omitted, not assigned `undefined` — see the section header.
+  if (caption !== null) next.caption = caption;
+  return next;
+}
+
+export interface DocumentSliceOptions {
+  /** The document the editor opens with. */
+  readonly document: SketchDocument;
+  /** Injectable clock, so a test can assert on `modifiedAt` without racing
+   *  the wall. */
+  readonly now: () => string;
+  /** Undo depth; defaults to the history module's own limit. */
+  readonly historyLimit?: number | undefined;
+}
+
+export function createDocumentSlice(
+  options: DocumentSliceOptions,
+): EditorSliceCreator<DocumentSlice> {
+  // At construction, not at first use: a store opened on a draft would hand
+  // that proxy to chem-core on the very first edit, and the failure would
+  // surface as a cache that never hits rather than as an error. `openDocument`
+  // makes the same check on every later document; this covers the first one.
+  assertNotDraft(options.document, "createEditorStore(document)");
+  assertNotDraft(options.document.molecule, "createEditorStore(molecule)");
+
+  return (set, get) => {
+    /**
+     * The undoable half of the current state.
+     *
+     * `get()` ALWAYS returns finalised state, recipe or no recipe: zustand
+     * hands immer's curried producer to the vanilla `setState`, which only
+     * reassigns the state once the producer has returned, so a `get()` from
+     * inside a recipe sees the previous state rather than the draft. (That
+     * also means calling an action from inside a `set` recipe is a LOST
+     * UPDATE, not a draft leak — the inner action's write lands first and the
+     * outer producer's result then overwrites it, silently. Nothing here does
+     * that, and every recipe in this store is a wholesale assignment that
+     * calls nothing, which is the property that keeps it true.)
+     *
+     * The assertion is therefore not about recipes. It catches a draft that
+     * entered the state from OUTSIDE — through `createEditorStore({ document })`
+     * or a raw `store.setState` — before it can be handed to chem-core and
+     * quietly defeat its instance-keyed caches. `createDocumentSlice` checks
+     * the initial document eagerly for the same reason; this is the net under
+     * everything else.
+     */
+    const snapshot = (): UndoableState => {
+      const state = get();
+      assertNotDraft(state.document, "snapshot(document)");
+      return { document: state.document, selection: state.selection };
+    };
+
+    /**
+     * The single write path for undoable state: record the step, then assign
+     * the finished values into the draft in one `set` so subscribers see the
+     * document, the selection and the history move together.
+     *
+     * `record` is a no-op while a transaction is in flight, which is the whole
+     * mechanism behind "a 30-frame drag is one undo step".
+     */
+    const commit = (label: string, next: UndoableState): void => {
+      const before = snapshot();
+      if (undoableEqual(before, next)) return;
+      const history = historyRecord(
+        get().history,
+        label,
+        before,
+        next,
+        undoableEqual,
+      );
+      set((draft) => {
+        draft.document = castDraft(next.document);
+        draft.selection = castDraft(next.selection);
+        draft.history = castDraft(history);
+      });
+    };
+
+    /** Undo, redo and abort all restore a snapshot verbatim, without pushing
+     *  an entry of their own. */
+    const restore = (
+      next: UndoableState,
+      history: History<UndoableState>,
+    ): void => {
+      set((draft) => {
+        draft.document = castDraft(next.document);
+        draft.selection = castDraft(next.selection);
+        draft.history = castDraft(history);
+      });
+    };
+
+    /** Every document-level edit funnels through here so that `modifiedAt` is
+     *  stamped in exactly one place. */
+    const commitDocument = (label: string, document: SketchDocument): void => {
+      const before = snapshot();
+      if (document === before.document) return;
+      commit(label, {
+        document: touchDocument(document, options.now()),
+        selection: before.selection,
+      });
+    };
+
+    const commitPanels = (
+      label: string,
+      panels: readonly Panel[],
+    ): void => {
+      const before = snapshot();
+      commitDocument(label, { ...before.document, panels });
+    };
+
+    return {
+      document: options.document,
+      history: createHistory<UndoableState>(options.historyLimit),
+
+      /**
+       * Replacing the document is UNDOABLE, deliberately.
+       *
+       * This store holds one document, so opening a dropped .mol file
+       * overwrites whatever was on the canvas. Without an entry, a mis-drop
+       * onto an unsaved sketch would destroy it with no way back — and the
+       * entry is nearly free, because the outgoing document is a value that
+       * already exists. When the multi-document shell lands (a later task)
+       * opening a file will make a new document instead, and this action
+       * becomes the "revert to saved" path rather than the import path.
+       *
+       * The selection is cleared in the same entry: its ids name atoms of the
+       * outgoing molecule and mean nothing in the incoming one.
+       */
+      openDocument(document, label = "Open document") {
+        const before = snapshot();
+        if (document === before.document) return;
+        assertNotDraft(document.molecule, "openDocument");
+        commit(label, { document, selection: EMPTY_SELECTION });
+      },
+
+      applyMoleculeEdit(label, edit) {
+        const before = snapshot();
+        // OUTSIDE the recipe, against the real molecule. The guarded facade in
+        // chem-guard.ts asserts the same thing from the other side.
+        const molecule: Molecule = edit(before.document.molecule);
+        assertNotDraft(molecule, `applyMoleculeEdit(${label})`);
+        // chem-core returns the input when an op changes nothing — clicking an
+        // atom that is already carbon, a drag that has not crossed a pixel.
+        // Recording that would be an undo step with nothing to see.
+        if (molecule === before.document.molecule) return;
+
+        commit(label, {
+          document: touchDocument(
+            { ...before.document, molecule },
+            options.now(),
+          ),
+          // In the SAME entry as the edit, so undoing a deletion brings the
+          // atoms and the selection back together.
+          selection: pruneSelection(before.selection, molecule),
+        });
+      },
+
+      setStylePreset(preset) {
+        const before = get().document;
+        if (before.stylePreset === preset) return;
+        commitDocument("Change style preset", {
+          ...before,
+          stylePreset: preset,
+        });
+      },
+
+      setDocumentTitle(title) {
+        const before = get().document;
+        if (before.metadata.title === title) return;
+        commitDocument("Rename document", {
+          ...before,
+          metadata: { ...before.metadata, title },
+        });
+      },
+
+      addPanel(kind, caption) {
+        const panel = createPanel(kind, caption);
+        commitPanels("Add panel", [...get().document.panels, panel]);
+        return panel.id;
+      },
+
+      removePanel(id) {
+        const panels = get().document.panels;
+        const next = panels.filter((panel) => panel.id !== id);
+        if (next.length === panels.length) return;
+        commitPanels("Remove panel", next);
+      },
+
+      updatePanel(id, patch) {
+        const panels = get().document.panels;
+        let changed = false;
+        const next = panels.map((panel) => {
+          if (panel.id !== id) return panel;
+          const patched = patchPanel(panel, patch);
+          if (patched !== panel) changed = true;
+          return patched;
+        });
+        if (!changed) return;
+        commitPanels("Change representation", next);
+      },
+
+      setPanelCaption(id, caption) {
+        const panels = get().document.panels;
+        let changed = false;
+        const next = panels.map((panel) => {
+          if (panel.id !== id) return panel;
+          const patched = panelWithCaption(panel, caption);
+          if (patched !== panel) changed = true;
+          return patched;
+        });
+        if (!changed) return;
+        commitPanels(caption === null ? "Remove caption" : "Edit caption", next);
+      },
+
+      reorderPanels(order) {
+        const panels = get().document.panels;
+        const byId = new Map(panels.map((panel) => [panel.id, panel]));
+        // A permutation or nothing. A drag-reorder always hands over the full
+        // list; a shorter one is a caller bug, and honouring it would delete
+        // the panels it forgot to mention.
+        if (order.length !== panels.length) return;
+        const next: Panel[] = [];
+        for (const id of order) {
+          const panel = byId.get(id);
+          if (!panel) return;
+          byId.delete(id);
+          next.push(panel);
+        }
+        if (next.every((panel, i) => panel === panels[i])) return;
+        commitPanels("Reorder panels", next);
+      },
+
+      beginTransaction(label) {
+        const history = historyBegin(get().history, label, snapshot());
+        set((draft) => {
+          draft.history = castDraft(history);
+        });
+      },
+
+      commitTransaction() {
+        const history = historyCommit(
+          get().history,
+          snapshot(),
+          // Document-only: see the note on `documentEqual`.
+          documentEqual,
+        );
+        set((draft) => {
+          draft.history = castDraft(history);
+        });
+      },
+
+      abortTransaction() {
+        const { history, state } = historyAbort(get().history);
+        // `state` is null when nothing was in flight; there is then nothing to
+        // restore and the history is already the one we hold.
+        if (!state) return;
+        restore(state, history);
+      },
+
+      transact(label, fn) {
+        // Does THIS call open the gesture, or join one already in flight?
+        // `abortTransaction` unwinds every nesting level by design, so a
+        // nested `transact` — the "Delete selection" an action performs inside
+        // the user's "Draw ring" — must not be allowed to reach for it. If it
+        // did, a caller that caught the inner failure and carried on would
+        // find the outer transaction gone: its edits so far silently rolled
+        // back, and every remaining pointer-move frame recording an entry of
+        // its own, which is the thirty-entry drag transactions exist to
+        // prevent.
+        const outermost = get().history.transaction === null;
+        get().beginTransaction(label);
+        try {
+          fn();
+        } catch (error) {
+          if (outermost) {
+            // We own the gesture and it failed, so the base is the only state
+            // known to be consistent.
+            get().abortTransaction();
+          } else {
+            // Unwind only our own level. `commitTransaction` above depth 0
+            // decrements and pushes nothing, so the outer transaction keeps
+            // its base and its label and stays in flight; whether the failure
+            // ends the gesture is the outer level's decision to make.
+            get().commitTransaction();
+          }
+          // Rethrow either way: swallowing it would leave the caller believing
+          // a half-applied edit succeeded.
+          throw error;
+        }
+        get().commitTransaction();
+      },
+
+      undo() {
+        const result = historyUndo(get().history, snapshot());
+        if (!result) return false;
+        restore(result.state, result.history);
+        return true;
+      },
+
+      redo() {
+        const result = historyRedo(get().history, snapshot());
+        if (!result) return false;
+        restore(result.state, result.history);
+        return true;
+      },
+
+      canUndo() {
+        return historyCanUndo(get().history);
+      },
+
+      canRedo() {
+        return historyCanRedo(get().history);
+      },
+
+      undoLabel() {
+        return historyUndoLabel(get().history);
+      },
+
+      redoLabel() {
+        return historyRedoLabel(get().history);
+      },
+    };
+  };
+}
