@@ -5,6 +5,10 @@ const isDev = process.env.NODE_ENV === "development";
 const isExport = process.env.NEXT_FILE_EXPORT === "1";
 
 const nextConfig: NextConfig = {
+  // Pin the workspace root. Without this Next walks up looking for a
+  // lockfile and, when dev runs from a git worktree under the main
+  // checkout, picks the parent repo and resolves node_modules there.
+  turbopack: { root: path.join(process.cwd(), "..", "..") },
   ...(isDev
     ? {}
     : isExport

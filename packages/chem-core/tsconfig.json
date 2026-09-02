@@ -4,13 +4,21 @@
     "rootDir": "./src",
     "outDir": "./dist",
     "composite": true,
-    "lib": ["ES2022"],
+    "lib": [
+      "ES2022"
+    ],
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
-    "verbatimModuleSyntax": true
+    "verbatimModuleSyntax": true,
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
   },
-  "include": ["src"],
-  "exclude": ["src/**/*.test.ts", "dist"]
+  "include": [
+    "src"
+  ],
+  "exclude": [
+    "src/**/*.test.ts",
+    "dist"
+  ]
 }
