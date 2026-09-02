@@ -355,10 +355,12 @@ function electronCounts(mol: Molecule): number[] {
 /**
  * Every atom's bond orders sum to a whole number.
  *
- * This is the point of Kekulisation: an aromatic-flagged bond counts 1.5, so
- * a molecule still carrying flags — or one where only half a ring was
- * assigned — leaves half-integers behind, and `implicitHydrogenCount` then
- * invents or loses hydrogens.
+ * `bondOrderSum` stays raw on purpose — an aromatic-flagged bond counts 1.5
+ * there — so a molecule still carrying flags, or one where only half a ring
+ * was assigned, leaves half-integers behind. That makes this the assertion
+ * that catches a partial assignment. It is NOT a hydrogen-count check any
+ * more: `explicitValence` resolves those halves against the valence list, so
+ * the formula is right either side of Kekulisation.
  */
 function expectIntegralBondOrderSums(mol: Molecule, label: string): void {
   for (const id of mol.atomIds) {
@@ -752,16 +754,18 @@ describe("kekulize", () => {
     expect(A.isAromaticRing(kekulized, 0)).toBe(true);
   });
 
-  it("legitimately changes thiophene's formula, because the flags were wrong", () => {
-    // Thiophene is the one fixture where elementCounts() MUST NOT be used as
-    // the invariance check. Its sulfur sees 1.5 + 1.5 = 3 on the flagged form,
-    // which falls between S's valences of 2 and 4, so implicitHydrogenCount
-    // invents a hydrogen there; after Kekulisation the sum is 2 and it does
-    // not. The count changes because kekulize is FIXING a defect of the flag
-    // representation, not introducing one.
+  it("preserves thiophene's formula across Kekulisation", () => {
+    // This fixture used to be the documented exception: sulfur sees
+    // 1.5 + 1.5 = 3 on the flagged form, which falls between S's valences of 2
+    // and 4, and `implicitHydrogenCount` used to pick the 4 and invent a fifth
+    // hydrogen — so an imported thiophene read C4H5S and only became C4H4S
+    // after kekulize. valence.ts now resolves that half-integer the way RDKit
+    // does, snapping the sum down to sulfur's 2, so the flagged and Kekule
+    // readings agree and elementCounts() is a real invariance check here.
     const imported = importAromatic(thiophene());
-    expect(elementCounts(imported)).toEqual({ C: 4, H: 5, S: 1 });
+    expect(elementCounts(imported)).toEqual({ C: 4, H: 4, S: 1 });
     const kekulized = A.kekulize(imported);
+    expect(elementCounts(kekulized)).toEqual(elementCounts(imported));
     expect(elementCounts(kekulized)).toEqual({ C: 4, H: 4, S: 1 });
     expectIntegralBondOrderSums(kekulized, "kekulized thiophene");
     expect(A.isAromaticRing(kekulized, 0)).toBe(true);
@@ -872,16 +876,14 @@ describe("kekulize", () => {
     expect(result.molecule).toBe(imported);
   });
 
-  it("legitimately changes selenophene's formula, as it does thiophene's", () => {
-    // The same flagged-form defect as thiophene, on a second element, so the
-    // rule reads as "any multi-valence heteroatom" rather than a sulfur quirk.
-    // Selenium's valences are 2, 4, 6; the flagged ring sums to 3, which falls
-    // between 2 and 4, so implicitHydrogenCount invents a hydrogen that the
-    // Kekule form does not have. The fix belongs in valence.ts's handling of
-    // half-integer aromatic sums; kekulize is only where it becomes visible.
+  it("preserves selenophene's formula too, on a second element", () => {
+    // Thiophene's case on a second element, so the rule reads as "any
+    // multi-valence heteroatom" rather than a sulfur quirk: selenium's
+    // valences are also 2, 4, 6 and the flagged ring also sums to 3.
     const imported = importAromatic(monocycle(["Se", "C", "C", "C", "C"], [1, 3]));
-    expect(elementCounts(imported)).toEqual({ C: 4, H: 5, Se: 1 });
+    expect(elementCounts(imported)).toEqual({ C: 4, H: 4, Se: 1 });
     const kekulized = A.kekulize(imported);
+    expect(elementCounts(kekulized)).toEqual(elementCounts(imported));
     expect(elementCounts(kekulized)).toEqual({ C: 4, H: 4, Se: 1 });
     expectIntegralBondOrderSums(kekulized, "kekulized selenophene");
     expect(A.isAromaticRing(kekulized, 0)).toBe(true);

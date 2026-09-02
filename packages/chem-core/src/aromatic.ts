@@ -619,14 +619,21 @@ export function kekulize(mol: Molecule): Molecule {
  *
  * ELEMENT COUNTS. Kekulisation preserves `elementCounts()` for every molecule
  * whose flagged form was readable in the first place, and that is the contract
- * to hold it to. It does NOT preserve it where the flagged form was already
- * wrong: an aromatic bond weighs 1.5 in valence.ts, so thiophene's sulfur sums
- * to 3, which falls between its valences of 2 and 4 and invents a hydrogen
- * that the Kekule form does not have. Selenophene and a charged aromatic
- * carbon go the same way. In each case the number AFTER kekulisation is the
- * correct one and the change is a repair, not a loss — but the repair belongs
- * in valence.ts's handling of half-integer sums, and until it lands there a
- * caller comparing formulas across an import must expect these to move.
+ * to hold it to. Thiophene and selenophene were the documented exceptions
+ * until `valence.ts` learned RDKit's rule for resolving the half-integer an
+ * aromatic bond leaves at a multi-valence heteroatom; both now read the same
+ * formula either side of the call, and an importer no longer has to kekulise
+ * first to get the hydrogens right.
+ *
+ * A component that FAILS is returned untouched, flags intact, so its formula
+ * does not move either. What still moves is a component that succeeds through
+ * the ambiguous-charged-centre second reading below: tropylium goes C7H6+
+ * flagged to C7H7+ Kekulised, and cyclopentadienide C5H4- to C5H5-. Those
+ * centres sit exactly ON their charge-adjusted valence, where two aromatic
+ * bonds already account for the 3 they are allowed, so the flagged form cannot
+ * say whether the atom wants a hydrogen or a double bond and Kekulisation is
+ * what settles it. A caller comparing formulas across this call should expect
+ * those, and only those, to change.
  *
  * FAILURE BEHAVIOUR. The aromatic subgraph is split into connected components
  * and each is matched independently; a component with no perfect matching is

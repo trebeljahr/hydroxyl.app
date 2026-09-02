@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { kekulize } from "./aromatic.js";
 import { benzene, buildMolecule, carbocycle, linearChain, singleAtom } from "./builders.js";
+import { elementCounts, exactMass, molecularWeight } from "./formula.js";
 import * as M from "./molecule.js";
+import { isRingBond } from "./rings.js";
+import type { AtomId, AtomInit, Molecule } from "./types.js";
 import * as V from "./valence.js";
+import { fromPolar, vec } from "./vec.js";
 
 const first = (mol: ReturnType<typeof singleAtom>) => mol.atomIds[0]!;
 
@@ -243,5 +248,331 @@ describe("free valence and over-valence", () => {
   it("reports nothing for a clean structure", () => {
     expect(V.valenceIssues(benzene())).toEqual([]);
     expect(V.valenceIssues(linearChain(8))).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Imported aromatic flags
+//
+// The regression suite for the half-integer defect. An aromatic-flagged bond
+// weighs 1.5, so a heteroatom with two of them sums to 3 — and picking the
+// smallest valence AT OR ABOVE 3 skipped sulfur's 2 for its 4 and invented a
+// hydrogen. Every fixture below is asserted twice, once carrying flags and
+// once Kekulised, because the two forms describe the same molecule and the
+// only defensible test is that they agree. Benzene hid the bug for 367 tests
+// precisely because carbon has a single valence and so has no wrong entry to
+// pick.
+// ---------------------------------------------------------------------------
+
+/** A ring on a circle. `doubleAt` holds the index `i` of each bond joining
+ *  atom `i` to atom `i + 1`, so a Kekule structure is written as the positions
+ *  of its double bonds. Local to this file for the reason the header of
+ *  aromatic.test.ts gives: a shared fixture module would ship in dist. */
+function monocycle(
+  elements: readonly string[],
+  doubleAt: readonly number[] = [],
+  extras: Readonly<Record<number, Partial<AtomInit>>> = {},
+): Molecule {
+  const n = elements.length;
+  const radius = 1 / (2 * Math.sin(Math.PI / n));
+  return buildMolecule((b) => {
+    const ids: AtomId[] = [];
+    for (let i = 0; i < n; i++) {
+      const angle = -Math.PI / 2 + (2 * Math.PI * i) / n;
+      ids.push(b.atom(elements[i]!, fromPolar(angle, radius), extras[i] ?? {}));
+    }
+    const doubles = new Set(doubleAt);
+    for (let i = 0; i < n; i++) {
+      b.bond(ids[i]!, ids[(i + 1) % n]!, doubles.has(i) ? 2 : 1);
+    }
+  });
+}
+
+/**
+ * Benzothiophene, in the Kekule storage form. Present so the fixtures are not
+ * all monocycles: a fusion carbon carries THREE aromatic bonds and so sums to
+ * 4.5 rather than 3, which is the other half-integer the resolution has to
+ * handle — and the one that used to make every flagged fused carbon report as
+ * over-valent.
+ */
+function benzothiophene(): Molecule {
+  return buildMolecule((b) => {
+    // Five-ring S1 C2 C3 C3a C7a, six-ring C3a C4 C5 C6 C7 C7a, fused on
+    // C3a-C7a. Positions are schematic; valence does not read them.
+    const s1 = b.atom("S", vec(0, 0));
+    const c2 = b.atom("C", vec(1, 0.3));
+    const c3 = b.atom("C", vec(1.6, 1.2));
+    const c3a = b.atom("C", vec(1, 2));
+    const c7a = b.atom("C", vec(0.1, 1.5));
+    const c4 = b.atom("C", vec(1.2, 3));
+    const c5 = b.atom("C", vec(0.5, 3.8));
+    const c6 = b.atom("C", vec(-0.4, 3.6));
+    const c7 = b.atom("C", vec(-0.6, 2.4));
+    b.bond(s1, c2, 1);
+    b.bond(c2, c3, 2);
+    b.bond(c3, c3a, 1);
+    b.bond(c3a, c7a, 2);
+    b.bond(c7a, s1, 1);
+    b.bond(c3a, c4, 1);
+    b.bond(c4, c5, 2);
+    b.bond(c5, c6, 1);
+    b.bond(c6, c7, 2);
+    b.bond(c7, c7a, 1);
+  });
+}
+
+/** What an importer hands over: every ring bond flagged aromatic, its order
+ *  discarded, and both endpoints marked. Mirrors the molblock and SMILES
+ *  paths, which carry perception and no Kekule structure. */
+function importAromatic(mol: Molecule): Molecule {
+  const atoms = { ...mol.atoms };
+  const bonds = { ...mol.bonds };
+  for (const id of mol.bondIds) {
+    if (!isRingBond(mol, id)) continue;
+    const bond = bonds[id]!;
+    bonds[id] = { ...bond, order: 1, aromatic: true };
+    atoms[bond.from] = { ...atoms[bond.from]!, aromatic: true };
+    atoms[bond.to] = { ...atoms[bond.to]!, aromatic: true };
+  }
+  return { ...mol, atoms, bonds };
+}
+
+/**
+ * The fixtures, with the heteroatom always at `a1`.
+ *
+ * Pyrrole and phosphole pin their N-H and P-H, and must: two aromatic bonds
+ * give their nitrogen and phosphorus the same sum of 3 that pyridine's
+ * nitrogen sees, so valence alone cannot tell a donor from a non-donor. That
+ * is why RDKit writes them `[nH]1cccc1` and `[pH]1cccc1`, and pinning here is
+ * modelling the importer faithfully rather than papering over the defect —
+ * thiophene, which is the defect, pins nothing.
+ */
+const AROMATIC_FIXTURES: ReadonlyArray<
+  readonly [string, Molecule, Readonly<Record<string, number>>]
+> = [
+  ["benzene", monocycle(["C", "C", "C", "C", "C", "C"], [0, 2, 4]), { C: 6, H: 6 }],
+  ["pyridine", monocycle(["N", "C", "C", "C", "C", "C"], [0, 2, 4]), { C: 5, H: 5, N: 1 }],
+  [
+    "pyrrole",
+    monocycle(["N", "C", "C", "C", "C"], [1, 3], { 0: { explicitHydrogenCount: 1 } }),
+    { C: 4, H: 5, N: 1 },
+  ],
+  ["furan", monocycle(["O", "C", "C", "C", "C"], [1, 3]), { C: 4, H: 4, O: 1 }],
+  ["thiophene", monocycle(["S", "C", "C", "C", "C"], [1, 3]), { C: 4, H: 4, S: 1 }],
+  ["selenophene", monocycle(["Se", "C", "C", "C", "C"], [1, 3]), { C: 4, H: 4, Se: 1 }],
+  [
+    "phosphole",
+    monocycle(["P", "C", "C", "C", "C"], [1, 3], { 0: { explicitHydrogenCount: 1 } }),
+    { C: 4, H: 5, P: 1 },
+  ],
+  ["benzothiophene", benzothiophene(), { C: 8, H: 6, S: 1 }],
+  // Charged heteroatoms. Pyridinium sits BELOW its charge-adjusted valence and
+  // pyrylium and thiopyrylium sit exactly ON theirs, which is the boundary the
+  // resolution must not cross: snapping an at-the-limit centre would change
+  // tropylium and the Cp anion, which read correctly today.
+  [
+    "pyridinium",
+    monocycle(["N", "C", "C", "C", "C", "C"], [0, 2, 4], { 0: { charge: 1 } }),
+    { C: 5, H: 6, N: 1 },
+  ],
+  [
+    "pyrylium",
+    monocycle(["O", "C", "C", "C", "C", "C"], [0, 2, 4], { 0: { charge: 1 } }),
+    { C: 5, H: 5, O: 1 },
+  ],
+  [
+    "pyrrolide",
+    monocycle(["N", "C", "C", "C", "C"], [1, 3], { 0: { charge: -1 } }),
+    { C: 4, H: 4, N: 1 },
+  ],
+  // Stannole is thiophene's defect on a group-14 element: tin's valences are
+  // 2 and 4, the flagged ring sums to 3, and the old search picked the 4.
+  ["stannole", monocycle(["Sn", "C", "C", "C", "C"], [1, 3]), { C: 4, H: 4, Sn: 1 }],
+  // Stannabenzene pins its hydrogen for the same reason pyrrole pins its N-H,
+  // and it is the case that proves the rule is a reading rather than a
+  // derivation: tin's valences are 2 and 4, exactly sulfur's shape, but here
+  // the metal takes a ring DOUBLE BOND where thiophene's sulfur donates a lone
+  // pair. Two aromatic bonds look identical in both, so the pin is the only
+  // thing that can tell them apart. See `resolveAromaticValence`.
+  [
+    "stannabenzene",
+    monocycle(["Sn", "C", "C", "C", "C", "C"], [0, 2, 4], {
+      0: { explicitHydrogenCount: 1 },
+    }),
+    { C: 5, H: 6, Sn: 1 },
+  ],
+];
+
+describe("imported aromatic flags derive the Kekule hydrogen count", () => {
+  it("gives every fixture the same formula flagged and Kekulised", () => {
+    for (const [label, kekule, formula] of AROMATIC_FIXTURES) {
+      const flagged = importAromatic(kekule);
+      expect(elementCounts(kekule), `${label}: Kekule form`).toEqual(formula);
+      expect(elementCounts(flagged), `${label}: flagged form`).toEqual(formula);
+      expect(elementCounts(flagged), `${label}: forms agree`).toEqual(
+        elementCounts(kekule),
+      );
+    }
+  });
+
+  it("survives a round trip through kekulize", () => {
+    // The mitigation importers were told to apply until this landed. It must
+    // still hold, and must now be redundant rather than load-bearing.
+    for (const [label, kekule, formula] of AROMATIC_FIXTURES) {
+      const flagged = importAromatic(kekule);
+      expect(elementCounts(kekulize(flagged)), `${label}: kekulized`).toEqual(
+        formula,
+      );
+    }
+  });
+
+  it("reads thiophene's sulfur as divalent, which is the defect itself", () => {
+    // The specific number the bug turned on. Sulfur's valences are 2, 4, 6;
+    // two aromatic bonds sum to 3; the old code found no entry at or above 3
+    // before 4 and handed back one hydrogen.
+    const flagged = importAromatic(monocycle(["S", "C", "C", "C", "C"], [1, 3]));
+    expect(V.implicitHydrogenCount(flagged, "a1")).toBe(0);
+    expect(V.explicitValence(flagged, "a1")).toBe(2);
+    // `bondOrderSum` is deliberately NOT snapped: it reports what is drawn,
+    // and Kekulisation's tests use its half-integers to detect a ring that was
+    // only partly assigned.
+    expect(V.bondOrderSum(flagged, "a1")).toBe(3);
+  });
+
+  it("resolves a fused carbon's 4.5 rather than calling it over-valent", () => {
+    const flagged = importAromatic(benzothiophene());
+    const fusion = flagged.atomIds.filter((id) => M.degree(flagged, id) === 3);
+    expect(fusion).toHaveLength(2);
+    for (const id of fusion) {
+      expect(V.bondOrderSum(flagged, id), `${id}: raw sum`).toBe(4.5);
+      expect(V.explicitValence(flagged, id), `${id}: resolved`).toBe(4);
+      expect(V.isOverValent(flagged, id), `${id}: not over-valent`).toBe(false);
+      expect(V.implicitHydrogenCount(flagged, id)).toBe(0);
+    }
+  });
+
+  it("reports no valence issue on any flagged fixture", () => {
+    // Furan's oxygen and the pyrrolide nitrogen used to fail this: their raw
+    // sum of 3 exceeded a charge-adjusted maximum of 2, so an imported furan
+    // arrived with a valence error against an atom that is perfectly ordinary.
+    for (const [label, kekule] of AROMATIC_FIXTURES) {
+      expect(V.valenceIssues(kekule), `${label}: Kekule form`).toEqual([]);
+      expect(V.valenceIssues(importAromatic(kekule)), `${label}: flagged`).toEqual(
+        [],
+      );
+    }
+  });
+
+  it("keeps free valence and mass in step across the two forms", () => {
+    // Everything downstream of implicitHydrogenCount: the status-bar readout,
+    // and the two mass functions formula.ts derives from the same count.
+    for (const [label, kekule] of AROMATIC_FIXTURES) {
+      const flagged = importAromatic(kekule);
+      for (const id of kekule.atomIds) {
+        // A pinned hydrogen is the one place the two forms genuinely differ,
+        // and it is not this defect. Pyrrole's N and phosphole's P sit exactly
+        // ON their valence once their two aromatic bonds are counted at 1.5 —
+        // the 3 that already stands in for the pinned H — so their remaining
+        // capacity reads 0 flagged and 1 Kekulised. Resolving that would mean
+        // snapping an at-the-limit centre, which is precisely what tropylium
+        // and the Cp anion depend on NOT happening. The formula, which is what
+        // this task is about, agrees either way because the pin short-circuits
+        // the derivation entirely.
+        if (M.requireAtom(kekule, id).explicitHydrogenCount !== undefined) continue;
+        expect(
+          V.freeValence(flagged, id),
+          `${label}/${id}: free valence`,
+        ).toBe(V.freeValence(kekule, id));
+      }
+      expect(molecularWeight(flagged), `${label}: weight`).toBeCloseTo(
+        molecularWeight(kekule),
+        9,
+      );
+      expect(exactMass(flagged), `${label}: exact mass`).toBeCloseTo(
+        exactMass(kekule),
+        9,
+      );
+    }
+  });
+
+  it("still reports an atom no amount of perception could explain", () => {
+    // The clamp, and its limit. Snapping down must not become a way to silence
+    // a real error — but it can only tell the two apart by size. A flag adds at
+    // most half a bond order, over at most three ring bonds, so a sum that
+    // overshoots the valence list by more than 1.5 cannot be flag noise.
+    //
+    // A neutral ring nitrogen bearing an exocyclic double bond — how an
+    // importer writes pyridine N-oxide when it loses the charge-separated form
+    // — sums to 1.5 + 1.5 + 2 = 5 against nitrogen's valence of 3. The gap of 2
+    // is past the slack, so the sum is left where it is and the error survives
+    // into the flagged form exactly as it does in the Kekule one.
+    const badNOxide = buildMolecule((b) => {
+      const ring: AtomId[] = [];
+      for (let i = 0; i < 6; i++) {
+        ring.push(b.atom(i === 0 ? "N" : "C", fromPolar(i, 1)));
+      }
+      for (let i = 0; i < 6; i++) {
+        b.bond(ring[i]!, ring[(i + 1) % 6]!, i % 2 === 0 ? 2 : 1);
+      }
+      b.bond(ring[0]!, b.atom("O", vec(0, 2)), 2);
+    });
+    const flaggedNOxide = importAromatic(badNOxide);
+    expect(V.bondOrderSum(flaggedNOxide, "a1")).toBe(5);
+    expect(V.explicitValence(flaggedNOxide, "a1")).toBe(5);
+    expect(V.isOverValent(flaggedNOxide, "a1")).toBe(true);
+    expect(V.isOverValent(badNOxide, "a1")).toBe(true);
+
+    // The other side of the same coin, asserted so nobody reads the clamp as
+    // stronger than it is: a ring carbon carrying two extra substituents sums
+    // to 5 against a valence of 4, a gap of 1, which is INSIDE the slack. It is
+    // resolved to 4 and stops being reported for as long as the flags stand.
+    // That is the price of not calling every fused carbon at 4.5 over-valent,
+    // and RDKit pays it the same way. The Kekule form of the same structure
+    // reports it, which is where a chemist would see it.
+    const overloaded = buildMolecule((b) => {
+      const ring: AtomId[] = [];
+      for (let i = 0; i < 6; i++) ring.push(b.atom("C", fromPolar(i, 1)));
+      for (let i = 0; i < 6; i++) {
+        b.bond(ring[i]!, ring[(i + 1) % 6]!, i % 2 === 0 ? 2 : 1);
+      }
+      b.bond(ring[0]!, b.atom("C"), 1);
+      b.bond(ring[0]!, b.atom("C"), 1);
+    });
+    const flagged = importAromatic(overloaded);
+    expect(V.bondOrderSum(flagged, "a1")).toBe(5);
+    expect(V.explicitValence(flagged, "a1")).toBe(4);
+    expect(V.isOverValent(flagged, "a1")).toBe(false);
+    expect(V.isOverValent(overloaded, "a1")).toBe(true);
+  });
+
+  it("needs stannabenzene's hydrogen pinned, as it needs pyrrole's", () => {
+    // The residue, pinned so it is a known limit rather than a surprise.
+    // Stannole's tin donates a lone pair and takes no hydrogen; stannabenzene's
+    // takes a ring double bond and one hydrogen. Both are neutral tin with two
+    // aromatic bonds, so the flagged forms are byte-identical apart from the
+    // ring size and no valence rule can separate them. Resolution reads them
+    // both as the donor, which is right for the five-ring and one hydrogen
+    // short for the six — so the six-ring pins, exactly as RDKit writes [snH].
+    const bare = monocycle(["Sn", "C", "C", "C", "C", "C"], [0, 2, 4]);
+    expect(elementCounts(bare)).toEqual({ C: 5, H: 6, Sn: 1 });
+    expect(elementCounts(importAromatic(bare))).toEqual({ C: 5, H: 5, Sn: 1 });
+
+    const pinned = monocycle(["Sn", "C", "C", "C", "C", "C"], [0, 2, 4], {
+      0: { explicitHydrogenCount: 1 },
+    });
+    expect(elementCounts(importAromatic(pinned))).toEqual(elementCounts(pinned));
+  });
+
+  it("leaves the Kekule storage form untouched", () => {
+    // The safety property that bounds the blast radius: the resolution is
+    // keyed off aromatic flags, and the storage form carries none, so nothing
+    // the editor produces can reach it. A sulfur with three plain single bonds
+    // still gets its hydrogen from the 4 in its valence list.
+    const sulfonium = buildMolecule((b) => {
+      const s = b.atom("S");
+      for (let i = 0; i < 3; i++) b.bond(s, b.atom("C"), 1);
+    });
+    expect(V.explicitValence(sulfonium, "a1")).toBe(3);
+    expect(V.implicitHydrogenCount(sulfonium, "a1")).toBe(1);
   });
 });
