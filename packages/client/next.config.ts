@@ -30,7 +30,7 @@ const nextConfig: NextConfig = {
         }),
   trailingSlash: true,
   images: { unoptimized: true },
-  transpilePackages: ["@starter/shared", "@starter/chem-core"],
+  transpilePackages: ["@starter/shared", "@starter/chem-core", "@starter/chem-render"],
 };
 
 export default nextConfig;

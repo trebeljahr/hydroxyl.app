@@ -1,0 +1,73 @@
+/**
+ * Regenerates the contact sheet as part of the ordinary test run.
+ *
+ * Deliberately a test rather than a script: a review aid that has to be
+ * remembered is a review aid that goes stale, and a stale sheet is worse than
+ * none — it shows a picture that is no longer what the code produces, which is
+ * precisely the mistake the goldens already invite.
+ *
+ * The assertions are shallow on purpose. Correctness of the rendering is the
+ * goldens' job; this file only proves the page was written, is self-contained,
+ * and covers the full matrix.
+ */
+
+import { existsSync, readFileSync, statSync } from "node:fs";
+
+import { afterAll, describe, expect, it } from "vitest";
+
+import { FIXTURES } from "../src/fixtures.js";
+import { VIEW_KINDS } from "../src/representation.js";
+
+import { contactSheetPath, contactSheetUrl, writeContactSheet } from "./contact-sheet.js";
+
+const path = writeContactSheet();
+const html = readFileSync(path, "utf8");
+
+afterAll(() => {
+  // Printed at the end of the run so it is one click away in any terminal
+  // that linkifies file URLs.
+  //
+  // `process.stdout.write` rather than `console.log`: vitest's default
+  // reporter captures console output and only replays it for failing tests,
+  // so a `console.log` here would be swallowed on exactly the green run where
+  // someone wants the link.
+  process.stdout.write(`\ncontact sheet: ${contactSheetUrl()}\n`);
+});
+
+describe("contact sheet", () => {
+  it("is written where it says it is", () => {
+    expect(path).toBe(contactSheetPath());
+    expect(existsSync(path)).toBe(true);
+    expect(statSync(path).size).toBeGreaterThan(1000);
+  });
+
+  it("covers every fixture in every representation in both presets", () => {
+    for (const fixture of FIXTURES) {
+      expect(html).toContain(`<h2>${fixture.name}</h2>`);
+    }
+    for (const kind of VIEW_KINDS) {
+      // One row per kind per fixture.
+      const rows = html.split(`class="kind">${kind}`).length - 1;
+      expect(rows, kind).toBe(FIXTURES.length);
+    }
+    const cells = html.split('class="cell"').length - 1;
+    expect(cells).toBe(FIXTURES.length * VIEW_KINDS.length * 2);
+  });
+
+  it("embeds the SVG rather than linking it", () => {
+    // It has to be legible opened straight off the filesystem, on a machine
+    // with no dev server and no network. An <img src="..."> or a CDN
+    // stylesheet would break exactly when someone needs the sheet most.
+    expect(html).toContain('<svg xmlns="http://www.w3.org/2000/svg"');
+    expect(html).not.toContain("<?xml");
+    expect(html).not.toMatch(/<img\b/);
+    expect(html).not.toMatch(/https?:\/\/(?!www\.w3\.org)/);
+  });
+
+  it("labels each cell with what it is showing", () => {
+    expect(html).toContain("primitives");
+    expect(html).toMatch(/\d+(\.\d+)? &times; \d+(\.\d+)? px/);
+    expect(html).toContain(">publication<");
+    expect(html).toContain(">screen<");
+  });
+});

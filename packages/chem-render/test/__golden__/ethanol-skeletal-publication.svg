@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-8.9 -20.9 59.369 29.8" width="59.369px" height="29.8px">
+  <line id="bond:b4:line" data-bond="b4" x1="0" y1="0" x2="20.785" y2="-12" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b5:line" data-bond="b5" x1="20.785" y1="-12" x2="41.569" y2="0" stroke="#000000" stroke-width="1.4"/>
+  <circle id="atom:a1:dot" data-atom="a1" cx="0" cy="0" r="0.9" fill="#000000"/>
+  <circle id="atom:a2:dot" data-atom="a2" cx="20.785" cy="-12" r="0.9" fill="#000000"/>
+  <circle id="atom:a3:dot" data-atom="a3" cx="41.569" cy="0" r="0.9" fill="#000000"/>
+</svg>

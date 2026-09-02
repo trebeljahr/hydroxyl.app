@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@starter/chem-core": "workspace:*",
+    "@starter/chem-render": "workspace:*",
     "@starter/shared": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

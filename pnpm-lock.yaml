@@ -33,11 +33,27 @@ importers:
         specifier: ^4.1.6
         version: 4.1.6(@types/node@25.9.0)(jsdom@29.1.1)(vite@8.0.13(@types/node@25.9.0)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.2))
 
+  packages/chem-render:
+    dependencies:
+      '@starter/chem-core':
+        specifier: workspace:*
+        version: link:../chem-core
+    devDependencies:
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.6
+        version: 4.1.6(@types/node@25.9.0)(jsdom@29.1.1)(vite@8.0.13(@types/node@25.9.0)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.2))
+
   packages/client:
     dependencies:
       '@starter/chem-core':
         specifier: workspace:*
         version: link:../chem-core
+      '@starter/chem-render':
+        specifier: workspace:*
+        version: link:../chem-render
       '@starter/shared':
         specifier: workspace:*
         version: link:../shared
