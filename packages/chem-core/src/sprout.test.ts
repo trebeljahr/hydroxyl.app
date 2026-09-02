@@ -174,6 +174,29 @@ describe("defaultSproutAngle", () => {
     expect(grownSide).toBe(-chainSide);
   });
 
+  it("continues the zig-zag past a branch point, where the average cancels", () => {
+    // Propane with a methyl on the middle carbon — "draw a chain, add a
+    // methyl, extend the chain", which is about as ordinary as this editor's
+    // gestures get. The branched neighbour's two other substituents sit
+    // SYMMETRICALLY about the terminus->neighbour axis (that is where `sprout`
+    // put the methyl, at the free vertex), so their unit average cancels and
+    // has no side. Turning counter-clockwise regardless would repeat the
+    // previous turn and bend the backbone 60 degrees at the branch.
+    const propane = linearChain(3);
+    const branched = sprout(propane, propane.atomIds[1]!).molecule;
+    const terminus = propane.atomIds[2]!;
+
+    expect(toDegrees(defaultSproutAngle(branched, terminus))).toBeCloseTo(30, 9);
+
+    // ...which is the far side of the axis from the backbone, exactly as at an
+    // unbranched terminus: the tie is broken on the first substituent in bond
+    // order, and for a chain that is the backbone being extended.
+    const axis = sub(posOf(branched, propane.atomIds[1]!), posOf(branched, terminus));
+    const grown = sub(defaultSproutPosition(branched, terminus), posOf(branched, terminus));
+    const backbone = sub(posOf(branched, propane.atomIds[0]!), posOf(branched, terminus));
+    expect(Math.sign(cross(axis, grown))).toBe(-Math.sign(cross(axis, backbone)));
+  });
+
   it("sprouts into the free vertex of a trigonal centre", () => {
     // Two substituents 120 degrees apart, at 90 and 210: the sp2 skeleton of a
     // carbonyl carbon. Exactly one vertex is left, at -30 degrees.

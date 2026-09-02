@@ -130,8 +130,15 @@ export interface SproutResult {
 // Local geometry
 // ---------------------------------------------------------------------------
 
-/** Offsets from `atomId` to each bonded neighbour, in bond insertion order. */
-function bondDirections(mol: Molecule, atomId: AtomId): Vec2[] {
+/**
+ * Offsets from `atomId` to each bonded neighbour, in bond insertion order.
+ *
+ * Exported for templates.ts, which asks `largestGapBisector` the same "where
+ * is there room" question over these directions plus the ring interiors the
+ * atom sits on. Two copies of the traversal would be two things to keep in
+ * step with `bondsAt`'s ordering guarantee.
+ */
+export function bondDirections(mol: Molecule, atomId: AtomId): Vec2[] {
   const origin = requireAtom(mol, atomId).pos;
   return bondsAt(mol, atomId).map((bond) =>
     sub(requireAtom(mol, otherEnd(bond, atomId)).pos, origin),
@@ -170,23 +177,41 @@ function terminalSproutAngle(mol: Molecule, atomId: AtomId, axis: Vec2): number 
 
   let sum: Vec2 = ORIGIN;
   let count = 0;
+  let first: Vec2 | undefined;
   for (const bond of bondsAt(mol, neighborId)) {
     const otherId = otherEnd(bond, neighborId);
     if (otherId === atomId) continue;
-    sum = add(sum, normalize(sub(requireAtom(mol, otherId).pos, neighborPos)));
+    const direction = normalize(sub(requireAtom(mol, otherId).pos, neighborPos));
+    if (first === undefined) first = direction;
+    sum = add(sum, direction);
     count++;
   }
 
-  // A lone two-atom molecule has no zig-zag to continue, and neither does a
-  // neighbour whose other substituents happen to sit on the axis. Turn
-  // counter-clockwise by convention so the result is at least reproducible.
-  if (count === 0) return base + SUBSTITUENT_TURN;
+  // A lone two-atom molecule has no zig-zag to continue. Turn counter-clockwise
+  // by convention so the result is at least reproducible.
+  if (count === 0 || first === undefined) return base + SUBSTITUENT_TURN;
 
   // Positive cross product means the substituents lie counter-clockwise of the
-  // axis, so the new bond turns clockwise to end up opposite them. A side too
-  // small to trust falls through to the same counter-clockwise convention.
+  // axis, so the new bond turns clockwise to end up opposite them.
   const side = cross(axis, vec(sum.x / count, sum.y / count));
-  return side > SIDE_EPSILON ? base - SUBSTITUENT_TURN : base + SUBSTITUENT_TURN;
+  if (Math.abs(side) > SIDE_EPSILON) {
+    return side > 0 ? base - SUBSTITUENT_TURN : base + SUBSTITUENT_TURN;
+  }
+
+  // The average cancelled: the neighbour's other substituents sit symmetrically
+  // about the axis, so it has no side to be on. That is not an exotic input —
+  // it is exactly what a `sprout` onto a chain produces, because the sprout
+  // lands at the free vertex, which is symmetric about the chain axis by
+  // construction. "Draw a chain, add a methyl, extend the chain" therefore hits
+  // it every time, and turning counter-clockwise regardless would repeat the
+  // previous turn and bend the backbone 60 degrees at the branch.
+  //
+  // So lean off the FIRST of those substituents instead. `bondsAt` order is
+  // bond insertion order — the same stability tiebreak `referenceAngle` uses —
+  // and for a chain drawn one bond at a time it is the backbone the user is
+  // extending, which is the phase the zig-zag has to continue.
+  const firstSide = cross(axis, first);
+  return firstSide > SIDE_EPSILON ? base - SUBSTITUENT_TURN : base + SUBSTITUENT_TURN;
 }
 
 /**
@@ -200,8 +225,13 @@ function terminalSproutAngle(mol: Molecule, atomId: AtomId, axis: Vec2): number 
  * Ties — a linear allene or alkyne centre presents two gaps of exactly 180
  * degrees — are broken by taking the first gap in sorted-angle order, so a
  * repeated gesture on the same structure keeps producing the same drawing.
+ *
+ * The directions are whatever the caller counts as occupied. Bonds are all a
+ * sprout knows about; templates.ts adds the ring interiors the atom sits on,
+ * because a tie broken by angle order alone can hand a ring template the wedge
+ * that is the existing ring's inside.
  */
-function largestGapBisector(directions: readonly Vec2[]): number {
+export function largestGapBisector(directions: readonly Vec2[]): number {
   const angles = directions
     .map((d) => normalizeAnglePositive(angleOf(d)))
     .sort((a, b) => a - b);
