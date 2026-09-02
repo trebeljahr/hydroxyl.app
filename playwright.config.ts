@@ -1,6 +1,17 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const PORT = 6337;
+/**
+ * 6337 by default, overridable through PORT — the same convention the client's
+ * own `dev` and `start` scripts already use.
+ *
+ * The override is not a nicety. Development here happens in several git
+ * worktrees at once, and a `pnpm dev` from any one of them owns 6337; with the
+ * port hardcoded, `reuseExistingServer` below then points every worktree's e2e
+ * run at whichever checkout happens to be serving, so a spec passes or fails
+ * against code that is not the code under test. Running with
+ * `PORT=<something free> pnpm test:e2e` builds and serves THIS tree instead.
+ */
+const PORT = Number(process.env.PORT ?? 6337);
 const baseURL = `http://127.0.0.1:${PORT}`;
 
 export default defineConfig({
