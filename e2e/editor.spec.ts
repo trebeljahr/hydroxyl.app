@@ -227,11 +227,19 @@ async function readGeometry(page: Page): Promise<CanvasGeometry> {
     const lines = document.querySelectorAll<SVGLineElement>(
       '[data-canvas-root] [data-layer="scene"] line[data-bond-id]',
     );
+    // Since bond geometry landed, a double bond draws two lines and a triple
+    // three, every one carrying the SAME data-bond-id. Keep the first line per
+    // id — buildScene emits the axis before any offset copy, and the axis is
+    // the segment every geometric assertion in this file means.
+    const seenBondIds = new Set<string>();
     for (const line of lines) {
+      const id = line.getAttribute("data-bond-id") ?? "";
+      if (seenBondIds.has(id)) continue;
       const a = toClient(line, line.x1.baseVal.value, line.y1.baseVal.value);
       const b = toClient(line, line.x2.baseVal.value, line.y2.baseVal.value);
       if (a === null || b === null) continue;
-      bonds.push({ id: line.getAttribute("data-bond-id") ?? "", a, b });
+      seenBondIds.add(id);
+      bonds.push({ id, a, b });
     }
 
     const atoms: { id: string; centre: { x: number; y: number } }[] = [];
@@ -250,6 +258,16 @@ async function readGeometry(page: Page): Promise<CanvasGeometry> {
 
     return { bonds, atoms };
   });
+}
+
+/** How many BONDS are drawn, not how many lines: a double bond draws two and
+ *  a triple three, all stamped with the same data-bond-id. Counting elements
+ *  would assert the depiction; every caller here means the chemistry. */
+async function drawnBondCount(page: Page, scope = ""): Promise<number> {
+  return page.evaluate((sel) => {
+    const nodes = document.querySelectorAll(`${sel}[data-bond-id]`);
+    return new Set([...nodes].map((n) => n.getAttribute("data-bond-id"))).size;
+  }, scope ? `${scope} ` : "");
 }
 
 async function boxOf(page: Page, selector: string): Promise<Box> {
@@ -316,14 +334,14 @@ test("renders the benzene fixture as six bonds and six atoms", async ({
 
   const scene = page.locator(SCENE);
   await expect(scene.locator("[data-atom-id]")).toHaveCount(RING_CARBONS);
-  await expect(scene.locator("[data-bond-id]")).toHaveCount(RING_BONDS);
+  expect(await drawnBondCount(page, SCENE)).toBe(RING_BONDS);
 
   // The counts have to hold for the WHOLE PAGE, not just inside the scene
   // layer. `[data-atom-id]` is the selector that means "a drawn atom", and an
   // overlay halo wearing it would turn a structural fact into a stateful one
   // — the count would then depend on what happened to be hovered.
   await expect(page.locator("[data-atom-id]")).toHaveCount(RING_CARBONS);
-  await expect(page.locator("[data-bond-id]")).toHaveCount(RING_BONDS);
+  expect(await drawnBondCount(page)).toBe(RING_BONDS);
 
   // The overlay group exists, is a SIBLING of the scene rather than part of
   // it, and claims no model entities of its own.
@@ -544,7 +562,7 @@ async function assertPanDrag(
   await expect(page.locator(`${SCENE} [data-atom-id]`)).toHaveCount(
     RING_CARBONS,
   );
-  await expect(page.locator(`${SCENE} [data-bond-id]`)).toHaveCount(RING_BONDS);
+  expect(await drawnBondCount(page, SCENE)).toBe(RING_BONDS);
 }
 
 // Up and to the left, so the drag stays clear of both the canvas edges and
@@ -667,7 +685,7 @@ test("clicking bonds selects them, shift extends, empty space clears", async ({
   // pushed into `scene.primitives` instead, it would live under the scene
   // layer — and would then be in every exported figure.
   await expect(page.locator(`${SCENE} [data-overlay]`)).toHaveCount(0);
-  await expect(page.locator("[data-bond-id]")).toHaveCount(RING_BONDS);
+  expect(await drawnBondCount(page)).toBe(RING_BONDS);
 
   // The ring centre is empty canvas at any zoom; an unmodified click there
   // means "I am done with this selection".
@@ -778,7 +796,7 @@ test("drawing a three-bond chain produces the document the chemist drew", async 
   // THE DOCUMENT. Three drags, three carbons, three bonds — not sixty, and not
   // a stack of coincident atoms where a snap happened to land on one.
   await expect(page.locator("[data-atom-id]")).toHaveCount(RING_CARBONS + 3);
-  await expect(page.locator("[data-bond-id]")).toHaveCount(RING_BONDS + 3);
+  expect(await drawnBondCount(page)).toBe(RING_BONDS + 3);
 
   // MEASURED FROM ONE SNAPSHOT, taken after the last fit. The view is
   // re-framed between steps to keep the growing chain on screen, so a position
@@ -841,7 +859,7 @@ test("dragging onto an existing atom closes a ring rather than duplicating it", 
   // sitting exactly on top of the sixth: invisible on screen, wrong in the
   // formula, and it makes the molfile export write two atoms at one coordinate.
   await expect(page.locator("[data-atom-id]")).toHaveCount(RING_CARBONS);
-  await expect(page.locator("[data-bond-id]")).toHaveCount(RING_BONDS + 1);
+  expect(await drawnBondCount(page)).toBe(RING_BONDS + 1);
 
   expect(errors).toEqual([]);
 });
@@ -875,7 +893,7 @@ test("dragging onto an already-bonded atom is refused, visibly", async ({ page }
   await page.mouse.up();
 
   await expect(page.locator("[data-atom-id]")).toHaveCount(RING_CARBONS);
-  await expect(page.locator("[data-bond-id]")).toHaveCount(RING_BONDS);
+  expect(await drawnBondCount(page)).toBe(RING_BONDS);
 
   expect(errors).toEqual([]);
 });
@@ -903,7 +921,7 @@ test("Escape mid-drag leaves the molecule exactly as it was", async ({ page }) =
   await page.keyboard.press("Escape");
 
   await expect(page.locator("[data-atom-id]")).toHaveCount(RING_CARBONS);
-  await expect(page.locator("[data-bond-id]")).toHaveCount(RING_BONDS);
+  expect(await drawnBondCount(page)).toBe(RING_BONDS);
   await expect(page.locator('[data-overlay="ghost-bond"]')).toHaveCount(0);
 
   // And the cancelled drag cannot resume: the pointerup that follows must
@@ -997,7 +1015,7 @@ test("dragging a selected atom moves it instead of drawing from it", async ({
 
   // Nothing minted: a SELECTED atom moves, an unselected one sprouts.
   await expect(page.locator("[data-atom-id]")).toHaveCount(RING_CARBONS);
-  await expect(page.locator("[data-bond-id]")).toHaveCount(RING_BONDS);
+  expect(await drawnBondCount(page)).toBe(RING_BONDS);
 
   const after = await readGeometry(page);
   const moved = after.atoms.find((candidate) => candidate.id === atom.id);
@@ -1055,7 +1073,7 @@ test("dropping a selected atom onto another merges the two", async ({ page }) =>
   // completing as a plain move: two unbonded atoms left on one coordinate,
   // indistinguishable on screen and two atoms in every export.
   await expect(page.locator("[data-atom-id]")).toHaveCount(RING_CARBONS - 1);
-  await expect(page.locator("[data-bond-id]")).toHaveCount(RING_BONDS);
+  expect(await drawnBondCount(page)).toBe(RING_BONDS);
   await expect(page.locator('[data-overlay="target-accepted"]')).toHaveCount(0);
 
   // Decision 1: the survivor keeps the TARGET's id and position.
