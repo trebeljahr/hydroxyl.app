@@ -97,6 +97,24 @@ export function totalValence(mol: Molecule, atomId: AtomId): number {
   return explicitValence(mol, atomId) + implicitHydrogenCount(mol, atomId);
 }
 
+/**
+ * Every default valence this element offers, charge adjustment applied, in the
+ * element table's ascending order. Empty for a metal, which carries none.
+ *
+ * The LIST, not just its last entry, is what a caller reasoning about a
+ * multi-valence element needs. Sulfur allows 2, 4 and 6 and picks whichever
+ * one its bonding actually reaches: divalent in a thiol, hexavalent in a
+ * sulfone. Collapsing that to `maxValence` and measuring room against 6 makes
+ * a two-connected sulfur look like it has four bonds' worth of capacity going
+ * spare, which is true of a sulfone and nonsense for a thiophene.
+ */
+export function chargeAdjustedValences(mol: Molecule, atomId: AtomId): number[] {
+  const atom = requireAtom(mol, atomId);
+  const element = requireElement(atom.element);
+  const adjustment = chargeAdjustment(element.symbol, element.group, atom.charge);
+  return element.valences.map((valence) => valence + adjustment);
+}
+
 /** The highest valence this atom could reach, charge included. */
 export function maxValence(mol: Molecule, atomId: AtomId): number {
   const atom = requireAtom(mol, atomId);

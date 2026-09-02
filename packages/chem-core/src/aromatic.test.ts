@@ -824,6 +824,43 @@ describe("kekulize", () => {
     expect(A.isAromaticRing(kekulized, 0)).toBe(true);
   });
 
+  it("Kekulises thiopyrylium, where sulfur's LOWER valence is the operative one", () => {
+    // Pyrylium with S+ where the O+ is, and the case that showed reading
+    // `maxValence` was wrong for a multi-valence heteroatom. Sulfur allows 2, 4
+    // and 6, so its charge-adjusted maximum is 7; measured against that, a
+    // two-connected sulfur has five units of room rather than the one that says
+    // "take a double bond", and the sulfur was left out of the matching
+    // entirely. The five carbons left over could not pair among themselves, the
+    // odd-parity prune fired, and the whole ring came back unconverted — while
+    // pyrylium, whose oxygen has only one valence to read, was fine.
+    const imported = importAromatic(
+      monocycle(["S", "C", "C", "C", "C", "C"], [0, 2, 4], { 0: { charge: 1 } }),
+    );
+    const result = A.kekulizeWithReport(imported);
+    expect(result.unkekulizedAtomIds).toEqual([]);
+
+    const kekulized = result.molecule;
+    expect(A.hasAromaticFlags(kekulized)).toBe(false);
+    expectIntegralBondOrderSums(kekulized, "kekulized thiopyrylium");
+    expect(elementCounts(kekulized)).toEqual({ C: 5, H: 5, S: 1 });
+    // The sulfur took the S+=C double bond, exactly as pyrylium's oxygen does.
+    expect(M.bondsAt(kekulized, "a1").some((b) => b.order === 2)).toBe(true);
+    expect(A.isAromaticRing(kekulized, 0)).toBe(true);
+  });
+
+  it("still leaves neutral thiophene's sulfur out of the matching", () => {
+    // The other half of the same rule, and the reason it is stated as "the
+    // smallest valence at or above the sigma framework" rather than "the
+    // smallest one above it". Thiophene's neutral sulfur has a framework of 2
+    // which IS a sulfur valence, so it has no room, needs no double bond and
+    // donates its lone pair instead. Charging it is the only difference between
+    // this and thiopyrylium.
+    const imported = importAromatic(thiophene());
+    const kekulized = A.kekulize(imported);
+    expect(M.bondsAt(kekulized, "a1").every((b) => b.order === 1)).toBe(true);
+    expect(elementCounts(kekulized)).toEqual({ C: 4, H: 4, S: 1 });
+  });
+
   it("still reports a failure when nothing charged explains it", () => {
     // Un-pinned pyrrole again, from the other direction: its nitrogen is
     // neutral, so the charged-centre relaxation finds nothing to relax and the

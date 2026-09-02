@@ -93,6 +93,29 @@ describe("variable valence", () => {
     });
     expect(V.implicitHydrogenCount(phosphate, phosphate.atomIds[0]!)).toBe(0);
   });
+
+  it("exposes the whole charge-adjusted valence list, not just its maximum", () => {
+    // `maxValence` alone cannot answer "how much room does this atom have",
+    // because for sulfur the answer depends on which of its three valences the
+    // bonding actually reaches. Kekulisation needs the list: thiopyrylium's S+
+    // settles at 3 with one double bond, and measuring it against the 7 at the
+    // top of the same list says it needs no double bond at all.
+    const thiophene = buildMolecule((b) => b.atom("S"));
+    expect(V.chargeAdjustedValences(thiophene, thiophene.atomIds[0]!)).toEqual([2, 4, 6]);
+
+    const sulfonium = buildMolecule((b) => b.atom("S", undefined, { charge: 1 }));
+    expect(V.chargeAdjustedValences(sulfonium, sulfonium.atomIds[0]!)).toEqual([3, 5, 7]);
+    expect(V.maxValence(sulfonium, sulfonium.atomIds[0]!)).toBe(7);
+
+    // Carbon's positive-charge inversion carries through, as it must: the list
+    // and `maxValence` are two readings of one adjustment, never two rules.
+    const cation = buildMolecule((b) => b.atom("C", undefined, { charge: 1 }));
+    expect(V.chargeAdjustedValences(cation, cation.atomIds[0]!)).toEqual([3]);
+
+    // A metal carries no default valence, so there is nothing to adjust.
+    const iron = buildMolecule((b) => b.atom("Fe"));
+    expect(V.chargeAdjustedValences(iron, iron.atomIds[0]!)).toEqual([]);
+  });
 });
 
 describe("charge", () => {

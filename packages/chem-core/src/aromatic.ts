@@ -66,7 +66,12 @@ import type {
   BondOrder,
   Molecule,
 } from "./types.js";
-import { bondOrderSum, implicitHydrogenCount, maxValence } from "./valence.js";
+import {
+  bondOrderSum,
+  chargeAdjustedValences,
+  implicitHydrogenCount,
+  maxValence,
+} from "./valence.js";
 
 export interface AromaticPerception {
   /** Parallel to `rings(mol)`. A ring is aromatic when it satisfies the rule
@@ -756,18 +761,34 @@ function aromaticComponents(mol: Molecule): AromaticComponent[] {
  * Whether this atom must be given one ring double bond for its valence to
  * come out right.
  *
- * `maxValence` is used rather than "the smallest default valence at or above
- * sigma" because the charge adjustment is private to valence.ts and
- * `maxValence` already applies it. The `=== 1` test keeps that harmless for
- * multi-valence elements: thiophene's sulfur has a max valence of 6 against a
- * sigma of 2, so the difference is 4 and it correctly needs no double bond.
+ * THE SIGMA FRAMEWORK IS COUNTED DIRECTLY, not through
+ * `implicitHydrogenCount`. Every aromatic bond is read as the single bond it
+ * becomes if this atom is NOT the one given the double, and a hydrogen counts
+ * only where the importer pinned it. Deriving hydrogens instead reads the
+ * flagged molecule through valence.ts's 1.5-per-aromatic-bond sum, which
+ * invents one on thiophene's sulfur — a phantom that has no business deciding
+ * the bond orders that then determine the real hydrogen count.
  *
- * NOT RELIABLE FOR A CHARGED CENTRE. `sigma` comes from
- * `implicitHydrogenCount` on a molecule where an aromatic bond still weighs
- * 1.5, and for tropylium's C+ two of those already saturate the 3 its
- * charge-adjusted valence allows — so it reports no hydrogen and this returns
- * true where the truth is [cH+]. `matchComponent` handles the resulting
- * failure; see the comment there.
+ * THE OPERATIVE VALENCE IS THE SMALLEST ONE AT OR ABOVE THE FRAMEWORK, not
+ * `maxValence`. Reading the maximum is what failed thiopyrylium: S+ allows 3,
+ * 5 or 7, and against 7 a two-connected sulfur looks like it has five units of
+ * room rather than the one that says "take a double bond", so it was left out
+ * of the matching and the five carbons left over had odd parity. Sulfur's
+ * lower valence is the operative one there, exactly as oxygen's only valence
+ * is in pyrylium. Thiophene's neutral sulfur is unaffected and for a better
+ * reason than before: its framework of 2 already IS a sulfur valence, so there
+ * is no room at all and it donates a lone pair instead.
+ *
+ * ANY room means a double bond, not exactly one unit of it — a benzene carbon
+ * has a framework of 2 against a valence of 4, since its hydrogen is not
+ * pinned either. What forces the atom to actually take one is `matchComponent`
+ * demanding a PERFECT matching over everything this returns true for, which is
+ * how RDKit reads a flagged ring too.
+ *
+ * NOT RELIABLE FOR A CHARGED CENTRE. Tropylium's C+ has a framework of 2
+ * against the 3 its charge-adjusted valence allows, so this returns true where
+ * the truth is [cH+] with no double bond at all. `matchComponent` handles the
+ * resulting failure; see the comment there.
  */
 function needsRingDouble(mol: Molecule, atomId: AtomId): boolean {
   // A pi bond outside the aromatic subgraph has already spent this atom's p
@@ -776,11 +797,16 @@ function needsRingDouble(mol: Molecule, atomId: AtomId): boolean {
   for (const bond of bondsAt(mol, atomId)) {
     if (!bond.aromatic && bond.order >= 2) return false;
   }
-  const sigma = degree(mol, atomId) + implicitHydrogenCount(mol, atomId);
-  const max = maxValence(mol, atomId);
-  // Infinity is a metal, which carries no default valence and is never
-  // treated as needing anything.
-  return max !== Infinity && max - sigma === 1;
+  const atom = requireAtom(mol, atomId);
+  let sigma = atom.radicalElectrons + (atom.explicitHydrogenCount ?? 0);
+  for (const bond of bondsAt(mol, atomId)) sigma += bond.aromatic ? 1 : bond.order;
+
+  for (const valence of chargeAdjustedValences(mol, atomId)) {
+    if (valence >= sigma) return valence > sigma;
+  }
+  // Fell off the end: a metal, which carries no default valence, or an atom
+  // already past its highest one. Neither is treated as needing anything.
+  return false;
 }
 
 /** Bounds the backtracking search. Aromatic systems have degree <= 3 and few
@@ -811,10 +837,9 @@ function matchComponent(
   if (direct) return direct;
 
   // Second reading for the charged centres `needsRingDouble` cannot resolve.
-  // Its sigma count comes from `implicitHydrogenCount` on a molecule where an
-  // aromatic bond still weighs 1.5, and tropylium's C+ sums to exactly the 3
-  // its charge-adjusted valence allows — so it is told it has no hydrogen and
-  // therefore needs a ring double bond. Both readings are valence-consistent
+  // Tropylium's C+ has a sigma framework of 2 against the 3 its charge-adjusted
+  // valence allows, so it is told it needs a ring double bond with no way of
+  // knowing a hydrogen would fill the gap. Both readings are valence-consistent
   // ([c+] taking the double bond, or [cH+] taking a hydrogen), which is the
   // same ambiguity pyrrole's N-H has, and molfiles carry no hydrogen-count
   // field to settle it. It is settled here by outcome instead: the strict
