@@ -159,6 +159,26 @@ export function modelToPx(style: RenderStyle, p: Vec2): ScenePoint {
 }
 
 /**
+ * The exact inverse of `modelToPx`: a scene point back to a chem-core position.
+ *
+ * Its caller is the editor canvas. A pointer lands somewhere in scene px, and
+ * chem-core's `hitTest` wants a model position — so the division and the
+ * un-flip have to happen somewhere, and this file is the only place they are
+ * allowed to. An editor that spelled out `p.y / -bondLengthPx` for itself
+ * would be precisely the second site the invariant above exists to prevent:
+ * the one that quietly disagrees about which way is up the day a style changes
+ * or a transform is inserted, and makes a structure hit-test mirrored.
+ *
+ * For a DELTA or a tolerance — a drag distance, a pick radius — use
+ * `pxPerModelUnit` and divide. There is no y to flip in a difference of two
+ * points (the two negations cancel), and running one through here would negate
+ * it once too often.
+ */
+export function pxToModel(style: RenderStyle, p: ScenePoint): Vec2 {
+  return { x: p.x / style.bondLengthPx, y: -p.y / style.bondLengthPx };
+}
+
+/**
  * The scale factor alone, for callers that need it without a point — an
  * editor converting a pointer delta back into model units, say.
  */
