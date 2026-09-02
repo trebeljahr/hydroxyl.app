@@ -56,6 +56,7 @@ import {
   benzene as buildBenzene,
   carbocycle,
   expandToBonds,
+  isDegenerateBond,
   isFusionBond,
   rectFromCorners,
   selection as coreSelection,
@@ -127,6 +128,7 @@ const LABEL_RING = "Add ring";
 
 const MESSAGE_ALREADY_BONDED = "These atoms are already bonded";
 const MESSAGE_FUSED_BOTH_SIDES = "That bond already has a ring on each side";
+const MESSAGE_ZERO_LENGTH_BOND = "That bond has zero length; move its atoms apart first";
 
 // ---------------------------------------------------------------------------
 // Geometry helpers
@@ -453,6 +455,16 @@ function ringClick(
     if (isFusionBond(mol, hit.bondId)) {
       return [{ kind: "status", message: MESSAGE_FUSED_BOTH_SIDES }];
     }
+    // The other geometric impossibility `fuseRingOnBond` throws on, and one
+    // `isFusionBond` does not cover: a bond whose two atoms are coincident has
+    // no perpendicular bisector to place a ring across. A drawing reaches that
+    // state through an import with duplicate coordinates, or by a fragment
+    // drag that parked one of its atoms on a neighbour. The adapter would
+    // catch the throw, but a refusal that names the reason is a better answer
+    // than a rolled-back gesture with a stack trace behind it.
+    if (isDegenerateBond(mol, hit.bondId)) {
+      return [{ kind: "status", message: MESSAGE_ZERO_LENGTH_BOND }];
+    }
     return [
       {
         kind: "edit",
@@ -597,7 +609,7 @@ function onDragStart(
   // store back to it and the reducer cannot see that happen — building the new
   // gesture on the molecule the abandoned one had reached would re-apply its
   // half-finished edit as part of the next entry.
-  const abandoned = committingBase(state);
+  const abandoned = gestureBase(state);
   const ctx: InteractionContext =
     abandoned === null ? incoming : { ...incoming, molecule: abandoned };
   const stale: readonly InteractionCommand[] =
@@ -661,8 +673,29 @@ function onDragStart(
   return result(swept.state, [...stale, ...swept.commands]);
 }
 
-/** The base of a transaction a previous gesture left open, or null. */
-function committingBase(state: InteractionState): Molecule | null {
+/**
+ * The molecule a committing gesture is rebuilding every frame FROM, or null
+ * when no gesture is in flight.
+ *
+ * Two callers, and the second is why this is exported.
+ *
+ * `onDragStart` uses it to unwind a transaction an abandoned gesture left
+ * open: `abortTransaction` will roll the store back to this molecule and the
+ * reducer cannot see that happen.
+ *
+ * THE ADAPTER HIT-TESTS AGAINST IT. Because this machine commits on every
+ * pointer-move, the live molecule mid-gesture already contains the gesture's
+ * own work — the dragged atom sitting under the pointer, the atom the bond
+ * being drawn just minted. Resolving a hit against that answers "what is under
+ * the pointer" with "the thing in your hand", so the merge target underneath
+ * is never seen: an accurately aimed drop finishes as a plain move and leaves
+ * two unbonded atoms on identical coordinates — one blob on screen, two atoms
+ * in the export — and the already-bonded refusal never fires either. Picking
+ * against the base subtracts exactly this gesture's own displacement and
+ * nothing else, because nothing but this gesture has moved anything since it
+ * started.
+ */
+export function gestureBase(state: InteractionState): Molecule | null {
   switch (state.kind) {
     case "drawingBond":
     case "movingSelection":

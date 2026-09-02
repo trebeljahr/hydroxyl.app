@@ -452,6 +452,28 @@ function occupiedSide(
 }
 
 /**
+ * Whether a bond is too short to hang geometry off.
+ *
+ * The exact test `fuseRingOnBond` throws on, exported so a UI can refuse the
+ * gesture in its own words rather than catch an exception out of a pointer
+ * handler — the counterpart to `isFusionBond` for the other impossibility.
+ * Keeping the predicate beside the throw is what stops the two answers
+ * drifting: the throw is the authority and this is the same comparison rather
+ * than an approximation of it.
+ *
+ * A bond the molecule does not have counts as degenerate. There is nothing to
+ * fuse across either way, and a pre-flight question should not throw.
+ */
+export function isDegenerateBond(mol: Molecule, bondId: BondId): boolean {
+  const bond = mol.bonds[bondId];
+  if (bond === undefined) return true;
+  const from = mol.atoms[bond.from];
+  const to = mol.atoms[bond.to];
+  if (from === undefined || to === undefined) return true;
+  return length(sub(to.pos, from.pos)) <= DEGENERATE_EPSILON;
+}
+
+/**
  * Fuse a ring across an existing bond: the new ring shares that bond and both
  * its atoms, and mints `size - 2` atoms and `size - 1` bonds — fewer of each
  * where the rest of the ring lands on atoms that are already drawn.
@@ -474,8 +496,8 @@ function occupiedSide(
  * them, and in the symmetric case (naphthalene's central bond) it lands exactly
  * on top of one. That is the same kind of geometric impossibility as the
  * zero-length bond below, and refusing it is the only outcome that does not
- * leave the drawing quietly broken. The UI can ask `isFusionBond` before
- * offering the gesture.
+ * leave the drawing quietly broken. The UI can ask `isFusionBond` and
+ * `isDegenerateBond` before offering the gesture.
  */
 export function fuseRingOnBond(
   mol: Molecule,

@@ -13,6 +13,7 @@ import {
   appendChain,
   attachRingToAtom,
   fuseRingOnBond,
+  isDegenerateBond,
   RING_TEMPLATES,
   spiroRingAtAtom,
   type RingTemplateName,
@@ -1079,5 +1080,35 @@ describe("caller errors throw", () => {
     expect(() => fuseRingOnBond(degenerate, degenerate.bondIds[0]!, "benzene")).toThrow(
       /zero length/,
     );
+  });
+
+  it("answers isDegenerateBond exactly where fuseRingOnBond throws", () => {
+    // The predicate exists so a UI can refuse the gesture in its own words
+    // instead of catching an exception out of a pointer handler, which is only
+    // worth anything if the two agree. Asserted as agreement rather than as
+    // two independent expectations, so a change to the epsilon on one side
+    // cannot pass.
+    const coincident = buildMolecule((b) => {
+      const a = b.atom("C", ORIGIN);
+      const c = b.atom("C", ORIGIN);
+      b.bond(a, c, 1);
+    });
+    const real = benzene();
+
+    for (const mol of [coincident, real]) {
+      for (const bondId of mol.bondIds) {
+        let threw = false;
+        try {
+          fuseRingOnBond(mol, bondId, "cyclohexane");
+        } catch (error) {
+          threw = /zero length/.test(String(error));
+        }
+        expect(isDegenerateBond(mol, bondId)).toBe(threw);
+      }
+    }
+
+    // A bond the molecule does not have: degenerate rather than a throw, so a
+    // pre-flight question about a stale id is answerable.
+    expect(isDegenerateBond(real, "b999")).toBe(true);
   });
 });

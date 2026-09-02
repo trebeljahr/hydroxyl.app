@@ -21,7 +21,8 @@
  * 300-heavy-atom structure draws, and writing their attributes. Measured under
  * jsdom, which is a CONSERVATIVE stand-in — its DOM is slower than a real
  * browser's, so a frame that fits here fits there. What neither can measure is
- * the browser's own layout and paint, which was checked by hand.
+ * the browser's own layout and paint — `e2e/performance.spec.ts` does that, in
+ * Chromium, on the same structure, and is the third of the three numbers.
  *
  * Both are asserted against the WHOLE frame's 16.7 ms rather than against half
  * of it each, because the point is the headroom: if either half ever grows to
@@ -35,10 +36,11 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { buildMolecule, valenceIssues } from "@starter/chem-core";
+import { valenceIssues } from "@starter/chem-core";
 import type { AtomId, Molecule } from "@starter/chem-core";
 import { createDocument } from "@starter/shared";
 
+import { stressMolecule } from "@/canvas/fixture";
 import { buildDocumentScene } from "@/canvas/scene-bridge";
 import { createSceneIndex } from "@/canvas/metrics";
 import { OverlayLayer } from "@/canvas/OverlayLayer";
@@ -56,30 +58,16 @@ const FRAMES = 120;
 const FRAME_BUDGET_MS = 1000 / 60;
 
 /**
- * A 300-heavy-atom fused polycyclic, not a 300-atom straight chain.
+ * The same structure `/editor?fixture=stress` opens, from the same builder.
  *
- * A chain is the easy case for everything downstream: ring perception finds
- * nothing, adjacency is two entries per atom, and the scene has no crossings.
- * A ladder of fused six-rings is what a real steroid-scale drawing looks like
- * to the code that has to keep up with it.
+ * Shared rather than copied so the three measurements — this file's model
+ * path, this file's jsdom render, and `e2e/performance.spec.ts` in a real
+ * browser — are all quoting a number about ONE molecule. A local copy would
+ * drift, and then the browser figure and the node figure would be describing
+ * different drawings without saying so.
  */
 function polycyclic(): Molecule {
-  return buildMolecule((b) => {
-    const top: AtomId[] = [];
-    const bottom: AtomId[] = [];
-    const rungs = HEAVY_ATOMS / 2;
-    for (let i = 0; i < rungs; i += 1) {
-      top.push(b.atom("C", { x: i * 0.866, y: i % 2 === 0 ? 0.5 : 0 }));
-      bottom.push(b.atom("C", { x: i * 0.866, y: (i % 2 === 0 ? 0.5 : 0) - 1 }));
-    }
-    for (let i = 1; i < rungs; i += 1) {
-      b.bond(top[i - 1]!, top[i]!, 1);
-      b.bond(bottom[i - 1]!, bottom[i]!, 1);
-    }
-    // Every other rung, so the result is a fused ladder rather than a
-    // succession of four-rings.
-    for (let i = 0; i < rungs; i += 2) b.bond(top[i]!, bottom[i]!, 1);
-  });
+  return stressMolecule(HEAVY_ATOMS);
 }
 
 describe("drag performance", () => {

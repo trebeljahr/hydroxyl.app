@@ -1008,6 +1008,67 @@ test("dragging a selected atom moves it instead of drawing from it", async ({
   expect(errors).toEqual([]);
 });
 
+test("dropping a selected atom onto another merges the two", async ({ page }) => {
+  const errors = collectPageErrors(page);
+  await openEditor(page);
+
+  const geometry = await readGeometry(page);
+  // The two PARA vertices again: the furthest-apart pair, and the only ones
+  // not already bonded, so the merge is offered rather than refused.
+  let best = {
+    a: nth(geometry.atoms, 0, "atoms"),
+    b: nth(geometry.atoms, 0, "atoms"),
+    d: 0,
+  };
+  for (const a of geometry.atoms) {
+    for (const b of geometry.atoms) {
+      const d = distance(a.centre, b.centre);
+      if (d > best.d) best = { a, b, d };
+    }
+  }
+
+  // DRAG THE LATER-DRAWN ATOM ONTO THE EARLIER ONE, which is the strict
+  // direction. `hitTest` breaks a tie in favour of the atom drawn on top —
+  // the later one — so with the two superimposed at the drop, a hit test that
+  // could still see the atom in hand answers with it and the merge silently
+  // does not happen. Dragging the earlier onto the later passes either way.
+  const dragged = best.a.id < best.b.id ? best.b : best.a;
+  const onto = dragged === best.a ? best.b : best.a;
+
+  // Selecting first is what makes this a MOVE rather than a draw, which is the
+  // gesture merge belongs to.
+  await page.mouse.click(dragged.centre.x, dragged.centre.y);
+  await expect(page.locator('[data-overlay="selected-atom"]')).toHaveCount(1);
+
+  await page.mouse.move(dragged.centre.x, dragged.centre.y);
+  await page.mouse.down();
+  await page.mouse.move(onto.centre.x, onto.centre.y, { steps: 12 });
+  // The final move lands ON the target, which is where the regression lived:
+  // by this frame the dragged atom is already committed under the pointer, so
+  // a hit test against the live molecule can only answer with the atom in
+  // hand, and the accept ring below never appears.
+  await page.mouse.move(onto.centre.x, onto.centre.y);
+  await expect(page.locator('[data-overlay="target-accepted"]')).toHaveCount(1);
+  await page.mouse.up();
+
+  // ONE atom fewer and NO new bond. The failure this catches is the drop
+  // completing as a plain move: two unbonded atoms left on one coordinate,
+  // indistinguishable on screen and two atoms in every export.
+  await expect(page.locator("[data-atom-id]")).toHaveCount(RING_CARBONS - 1);
+  await expect(page.locator("[data-bond-id]")).toHaveCount(RING_BONDS);
+  await expect(page.locator('[data-overlay="target-accepted"]')).toHaveCount(0);
+
+  // Decision 1: the survivor keeps the TARGET's id and position.
+  const after = await readGeometry(page);
+  const survivor = after.atoms.find((candidate) => candidate.id === onto.id);
+  expect(survivor).toBeDefined();
+  expect(after.atoms.some((candidate) => candidate.id === dragged.id)).toBe(false);
+  if (survivor === undefined) return;
+  expect(distance(survivor.centre, onto.centre)).toBeLessThan(BOX_SLACK_PX + 1);
+
+  expect(errors).toEqual([]);
+});
+
 test("the overlay claims no model entities, whatever a gesture is doing", async ({
   page,
 }) => {

@@ -731,6 +731,33 @@ describe("ring templates", () => {
     expect(driver.status).toBe("That bond already has a ring on each side");
   });
 
+  it("refuses to fuse across a zero-length bond", () => {
+    // The other geometry `fuseRingOnBond` throws on, and one `isFusionBond`
+    // says nothing about. A drawing reaches it through an import with
+    // duplicate coordinates or a fragment drag that parked an atom on its
+    // neighbour, so it is pre-checked for the same reason as the fusion case:
+    // a named refusal beats a rolled-back gesture with a stack trace behind it.
+    const mol = buildMolecule((b) => {
+      const a = b.atom("C", { x: 0, y: 0 });
+      const c = b.atom("C", { x: 0, y: 0 });
+      b.bond(a, c);
+    });
+    const driver = new Driver(mol);
+    driver.tool = "ring";
+
+    expect(() =>
+      driver.send({
+        kind: "click",
+        sample: sample({ x: 0, y: 0 }, { kind: "bond", bondId: mol.bondIds[0]! }),
+      }),
+    ).not.toThrow();
+    expect(driver.molecule).toBe(mol);
+    expect(driver.status).toBe(
+      "That bond has zero length; move its atoms apart first",
+    );
+    expect(driver.entries).toEqual([]);
+  });
+
   it("attaches over an atom, and makes a spiro ring with alt", () => {
     const mol = benzene();
     const attach = new Driver(mol);

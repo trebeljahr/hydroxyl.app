@@ -27,9 +27,7 @@ import { isDraft } from "immer";
 import {
   addAtom as coreAddAtom,
   addBond as coreAddBond,
-  appendChain as coreAppendChain,
   attachRingToAtom as coreAttachRingToAtom,
-  cycleBondOrder as coreCycleBondOrder,
   extractFragment as coreExtractFragment,
   fuseRingOnBond as coreFuseRingOnBond,
   flipAtoms as coreFlipAtoms,
@@ -110,23 +108,24 @@ export const guardedOps = {
   addAtom: guard("addAtom", coreAddAtom),
   addBond: guard("addBond", coreAddBond),
   extractFragment: guard("extractFragment", coreExtractFragment),
-  cycleBondOrder: guard("cycleBondOrder", coreCycleBondOrder),
 
   /**
    * The drawing ops the pointer state machine commits through.
    *
    * They arrive later than the rest because the canvas was read-only until
-   * `canvas-editing-fsm`; the whitelist is deny-by-default, so each one is
-   * here on purpose rather than by a blanket re-export. All five mint ids,
-   * which is exactly the class of call that must never see a proxy: an id
-   * minted off a draft's `nextId` is an id the real molecule has not reserved.
+   * `canvas-editing-fsm`. Deny-by-default cuts both ways, so this list holds
+   * exactly the ops something calls and no more — `cycleBondOrder` and
+   * `appendChain` were wrapped here before anything used them and have been
+   * taken back out; whoever wires the gesture adds the entry with it. All five
+   * mint ids, which is exactly the class of call that must never see a proxy:
+   * an id minted off a draft's `nextId` is an id the real molecule has not
+   * reserved.
    */
   sprout: guard("sprout", coreSprout),
   sproutTo: guard("sproutTo", coreSproutTo),
   fuseRingOnBond: guard("fuseRingOnBond", coreFuseRingOnBond),
   attachRingToAtom: guard("attachRingToAtom", coreAttachRingToAtom),
   spiroRingAtAtom: guard("spiroRingAtAtom", coreSpiroRingAtAtom),
-  appendChain: guard("appendChain", coreAppendChain),
 
   /**
    * Written out rather than wrapped, because BOTH arguments are molecules —

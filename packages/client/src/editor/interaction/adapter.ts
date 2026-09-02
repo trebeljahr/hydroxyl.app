@@ -10,7 +10,7 @@
  * MEANS is on the other side of that boundary, where it can be tested without
  * a browser.
  *
- * TWO SHAPES HERE ARE LOAD-BEARING AND EASY TO UNDO BY ACCIDENT.
+ * FOUR SHAPES HERE ARE LOAD-BEARING AND EASY TO UNDO BY ACCIDENT.
  *
  * 1. EVERY HANDLER HAS AN EMPTY DEPENDENCY LIST and reads the world through
  *    `editorStore.getState()` and the pick-context ref. The gesture hook
@@ -27,18 +27,31 @@
  *    displays would pay React's price for nothing. The mirror is compared
  *    before it is set, so a drag that changes no overlay geometry causes no
  *    render of its own.
+ *
+ * 3. HIT-TESTING RUNS AGAINST THE GESTURE'S BASE MOLECULE, not the live one.
+ *    The machine commits on every pointer-move, so mid-drag the live molecule
+ *    already contains the gesture's own work and a pick against it answers
+ *    "the thing in your hand" — which makes every merge and ring-closure
+ *    target underneath unreachable, silently. See `gestureBase` in machine.ts
+ *    and `hit-resolution.test.ts`, which drives this path for real.
+ *
+ * 4. EVERY COMMAND BATCH GOES THROUGH `performBatch`, which unwinds the store
+ *    if a chem-core refusal throws out of an `edit`. A transaction opened and
+ *    never closed kills undo for the rest of the session with nothing in the
+ *    console.
  */
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 
-import type { AtomId, Vec2 } from "@starter/chem-core";
+import type { AtomId, Molecule, Vec2 } from "@starter/chem-core";
 
 import { canvasPointToModel, pickAt } from "@/canvas/pick";
 import type { PickContext } from "@/canvas/pick";
 import { rotateHandlePoint, ROTATE_HANDLE_GRAB_PX } from "@/canvas/handles";
 import type { CanvasGestureHandlers, CanvasPointerModifiers } from "@/canvas/useCanvasGestures";
 import { editorStore, toModel } from "@/state";
+import type { Selection } from "@/state";
 
 import type {
   InteractionCommand,
@@ -50,7 +63,7 @@ import type {
   TargetMark,
 } from "./facts";
 import { IDLE } from "./facts";
-import { movingAtomIds, reduce } from "./machine";
+import { gestureBase, movingAtomIds, reduce } from "./machine";
 
 /**
  * What the overlay needs to know about a gesture in flight, in MODEL units.
@@ -195,6 +208,46 @@ function perform(command: InteractionCommand): void {
   }
 }
 
+/**
+ * Perform a batch of commands, rolling the store back if one throws. Answers
+ * whether the batch completed.
+ *
+ * THE ONE FAILURE THIS DESIGN CANNOT SURVIVE IS A LEAKED TRANSACTION, and this
+ * is where it would leak. An `edit` closure calls chem-core, and chem-core
+ * throws on geometry it cannot honour — `fuseRingOnBond` across a zero-length
+ * bond is the reachable example, and `applyMoleculeEdit` rethrows by design.
+ * Without this catch the throw escapes the pointer handler with
+ * `beginTransaction` already performed and its commit unreachable, so the store
+ * stays inside a transaction FOR THE REST OF THE SESSION: undo and redo go
+ * dead, silently, and every later edit records against a stale base. The
+ * reducer's own stale-transaction net cannot recover it either, because the
+ * click paths have already returned the machine to `idle` and
+ * `gestureBase(idle)` is null.
+ *
+ * `abortTransaction` unwinds every nesting level and is a no-op when nothing is
+ * in flight, which is exactly what a failed gesture wants. The failure is then
+ * REPORTED rather than rethrown: it has already been made safe, and a throw out
+ * of a pointer handler would only take the canvas down with it. chem-core's
+ * refusals are written for a person — "Bond b3 has zero length; a ring cannot
+ * be fused across it" — so the message is worth showing verbatim.
+ */
+export function performBatch(commands: readonly InteractionCommand[]): boolean {
+  try {
+    for (const command of commands) perform(command);
+    return true;
+  } catch (error) {
+    const store = editorStore.getState();
+    store.abortTransaction();
+    store.setStatusMessage(
+      error instanceof Error && error.message.length > 0
+        ? error.message
+        : "That edit could not be applied",
+    );
+    console.error("Editing gesture failed and was rolled back", error);
+    return false;
+  }
+}
+
 function currentContext(): InteractionContext {
   const state = editorStore.getState();
   return {
@@ -214,10 +267,16 @@ function currentContext(): InteractionContext {
  *
  * The handle has to win: it is drawn beside the selection and will routinely
  * overlap a bond, and an affordance you cannot grab because the thing behind
- * it answers first is worse than no affordance.
+ * it answers first is worse than no affordance. It is measured against the
+ * LIVE index, so it stays under the pointer that is dragging it.
+ *
+ * The chemistry pick runs against `pickMolecule`, which is the gesture's base
+ * while one is in flight and the live molecule otherwise — see `gestureBase`.
+ * The two molecules are the same object whenever nothing is being dragged.
  */
 function resolveHit(
   ctx: PickContext,
+  pickMolecule: Molecule,
   canvasPoint: Vec2,
   movingIds: readonly AtomId[],
 ): PointerHit {
@@ -228,10 +287,40 @@ function resolveHit(
     if (reach <= ROTATE_HANDLE_GRAB_PX) return { kind: "handle" };
   }
 
-  const hit = pickAt(ctx, canvasPoint);
+  // Same context, different molecule. The index and the viewport are the live
+  // ones: `labelRadius` is keyed on atom ids, which the base and the live
+  // molecule share for every atom the base has, and the coordinate chain does
+  // not depend on the molecule at all.
+  const pickCtx: PickContext =
+    pickMolecule === ctx.molecule ? ctx : { ...ctx, molecule: pickMolecule };
+  const hit = pickAt(pickCtx, canvasPoint);
   if (hit.kind === "atom") return { kind: "atom", atomId: hit.atomId };
   if (hit.kind === "bond") return { kind: "bond", bondId: hit.bondId };
   return { kind: "none" };
+}
+
+/**
+ * A canvas point plus everything the reducer needs to know about it.
+ *
+ * Exported so a test can drive the REAL hit resolution — a scene built by
+ * `buildDocumentScene`, an index by `createSceneIndex`, a pick by `pickAt` —
+ * against a store mid-gesture, with no DOM. That path is where the
+ * merge-on-drop regression lived: every synthetic-fact test named its target
+ * atom directly and so could never see it.
+ */
+export function resolveSample(
+  ctx: PickContext,
+  state: InteractionState,
+  selection: Selection,
+  canvasPoint: Vec2,
+  modifiers: CanvasPointerModifiers,
+): PointerSample {
+  const movingIds = movingAtomIds(ctx.molecule, selection);
+  return {
+    point: canvasPointToModel(ctx, canvasPoint),
+    hit: resolveHit(ctx, gestureBase(state) ?? ctx.molecule, canvasPoint, movingIds),
+    modifiers: { shift: modifiers.shift, alt: modifiers.alt },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -248,25 +337,28 @@ export function useCanvasInteraction(
   const overlayRef = useRef<InteractionOverlayState>(NO_INTERACTION_OVERLAY);
 
   const sampleAt = useCallback(
-    (canvasPoint: Vec2, modifiers: CanvasPointerModifiers): PointerSample => {
-      const ctx = pickContextRef.current;
-      const store = editorStore.getState();
-      const movingIds = movingAtomIds(store.document.molecule, store.selection);
-      return {
-        point: canvasPointToModel(ctx, canvasPoint),
-        hit: resolveHit(ctx, canvasPoint, movingIds),
-        modifiers: { shift: modifiers.shift, alt: modifiers.alt },
-      };
-    },
+    (canvasPoint: Vec2, modifiers: CanvasPointerModifiers): PointerSample =>
+      resolveSample(
+        pickContextRef.current,
+        // The state BEFORE this fact is reduced, which is the one whose base
+        // the store currently holds the edits of.
+        stateRef.current,
+        editorStore.getState().selection,
+        canvasPoint,
+        modifiers,
+      ),
     [pickContextRef],
   );
 
   const dispatch = useCallback((fact: PointerFact): void => {
     const { state, commands } = reduce(stateRef.current, fact, currentContext());
     stateRef.current = state;
-    for (const command of commands) perform(command);
+    // A batch that failed took the store's transaction with it, so the machine
+    // must not keep a gesture whose base the store no longer holds: back to
+    // idle, and the next pointer event starts clean.
+    if (!performBatch(commands)) stateRef.current = IDLE;
 
-    const next = projectOverlay(state);
+    const next = projectOverlay(stateRef.current);
     if (overlaysEqual(next, overlayRef.current)) return;
     overlayRef.current = next;
     setOverlay(next);

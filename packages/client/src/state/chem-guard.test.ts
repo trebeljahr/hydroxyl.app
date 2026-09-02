@@ -3,6 +3,7 @@ import { produce } from "immer";
 import { describe, expect, it } from "vitest";
 
 import { assertNotDraft, guardedOps } from "./chem-guard";
+import type { GuardedOps } from "./chem-guard";
 
 /** `process.env.NODE_ENV` is typed as a literal union by the Next types, and
  *  the tests need to write an arbitrary value to it (and to restore whatever
@@ -72,55 +73,59 @@ describe("guardedOps", () => {
     const firstAtom = mol.atomIds[0]!;
     const firstBond = mol.bondIds[0]!;
 
-    const attempts: ReadonlyArray<readonly [string, (draft: Molecule) => void]> = [
-      ["removeAtoms", (d) => void guardedOps.removeAtoms(d, [firstAtom])],
-      ["removeBonds", (d) => void guardedOps.removeBonds(d, [firstBond])],
-      ["updateAtom", (d) => void guardedOps.updateAtom(d, firstAtom, { charge: 1 })],
-      ["updateBond", (d) => void guardedOps.updateBond(d, firstBond, { order: 2 })],
-      [
-        "setAtomPosition",
-        (d) => void guardedOps.setAtomPosition(d, firstAtom, { x: 0, y: 0 }),
-      ],
-      [
-        "setAtomPositions",
-        (d) => void guardedOps.setAtomPositions(d, [[firstAtom, { x: 0, y: 0 }]]),
-      ],
-      [
-        "mergeAtoms",
-        (d) => void guardedOps.mergeAtoms(d, mol.atomIds[0]!, mol.atomIds[2]!),
-      ],
-      [
-        "translateAtoms",
-        (d) => void guardedOps.translateAtoms(d, [firstAtom], { x: 1, y: 1 }),
-      ],
-      [
-        "rotateAtoms",
-        (d) => void guardedOps.rotateAtoms(d, [firstAtom], { x: 0, y: 0 }, 1),
-      ],
-      [
-        "flipAtoms",
-        (d) =>
-          void guardedOps.flipAtoms(d, [firstAtom], {
-            point: { x: 0, y: 0 },
-            direction: { x: 0, y: 1 },
-          }),
-      ],
-      ["addAtom", (d) => void guardedOps.addAtom(d, { element: "C" })],
-      [
-        "addBond",
-        (d) => void guardedOps.addBond(d, { from: mol.atomIds[0]!, to: mol.atomIds[3]! }),
-      ],
-      ["extractFragment", (d) => void guardedOps.extractFragment(d, [firstAtom])],
-      ["insertFragment(target)", (d) => void guardedOps.insertFragment(d, benzene())],
-    ];
+    // KEYED ON `guardedOps` RATHER THAN LISTED FREELY, and the exhaustiveness
+    // assertion below is the point of the test. A hand-written array is
+    // silently incomplete the moment the facade grows an entry — which is
+    // exactly what happened when the drawing ops arrived: seven new ops, none
+    // of them attempted here, so an op wired as a bare re-export would have
+    // slipped through with the suite green. `Record<keyof GuardedOps, ...>`
+    // makes that a type error, and the runtime check catches the reverse.
+    const attempts: Record<keyof GuardedOps, (draft: Molecule) => void> = {
+      removeAtoms: (d) => void guardedOps.removeAtoms(d, [firstAtom]),
+      removeBonds: (d) => void guardedOps.removeBonds(d, [firstBond]),
+      updateAtom: (d) => void guardedOps.updateAtom(d, firstAtom, { charge: 1 }),
+      updateBond: (d) => void guardedOps.updateBond(d, firstBond, { order: 2 }),
+      setAtomPosition: (d) =>
+        void guardedOps.setAtomPosition(d, firstAtom, { x: 0, y: 0 }),
+      setAtomPositions: (d) =>
+        void guardedOps.setAtomPositions(d, [[firstAtom, { x: 0, y: 0 }]]),
+      mergeAtoms: (d) => void guardedOps.mergeAtoms(d, mol.atomIds[0]!, mol.atomIds[2]!),
+      translateAtoms: (d) => void guardedOps.translateAtoms(d, [firstAtom], { x: 1, y: 1 }),
+      rotateAtoms: (d) => void guardedOps.rotateAtoms(d, [firstAtom], { x: 0, y: 0 }, 1),
+      flipAtoms: (d) =>
+        void guardedOps.flipAtoms(d, [firstAtom], {
+          point: { x: 0, y: 0 },
+          direction: { x: 0, y: 1 },
+        }),
+      addAtom: (d) => void guardedOps.addAtom(d, { element: "C" }),
+      addBond: (d) =>
+        void guardedOps.addBond(d, { from: mol.atomIds[0]!, to: mol.atomIds[3]! }),
+      extractFragment: (d) => void guardedOps.extractFragment(d, [firstAtom]),
+      insertFragment: (d) => void guardedOps.insertFragment(d, benzene()),
+      sprout: (d) => void guardedOps.sprout(d, firstAtom),
+      sproutTo: (d) =>
+        void guardedOps.sproutTo(d, firstAtom, {
+          kind: "new-atom",
+          pos: { x: 5, y: 5 },
+          angle: 0,
+        }),
+      fuseRingOnBond: (d) => void guardedOps.fuseRingOnBond(d, firstBond, "benzene"),
+      attachRingToAtom: (d) => void guardedOps.attachRingToAtom(d, firstAtom, "benzene"),
+      spiroRingAtAtom: (d) => void guardedOps.spiroRingAtAtom(d, firstAtom, "benzene"),
+    };
 
-    for (const [name, attempt] of attempts) {
+    // The facade and the attempts cover each other. Without this the object
+    // above could go stale the other way — an op removed from the facade would
+    // leave a dead attempt that still passed.
+    expect(Object.keys(attempts).sort()).toEqual(Object.keys(guardedOps).sort());
+
+    for (const [name, attempt] of Object.entries(attempts)) {
       expect(() =>
         produce(mol, (draft) => {
           attempt(draft as unknown as Molecule);
         }),
         `${name} should have refused a draft`,
-      ).toThrow(new RegExp(name.split("(")[0]!));
+      ).toThrow(new RegExp(name));
     }
   });
 
