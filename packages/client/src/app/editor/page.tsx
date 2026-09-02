@@ -23,8 +23,12 @@
  * loaded. The document title is rendered in the header below instead, where it
  * can be live.
  *
- * NO TOOLBAR. Drawing tools are a later task; this page is the frame around
- * the canvas and nothing more.
+ * NO TOOLBAR. The tool rail, the keyboard map and the command palette belong
+ * to `editor-shell-and-commands`; this page is the frame around the canvas and
+ * the one line of instructions that stands in for them until they arrive.
+ * That line has to stay TRUE — a plain left drag does not pan (pan is the
+ * middle button or a held space) and, since the editing machine landed, it
+ * draws.
  */
 
 import { useEffect } from "react";
@@ -57,7 +61,9 @@ export default function EditorPage() {
       <header className="flex items-baseline gap-3 border-b px-4 py-2">
         <h1 className="text-sm font-medium">{title}</h1>
         <p className="text-muted-foreground text-xs">
-          Drag to pan, scroll to zoom, click to select
+          Drag from an atom to draw &middot; click to select &middot; drag a
+          selection to move it &middot; middle-drag or hold space to pan
+          &middot; scroll to zoom
         </p>
       </header>
       <main className="min-h-0 flex-1">

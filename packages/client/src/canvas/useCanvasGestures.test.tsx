@@ -42,9 +42,16 @@ function makeHandlers(): HandlerSpies {
   return {
     onHover: vi.fn<CanvasGestureHandlers["onHover"]>(),
     onHoverEnd: vi.fn<CanvasGestureHandlers["onHoverEnd"]>(),
+    onPress: vi.fn<CanvasGestureHandlers["onPress"]>(),
     onSelect: vi.fn<CanvasGestureHandlers["onSelect"]>(),
+    onDragStart: vi.fn<CanvasGestureHandlers["onDragStart"]>(),
+    onDragMove: vi.fn<CanvasGestureHandlers["onDragMove"]>(),
+    onDragEnd: vi.fn<CanvasGestureHandlers["onDragEnd"]>(),
+    onDragCancel: vi.fn<CanvasGestureHandlers["onDragCancel"]>(),
     onZoom: vi.fn<CanvasGestureHandlers["onZoom"]>(),
     onPan: vi.fn<CanvasGestureHandlers["onPan"]>(),
+    onPanStart: vi.fn<CanvasGestureHandlers["onPanStart"]>(),
+    onPanEnd: vi.fn<CanvasGestureHandlers["onPanEnd"]>(),
     onResize: vi.fn<CanvasGestureHandlers["onResize"]>(),
   };
 }
@@ -300,7 +307,7 @@ describe("useCanvasGestures — click versus drag", () => {
 
     expect(handlers.onSelect).toHaveBeenCalledWith(
       { x: 200, y: 150 },
-      { shift: false },
+      { shift: false, alt: false },
     );
   });
 
@@ -401,5 +408,145 @@ describe("useCanvasGestures — size", () => {
     // runs against whatever is there. `mount` stubs the rect to 800x600, so
     // the assertion is that a measurement happened at all.
     expect(handlers.onResize).toHaveBeenCalledWith({ width: 800, height: 600 });
+  });
+});
+
+/**
+ * The drag surface, which is what turns a read-only canvas into a drawable one.
+ *
+ * The cases that matter are the abnormal exits. A drag that opens a store
+ * transaction and never closes it kills undo for the rest of the session, with
+ * nothing thrown and nothing logged — so every route out of a gesture
+ * (pointerup, pointercancel, Escape, a lost capture, a window that lost focus,
+ * an unmount) has to produce exactly one of `onDragEnd` or `onDragCancel`.
+ */
+describe("useCanvasGestures — dragging", () => {
+  const FAR = CLICK_SLOP_PX + 20;
+
+  function startDrag(svg: SVGSVGElement): void {
+    pointer(svg, "pointerdown", { x: 100, y: 100, button: 0, buttons: 1 });
+    pointer(svg, "pointermove", { x: 100 + FAR, y: 100, buttons: 1 });
+  }
+
+  it("fires the drag triple once each, anchored on the DOWN point", () => {
+    const { svg } = mount(handlers);
+    startDrag(svg);
+
+    expect(handlers.onDragStart).toHaveBeenCalledTimes(1);
+    // The origin is where the button went down, not where the threshold was
+    // crossed: four pixels later the hit test would sometimes answer with the
+    // neighbouring bond instead of the atom the user aimed at.
+    expect(handlers.onDragStart).toHaveBeenCalledWith(
+      { x: 100, y: 100 },
+      { x: 100 + FAR, y: 100 },
+      { shift: false, alt: false },
+    );
+
+    pointer(svg, "pointermove", { x: 100 + FAR, y: 140, buttons: 1 });
+    expect(handlers.onDragMove).toHaveBeenCalledTimes(1);
+    expect(handlers.onDragStart).toHaveBeenCalledTimes(1);
+
+    pointer(svg, "pointerup", { x: 100 + FAR, y: 140, button: 0 });
+    expect(handlers.onDragEnd).toHaveBeenCalledTimes(1);
+    expect(handlers.onDragCancel).not.toHaveBeenCalled();
+    // A gesture is a click or a drag, never both.
+    expect(handlers.onSelect).not.toHaveBeenCalled();
+  });
+
+  it("reports a press before it knows whether this is a click or a drag", () => {
+    const { svg } = mount(handlers);
+    pointer(svg, "pointerdown", { x: 100, y: 100, button: 0, buttons: 1 });
+    expect(handlers.onPress).toHaveBeenCalledWith(
+      { x: 100, y: 100 },
+      { shift: false, alt: false },
+    );
+    expect(handlers.onDragStart).not.toHaveBeenCalled();
+  });
+
+  it("takes pointer capture at pointerdown, not at the threshold", () => {
+    // By the time a fast flick has travelled its four pixels it may already be
+    // outside the element, and `setPointerCapture` on a pointer whose events
+    // you no longer receive never happens — the drag then loses its pointerup
+    // and leaves the transaction open.
+    const captured: number[] = [];
+    SVGSVGElement.prototype.setPointerCapture = function (id: number) {
+      captured.push(id);
+    };
+    const { svg } = mount(handlers);
+    pointer(svg, "pointerdown", { x: 100, y: 100, button: 0, buttons: 1 });
+    expect(captured).toEqual([1]);
+  });
+
+  it("cancels on Escape, and the pointerup that follows commits nothing", () => {
+    const { svg } = mount(handlers);
+    startDrag(svg);
+
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      );
+    });
+    expect(handlers.onDragCancel).toHaveBeenCalledTimes(1);
+
+    pointer(svg, "pointerup", { x: 100 + FAR, y: 100, button: 0 });
+    expect(handlers.onDragEnd).not.toHaveBeenCalled();
+    // And still not a click: cancelling a drag does not turn it back into one.
+    expect(handlers.onSelect).not.toHaveBeenCalled();
+  });
+
+  it("leaves Escape alone when no gesture is in flight", () => {
+    // `ToolSlice.escape()` — tool back to select, palette closed — belongs to
+    // the editor shell. Swallowing Escape unconditionally would make it
+    // unreachable, and the canvas has no business claiming a key it is not
+    // using.
+    mount(handlers);
+    const event = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => {
+      window.dispatchEvent(event);
+    });
+    expect(event.defaultPrevented).toBe(false);
+    expect(handlers.onDragCancel).not.toHaveBeenCalled();
+  });
+
+  it("cancels a drag the window lost focus during", () => {
+    // A tab switch mid-drag delivers no pointerup, ever. Without this the
+    // transaction stays open for the rest of the session.
+    const { svg } = mount(handlers);
+    startDrag(svg);
+    act(() => {
+      window.dispatchEvent(new Event("blur"));
+    });
+    expect(handlers.onDragCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels a drag still in flight when the canvas unmounts", () => {
+    const { svg, unmount } = mount(handlers);
+    startDrag(svg);
+    act(() => {
+      unmount();
+    });
+    expect(handlers.onDragCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels on pointercancel", () => {
+    const { svg } = mount(handlers);
+    startDrag(svg);
+    pointer(svg, "pointercancel", { x: 100 + FAR, y: 100 });
+    expect(handlers.onDragCancel).toHaveBeenCalledTimes(1);
+    expect(handlers.onDragEnd).not.toHaveBeenCalled();
+  });
+
+  it("brackets a pan with panStart and panEnd", () => {
+    const { svg } = mount(handlers);
+    pointer(svg, "pointerdown", { x: 100, y: 100, button: 1, buttons: 4 });
+    expect(handlers.onPanStart).toHaveBeenCalledTimes(1);
+    expect(handlers.onDragStart).not.toHaveBeenCalled();
+    pointer(svg, "pointermove", { x: 150, y: 100, buttons: 4 });
+    pointer(svg, "pointerup", { x: 150, y: 100, button: 1 });
+    expect(handlers.onPanEnd).toHaveBeenCalledTimes(1);
   });
 });

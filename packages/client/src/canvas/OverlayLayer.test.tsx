@@ -34,6 +34,7 @@ import type { Selection } from "@/state";
 
 import { createSceneIndex } from "./metrics";
 import { OverlayLayer } from "./OverlayLayer";
+import type { OverlayLayerProps } from "./OverlayLayer";
 import { SceneLayer } from "./SceneLayer";
 
 const MOL = benzene();
@@ -220,5 +221,145 @@ describe("OverlayLayer — geometry and staleness", () => {
     const overlay = container.querySelector('[data-layer="overlay"]')!;
     expect(overlay).not.toBeNull();
     expect(overlay.childNodes).toHaveLength(0);
+  });
+});
+
+/**
+ * The gesture marks.
+ *
+ * Every one of them wears `data-overlay` and none of them wears
+ * `data-atom-id`/`data-bond-id`, which is what keeps "benzene renders six
+ * atoms" a structural assertion — an e2e spec counts those selectors
+ * PAGE-WIDE, so a ghost bond or a marquee rectangle carrying one would break a
+ * test that has nothing to do with drawing.
+ */
+describe("OverlayLayer — gesture marks", () => {
+  function renderGesture(props: Partial<OverlayLayerProps>): HTMLElement {
+    const { container } = render(
+      <svg>
+        <OverlayLayer
+          index={INDEX}
+          selection={EMPTY_SELECTION}
+          hoveredAtomId={null}
+          hoveredBondId={null}
+          {...props}
+        />
+      </svg>,
+    );
+    return container;
+  }
+
+  it("draws the ghost bond through modelToPx, flip included", () => {
+    const container = renderGesture({
+      interaction: {
+        ghost: { from: { x: 0, y: 0 }, to: { x: 0, y: 1 } },
+        target: null,
+        marquee: null,
+        pivot: null,
+      },
+    });
+    const ghost = container.querySelector('[data-overlay="ghost-bond"]')!;
+    expect(ghost).not.toBeNull();
+    // Model y-up, scene y-down: a ghost pointing UP in the model has a
+    // NEGATIVE scene y at its far end. A missing flip here would draw every
+    // bond-in-progress mirrored about its own atom.
+    expect(Number(ghost.getAttribute("y1"))).toBe(0);
+    expect(Number(ghost.getAttribute("y2"))).toBe(-SCREEN_STYLE.bondLengthPx);
+  });
+
+  it("marks an accepted target differently from a refused one", () => {
+    const accepted = renderGesture({
+      interaction: {
+        ghost: null,
+        target: { atomId: "a4", refused: false },
+        marquee: null,
+        pivot: null,
+      },
+    });
+    expect(
+      accepted.querySelector('[data-overlay="target-accepted"]'),
+    ).not.toBeNull();
+
+    const refused = renderGesture({
+      interaction: {
+        ghost: null,
+        target: { atomId: "a2", refused: true },
+        marquee: null,
+        pivot: null,
+      },
+    });
+    const mark = refused.querySelector('[data-overlay="target-refused"]')!;
+    expect(mark).not.toBeNull();
+    // Decision 2 made visible: the user has to see the refusal while the
+    // button is still down, not discover it when nothing happens on release.
+    expect(mark.getAttribute("data-overlay-target")).toBe("a2");
+  });
+
+  it("normalises the marquee AFTER the flip, never before it", () => {
+    // The y-flip swaps which corner is on top, so a rect normalised in model
+    // units comes back inverted — and an SVG <rect> with a negative height
+    // renders nothing at all, silently, with no console output to notice.
+    const upLeft = renderGesture({
+      interaction: {
+        ghost: null,
+        target: null,
+        marquee: { a: { x: 1, y: 1 }, b: { x: -1, y: -1 } },
+        pivot: null,
+      },
+    });
+    const rect = upLeft.querySelector('[data-overlay="marquee"]')!;
+    expect(Number(rect.getAttribute("width"))).toBeCloseTo(
+      2 * SCREEN_STYLE.bondLengthPx,
+      6,
+    );
+    expect(Number(rect.getAttribute("height"))).toBeCloseTo(
+      2 * SCREEN_STYLE.bondLengthPx,
+      6,
+    );
+    expect(Number(rect.getAttribute("height"))).toBeGreaterThan(0);
+  });
+
+  it("badges a valence issue without refusing anything", () => {
+    const container = renderGesture({
+      issues: [
+        { atomId: "a1", severity: "error", message: "C has 5 bonds but allows at most 4" },
+      ],
+    });
+    const badge = container.querySelector('[data-overlay="valence-issue"]')!;
+    expect(badge).not.toBeNull();
+    expect(badge.getAttribute("data-overlay-target")).toBe("a1");
+    expect(badge.querySelector("title")?.textContent).toContain("at most 4");
+  });
+
+  it("places the rotate handle above the atoms it turns, and only when there are some", () => {
+    const none = renderGesture({ handleAtomIds: [] });
+    expect(none.querySelector('[data-overlay="rotate-handle"]')).toBeNull();
+
+    const some = renderGesture({ handleAtomIds: ["a1", "a2", "a3", "a4", "a5", "a6"] });
+    const handle = some.querySelector('[data-overlay="rotate-handle"]')!;
+    expect(handle).not.toBeNull();
+    // Benzene's centroid is the origin, which is scene (0, 0); the handle sits
+    // above it, and scene px are y-down so "above" is negative.
+    expect(Number(handle.getAttribute("cx"))).toBeCloseTo(0, 6);
+    expect(Number(handle.getAttribute("cy"))).toBeLessThan(0);
+  });
+
+  it("wears no model-entity attribute on any gesture mark", () => {
+    const container = renderGesture({
+      interaction: {
+        ghost: { from: { x: 0, y: 0 }, to: { x: 1, y: 1 } },
+        target: { atomId: "a4", refused: false },
+        marquee: { a: { x: -1, y: -1 }, b: { x: 1, y: 1 } },
+        pivot: { x: 0, y: 0 },
+      },
+      issues: [{ atomId: "a1", severity: "error", message: "x" }],
+      handleAtomIds: ["a1", "a2"],
+    });
+    expect(container.querySelectorAll("[data-atom-id]")).toHaveLength(0);
+    expect(container.querySelectorAll("[data-bond-id]")).toHaveLength(0);
+    // Six marks: ghost, target, marquee, pivot, badge, handle. The marquee and
+    // the handle are mutually exclusive in the real canvas — a sweep hides the
+    // handle — so this fixture asks for the marquee and gets no handle.
+    expect(container.querySelectorAll("[data-overlay]").length).toBeGreaterThan(3);
   });
 });

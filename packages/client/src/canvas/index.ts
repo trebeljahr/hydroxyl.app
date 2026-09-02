@@ -34,6 +34,7 @@
 export * from "./scene-bridge";
 export * from "./metrics";
 export * from "./pick";
+export * from "./handles";
 export * from "./fixture";
 export * from "./SceneLayer";
 export * from "./OverlayLayer";

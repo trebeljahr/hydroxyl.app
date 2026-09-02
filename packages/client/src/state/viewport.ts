@@ -18,11 +18,14 @@
  *
  * That invariant is single-site and checkable: `modelToPx` in
  * chem-render/src/style.ts is the only function in the repo that scales or
- * negates. A later layer that has to cross back — a pointer delta in px
- * becoming an atom displacement in model units — must go through
- * `pxPerModelUnit(style)`, which chem-render exports for exactly that case,
- * rather than reintroducing a bond length here. Nothing in this file needs
- * it: this module never leaves px.
+ * negates. A later layer that has to cross back — a pointer position in px
+ * becoming an atom position in model units — goes through chem-render's
+ * `pxToModel`, and a pointer DISPLACEMENT goes through it too: it is linear,
+ * so the y-negation factors out of a difference rather than cancelling in it.
+ * `pxPerModelUnit(style)` alone is for SCALARS — a tolerance, a grab radius.
+ * Note that `toModel` below is AFFINE and must NOT be applied to a delta: its
+ * translation would be added once too often. Divide a delta by the zoom.
+ * Nothing in this file needs any of it: this module never leaves px.
  *
  * The convention, which the rest of the app may rely on:
  *

@@ -24,11 +24,17 @@
 
 import type { ReactElement } from "react";
 
-import type { AtomId, BondId } from "@starter/chem-core";
+import type { AtomId, BondId, ValenceIssue, Vec2 } from "@starter/chem-core";
+import { modelToPx } from "@starter/chem-render";
 import type { ScenePoint } from "@starter/chem-render";
 
 import type { Selection } from "@/state";
+import type { InteractionOverlayState } from "@/editor/interaction";
 
+import {
+  rotateHandlePoint,
+  ROTATE_HANDLE_RADIUS_PX,
+} from "./handles";
 import type { SceneIndex } from "./metrics";
 
 export interface OverlayLayerProps {
@@ -36,6 +42,12 @@ export interface OverlayLayerProps {
   readonly selection: Selection;
   readonly hoveredAtomId: AtomId | null;
   readonly hoveredBondId: BondId | null;
+  /** The gesture in flight, in MODEL units. Converted here, with `modelToPx`. */
+  readonly interaction?: InteractionOverlayState | undefined;
+  /** Atoms to badge. Never a refusal — see the note on `valenceBadge`. */
+  readonly issues?: readonly ValenceIssue[] | undefined;
+  /** Atoms the rotate handle should be placed around; empty for none. */
+  readonly handleAtomIds?: readonly AtomId[] | undefined;
 }
 
 /**
@@ -77,12 +89,44 @@ const SELECTED_COLOR = "#2563eb";
 const HOVER_BOND_WIDTH_PX = 10;
 const SELECTED_BOND_WIDTH_PX = 12;
 
+/**
+ * The gesture palette.
+ *
+ * Green for a target the gesture will accept, red for one it refuses, and the
+ * same blue as the selection for everything neutral. The refusal colour is the
+ * only place the overlay says "no" — decision 2 makes an already-bonded merge
+ * or ring closure a refused gesture, and the user has to see that while the
+ * button is still down rather than discover it when nothing happens on
+ * release.
+ *
+ * The valence badge is amber rather than red so that a structure which is
+ * merely over-valent — a legitimate intermediate state while sketching — does
+ * not read as an error the editor is refusing to accept.
+ */
+const ACCEPT_COLOR = "#16a34a";
+const REFUSE_COLOR = "#dc2626";
+const GHOST_COLOR = "#2563eb";
+const BADGE_COLOR = "#d97706";
+const GHOST_WIDTH_PX = 2;
+const MARQUEE_WIDTH_PX = 1;
+const TARGET_RADIUS_PX = 14;
+const BADGE_RADIUS_PX = 5;
+const BADGE_OFFSET_PX = 12;
+
 export function OverlayLayer({
   index,
   selection,
   hoveredAtomId,
   hoveredBondId,
+  interaction,
+  issues,
+  handleAtomIds,
 }: OverlayLayerProps): ReactElement {
+  const style = index.scene.style;
+  const handle =
+    handleAtomIds === undefined || handleAtomIds.length === 0
+      ? undefined
+      : rotateHandlePoint(index, handleAtomIds);
   return (
     // Pointer-events off, as on the scene layer: the root <svg> is the only
     // element that handles pointers. A halo that ate its own clicks would make
@@ -101,7 +145,198 @@ export function OverlayLayer({
       {hoveredAtomId === null
         ? null
         : atomHalo(index, hoveredAtomId, "hover-atom")}
+
+      {/*
+        The gesture marks, drawn last so they sit over both. A drag is the
+        most recent statement of intent on the canvas and has to win.
+      */}
+      {(issues ?? []).map((issue) => valenceBadge(index, issue))}
+      {handle === undefined || interaction?.marquee != null
+        ? null
+        : rotateHandle(handle)}
+      {interaction?.target == null
+        ? null
+        : targetRing(index, interaction.target.atomId, interaction.target.refused)}
+      {interaction?.ghost == null
+        ? null
+        : ghostBond(style, interaction.ghost.from, interaction.ghost.to)}
+      {interaction?.marquee == null
+        ? null
+        : marqueeRect(style, interaction.marquee.a, interaction.marquee.b)}
+      {interaction?.pivot == null ? null : pivotMark(style, interaction.pivot)}
     </g>
+  );
+}
+
+/**
+ * The bond being drawn, from the source atom to wherever the drag currently
+ * ends.
+ *
+ * MODEL UNITS IN, `modelToPx` OUT. This is the one overlay mark whose far end
+ * has no index entry to read a position from — while the drag is over empty
+ * canvas the atom exists in the store's molecule but the mark is about where
+ * the gesture is pointing, not about the ink. `modelToPx` is chem-render's and
+ * is the only sanctioned crossing; spelling the multiply and the negation out
+ * here would be the second site the render invariant exists to prevent.
+ *
+ * Dashed, so it never reads as a bond that has been committed even though —
+ * per the per-move-commit decision — it has.
+ */
+function ghostBond(
+  style: Parameters<typeof modelToPx>[0],
+  from: Vec2,
+  to: Vec2,
+): ReactElement | null {
+  const a = modelToPx(style, from);
+  const b = modelToPx(style, to);
+  if (!isFinitePoint(a) || !isFinitePoint(b)) return null;
+  return (
+    <line
+      key="ghost-bond"
+      data-overlay="ghost-bond"
+      x1={a.x}
+      y1={a.y}
+      x2={b.x}
+      y2={b.y}
+      stroke={GHOST_COLOR}
+      strokeWidth={GHOST_WIDTH_PX}
+      strokeOpacity={0.7}
+      strokeDasharray="5 4"
+      strokeLinecap="round"
+    />
+  );
+}
+
+/**
+ * The atom a ring closure or a merge would land on.
+ *
+ * Green accepts, red refuses. Both are drawn: a refusal the user cannot see is
+ * a gesture that mysteriously does nothing.
+ */
+function targetRing(
+  index: SceneIndex,
+  atomId: AtomId,
+  refused: boolean,
+): ReactElement | null {
+  const centre = index.atomCentre(atomId);
+  if (centre === undefined || !isFinitePoint(centre)) return null;
+  return (
+    <circle
+      key="gesture-target"
+      data-overlay={refused ? "target-refused" : "target-accepted"}
+      data-overlay-target={atomId}
+      cx={centre.x}
+      cy={centre.y}
+      r={TARGET_RADIUS_PX}
+      fill="none"
+      stroke={refused ? REFUSE_COLOR : ACCEPT_COLOR}
+      strokeWidth={2.5}
+      strokeDasharray={refused ? "4 3" : undefined}
+    />
+  );
+}
+
+/**
+ * The marquee, normalised HERE rather than in model space.
+ *
+ * The two corners arrive exactly as the pointer produced them, and the y-flip
+ * means a sweep DOWN the screen is a DECREASING model y — so a rect normalised
+ * in model units comes back through `modelToPx` inverted, and an SVG `<rect>`
+ * with a negative height renders nothing at all, silently. Converting first
+ * and taking min/max after is the only order that cannot get it wrong. The
+ * chem-core side normalises separately, with `rectFromCorners`, in the space
+ * `atomsInRect` actually reads.
+ */
+function marqueeRect(
+  style: Parameters<typeof modelToPx>[0],
+  a: Vec2,
+  b: Vec2,
+): ReactElement | null {
+  const pa = modelToPx(style, a);
+  const pb = modelToPx(style, b);
+  if (!isFinitePoint(pa) || !isFinitePoint(pb)) return null;
+  const x = Math.min(pa.x, pb.x);
+  const y = Math.min(pa.y, pb.y);
+  return (
+    <rect
+      key="marquee"
+      data-overlay="marquee"
+      x={x}
+      y={y}
+      width={Math.abs(pb.x - pa.x)}
+      height={Math.abs(pb.y - pa.y)}
+      fill={SELECTED_COLOR}
+      fillOpacity={0.08}
+      stroke={SELECTED_COLOR}
+      strokeWidth={MARQUEE_WIDTH_PX}
+      strokeDasharray="4 3"
+    />
+  );
+}
+
+/** The grab handle, which is also the pivot a rotation turns about. */
+function rotateHandle(point: ScenePoint): ReactElement | null {
+  if (!isFinitePoint(point)) return null;
+  return (
+    <circle
+      key="rotate-handle"
+      data-overlay="rotate-handle"
+      cx={point.x}
+      cy={point.y}
+      r={ROTATE_HANDLE_RADIUS_PX}
+      fill="#ffffff"
+      stroke={SELECTED_COLOR}
+      strokeWidth={2}
+    />
+  );
+}
+
+/** Where a rotation in progress is turning about. */
+function pivotMark(
+  style: Parameters<typeof modelToPx>[0],
+  pivot: Vec2,
+): ReactElement | null {
+  const point = modelToPx(style, pivot);
+  if (!isFinitePoint(point)) return null;
+  return (
+    <circle
+      key="rotate-pivot"
+      data-overlay="rotate-pivot"
+      cx={point.x}
+      cy={point.y}
+      r={3}
+      fill={SELECTED_COLOR}
+    />
+  );
+}
+
+/**
+ * A dot beside an atom `valenceIssues()` flagged.
+ *
+ * A BADGE AND NEVER A REFUSAL. Sprouting and template placement are never
+ * blocked by valence — drawing something briefly over-valent is a normal step
+ * in sketching an intermediate — so the editor reports it and carries on. The
+ * mark is offset up and to the right so it clears both the atom's own label
+ * and any selection halo around it.
+ */
+function valenceBadge(index: SceneIndex, issue: ValenceIssue): ReactElement | null {
+  const centre = index.atomCentre(issue.atomId);
+  if (centre === undefined || !isFinitePoint(centre)) return null;
+  const reach = Math.max(index.atomRadiusPx(issue.atomId), MIN_ATOM_HALO_RADIUS_PX);
+  return (
+    <circle
+      key={`valence:${issue.atomId}`}
+      data-overlay="valence-issue"
+      data-overlay-target={issue.atomId}
+      cx={centre.x + reach + BADGE_OFFSET_PX * 0.5}
+      cy={centre.y - reach - BADGE_OFFSET_PX * 0.5}
+      r={BADGE_RADIUS_PX}
+      fill={BADGE_COLOR}
+      stroke="#ffffff"
+      strokeWidth={1.5}
+    >
+      <title>{issue.message}</title>
+    </circle>
   );
 }
 

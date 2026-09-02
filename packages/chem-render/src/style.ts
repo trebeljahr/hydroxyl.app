@@ -221,10 +221,22 @@ export function modelToPx(style: RenderStyle, p: Vec2): ScenePoint {
  * the one that quietly disagrees about which way is up the day a style changes
  * or a transform is inserted, and makes a structure hit-test mirrored.
  *
- * For a DELTA or a tolerance — a drag distance, a pick radius — use
- * `pxPerModelUnit` and divide. There is no y to flip in a difference of two
- * points (the two negations cancel), and running one through here would negate
- * it once too often.
+ * FOR A DELTA — a drag displacement, one vector in px becoming one vector in
+ * model units — THIS IS STILL THE RIGHT FUNCTION, y-negation included. It is a
+ * LINEAR map (scale plus a sign, no translation term), so
+ * `pxToModel(p2) - pxToModel(p1) === pxToModel(p2 - p1)` exactly: the negation
+ * factors out of the subtraction, it does not cancel. An earlier version of
+ * this comment claimed the opposite and told the editor to divide a drag delta
+ * by `pxPerModelUnit` alone, which mirrors every drag vertically — the atom
+ * goes down while the pointer goes up.
+ *
+ * `pxPerModelUnit` alone is right for a SCALAR — a tolerance, a pick radius, a
+ * distance — because a length has no sign to flip.
+ *
+ * What is genuinely unsafe for a delta is the VIEWPORT's `toModel`, which is
+ * AFFINE: its `(p - size/2) / zoom + pan` translation cancels in a difference,
+ * so a delta must be divided by the zoom alone. Safest of all is to have no
+ * vector in the calculation: convert both endpoints and subtract.
  */
 export function pxToModel(style: RenderStyle, p: ScenePoint): Vec2 {
   return { x: p.x / style.bondLengthPx, y: -p.y / style.bondLengthPx };

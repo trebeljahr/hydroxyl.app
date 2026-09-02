@@ -23,10 +23,16 @@ import type { Page } from "@playwright/test";
  * a colour changes; measuring the geometry states the invariant instead of
  * photographing it.
  *
- * Everything here is READ-ONLY on the molecule. This task's canvas hovers,
- * selects, pans and zooms and edits nothing, so the atom and bond counts are
- * invariant across every gesture in this file — several tests re-assert them
- * after acting for exactly that reason.
+ * THE FIRST HALF OF THIS FILE IS READ-ONLY on the molecule: hover, select,
+ * pan and zoom edit nothing, so the atom and bond counts are invariant across
+ * those gestures and several of them re-assert it after acting.
+ *
+ * THE SECOND HALF DRAWS. Those specs are here rather than in a unit test for
+ * one reason: jsdom has no layout, so a drag driven through it has no geometry
+ * in it and cannot tell a snapped bond from a random one. The reducer's own
+ * decisions are unit-tested with synthetic facts and real numbers
+ * (`machine.test.ts`); what only a browser can prove is that a real pointer,
+ * landing on real pixels, produces the structure the chemist drew.
  */
 
 /**
@@ -589,7 +595,7 @@ test("space-held left drag pans the view without selecting anything", async ({
   expect(errors).toEqual([]);
 });
 
-test("a left drag past the click threshold does not select what it started on", async ({
+test("a left drag past the click threshold does not fire the click path", async ({
   page,
 }) => {
   const errors = collectPageErrors(page);
@@ -598,17 +604,28 @@ test("a left drag past the click threshold does not select what it started on", 
   const geometry = await readGeometry(page);
   const atom = nth(geometry.atoms, 0, "atoms");
 
-  // No space, no middle button: this is a plain left drag, which today pans
-  // nothing. It must still not fire a select, or every future drag tool would
-  // leave a selection behind it.
-  await page.mouse.move(atom.centre.x, atom.centre.y);
+  // Select something first, so "the click path did not run" is visible as a
+  // change rather than as the absence of one.
+  await page.mouse.click(atom.centre.x, atom.centre.y);
+  await expect(page.locator('[data-overlay="selected-atom"]')).toHaveCount(1);
+
+  // A plain left drag over EMPTY canvas is a marquee. It must not end as a
+  // click on whatever happens to be under the release point — the release is
+  // back on the atom here, and the click path would have left it selected.
+  const centre = ringCentre(geometry.atoms);
+  await page.mouse.move(centre.x, centre.y);
   await page.mouse.down();
-  await page.mouse.move(atom.centre.x + 40, atom.centre.y + 30, { steps: 6 });
+  await page.mouse.move(centre.x + 30, centre.y + 20, { steps: 6 });
+  await page.mouse.move(atom.centre.x, atom.centre.y, { steps: 6 });
   await page.mouse.up();
 
+  // The marquee enclosed nothing, so nothing is selected — and crucially the
+  // atom under the release point is NOT.
   await expect(
     page.locator('[data-overlay="selected-atom"], [data-overlay="selected-bond"]'),
   ).toHaveCount(0);
+  // ...and a marquee is not an edit.
+  await expect(page.locator(`${SCENE} [data-atom-id]`)).toHaveCount(RING_CARBONS);
 
   expect(errors).toEqual([]);
 });
@@ -686,6 +703,337 @@ test("clicking an atom selects it and clicking another replaces the selection", 
   await expect(page.locator(`${SCENE} [data-atom-id]`)).toHaveCount(
     RING_CARBONS,
   );
+
+  expect(errors).toEqual([]);
+});
+
+// ---------------------------------------------------------------------------
+// Drawing
+// ---------------------------------------------------------------------------
+
+/** Fits the view and waits for it to settle, so a drag stays on screen. */
+async function fit(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Fit" }).click();
+  await settle(page);
+}
+
+/** The median on-screen bond length, which is what a sprouted bond must match. */
+function bondLengthOf(geometry: CanvasGeometry): number {
+  const lengths = geometry.bonds.map(length).sort((a, b) => a - b);
+  return nth(lengths, lengths.length >> 1, "bond lengths");
+}
+
+function angleBetween(a: Point, b: Point): number {
+  return (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+}
+
+/** The atom in `after` that was not in `before`. */
+function newAtom(before: CanvasGeometry, after: CanvasGeometry): AtomMark {
+  const known = new Set(before.atoms.map((atom) => atom.id));
+  const grown = after.atoms.filter((atom) => !known.has(atom.id));
+  expect(grown, "expected exactly one new atom").toHaveLength(1);
+  return nth(grown, 0, "new atoms");
+}
+
+async function dragFromTo(page: Page, from: Point, to: Point): Promise<void> {
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps: 12 });
+  await page.mouse.up();
+}
+
+test("drawing a three-bond chain produces the document the chemist drew", async ({
+  page,
+}) => {
+  const errors = collectPageErrors(page);
+  await openEditor(page);
+
+  // Start from the ring's lowest vertex and grow downwards, away from the
+  // structure. Each drag is longer than a bond so the snap has a direction to
+  // resolve; the LENGTH is fixed by chem-core, which is one of the things
+  // asserted below.
+  let geometry = await readGeometry(page);
+  const bond = bondLengthOf(geometry);
+  let tip = geometry.atoms.reduce((lowest, atom) =>
+    atom.centre.y > lowest.centre.y ? atom : lowest,
+  );
+
+  const chainIds: string[] = [tip.id];
+  for (let step = 0; step < 3; step += 1) {
+    // Alternating left and right of straight down, which is how a chemist
+    // draws a zig-zag — and which makes the 30-degree snap do real work.
+    const bearing = step % 2 === 0 ? 60 : 120;
+    const radians = (bearing * Math.PI) / 180;
+    const before = geometry;
+    await dragFromTo(page, tip.centre, {
+      x: tip.centre.x + Math.cos(radians) * bond * 1.4,
+      y: tip.centre.y + Math.sin(radians) * bond * 1.4,
+    });
+    await fit(page);
+    geometry = await readGeometry(page);
+    tip = newAtom(before, geometry);
+    chainIds.push(tip.id);
+  }
+
+  // THE DOCUMENT. Three drags, three carbons, three bonds — not sixty, and not
+  // a stack of coincident atoms where a snap happened to land on one.
+  await expect(page.locator("[data-atom-id]")).toHaveCount(RING_CARBONS + 3);
+  await expect(page.locator("[data-bond-id]")).toHaveCount(RING_BONDS + 3);
+
+  // MEASURED FROM ONE SNAPSHOT, taken after the last fit. The view is
+  // re-framed between steps to keep the growing chain on screen, so a position
+  // captured during step 1 is in a different pixel space from one captured
+  // during step 3 — comparing across them measures the fit, not the bond. Ids
+  // survive the reframing; pixel coordinates do not.
+  const final = await readGeometry(page);
+  const chain = chainIds.map((id) => {
+    const atom = final.atoms.find((candidate) => candidate.id === id);
+    expect(atom, `atom ${id} vanished`).toBeDefined();
+    return atom as AtomMark;
+  });
+
+  const drawn = bondLengthOf(final);
+  for (let i = 1; i < chain.length; i += 1) {
+    const a = nth(chain, i - 1, "chain atoms");
+    const b = nth(chain, i, "chain atoms");
+    // Every drawn bond is ONE BOND LONG, whatever distance the pointer
+    // travelled: a drag chooses a direction, not a length.
+    expect(
+      Math.abs(distance(a.centre, b.centre) - drawn),
+      `bond ${String(i)} measures ${distance(a.centre, b.centre).toFixed(1)}px against ${drawn.toFixed(1)}px`,
+    ).toBeLessThan(drawn * 0.02);
+  }
+
+  // ...and every angle at a chain vertex is on the 30-degree lattice. This is
+  // the assertion a jsdom test cannot make and the one that fails if the snap
+  // is computed against world angles instead of the atom's own first bond.
+  for (let i = 2; i < chain.length; i += 1) {
+    const turn =
+      angleBetween(nth(chain, i - 1, "chain").centre, nth(chain, i, "chain").centre) -
+      angleBetween(nth(chain, i - 2, "chain").centre, nth(chain, i - 1, "chain").centre);
+    const steps = turn / 30;
+    expect(Math.abs(steps - Math.round(steps))).toBeLessThan(0.02);
+  }
+
+  expect(errors).toEqual([]);
+});
+
+test("dragging onto an existing atom closes a ring rather than duplicating it", async ({
+  page,
+}) => {
+  const errors = collectPageErrors(page);
+  await openEditor(page);
+
+  const geometry = await readGeometry(page);
+  // Two PARA vertices of the hexagon: the furthest-apart pair, which are the
+  // ones not already bonded. Bonding an adjacent pair is refused, deliberately.
+  let best = { a: nth(geometry.atoms, 0, "atoms"), b: nth(geometry.atoms, 0, "atoms"), d: 0 };
+  for (const a of geometry.atoms) {
+    for (const b of geometry.atoms) {
+      const d = distance(a.centre, b.centre);
+      if (d > best.d) best = { a, b, d };
+    }
+  }
+
+  await dragFromTo(page, best.a.centre, best.b.centre);
+
+  // ONE new bond and NO new atom. The failure this catches is a seventh carbon
+  // sitting exactly on top of the sixth: invisible on screen, wrong in the
+  // formula, and it makes the molfile export write two atoms at one coordinate.
+  await expect(page.locator("[data-atom-id]")).toHaveCount(RING_CARBONS);
+  await expect(page.locator("[data-bond-id]")).toHaveCount(RING_BONDS + 1);
+
+  expect(errors).toEqual([]);
+});
+
+test("dragging onto an already-bonded atom is refused, visibly", async ({ page }) => {
+  const errors = collectPageErrors(page);
+  await openEditor(page);
+
+  const geometry = await readGeometry(page);
+  const first = nth(geometry.bonds, 0, "bonds");
+  const from = geometry.atoms.find(
+    (atom) => distance(atom.centre, first.a) < 1,
+  );
+  const onto = geometry.atoms.find((atom) => distance(atom.centre, first.b) < 1);
+  expect(from).toBeDefined();
+  expect(onto).toBeDefined();
+  if (from === undefined || onto === undefined) return;
+
+  await page.mouse.move(from.centre.x, from.centre.y);
+  await page.mouse.down();
+  await page.mouse.move(
+    (from.centre.x + onto.centre.x) / 2,
+    (from.centre.y + onto.centre.y) / 2,
+    { steps: 6 },
+  );
+  await page.mouse.move(onto.centre.x, onto.centre.y, { steps: 6 });
+
+  // Decision 2, made visible while the button is still down: a refusal the
+  // user only discovers on release is a gesture that mysteriously does nothing.
+  await expect(page.locator('[data-overlay="target-refused"]')).toHaveCount(1);
+  await page.mouse.up();
+
+  await expect(page.locator("[data-atom-id]")).toHaveCount(RING_CARBONS);
+  await expect(page.locator("[data-bond-id]")).toHaveCount(RING_BONDS);
+
+  expect(errors).toEqual([]);
+});
+
+test("Escape mid-drag leaves the molecule exactly as it was", async ({ page }) => {
+  const errors = collectPageErrors(page);
+  await openEditor(page);
+
+  const geometry = await readGeometry(page);
+  const tip = geometry.atoms.reduce((lowest, atom) =>
+    atom.centre.y > lowest.centre.y ? atom : lowest,
+  );
+  const bond = bondLengthOf(geometry);
+
+  await page.mouse.move(tip.centre.x, tip.centre.y);
+  await page.mouse.down();
+  await page.mouse.move(tip.centre.x, tip.centre.y + bond * 1.4, { steps: 10 });
+
+  // The bond IS in the document at this instant — the machine commits on every
+  // pointer-move rather than holding a preview, so the status bar's formula
+  // and the valence badges stay live mid-drag.
+  await expect(page.locator("[data-atom-id]")).toHaveCount(RING_CARBONS + 1);
+  await expect(page.locator('[data-overlay="ghost-bond"]')).toHaveCount(1);
+
+  await page.keyboard.press("Escape");
+
+  await expect(page.locator("[data-atom-id]")).toHaveCount(RING_CARBONS);
+  await expect(page.locator("[data-bond-id]")).toHaveCount(RING_BONDS);
+  await expect(page.locator('[data-overlay="ghost-bond"]')).toHaveCount(0);
+
+  // And the cancelled drag cannot resume: the pointerup that follows must
+  // neither re-commit nor fall through to the click path.
+  await page.mouse.up();
+  await expect(page.locator("[data-atom-id]")).toHaveCount(RING_CARBONS);
+  await expect(
+    page.locator('[data-overlay="selected-atom"], [data-overlay="selected-bond"]'),
+  ).toHaveCount(0);
+
+  // The geometry is unchanged too, not merely the counts.
+  const after = await readGeometry(page);
+  for (const atom of after.atoms) {
+    const was = geometry.atoms.find((candidate) => candidate.id === atom.id);
+    expect(was).toBeDefined();
+    if (was === undefined) continue;
+    expect(distance(atom.centre, was.centre)).toBeLessThan(BOX_SLACK_PX);
+  }
+
+  expect(errors).toEqual([]);
+});
+
+test("a marquee selects what it encloses and its rectangle tracks the pointer", async ({
+  page,
+}) => {
+  const errors = collectPageErrors(page);
+  await openEditor(page);
+
+  const geometry = await readGeometry(page);
+  const canvasBox = await boxOf(page, CANVAS);
+  const centre = ringCentre(geometry.atoms);
+
+  // Sweep the right-hand half of the ring, starting outside it and finishing
+  // on the centre line. Bottom-right to top-left, so the normalisation is
+  // exercised in the direction the y-flip makes awkward.
+  const start = { x: canvasBox.x + canvasBox.width - 20, y: centre.y + 200 };
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(centre.x + 40, centre.y + 60, { steps: 6 });
+
+  const marquee = page.locator('[data-overlay="marquee"]');
+  await expect(marquee).toHaveCount(1);
+  const partial = await marquee.boundingBox();
+  expect(partial).not.toBeNull();
+
+  await page.mouse.move(centre.x + 5, centre.y - 200, { steps: 6 });
+  const full = await marquee.boundingBox();
+  expect(full).not.toBeNull();
+  if (partial === null || full === null) return;
+  // The rectangle TRACKS: it grew as the pointer travelled, and it is a real
+  // box rather than the zero-height one a rect normalised in model space
+  // renders as (an SVG rect with a negative height draws nothing, silently).
+  expect(full.height).toBeGreaterThan(partial.height);
+  expect(full.width).toBeGreaterThan(0);
+  expect(full.height).toBeGreaterThan(0);
+
+  await page.mouse.up();
+
+  // The two right-hand vertices and the bond between them. `expandToBonds` is
+  // what supplies the bond — `normalizeSelection` is purely subtractive and
+  // could never derive it.
+  await expect(page.locator('[data-overlay="selected-atom"]')).toHaveCount(2);
+  await expect(page.locator('[data-overlay="selected-bond"]')).toHaveCount(1);
+  await expect(page.locator('[data-overlay="marquee"]')).toHaveCount(0);
+  // A selection is not an edit.
+  await expect(page.locator("[data-atom-id]")).toHaveCount(RING_CARBONS);
+
+  expect(errors).toEqual([]);
+});
+
+test("dragging a selected atom moves it instead of drawing from it", async ({
+  page,
+}) => {
+  const errors = collectPageErrors(page);
+  await openEditor(page);
+
+  const geometry = await readGeometry(page);
+  const atom = nth(geometry.atoms, 0, "atoms");
+  const bond = bondLengthOf(geometry);
+
+  await page.mouse.click(atom.centre.x, atom.centre.y);
+  await expect(page.locator('[data-overlay="selected-atom"]')).toHaveCount(1);
+  // Selecting something offers the rotate handle, which is how a selection is
+  // turned without a modifier key.
+  await expect(page.locator('[data-overlay="rotate-handle"]')).toHaveCount(1);
+
+  await dragFromTo(page, atom.centre, {
+    x: atom.centre.x + bond * 0.5,
+    y: atom.centre.y + bond * 0.5,
+  });
+
+  // Nothing minted: a SELECTED atom moves, an unselected one sprouts.
+  await expect(page.locator("[data-atom-id]")).toHaveCount(RING_CARBONS);
+  await expect(page.locator("[data-bond-id]")).toHaveCount(RING_BONDS);
+
+  const after = await readGeometry(page);
+  const moved = after.atoms.find((candidate) => candidate.id === atom.id);
+  expect(moved).toBeDefined();
+  if (moved === undefined) return;
+  expect(distance(moved.centre, atom.centre)).toBeGreaterThan(bond * 0.3);
+
+  expect(errors).toEqual([]);
+});
+
+test("the overlay claims no model entities, whatever a gesture is doing", async ({
+  page,
+}) => {
+  const errors = collectPageErrors(page);
+  await openEditor(page);
+
+  const geometry = await readGeometry(page);
+  const tip = geometry.atoms.reduce((lowest, atom) =>
+    atom.centre.y > lowest.centre.y ? atom : lowest,
+  );
+
+  await page.mouse.move(tip.centre.x, tip.centre.y);
+  await page.mouse.down();
+  await page.mouse.move(tip.centre.x + 20, tip.centre.y + 90, { steps: 8 });
+
+  // Mid-gesture, with a ghost bond live, the page-wide counts still describe
+  // the MOLECULE and nothing else. An overlay mark wearing `data-atom-id`
+  // would turn every structural assertion in this file into a stateful one.
+  await expect(page.locator('[data-overlay="ghost-bond"]')).toHaveCount(1);
+  await expect(
+    page.locator(`${OVERLAY} [data-atom-id], ${OVERLAY} [data-bond-id]`),
+  ).toHaveCount(0);
+  await expect(page.locator(`${SCENE} [data-overlay]`)).toHaveCount(0);
+
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
 
   expect(errors).toEqual([]);
 });

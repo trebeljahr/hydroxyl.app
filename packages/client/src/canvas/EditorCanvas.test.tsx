@@ -254,35 +254,41 @@ describe("EditorCanvas — selection", () => {
     expect(selection().atomIds).toEqual(["a1", "a3"]);
   });
 
-  it("does not select at the end of a drag", () => {
-    // Without the slop test, every pan that happens to end over empty space
-    // also reads as a click on empty space, and the selection evaporates for
-    // no reason the user can see.
+  it("does not fire the click path at the end of a drag", () => {
+    // Without the slop test, every drag that happens to end over empty space
+    // also reads as a click on empty space. A drag is a drag for its whole
+    // length: this one starts on an atom and ends back where it began, and
+    // must still not be treated as a click on that atom.
+    //
+    // What it DOES do — a marquee over empty canvas selects what it encloses,
+    // which here is nothing — is the assertion below. The click path would
+    // have left "a1" selected instead, because the gesture ended on it.
     render(<EditorCanvas />);
     click(atomPoint("a1"));
+    expect(selection().atomIds).toEqual(["a1"]);
 
     const svg = canvasRoot();
-    const start = bondPoint("b9");
+    const empty = canvasPointFor({ x: 6, y: 6 });
     fireEvent.pointerDown(svg, {
       button: 0,
       pointerId: 2,
-      clientX: start.x,
-      clientY: start.y,
+      clientX: empty.x,
+      clientY: empty.y,
     });
     fireEvent.pointerMove(svg, {
       pointerId: 2,
       buttons: 1,
-      clientX: start.x + 40,
-      clientY: start.y + 40,
+      clientX: empty.x + 40,
+      clientY: empty.y + 40,
     });
     fireEvent.pointerUp(svg, {
       button: 0,
       pointerId: 2,
-      clientX: start.x,
-      clientY: start.y,
+      clientX: empty.x,
+      clientY: empty.y,
     });
 
-    expect(selection().atomIds).toEqual(["a1"]);
+    expect(selection().atomIds).toEqual([]);
     expect(selection().bondIds).toEqual([]);
   });
 
@@ -397,11 +403,144 @@ describe("EditorCanvas — viewport chrome", () => {
   });
 });
 
-describe("EditorCanvas — view only", () => {
-  it("never touches the molecule, whatever the pointer does", () => {
-    // This task is hover, select, pan and zoom. The document is read, never
-    // written — so the molecule that comes out the far end is the very object
-    // that went in, not merely an equal one.
+/**
+ * The canvas as an EDITING surface, end to end through the real store.
+ *
+ * jsdom has no layout, so nothing here proves anything about geometry — every
+ * point below is computed from the STORE's viewport, which is the same
+ * viewport `toModel` uses when the event arrives, and that is the most this
+ * harness can honestly claim. What it CAN prove is the wiring: that a drag
+ * reaches the machine, that the machine's commands reach the store, and that
+ * a gesture leaves exactly one entry in the history. The geometry of a drag is
+ * `machine.test.ts`'s job (synthetic facts, real numbers) and the e2e spec's.
+ */
+describe("EditorCanvas — editing", () => {
+  function drag(from: Vec2, to: Vec2, steps = 6): void {
+    const svg = canvasRoot();
+    fireEvent.pointerDown(svg, {
+      button: 0,
+      pointerId: 7,
+      clientX: from.x,
+      clientY: from.y,
+    });
+    for (let i = 1; i <= steps; i += 1) {
+      const t = i / steps;
+      fireEvent.pointerMove(svg, {
+        pointerId: 7,
+        buttons: 1,
+        clientX: from.x + (to.x - from.x) * t,
+        clientY: from.y + (to.y - from.y) * t,
+      });
+    }
+    fireEvent.pointerUp(svg, {
+      button: 0,
+      pointerId: 7,
+      clientX: to.x,
+      clientY: to.y,
+    });
+  }
+
+  it("draws one bond and records ONE undo entry for the whole drag", () => {
+    render(<EditorCanvas />);
+    const before = editorStore.getState();
+    const pastBefore = before.history.past.length;
+
+    // STRAIGHT DOWN AND AWAY FROM THE RING. The direction matters: the drag
+    // snaps to a 30-degree step relative to a1's own first bond and the bond
+    // it draws is one bond long, so a drag aimed across the hexagon snaps onto
+    // a neighbouring vertex and becomes a REFUSED ring closure — a1 and a2 are
+    // already bonded. a1 sits at the bottom of the ring, so due south is the
+    // one direction with nothing in it.
+    drag(atomPoint("a1"), canvasPointFor({ x: 0, y: -3 }), 20);
+
+    const after = editorStore.getState();
+    expect(after.document.molecule.atomIds).toHaveLength(7);
+    expect(after.document.molecule.bondIds).toHaveLength(7);
+    // Twenty move frames, one entry. `record` is a no-op while a transaction
+    // is in flight, which is the whole mechanism.
+    expect(after.history.past.length).toBe(pastBefore + 1);
+    expect(after.history.past.at(-1)?.label).toBe("Draw bond");
+
+    expect(after.undo()).toBe(true);
+    expect(editorStore.getState().document.molecule).toBe(before.document.molecule);
+  });
+
+  it("leaves the molecule byte-identical when Escape cancels the drag", () => {
+    render(<EditorCanvas />);
+    const molecule = editorStore.getState().document.molecule;
+    const pastBefore = editorStore.getState().history.past.length;
+
+    const svg = canvasRoot();
+    const from = atomPoint("a1");
+    fireEvent.pointerDown(svg, {
+      button: 0,
+      pointerId: 8,
+      clientX: from.x,
+      clientY: from.y,
+    });
+    const to = canvasPointFor({ x: 0, y: -3 });
+    fireEvent.pointerMove(svg, {
+      pointerId: 8,
+      buttons: 1,
+      clientX: to.x,
+      clientY: to.y,
+    });
+    // Mid-drag: the bond exists in the store at this instant, by design.
+    expect(editorStore.getState().document.molecule).not.toBe(molecule);
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    // `abortTransaction` restores the base snapshot verbatim, so this is
+    // reference identity rather than a deep compare — a strictly stronger
+    // statement than "byte-identical".
+    expect(editorStore.getState().document.molecule).toBe(molecule);
+    expect(editorStore.getState().history.past.length).toBe(pastBefore);
+    // And the cancelled drag cannot resume: the pointerup that follows must
+    // neither commit nor fire a select.
+    fireEvent.pointerUp(svg, {
+      button: 0,
+      pointerId: 8,
+      clientX: to.x,
+      clientY: to.y,
+    });
+    expect(editorStore.getState().document.molecule).toBe(molecule);
+    expect(editorStore.getState().history.past.length).toBe(pastBefore);
+  });
+
+  it("moves a selected atom rather than drawing from it", () => {
+    render(<EditorCanvas />);
+    click(atomPoint("a1"));
+    const atomCount = editorStore.getState().document.molecule.atomIds.length;
+
+    drag(atomPoint("a1"), canvasPointFor({ x: 4, y: 4 }), 10);
+
+    const after = editorStore.getState().document.molecule;
+    // No atom was minted: a selected atom moves, an unselected one sprouts.
+    expect(after.atomIds).toHaveLength(atomCount);
+    expect(after.atoms["a1"]!.pos).not.toEqual(MOL.atoms["a1"]!.pos);
+  });
+
+  it("does not refit the view on every frame of a drag", () => {
+    // The fit effect is guarded on `doc.id`, not on the document reference —
+    // every per-move commit mints a new document, so a reference guard would
+    // re-frame and re-scale the canvas sixty times a second while the user is
+    // drawing, sliding the structure out from under the cursor.
+    render(<EditorCanvas />);
+    const viewport = editorStore.getState().viewport;
+
+    drag(atomPoint("a1"), canvasPointFor({ x: 0, y: -3 }), 20);
+
+    expect(editorStore.getState().viewport.zoom).toBe(viewport.zoom);
+    expect(editorStore.getState().viewport.pan).toEqual(viewport.pan);
+  });
+});
+
+describe("EditorCanvas — view gestures", () => {
+  it("never touches the molecule when the gesture was a view gesture", () => {
+    // Hovering, clicking, panning and zooming are not edits. The canvas is
+    // drawable now, so this is no longer a property of the whole component —
+    // but it is still a property of every gesture below, and the molecule that
+    // comes out is the very object that went in, not merely an equal one.
     render(<EditorCanvas />);
     const molecule = editorStore.getState().document.molecule;
 

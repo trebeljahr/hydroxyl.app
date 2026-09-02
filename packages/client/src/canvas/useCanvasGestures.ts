@@ -85,18 +85,61 @@ const PAGE_DELTA_PX = 100;
 
 export interface CanvasPointerModifiers {
   readonly shift: boolean;
+  readonly alt: boolean;
 }
 
+/**
+ * THE DRAG TRIPLE IS SEPARATE FROM `onHover`, NOT A WIDENING OF IT.
+ *
+ * Hover is hard-suppressed while any button is down (see `onPointerMove`), and
+ * that suppression is right: hover answers "what would I click", which is a
+ * question about a pointer that is just sitting there. A drag frame asks a
+ * different question — "what would I merge into" — and writes a different
+ * highlight. Widening `onHover` to serve both would mean removing the
+ * suppression and re-deriving the intent from the buttons bitmask on every
+ * sample, in the consumer, on the one path where allocation shows.
+ *
+ * `onDragStart` fires ONCE, at the instant the pointer crosses
+ * `CLICK_SLOP_PX`, and carries the DOWN point as `origin` rather than that
+ * sample's. A gesture anchors on what was under the button; four pixels later
+ * the hit test would sometimes answer with the neighbouring bond.
+ *
+ * `onDragCancel` covers pointercancel, Escape, a revoked capture, a hidden tab
+ * and unmount, and is NEVER followed by `onDragEnd`. Every one of those paths
+ * has to be covered, because a gesture that opens a store transaction and
+ * never closes it silently kills undo for the rest of the session.
+ */
 export interface CanvasGestureHandlers {
   readonly onHover: (canvasPoint: Vec2) => void;
   readonly onHoverEnd: () => void;
+  /** Left button down, before it is known whether this is a click or a drag. */
+  readonly onPress: (
+    canvasPoint: Vec2,
+    modifiers: CanvasPointerModifiers,
+  ) => void;
   readonly onSelect: (
     canvasPoint: Vec2,
     modifiers: CanvasPointerModifiers,
   ) => void;
+  readonly onDragStart: (
+    origin: Vec2,
+    canvasPoint: Vec2,
+    modifiers: CanvasPointerModifiers,
+  ) => void;
+  readonly onDragMove: (
+    canvasPoint: Vec2,
+    modifiers: CanvasPointerModifiers,
+  ) => void;
+  readonly onDragEnd: (
+    canvasPoint: Vec2,
+    modifiers: CanvasPointerModifiers,
+  ) => void;
+  readonly onDragCancel: () => void;
   readonly onZoom: (canvasAnchor: Vec2, factor: number) => void;
   /** Already negated: pass it straight to the store's `panBy`. */
   readonly onPan: (deltaScreen: Vec2) => void;
+  readonly onPanStart: () => void;
+  readonly onPanEnd: () => void;
   readonly onResize: (size: ViewportSize) => void;
 }
 
@@ -126,6 +169,16 @@ interface PressTrack {
    * back to where it started was still a drag, and must not fire a select.
    */
   moved: boolean;
+  /**
+   * Whether `onDragStart` has fired and `onDragEnd`/`onDragCancel` has not.
+   *
+   * SEPARATE FROM `moved` on purpose. A cancelled drag clears `dragging` so no
+   * further move or end callback goes out, but leaves `moved` latched so the
+   * pointerup that follows still does not fire a select — a gesture is a click
+   * or a drag, never both, and cancelling it does not turn it back into a
+   * click.
+   */
+  dragging: boolean;
 }
 
 /**
@@ -164,6 +217,16 @@ function consumesSpace(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
   return target.closest("input, textarea, select, button, a, [role='button']") !== null;
+}
+
+/** One place the modifier bag is built, so the drag and click paths cannot
+ *  drift about which keys they read. Sampled PER EVENT: shift-to-constrain and
+ *  the alt/spiro variant are routinely pressed after the button goes down. */
+function modifiersOf(event: {
+  readonly shiftKey: boolean;
+  readonly altKey: boolean;
+}): CanvasPointerModifiers {
+  return { shift: event.shiftKey, alt: event.altKey };
 }
 
 /** `setPointerCapture` throws if the pointer went away between events (a
@@ -217,6 +280,25 @@ export function useCanvasGestures(
     panRef.current = null;
     if (svg) releasePointer(svg, pan.pointerId);
     setIsPanning(false);
+    handlersRef.current.onPanEnd();
+  }, []);
+
+  /**
+   * Ends a press, cancelling the drag it had become.
+   *
+   * THE ONE FUNCTION EVERY ABNORMAL EXIT GOES THROUGH — pointercancel, a
+   * revoked capture, Escape, a hidden tab, unmount. A gesture that opens a
+   * store transaction and never closes it is the worst failure mode this
+   * design has and it is completely silent: undo and redo go dead, every
+   * later edit is unrecorded, and the next Escape restores a base from
+   * whenever the leak happened.
+   */
+  const cancelPress = useCallback((svg: SVGSVGElement | null): void => {
+    const press = pressRef.current;
+    if (!press) return;
+    pressRef.current = null;
+    if (svg) releasePointer(svg, press.pointerId);
+    if (press.dragging) handlersRef.current.onDragCancel();
   }, []);
 
   /**
@@ -251,6 +333,11 @@ export function useCanvasGestures(
 
     const clear = (): void => {
       spaceRef.current = false;
+      // A gesture whose window just lost focus will never receive its
+      // pointerup either, so the same event that clears the modifier has to
+      // close the transaction the drag opened.
+      cancelPress(svgRef.current);
+      endPan(svgRef.current);
     };
 
     window.addEventListener("keydown", onKeyDown);
@@ -263,7 +350,66 @@ export function useCanvasGestures(
       window.removeEventListener("blur", clear);
       document.removeEventListener("visibilitychange", clear);
     };
-  }, []);
+  }, [cancelPress, endPan, svgRef]);
+
+  /**
+   * ESCAPE CANCELS THE GESTURE IN FLIGHT, and claims the key ONLY then.
+   *
+   * On `window` rather than on the canvas because the `<svg>` carries no
+   * `tabIndex` and can never take focus, so a keydown would never reach it —
+   * the same reason the space modifier above is tracked here.
+   *
+   * The early return when nothing is in flight is the important half.
+   * `ToolSlice.escape()` — tool back to select, element buffer cleared,
+   * palette closed — belongs to `editor-shell-and-commands`, and swallowing
+   * Escape unconditionally would make all three unreachable. Two Escapes
+   * therefore mean two different things in sequence: cancel this drag, then
+   * put the tool down.
+   *
+   * Cancelling by NULLING the press rather than by setting a flag is what
+   * makes "and cannot resume" fall out for free: every downstream branch
+   * already early-returns on a null press, hover stays suppressed while the
+   * button is down, and the pointerup fires no select.
+   */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape") return;
+      const svg = svgRef.current;
+      const panning = panRef.current !== null;
+      const pressing = pressRef.current !== null;
+      if (!panning && !pressing) return;
+      endPan(svg);
+      cancelPress(svg);
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [cancelPress, endPan, svgRef]);
+
+  /**
+   * A capture the browser took back.
+   *
+   * `lostpointercapture` arrives as neither a pointerup nor a pointercancel —
+   * the element was moved in the DOM, or the browser decided the gesture was
+   * over — so without this the drag would simply stop receiving events with a
+   * transaction still open.
+   */
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const onLost = (event: Event): void => {
+      const pointerId = (event as PointerEvent).pointerId;
+      if (panRef.current?.pointerId === pointerId) endPan(svg);
+      if (pressRef.current?.pointerId === pointerId) cancelPress(svg);
+    };
+    svg.addEventListener("lostpointercapture", onLost);
+    return () => {
+      svg.removeEventListener("lostpointercapture", onLost);
+    };
+  }, [cancelPress, endPan, svgRef]);
 
   /**
    * WHEEL ZOOM, ATTACHED NATIVELY AND NON-PASSIVE. DO NOT REPLACE THIS WITH
@@ -370,13 +516,20 @@ export function useCanvasGestures(
     };
   }, [svgRef]);
 
-  /** Releases capture for a drag still in progress when the canvas unmounts. */
+  /**
+   * Releases capture for a gesture still in progress when the canvas unmounts.
+   *
+   * Cancelling the PRESS matters more than releasing the capture: a Fast
+   * Refresh in the middle of a drag would otherwise leave the store holding an
+   * open transaction that nothing will ever close.
+   */
   useEffect(() => {
     const svg = svgRef.current;
     return () => {
+      cancelPress(svg);
       endPan(svg);
     };
-  }, [endPan, svgRef]);
+  }, [cancelPress, endPan, svgRef]);
 
   const onPointerDown = useCallback<React.PointerEventHandler<SVGSVGElement>>(
     (event) => {
@@ -395,21 +548,35 @@ export function useCanvasGestures(
         // one; without it the browser starts its own scroll gesture on top of
         // ours.
         event.preventDefault();
+        cancelPress(svg);
         capturePointer(svg, event.pointerId);
         panRef.current = { pointerId: event.pointerId, last: point };
-        pressRef.current = null;
         setIsPanning(true);
         // The hover answer is stale the moment the view starts moving.
         handlersRef.current.onHoverEnd();
+        handlersRef.current.onPanStart();
         return;
       }
 
       // Left button only. A right-press is the context menu's business, and
       // tracking it here would fire a select on its release.
       if (event.button !== 0) return;
-      pressRef.current = { pointerId: event.pointerId, origin: point, moved: false };
+
+      // CAPTURE AT POINTERDOWN, not at the threshold crossing. By the time the
+      // pointer has travelled its four pixels a fast flick may already be
+      // outside the element, and `setPointerCapture` on a pointer whose events
+      // you no longer receive never happens — the drag then loses its
+      // pointerup and leaves a transaction open.
+      capturePointer(svg, event.pointerId);
+      pressRef.current = {
+        pointerId: event.pointerId,
+        origin: point,
+        moved: false,
+        dragging: false,
+      };
+      handlersRef.current.onPress(point, modifiersOf(event));
     },
-    [svgRef],
+    [cancelPress, svgRef],
   );
 
   const onPointerMove = useCallback<React.PointerEventHandler<SVGSVGElement>>(
@@ -441,10 +608,26 @@ export function useCanvasGestures(
       }
 
       const press = pressRef.current;
-      if (press && press.pointerId === event.pointerId && !press.moved) {
-        const dx = point.x - press.origin.x;
-        const dy = point.y - press.origin.y;
-        if (Math.hypot(dx, dy) > CLICK_SLOP_PX) press.moved = true;
+      if (press && press.pointerId === event.pointerId) {
+        if (!press.moved) {
+          const dx = point.x - press.origin.x;
+          const dy = point.y - press.origin.y;
+          if (Math.hypot(dx, dy) > CLICK_SLOP_PX) {
+            press.moved = true;
+            press.dragging = true;
+            // The DOWN point, not this sample's: see the note on the handler
+            // interface.
+            handlersRef.current.onDragStart(
+              press.origin,
+              point,
+              modifiersOf(event),
+            );
+            return;
+          }
+        } else if (press.dragging) {
+          handlersRef.current.onDragMove(point, modifiersOf(event));
+          return;
+        }
       }
 
       // Hover is a question about what is under the cursor when the cursor is
@@ -466,16 +649,28 @@ export function useCanvasGestures(
       }
 
       const press = pressRef.current;
-      pressRef.current = null;
-      if (!svg || !press || press.pointerId !== event.pointerId) return;
+      if (!press || press.pointerId !== event.pointerId) return;
+      // A non-left release during a left drag (the user chords a second
+      // button) is not the end of the gesture and must not retire the press.
       if (event.button !== 0) return;
+
+      pressRef.current = null;
+      if (svg) releasePointer(svg, press.pointerId);
+      if (!svg) return;
+
+      const point = toCanvasPoint(svg, event);
+      const modifiers = modifiersOf(event);
+      if (press.dragging) {
+        handlersRef.current.onDragEnd(point, modifiers);
+        return;
+      }
+      // A press that crossed the threshold and was then cancelled: no drag to
+      // end, and not a click either.
       if (press.moved) return;
 
       // On pointerup rather than pointerdown so that a drag can still change
       // its mind, and so the slop test above has something to measure.
-      handlersRef.current.onSelect(toCanvasPoint(svg, event), {
-        shift: event.shiftKey,
-      });
+      handlersRef.current.onSelect(point, modifiers);
     },
     [endPan, svgRef],
   );
@@ -485,10 +680,10 @@ export function useCanvasGestures(
       const svg = svgRef.current;
       const pan = panRef.current;
       if (pan && pan.pointerId === event.pointerId) endPan(svg);
-      pressRef.current = null;
+      if (pressRef.current?.pointerId === event.pointerId) cancelPress(svg);
       handlersRef.current.onHoverEnd();
     },
-    [endPan, svgRef],
+    [cancelPress, endPan, svgRef],
   );
 
   const onPointerLeave = useCallback<React.PointerEventHandler<SVGSVGElement>>(

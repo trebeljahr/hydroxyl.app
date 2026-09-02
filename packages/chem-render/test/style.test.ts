@@ -107,6 +107,42 @@ describe("pxToModel", () => {
     });
   }
 
+  it("maps a DELTA with the flip intact, because it is linear", () => {
+    // THE CLAIM AN EARLIER DOC COMMENT GOT BACKWARDS, and the one aimed
+    // squarely at whoever writes the editor's drag maths.
+    //
+    // `pxToModel` has no translation term, so it is a LINEAR map and
+    // `f(p2) - f(p1) === f(p2 - p1)` exactly: the y-negation FACTORS OUT of a
+    // difference, it does not cancel in it. Routing a drag displacement
+    // through here is therefore correct and the negation is required.
+    // Dividing that displacement by `pxPerModelUnit` alone — which the comment
+    // used to prescribe — mirrors every drag vertically: the atom goes down
+    // while the pointer goes up, and nothing about the symptom points at the
+    // conversion.
+    //
+    // `pxPerModelUnit` alone is right for a SCALAR. A length has no sign.
+    for (const style of STYLES) {
+      const scale = pxPerModelUnit(style);
+      const a = { x: 37, y: -12 };
+      const b = { x: 37 - 3 * scale, y: -12 - scale };
+
+      const byEndpoints = {
+        x: pxToModel(style, b).x - pxToModel(style, a).x,
+        y: pxToModel(style, b).y - pxToModel(style, a).y,
+      };
+      const byDelta = pxToModel(style, { x: b.x - a.x, y: b.y - a.y });
+      expect(byDelta.x).toBeCloseTo(byEndpoints.x, PLACES);
+      expect(byDelta.y).toBeCloseTo(byEndpoints.y, PLACES);
+
+      // The sign, stated on its own so a symmetric error cannot hide: dragging
+      // one bond length UP the screen (a NEGATIVE scene y) is a displacement
+      // of +1 in model y.
+      expect(pxToModel(style, { x: 0, y: -scale }).y).toBeCloseTo(1, PLACES);
+      // ...and dividing by the scale alone would have said -1.
+      expect(-scale / scale).toBe(-1);
+    }
+  });
+
   it("differs between the presets, so neither can stand in for the other", () => {
     // Guards the guard: if both presets ever shared a bond length, every
     // "at both scales" assertion above would quietly become one assertion.

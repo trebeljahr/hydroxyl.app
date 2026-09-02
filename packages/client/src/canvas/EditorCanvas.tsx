@@ -36,26 +36,29 @@
  * because subscribing to everything re-renders every subscriber on every
  * pointer-move frame of a drag — see the note on the hook in state/store.ts.
  *
- * NOTHING HERE MUTATES THE MOLECULE. This task is view-only: hover, select,
- * pan, zoom. No draft ever crosses into chem-core (chem-guard.ts would throw),
- * and the document is read, never written.
+ * EVERY MOLECULE EDIT GOES THROUGH THE INTERACTION MACHINE, and this file
+ * contains none of the decisions. The pointer plumbing is `useCanvasGestures`,
+ * the meaning of a gesture is `editor/interaction/machine.ts` (a pure reducer,
+ * unit-tested with no DOM), and the store writes are the adapter's. What is
+ * left here is the transform, the layers and the chrome. No draft ever crosses
+ * into chem-core — chem-guard.ts would throw.
  */
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type { ReactElement } from "react";
-import type { Vec2 } from "@starter/chem-core";
+import { valenceIssues } from "@starter/chem-core";
 
+import { movingAtomIds, useCanvasInteraction } from "@/editor/interaction";
 import { editorStore, useEditorStore } from "@/state";
 
 import { buildDocumentScene } from "./scene-bridge";
 import { createSceneIndex, fitBounds } from "./metrics";
-import { pickAt, type PickContext } from "./pick";
+import { type PickContext } from "./pick";
 import { SceneLayer } from "./SceneLayer";
 import { OverlayLayer } from "./OverlayLayer";
 import {
   useCanvasGestures,
   type CanvasGestureHandlers,
-  type CanvasPointerModifiers,
 } from "./useCanvasGestures";
 
 export interface EditorCanvasProps {
@@ -149,62 +152,19 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
     [],
   );
 
-  const handleHover = useCallback((canvasPoint: Vec2) => {
-    const { setHoveredAtom, setHoveredBond } = editorStore.getState();
-    const hit = pickAt(pickContextRef.current, canvasPoint);
-    // BOTH are written on every hover, one of them to null. Writing only the
-    // half that matched leaves the other id set from wherever the pointer was
-    // last, and the overlay then draws two halos — one of them on an atom the
-    // pointer left three bonds ago. Both setters no-op on an unchanged id, so
-    // the common case still notifies nobody.
-    setHoveredAtom(hit.kind === "atom" ? hit.atomId : null);
-    setHoveredBond(hit.kind === "bond" ? hit.bondId : null);
-  }, []);
-
-  const handleHoverEnd = useCallback(() => {
-    const { setHoveredAtom, setHoveredBond } = editorStore.getState();
-    setHoveredAtom(null);
-    setHoveredBond(null);
-  }, []);
-
-  const handleSelect = useCallback(
-    (canvasPoint: Vec2, modifiers: CanvasPointerModifiers) => {
-      const state = editorStore.getState();
-      const hit = pickAt(pickContextRef.current, canvasPoint);
-
-      if (hit.kind === "atom") {
-        if (modifiers.shift) state.toggleAtom(hit.atomId);
-        else state.selectAtoms([hit.atomId]);
-        return;
-      }
-
-      if (hit.kind === "bond") {
-        if (modifiers.shift) state.toggleBond(hit.bondId);
-        else state.selectBonds([hit.bondId]);
-        return;
-      }
-
-      // Shift-click on empty space does NOTHING. A shift-click is the "add to
-      // what I already picked" gesture, and a multi-select is assembled by
-      // aiming at small targets — missing one of them by two pixels must not
-      // discard the four atoms already collected. Only an unmodified click on
-      // background means "I am done with this selection".
-      if (modifiers.shift) return;
-      state.clearSelection();
-    },
-    [],
-  );
+  // Hover, selection and every editing gesture live in the interaction
+  // machine. This component supplies it a pick context and nothing else.
+  const { handlers: interactionHandlers, overlay } =
+    useCanvasInteraction(pickContextRef);
 
   const gestureHandlers = useMemo<CanvasGestureHandlers>(
     () => ({
-      onHover: handleHover,
-      onHoverEnd: handleHoverEnd,
-      onSelect: handleSelect,
+      ...interactionHandlers,
       onZoom: handleZoom,
       onPan: handlePan,
       onResize: handleResize,
     }),
-    [handleHover, handleHoverEnd, handleSelect, handleZoom, handlePan, handleResize],
+    [interactionHandlers, handleZoom, handlePan, handleResize],
   );
 
   const { isPanning, rootHandlers } = useCanvasGestures(svgRef, gestureHandlers);
@@ -220,26 +180,50 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
 
   // Fit once per document, as soon as the canvas has a measured size.
   //
-  // Guarded on the document REFERENCE rather than on a "have I fitted yet"
-  // boolean: opening a second document has to reframe, and re-running on every
-  // size change would fight the user, snapping their zoom back the moment they
-  // resized the window after scrolling in on a substituent. The size check is
-  // what makes the wait explicit — `zoomToFit` on a zero-size viewport
-  // recentres without touching the zoom, which would consume the one shot this
-  // effect gets and leave the molecule at 100% forever.
-  const fittedDocumentRef = useRef<unknown>(null);
+  // GUARDED ON `doc.id`, NOT ON THE DOCUMENT REFERENCE. The reference changes
+  // on every edit — `touchDocument` mints a new object to stamp `modifiedAt` —
+  // and this canvas now commits on every pointer-move frame of a drag, so a
+  // reference guard would re-frame and re-scale the view sixty times a second
+  // while the user is drawing, sliding the structure out from under the
+  // cursor. `id` is minted per document and preserved across every edit, which
+  // is exactly the "is this a different drawing" question being asked. It was
+  // invisible while the canvas was read-only.
+  //
+  // Re-running on every size change would fight the user instead, snapping
+  // their zoom back the moment they resized the window after scrolling in on a
+  // substituent — so the size is a precondition, not a trigger. `zoomToFit` on
+  // a zero-size viewport recentres without touching the zoom, which would
+  // consume the one shot this effect gets and leave the molecule at 100%
+  // forever.
+  const fittedDocumentIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (fittedDocumentRef.current === doc) return;
+    if (fittedDocumentIdRef.current === doc.id) return;
     if (viewport.size.width <= 0 || viewport.size.height <= 0) return;
-    fittedDocumentRef.current = doc;
+    fittedDocumentIdRef.current = doc.id;
     fitToScene();
-  }, [doc, viewport.size.width, viewport.size.height, fitToScene]);
+  }, [doc.id, viewport.size.width, viewport.size.height, fitToScene]);
 
   const { width, height } = viewport.size;
   const transform =
     `translate(${svgNumber(width / 2)}, ${svgNumber(height / 2)}) ` +
     `scale(${svgNumber(viewport.zoom)}) ` +
     `translate(${svgNumber(-viewport.pan.x)}, ${svgNumber(-viewport.pan.y)})`;
+
+  // Recomputed per document, which during a drag is per frame. Measured at
+  // 0.18 ms for a 300-heavy-atom structure — a tenth of the frame budget — and
+  // computed ONCE here rather than separately by the overlay and by whatever
+  // status bar arrives later, since neither call would hit a cache: the
+  // WeakMaps chem-core memoises on are keyed on the Molecule instance and a
+  // per-move commit mints a new one every frame.
+  const issues = useMemo(() => valenceIssues(doc.molecule), [doc.molecule]);
+
+  // The atoms the rotate handle is placed around: exactly the ones a drag over
+  // the selection would move, so the handle can never appear beside a
+  // selection that has nothing to turn.
+  const handleAtomIds = useMemo(
+    () => movingAtomIds(doc.molecule, selection),
+    [doc.molecule, selection],
+  );
 
   const hovering = hoveredAtomId !== null || hoveredBondId !== null;
   const cursor = isPanning ? "grabbing" : hovering ? "pointer" : "default";
@@ -266,6 +250,9 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
             selection={selection}
             hoveredAtomId={hoveredAtomId}
             hoveredBondId={hoveredBondId}
+            interaction={overlay}
+            issues={issues}
+            handleAtomIds={handleAtomIds}
           />
         </g>
       </svg>
