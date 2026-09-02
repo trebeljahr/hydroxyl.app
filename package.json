@@ -7,7 +7,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "pnpm --filter @starter/client dev",
+    "dev": "pnpm --filter @starter/chem-core run build && pnpm --filter @starter/shared run build && concurrently -n core,shared,client -c blue,magenta,green \"pnpm --filter @starter/chem-core run dev\" \"pnpm --filter @starter/shared run dev\" \"pnpm --filter @starter/client dev\"",
     "build": "pnpm --filter @starter/chem-core run build && pnpm --filter @starter/shared run build && pnpm --filter @starter/client run build",
     "build:client": "pnpm --filter @starter/chem-core run build && pnpm --filter @starter/shared run build && pnpm --filter @starter/client run build",
     "test": "pnpm run test:core && pnpm run test:client",
