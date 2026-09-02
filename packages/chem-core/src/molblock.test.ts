@@ -163,7 +163,7 @@ describe("writeMolblock", () => {
   });
 
   it("asserts the implicit hydrogen count as hhh = count + 1", () => {
-    const lines = writeMolblock(ethanol()).split("\n");
+    const lines = writeMolblock(ethanol(), { hydrogenAssertion: "hhh" }).split("\n");
     // Row 1 is the methyl carbon (3 H), row 3 the hydroxyl oxygen (1 H).
     expect((lines[4] ?? "").slice(42, 45)).toBe("  4");
     expect((lines[6] ?? "").slice(42, 45)).toBe("  2");
@@ -443,13 +443,18 @@ describe('hydrogenAssertion: "valence"', () => {
     expect(elementCounts(readMolblock(text).molecule)).toEqual({ C: 1 });
   });
 
-  it("leaves the default alone", () => {
-    // The default is load-bearing for every other caller and for this
-    // package's own fixtures; adding the option must not have moved it.
+  it("is the default, because hhh is a query field", () => {
+    // `hhh` is defined by the CTfile spec as a QUERY field. RDKit reads it
+    // spec-correctly, so a molfile written with it arrives as a query
+    // molecule carrying no real hydrogens — benzene as C6 rather than C6H6,
+    // silently and with an empty error log. `valence` lets the reader derive
+    // the count, which is what every mainstream toolkit does correctly.
     expect(writeMolblock(pyrrole())).toBe(
+      writeMolblock(pyrrole(), { hydrogenAssertion: "valence" }),
+    );
+    expect(writeMolblock(pyrrole())).not.toBe(
       writeMolblock(pyrrole(), { hydrogenAssertion: "hhh" }),
     );
-    expect(hCol(atomLines(writeMolblock(pyrrole()))[0] ?? "")).toBe("  2");
   });
 });
 

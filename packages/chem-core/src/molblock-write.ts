@@ -116,7 +116,7 @@ export interface MolblockWriteOptions {
   readonly comment?: string | undefined;
   /** Overrides `MOLFILE_BOND_LENGTH`. Model coordinates are multiplied by it. */
   readonly coordinateScale?: number | undefined;
-  /** See `HydrogenAssertion`. Defaults to `"hhh"`. */
+  /** See `HydrogenAssertion`. Defaults to `"valence"`. */
   readonly hydrogenAssertion?: HydrogenAssertion | undefined;
 }
 
@@ -251,7 +251,7 @@ function radicalCode(electrons: number): number {
  */
 export function writeMolblock(mol: Molecule, options: MolblockWriteOptions = {}): string {
   const scale = options.coordinateScale ?? MOLFILE_BOND_LENGTH;
-  const assertion = options.hydrogenAssertion ?? "hhh";
+  const assertion = options.hydrogenAssertion ?? "valence";
 
   // Collected across the whole molecule and reported in one go: a user who
   // abbreviated six groups wants one dialog listing six, not six dialogs.
