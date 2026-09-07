@@ -35,6 +35,7 @@
 import { useState } from "react";
 import type { ReactElement, ReactNode } from "react";
 
+import { normalizeElementInput } from "@starter/chem-core";
 import type { Atom, Bond } from "@starter/chem-core";
 import {
   BOND_ORDER_VALUES,
@@ -158,14 +159,31 @@ function AtomProperties({ atom }: { readonly atom: Atom }): ReactElement {
           defaultValue={atom.element}
           key={`${atom.id}:${atom.element}`}
           onBlur={(event) => {
+            // NORMALISED, not taken as typed. `setElement` writes whatever
+            // string it is handed — the model deliberately types
+            // `ElementSymbol` as `string`, since an editor has to be able to
+            // hold an element the table does not know — so validating is the
+            // caller's job, and an atom silently typed "carbo" would derive no
+            // valence, no mass and no formula. Unrecognised input reverts.
             const raw = event.target.value.trim();
-            if (raw === "" || raw === atom.element) return;
-            // Through the same command the palette and the hotkey buffer use,
-            // so all three normalise "cl" to "Cl" the one way.
-            editorStore.getState().applyMoleculeEdit(
-              `Set element to ${raw}`,
-              (mol) => guardedOps.setElement(mol, atom.id, raw),
-            );
+            const symbol = normalizeElementInput(raw);
+            if (symbol === undefined) {
+              event.target.value = atom.element;
+              editorStore
+                .getState()
+                .setStatusMessage(`"${raw}" is not an element symbol`);
+              return;
+            }
+            if (symbol === atom.element) {
+              // Re-normalised in place, so typing "cl" leaves "Cl" showing.
+              event.target.value = symbol;
+              return;
+            }
+            editorStore
+              .getState()
+              .applyMoleculeEdit(`Set element to ${symbol}`, (mol) =>
+                guardedOps.setElement(mol, atom.id, symbol),
+              );
           }}
         />
       </Field>
