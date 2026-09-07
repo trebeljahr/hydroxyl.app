@@ -223,7 +223,6 @@ describe("the hashed wedge", () => {
   });
 
   it("agrees with `hashBars`, which is the geometry the scene consumes", () => {
-    const mol = hashed();
     const from = { x: 0, y: 0 };
     const to = { x: 30, y: 0 };
     const axis = bondAxis(from, to, undefined, undefined, 1);
@@ -232,7 +231,6 @@ describe("the hashed wedge", () => {
     expect(bars).toHaveLength(11);
     expect(bars[0]!.a.x).toBeCloseTo(0, 9);
     expect(bars[bars.length - 1]!.a.x).toBeCloseTo(30, 9);
-    void mol;
   });
 });
 

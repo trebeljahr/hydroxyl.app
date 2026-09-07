@@ -777,7 +777,6 @@ interface DoubleBondEnd {
 function doubleBondEnd(
   mol: Molecule,
   atomId: AtomId,
-  partner: AtomId,
   doubleBondId: BondId,
 ): DoubleBondEnd | undefined {
   const branches: { atomId: AtomId; bondId: BondId }[] = [];
@@ -790,7 +789,6 @@ function doubleBondEnd(
   }
   const implicitHydrogens = implicitHydrogenCount(mol, atomId);
   if (branches.length + implicitHydrogens !== 2) return undefined;
-  void partner;
   return { atomId, branches, implicitHydrogens };
 }
 
@@ -845,8 +843,8 @@ function computeIsStereogenicBond(mol: Molecule, bondId: BondId): boolean {
   for (const ringIndex of ringsAtBond(mol, bondId)) {
     if (ringSize(mol, ringIndex) <= SMALL_RING_LIMIT) return false;
   }
-  const endA = doubleBondEnd(mol, bond.from, bond.to, bondId);
-  const endB = doubleBondEnd(mol, bond.to, bond.from, bondId);
+  const endA = doubleBondEnd(mol, bond.from, bondId);
+  const endB = doubleBondEnd(mol, bond.to, bondId);
   if (endA === undefined || endB === undefined) return false;
   const choiceA = chooseAtEnd(mol, endA);
   const choiceB = chooseAtEnd(mol, endB);
@@ -893,8 +891,8 @@ function computeDoubleBondDescriptor(
     return { kind: "undetermined", reason: "unspecified" };
   }
 
-  const endA = doubleBondEnd(mol, bond.from, bond.to, bondId);
-  const endB = doubleBondEnd(mol, bond.to, bond.from, bondId);
+  const endA = doubleBondEnd(mol, bond.from, bondId);
+  const endB = doubleBondEnd(mol, bond.to, bondId);
   if (endA === undefined || endB === undefined) return undefined;
   const choiceA = chooseAtEnd(mol, endA);
   const choiceB = chooseAtEnd(mol, endB);
