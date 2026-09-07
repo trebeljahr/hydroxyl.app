@@ -69,9 +69,6 @@ import {
 import type {
   AtomId,
   BondId,
-  BondOrder,
-  BondStereo,
-  ElementSymbol,
   Molecule,
   RingTemplate,
   SproutTarget,

@@ -287,10 +287,15 @@ export function useCanvasGestures(
   const pressRef = useRef<PressTrack | null>(null);
   const spaceRef = useRef(false);
   // Read through a ref for the same reason the handler bag is: the pointerdown
-  // path must see the CURRENT tool, and it is reached from a callback with an
-  // empty dependency list.
+  // path must see the current tool, and it is reached from a callback with an
+  // empty dependency list. Refreshed in an effect rather than during render —
+  // writing a ref while rendering is the one thing the latest-ref pattern must
+  // not do, and a tool change is a click, never a per-frame value, so the one
+  // frame of lag an effect costs cannot be observed.
   const panToolRef = useRef(options.panTool === true);
-  panToolRef.current = options.panTool === true;
+  useEffect(() => {
+    panToolRef.current = options.panTool === true;
+  });
   const [isPanning, setIsPanning] = useState(false);
 
   const endPan = useCallback((svg: SVGSVGElement | null): void => {

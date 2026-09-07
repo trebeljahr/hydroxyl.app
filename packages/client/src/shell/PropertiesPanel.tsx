@@ -32,7 +32,7 @@
  * sketch unopenable.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { ReactElement, ReactNode } from "react";
 
 import type { Atom, Bond } from "@starter/chem-core";
@@ -86,6 +86,12 @@ const inputClass =
  * alone parses as NaN, the field would reject it, and the minus sign would
  * never survive long enough to be followed by a digit. The draft commits on
  * blur and on Enter.
+ *
+ * THE RESET IS DONE DURING RENDER, not in an effect. Syncing a derived draft
+ * with `useEffect(() => setDraft(...), [value])` renders the stale value
+ * first and the fresh one a frame later, which for a field the user may be
+ * typing into is a visible flicker; comparing against the last value seen is
+ * React's own answer for exactly this shape.
  */
 function NumberField({
   label,
@@ -100,21 +106,24 @@ function NumberField({
   readonly allowEmpty?: boolean;
   readonly onCommit: (value: number | undefined) => void;
 }): ReactElement {
-  const [draft, setDraft] = useState(value === undefined ? "" : String(value));
-  useEffect(() => {
-    setDraft(value === undefined ? "" : String(value));
-  }, [value]);
+  const asText = value === undefined ? "" : String(value);
+  const [draft, setDraft] = useState(asText);
+  const [lastSeen, setLastSeen] = useState(value);
+  if (lastSeen !== value) {
+    setLastSeen(value);
+    setDraft(asText);
+  }
 
   const commit = (): void => {
     const trimmed = draft.trim();
     if (trimmed === "") {
       if (allowEmpty === true) onCommit(undefined);
-      else setDraft(value === undefined ? "" : String(value));
+      else setDraft(asText);
       return;
     }
     const parsed = Number(trimmed);
     if (!Number.isFinite(parsed)) {
-      setDraft(value === undefined ? "" : String(value));
+      setDraft(asText);
       return;
     }
     onCommit(Math.trunc(parsed));
