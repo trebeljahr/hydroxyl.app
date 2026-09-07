@@ -4,7 +4,7 @@
 
 services:
   client:
-    image: ${CLIENT_IMAGE:-ghcr.io/trebeljahr/chemistry-sketcher-client:master}
+    image: ${CLIENT_IMAGE:-ghcr.io/trebeljahr/chemistry-sketcher-client:main}
     environment:
       # Pin the client port explicitly so a Coolify app-level PORT cannot
       # bleed into this service. Must stay in step with ENV PORT / EXPOSE

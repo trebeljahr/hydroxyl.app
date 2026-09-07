@@ -11,7 +11,7 @@
 #                      webServer builds and serves the app on 6337; there
 #                      is no database, cache or object store to start.
 #   3. build-client  — build ./Dockerfile, push to GHCR as
-#                      `ghcr.io/<owner>/<repo>-client:master` + `:<sha>`.
+#                      `ghcr.io/<owner>/<repo>-client:main` + `:<sha>`.
 #   4. deploy        — once the image is pushed, tell Coolify to redeploy
 #                      via its API (webhook fallback).
 #
@@ -38,7 +38,7 @@ name: build-and-deploy
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -112,7 +112,7 @@ jobs:
           file: Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}-client:master
+            ghcr.io/${{ github.repository }}-client:main
             ghcr.io/${{ github.repository }}-client:${{ github.sha }}
 
   deploy:
