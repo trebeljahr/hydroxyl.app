@@ -24,6 +24,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { buildMolecule } from "@starter/chem-core";
 import type { Vec2 } from "@starter/chem-core";
 import { SCREEN_STYLE, modelToPx } from "@starter/chem-render";
 
@@ -120,6 +121,34 @@ describe("EditorCanvas — the DOM contract", () => {
         ),
       ).size,
     ).toBe(6);
+  });
+
+  it("badges a wedge drawn on an atom that is not a stereocentre", () => {
+    // The acceptance criterion, end to end: chem-core reports it, the canvas
+    // has to show it. Propan-2-ol's carbinol carbon carries two methyls, so
+    // the wedge asserts a configuration that does not exist — and it renders
+    // perfectly, which is why only a badge catches it.
+    //
+    // Composed in `EditorCanvas` from `valenceIssues` plus `structuralIssues`,
+    // which is the wiring under test: the second list is a sibling of the
+    // first rather than part of it, because stereo perception reads valence.
+    const molecule = buildMolecule((b) => {
+      const c1 = b.atom("C", { x: 0, y: 0 });
+      const c2 = b.atom("C", { x: 0.87, y: 0.5 });
+      const c3 = b.atom("C", { x: 1.73, y: 0 });
+      const oxygen = b.atom("O", { x: 0.87, y: 1.5 });
+      b.bond(c1, c2, 1);
+      b.bond(c2, oxygen, 1, "wedge");
+      b.bond(c2, c3, 1);
+    });
+    editorStore.getState().openDocument({ ...DOC, molecule });
+    render(<EditorCanvas />);
+
+    const badge = document.querySelector('[data-overlay="valence-issue"]');
+    expect(badge).not.toBeNull();
+    // Badged on the narrow end, which is where the wedge makes its claim.
+    expect(badge?.getAttribute("data-overlay-target")).toBe("a2");
+    expect(badge?.querySelector("title")?.textContent).toContain("stereocentre");
   });
 
   it("paints through the viewport's own affine map, not a second one", () => {

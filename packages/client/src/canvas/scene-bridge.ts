@@ -14,7 +14,8 @@
  *                 | { kind: TextViewKind }
  *                 flags   = showCarbonLabels, showImplicitHydrogens,
  *                           showLonePairs, showCharges, showStereoBonds,
- *                           showAtomIndices
+ *                           showAtomIndices, aromaticCircles,
+ *                           showStereoDescriptors
  *
  * That is not an oversight to be tidied away by making one import the other.
  * The document's version is the PERSISTED TRUTH: it is what a saved file
@@ -26,24 +27,17 @@
  * honour it — without that being a file-format change. Translating between
  * them is a real, lossy step, and this is where it happens once.
  *
- * `showCarbonLabels`, `aromaticCircles` and `showLonePairs` exist on both
- * sides and are mapped; everything else in `DisplayFlags` comes from
- * chem-render's per-kind defaults via the `representation(kind, partialFlags)`
- * factory, which layers over `DEFAULT_FLAGS_BY_KIND`.
+ * ALL FOUR of the document's display fields are now mapped; everything else in
+ * `DisplayFlags` comes from chem-render's per-kind defaults via the
+ * `representation(kind, partialFlags)` factory, which layers over
+ * `DEFAULT_FLAGS_BY_KIND`.
  *
  * `aromaticCircles` was dropped here until `chem-render-bond-geometry` gave
- * the renderer a circle to draw. It is mapped now, and it cost exactly the one
- * line this header predicted.
- *
- * DROPPED, deliberately, because chem-render still has no counterpart:
- *
- *   - `showStereoDescriptors` — the R/S and E/Z letters set beside a centre.
- *     `DisplayFlags.showStereoBonds` is a different thing entirely: wedges are
- *     geometry, descriptors are computed annotations. It belongs to
- *     `stereochemistry-perception-and-marks`, at which point it becomes one
- *     more line below and nothing else moves. Until then, setting it in the
- *     document is silently a no-op on screen, which is a truthful "not
- *     implemented yet" rather than a wrong picture.
+ * the renderer a circle to draw, and `showStereoDescriptors` until
+ * `stereochemistry-perception-and-marks` gave it a letter to set. Each cost
+ * exactly the one line this header predicted, and nothing else moved. Nothing
+ * is dropped any more — a flag the renderer cannot honour would be a toggle
+ * that lights up and does nothing, which is worse than a missing toggle.
  *
  * The two `Representation` types are imported under explicit aliases below.
  * A bare import of both is a collision waiting for whoever edits this file
@@ -129,6 +123,7 @@ export function toRenderRepresentation(
     showCarbonLabels: display.showCarbonLabels,
     showLonePairs: display.showLonePairs,
     aromaticCircles: display.aromaticCircles,
+    showStereoDescriptors: display.showStereoDescriptors,
   });
 }
 

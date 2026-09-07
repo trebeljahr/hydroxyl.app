@@ -108,19 +108,17 @@ describe("toRenderRepresentation", () => {
     expect(Object.keys(rendered)).toEqual(["kind"]);
   });
 
-  it("carries aromaticCircles across and still drops showStereoDescriptors", () => {
-    // `aromaticCircles` used to be dropped here because nothing drew a circle.
-    // `chem-render-bond-geometry` gave the renderer one, so it is mapped now,
-    // and it cost the one line the header predicted.
-    //
-    // `showStereoDescriptors` stays dropped: the R/S and E/Z letters are a
-    // different thing from `showStereoBonds`, and they belong to
-    // `stereochemistry-perception-and-marks`. Setting it in the document is a
-    // truthful "not implemented yet" rather than a wrong picture, and when
-    // that pass lands this test is the one that has to change again.
+  it("carries every one of the document's four display fields across", () => {
+    // Both of the fields this bridge used to drop are mapped now, each on the
+    // pass that gave the renderer something to draw: `aromaticCircles` when
+    // there was a circle, `showStereoDescriptors` when there was a letter.
+    // Nothing is dropped any more, which is what the sorted key list below is
+    // really asserting — a document field with no renderer counterpart is a
+    // toggle that lights up and does nothing.
     const rendered = toRenderRepresentation(allDisplayOn("kekule"));
     if (!isStructural(rendered)) throw new Error("kekule must be structural");
     expect(rendered.flags.aromaticCircles).toBe(true);
+    expect(rendered.flags.showStereoDescriptors).toBe(true);
     expect(Object.keys(rendered.flags).sort()).toEqual([
       "aromaticCircles",
       "showAtomIndices",
@@ -129,8 +127,8 @@ describe("toRenderRepresentation", () => {
       "showImplicitHydrogens",
       "showLonePairs",
       "showStereoBonds",
+      "showStereoDescriptors",
     ]);
-    expect(Object.hasOwn(rendered.flags, "showStereoDescriptors")).toBe(false);
   });
 });
 

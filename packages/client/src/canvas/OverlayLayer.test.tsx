@@ -331,6 +331,25 @@ describe("OverlayLayer — gesture marks", () => {
     expect(badge.querySelector("title")?.textContent).toContain("at most 4");
   });
 
+  it("badges two issues on one atom rather than dropping the second", () => {
+    // An atom can carry a valence error and a structural one at once — a wedge
+    // on an over-valent carbon is one edit away — and the two arrive as one
+    // concatenated list from `EditorCanvas`. Keyed on the atom id alone, React
+    // renders the first and silently discards the second.
+    const container = renderGesture({
+      issues: [
+        { atomId: "a1", severity: "error", message: "C has 5 bonds but allows at most 4" },
+        {
+          atomId: "a1",
+          severity: "warning",
+          message: "a wedge bond starts at an atom that is not a stereocentre",
+        },
+      ],
+    });
+    const badges = container.querySelectorAll('[data-overlay="valence-issue"]');
+    expect(badges).toHaveLength(2);
+  });
+
   it("places the rotate handle above the atoms it turns, and only when there are some", () => {
     const none = renderGesture({ handleAtomIds: [] });
     expect(none.querySelector('[data-overlay="rotate-handle"]')).toBeNull();

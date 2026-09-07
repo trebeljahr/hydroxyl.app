@@ -46,7 +46,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type { ReactElement } from "react";
-import { valenceIssues } from "@starter/chem-core";
+import { structuralIssues, valenceIssues } from "@starter/chem-core";
 
 import { movingAtomIds, useCanvasInteraction } from "@/editor/interaction";
 import { editorStore, useEditorStore } from "@/state";
@@ -215,7 +215,17 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
   // status bar arrives later, since neither call would hit a cache: the
   // WeakMaps chem-core memoises on are keyed on the Molecule instance and a
   // per-move commit mints a new one every frame.
-  const issues = useMemo(() => valenceIssues(doc.molecule), [doc.molecule]);
+  //
+  // Both families, composed HERE rather than inside chem-core: `stereo.ts`
+  // needs `implicitHydrogenCount` to count substituents, so folding its check
+  // into `valenceIssues` would make valence.ts import a module that imports
+  // valence.ts. Structural perception is lazy and only looks at the ends of a
+  // wedge, so a structure with no stereo marks adds one pass over the bond
+  // list and no CIP work at all.
+  const issues = useMemo(
+    () => [...valenceIssues(doc.molecule), ...structuralIssues(doc.molecule)],
+    [doc.molecule],
+  );
 
   // The atoms the rotate handle is placed around: exactly the ones a drag over
   // the selection would move, so the handle can never appear beside a

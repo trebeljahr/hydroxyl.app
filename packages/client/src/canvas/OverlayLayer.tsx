@@ -150,7 +150,7 @@ export function OverlayLayer({
         The gesture marks, drawn last so they sit over both. A drag is the
         most recent statement of intent on the canvas and has to win.
       */}
-      {(issues ?? []).map((issue) => valenceBadge(index, issue))}
+      {(issues ?? []).map((issue, at) => valenceBadge(index, issue, at))}
       {handle === undefined || interaction?.marquee != null
         ? null
         : rotateHandle(handle)}
@@ -319,13 +319,21 @@ function pivotMark(
  * mark is offset up and to the right so it clears both the atom's own label
  * and any selection halo around it.
  */
-function valenceBadge(index: SceneIndex, issue: ValenceIssue): ReactElement | null {
+function valenceBadge(
+  index: SceneIndex,
+  issue: ValenceIssue,
+  at: number,
+): ReactElement | null {
   const centre = index.atomCentre(issue.atomId);
   if (centre === undefined || !isFinitePoint(centre)) return null;
   const reach = Math.max(index.atomRadiusPx(issue.atomId), MIN_ATOM_HALO_RADIUS_PX);
   return (
     <circle
-      key={`valence:${issue.atomId}`}
+      // The position in the list, not the atom id alone: an atom can carry
+      // both a valence error and a structural one — a wedge on an over-valent
+      // carbon is one edit away — and two badges under one key make React drop
+      // the second silently.
+      key={`issue:${at}:${issue.atomId}`}
       data-overlay="valence-issue"
       data-overlay-target={issue.atomId}
       cx={centre.x + reach + BADGE_OFFSET_PX * 0.5}
