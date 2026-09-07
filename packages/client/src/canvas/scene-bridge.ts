@@ -143,7 +143,7 @@ export function toRenderRepresentation(
  * editor canvas is for drawing structures — defaulting to the text panel would
  * put "C6H6" where the molecule should be, with nothing to click.
  */
-function panelToDraw(doc: SketchDocument, panelId?: PanelId): Panel | undefined {
+export function panelToDraw(doc: SketchDocument, panelId?: PanelId): Panel | undefined {
   if (panelId !== undefined) {
     const named = doc.panels.find((panel) => panel.id === panelId);
     if (named !== undefined) return named;

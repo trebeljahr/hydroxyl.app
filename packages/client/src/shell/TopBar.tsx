@@ -1,0 +1,156 @@
+"use client";
+
+/**
+ * The top bar: the document's name, the handful of commands worth a permanent
+ * button, and the theme switch.
+ *
+ * EVERY BUTTON HERE IS A REGISTRY ENTRY. Undo, redo and Clean up structure are
+ * `commandById(...)`, so their disabled state is the same `enabled(state)` the
+ * palette greys on and their behaviour is the same `run` the shortcut fires.
+ * The title field is the one control that is not — a text input is not a
+ * command — and it is also the reason the keyboard layer's text-entry guard
+ * exists: typing "Benzene-1,2-diol" into it must not switch tools eight times.
+ */
+
+import type { ReactElement } from "react";
+import {
+  CommandIcon,
+  MoonIcon,
+  Redo2Icon,
+  SparklesIcon,
+  SunIcon,
+  Undo2Icon,
+} from "lucide-react";
+
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { commandById, formatShortcut } from "@/editor/commands/registry";
+import { cn } from "@/lib/utils";
+import { editorStore, useEditorStore } from "@/state";
+
+import { useTheme } from "./theme";
+
+function isApplePlatform(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent);
+}
+
+function CommandButton({
+  id,
+  label,
+  children,
+}: {
+  readonly id: string;
+  readonly label?: string;
+  readonly children: ReactElement;
+}): ReactElement {
+  const command = commandById(id);
+  // Subscribed through a selector that returns a boolean, so the button
+  // re-renders when its availability changes and not on every pointer frame.
+  const enabled = useEditorStore((state) => command.enabled(state));
+  const title = label ?? command.title;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          data-command={id}
+          disabled={!enabled}
+          onClick={() => {
+            void command.run(editorStore);
+          }}
+          className={cn(
+            "flex h-8 items-center gap-1.5 rounded-md px-2 text-xs",
+            "focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-2",
+            enabled
+              ? "hover:bg-accent hover:text-accent-foreground"
+              : "cursor-not-allowed opacity-40",
+          )}
+        >
+          {children}
+          <span className="sr-only">{title}</span>
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        <span className="font-medium">{title}</span>
+        {command.shortcut === undefined ? null : (
+          <span className="ml-2 font-mono opacity-70">
+            {formatShortcut(command.shortcut, isApplePlatform())}
+          </span>
+        )}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+export function TopBar(): ReactElement {
+  const title = useEditorStore((state) => state.document.metadata.title);
+  const { theme, toggleTheme } = useTheme();
+
+  return (
+    <header
+      data-shell="top-bar"
+      className="bg-background flex h-11 shrink-0 items-center gap-2 border-b px-3"
+    >
+      <input
+        aria-label="Document title"
+        data-shell="document-title"
+        value={title}
+        onChange={(event) =>
+          editorStore.getState().setDocumentTitle(event.target.value)
+        }
+        className="focus:ring-ring h-8 w-64 rounded-md border border-transparent bg-transparent px-2 text-sm font-medium focus:outline-none focus:ring-2"
+      />
+
+      <div className="ml-2 flex items-center gap-0.5">
+        <CommandButton id="edit.undo">
+          <Undo2Icon className="size-4" />
+        </CommandButton>
+        <CommandButton id="edit.redo">
+          <Redo2Icon className="size-4" />
+        </CommandButton>
+      </div>
+
+      <div className="ml-auto flex items-center gap-1">
+        <CommandButton id="structure.clean-up">
+          <>
+            <SparklesIcon className="size-4" />
+            <span aria-hidden="true">Clean up</span>
+          </>
+        </CommandButton>
+        <CommandButton id="view.command-palette">
+          <>
+            <CommandIcon className="size-4" />
+            <span aria-hidden="true">Commands</span>
+          </>
+        </CommandButton>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              data-shell="theme-toggle"
+              aria-pressed={theme === "dark"}
+              onClick={toggleTheme}
+              className="hover:bg-accent focus-visible:ring-ring flex size-8 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2"
+            >
+              {theme === "dark" ? (
+                <SunIcon className="size-4" />
+              ) : (
+                <MoonIcon className="size-4" />
+              )}
+              <span className="sr-only">
+                {theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+              </span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            {theme === "dark" ? "Light theme" : "Dark theme"}
+          </TooltipContent>
+        </Tooltip>
+      </div>
+    </header>
+  );
+}

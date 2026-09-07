@@ -25,10 +25,17 @@
  *   `pickAt` returns chem-core's hit type unchanged, on purpose, so that the
  *   editing tasks that come next consume the same value chem-core's own tests
  *   assert on.
- * - The internal helpers of each file. `panelToDraw`, the primitive bucketing
- *   in metrics.ts and the finite-vector guards are implementation detail; a
- *   caller reaching for one of them is a sign the public surface is missing
- *   something, and that is worth noticing rather than routing around.
+ * - The internal helpers of each file: the primitive bucketing in metrics.ts
+ *   and the finite-vector guards are implementation detail; a caller reaching
+ *   for one of them is a sign the public surface is missing something, and
+ *   that is worth noticing rather than routing around.
+ *
+ * `panelToDraw` USED to be on that list and is now exported, because the
+ * command registry has to toggle `aromaticCircles` on the SAME panel the
+ * canvas draws. The alternative — hardcoding `"panel-skeletal"` at the call
+ * site — would silently target nothing in a document whose panels were
+ * reordered or renamed, and would be a second answer to a question this file
+ * already answers.
  */
 
 export * from "./scene-bridge";

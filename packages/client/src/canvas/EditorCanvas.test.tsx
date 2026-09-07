@@ -17,11 +17,17 @@
  * one thing this harness cannot prove is that the element's measured size and
  * the store's agree — that is the e2e spec's job.
  *
- * NOTHING HERE MAY MUTATE THE MOLECULE. This task is view-only, and the last
- * test in the file is the one that says so.
+ * NOTHING HERE MAY MUTATE THE MOLECULE outside the editing block at the
+ * bottom, and the last test in the file is the one that says so.
+ *
+ * THE FIT / RESET / ZOOM CHROME MOVED to the status bar when the shell landed,
+ * so the tests that drove it moved with it — `shell/StatusBar.test.tsx` keeps
+ * every one of their assertions, including the two that are really about this
+ * component (that Fit re-frames to the same viewport the canvas fits on mount,
+ * and that repeating it does not shrink the figure).
  */
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { buildMolecule } from "@starter/chem-core";
@@ -393,42 +399,43 @@ describe("EditorCanvas — hover", () => {
   });
 });
 
-describe("EditorCanvas — viewport chrome", () => {
-  it("re-frames the molecule when Fit is pressed after a pan", () => {
+describe("EditorCanvas — keyboard focus", () => {
+  it("is one tab stop for the whole drawing, not one per atom", () => {
+    // A tab stop per atom would put twenty stops between the tool rail and
+    // the properties panel in a fused tetracycle. The arrow keys rove from
+    // the single stop instead.
     render(<EditorCanvas />);
-    const fitted = editorStore.getState().viewport;
-
-    editorStore.getState().panBy({ x: 250, y: -120 });
-    expect(editorStore.getState().viewport.pan).not.toEqual(fitted.pan);
-
-    fireEvent.click(screen.getByRole("button", { name: "Fit" }));
-    expect(editorStore.getState().viewport.pan.x).toBeCloseTo(fitted.pan.x, 9);
-    expect(editorStore.getState().viewport.pan.y).toBeCloseTo(fitted.pan.y, 9);
-    expect(editorStore.getState().viewport.zoom).toBeCloseTo(fitted.zoom, 9);
+    expect(canvasRoot().getAttribute("tabindex")).toBe("0");
+    expect(canvasRoot().getAttribute("role")).toBe("application");
+    expect(canvasRoot().querySelectorAll("[tabindex]")).toHaveLength(0);
   });
 
-  it("keeps the fit stable however many times it is applied", () => {
-    // The margin lives inside `scene.bounds`, and the canvas asks `zoomToFit`
-    // for a ZERO fractional margin because of it. A second margin applied per
-    // press would shrink the figure a little on every click of Fit.
+  it("seeds the roving focus on the first atom when the canvas is focused", () => {
     render(<EditorCanvas />);
-    const first = editorStore.getState().viewport.zoom;
-    for (let i = 0; i < 3; i++) {
-      fireEvent.click(screen.getByRole("button", { name: "Fit" }));
-    }
-    expect(editorStore.getState().viewport.zoom).toBeCloseTo(first, 9);
+    expect(editorStore.getState().ui.focusedAtomId).toBeNull();
+    fireEvent.focus(canvasRoot());
+    expect(editorStore.getState().ui.focusedAtomId).toBe(MOL.atomIds[0]);
+    expect(
+      document.querySelector('[data-overlay="focus-atom"]')?.getAttribute(
+        "data-overlay-target",
+      ),
+    ).toBe(MOL.atomIds[0]);
   });
 
-  it("reports the zoom as a percentage", () => {
+  it("keeps a focus the user already moved, rather than resetting it on refocus", () => {
     render(<EditorCanvas />);
-    const zoom = editorStore.getState().viewport.zoom;
-    expect(screen.getByText(`${String(Math.round(zoom * 100))}%`)).toBeInTheDocument();
+    editorStore.getState().setFocusedAtom("a4");
+    fireEvent.focus(canvasRoot());
+    expect(editorStore.getState().ui.focusedAtomId).toBe("a4");
   });
 
-  it("puts its chrome outside the <svg>, so the canvas root stays the only pointer target", () => {
+  it("announces the focused atom in a live region", () => {
     render(<EditorCanvas />);
-    const fit = screen.getByRole("button", { name: "Fit" });
-    expect(canvasRoot().contains(fit)).toBe(false);
+    editorStore.getState().setFocusedAtom("a1");
+    const status = document.getElementById("canvas-focus-status");
+    expect(status?.getAttribute("aria-live")).toBe("polite");
+    expect(status?.textContent).toContain("C");
+    expect(status?.textContent).toContain("bonds");
   });
 });
 

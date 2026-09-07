@@ -48,6 +48,16 @@ export interface OverlayLayerProps {
   readonly issues?: readonly ValenceIssue[] | undefined;
   /** Atoms the rotate handle should be placed around; empty for none. */
   readonly handleAtomIds?: readonly AtomId[] | undefined;
+  /**
+   * The atom the canvas's roving keyboard focus is on.
+   *
+   * A THIRD mark, distinct from hover and selection, because it answers a
+   * third question — "where is the keyboard" — and the three are routinely on
+   * three different atoms at once. Drawn as a dashed ring so it is
+   * distinguishable from the solid selection ring without colour, which is
+   * the point of a focus indicator.
+   */
+  readonly focusedAtomId?: AtomId | null | undefined;
 }
 
 /**
@@ -107,6 +117,9 @@ const ACCEPT_COLOR = "#16a34a";
 const REFUSE_COLOR = "#dc2626";
 const GHOST_COLOR = "#2563eb";
 const BADGE_COLOR = "#d97706";
+const FOCUS_COLOR = "#7c3aed";
+/** Clear of the selection ring so both are legible on the same atom. */
+const FOCUS_RING_PAD_PX = 5;
 const GHOST_WIDTH_PX = 2;
 const MARQUEE_WIDTH_PX = 1;
 const TARGET_RADIUS_PX = 14;
@@ -121,6 +134,7 @@ export function OverlayLayer({
   interaction,
   issues,
   handleAtomIds,
+  focusedAtomId,
 }: OverlayLayerProps): ReactElement {
   const style = index.scene.style;
   const handle =
@@ -150,6 +164,7 @@ export function OverlayLayer({
         The gesture marks, drawn last so they sit over both. A drag is the
         most recent statement of intent on the canvas and has to win.
       */}
+      {focusedAtomId == null ? null : focusRing(index, focusedAtomId)}
       {(issues ?? []).map((issue, at) => valenceBadge(index, issue, at))}
       {handle === undefined || interaction?.marquee != null
         ? null
@@ -389,6 +404,37 @@ function atomHalo(
       stroke={hovered ? HOVER_COLOR : SELECTED_COLOR}
       strokeWidth={hovered ? 1.5 : 2.5}
       strokeOpacity={hovered ? 0.55 : 1}
+    />
+  );
+}
+
+/**
+ * The keyboard focus ring.
+ *
+ * Outside the selection halo rather than instead of it: an atom can be
+ * focused, selected and hovered at once, and a focus indicator that replaced
+ * one of the other two would make the keyboard user lose track of what an
+ * edit is about to act on.
+ */
+function focusRing(index: SceneIndex, id: AtomId): ReactElement | null {
+  const centre = index.atomCentre(id);
+  if (centre === undefined || !isFinitePoint(centre)) return null;
+  const radius =
+    Math.max(index.atomRadiusPx(id), MIN_ATOM_HALO_RADIUS_PX) +
+    ATOM_HALO_PAD_PX +
+    FOCUS_RING_PAD_PX;
+  return (
+    <circle
+      key={`focus-atom:${id}`}
+      data-overlay="focus-atom"
+      data-overlay-target={id}
+      cx={centre.x}
+      cy={centre.y}
+      r={radius}
+      fill="none"
+      stroke={FOCUS_COLOR}
+      strokeWidth={2}
+      strokeDasharray="4 3"
     />
   );
 }

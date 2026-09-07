@@ -22,7 +22,11 @@
  * them, which for an undone document is when history drops it.
  */
 
-import { massSummary, valenceIssues } from "@starter/chem-core";
+import {
+  massSummary,
+  structuralIssues,
+  valenceIssues,
+} from "@starter/chem-core";
 import type { MassSummary, Molecule, ValenceIssue } from "@starter/chem-core";
 
 const massCache = new WeakMap<Molecule, MassSummary>();
@@ -45,7 +49,15 @@ export function moleculeMass(mol: Molecule): MassSummary {
 export function moleculeIssues(mol: Molecule): readonly ValenceIssue[] {
   const cached = issueCache.get(mol);
   if (cached !== undefined) return cached;
-  const computed: readonly ValenceIssue[] = valenceIssues(mol);
+  // Both families. `stereo.ts` needs implicitHydrogenCount to count
+  // substituents, so folding its check into valenceIssues would make
+  // valence.ts import a module that imports valence.ts. Composed here
+  // instead, and cached together so the badges and the status-bar count
+  // are one walk rather than two.
+  const computed: readonly ValenceIssue[] = [
+    ...valenceIssues(mol),
+    ...structuralIssues(mol),
+  ];
   issueCache.set(mol, computed);
   return computed;
 }

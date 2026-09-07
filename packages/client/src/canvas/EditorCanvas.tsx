@@ -46,12 +46,13 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type { ReactElement } from "react";
-import { structuralIssues, valenceIssues } from "@starter/chem-core";
-
+import { moleculeIssues } from "@/editor/derived";
 import { movingAtomIds, useCanvasInteraction } from "@/editor/interaction";
+import { toolDef } from "@/editor/tools";
+import { describeAtom } from "@/editor/traversal";
 import { editorStore, useEditorStore } from "@/state";
 
-import { buildDocumentScene } from "./scene-bridge";
+import { buildDocumentScene, renderStyleFor } from "./scene-bridge";
 import { createSceneIndex, fitBounds } from "./metrics";
 import { type PickContext } from "./pick";
 import { SceneLayer } from "./SceneLayer";
@@ -94,6 +95,8 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
   const viewport = useEditorStore((state) => state.viewport);
   const hoveredAtomId = useEditorStore((state) => state.ui.hoveredAtomId);
   const hoveredBondId = useEditorStore((state) => state.ui.hoveredBondId);
+  const focusedAtomId = useEditorStore((state) => state.ui.focusedAtomId);
+  const tool = useEditorStore((state) => state.tool);
 
   // Reference identity is MEANINGFUL here, which is what makes this memo real
   // rather than decorative: the document slice assigns a new `SketchDocument`
@@ -167,7 +170,9 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
     [interactionHandlers, handleZoom, handlePan, handleResize],
   );
 
-  const { isPanning, rootHandlers } = useCanvasGestures(svgRef, gestureHandlers);
+  const { isPanning, rootHandlers } = useCanvasGestures(svgRef, gestureHandlers, {
+    panTool: tool === "pan",
+  });
 
   const fitToScene = useCallback(() => {
     // The literal 0 is the FRACTIONAL margin and it is deliberate.
@@ -210,22 +215,16 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
     `translate(${svgNumber(-viewport.pan.x)}, ${svgNumber(-viewport.pan.y)})`;
 
   // Recomputed per document, which during a drag is per frame. Measured at
-  // 0.18 ms for a 300-heavy-atom structure — a tenth of the frame budget — and
-  // computed ONCE here rather than separately by the overlay and by whatever
-  // status bar arrives later, since neither call would hit a cache: the
-  // WeakMaps chem-core memoises on are keyed on the Molecule instance and a
-  // per-move commit mints a new one every frame.
+  // 0.18 ms for a 300-heavy-atom structure — a tenth of the frame budget.
   //
-  // Both families, composed HERE rather than inside chem-core: `stereo.ts`
-  // needs `implicitHydrogenCount` to count substituents, so folding its check
-  // into `valenceIssues` would make valence.ts import a module that imports
-  // valence.ts. Structural perception is lazy and only looks at the ends of a
-  // wedge, so a structure with no stereo marks adds one pass over the bond
-  // list and no CIP work at all.
-  const issues = useMemo(
-    () => [...valenceIssues(doc.molecule), ...structuralIssues(doc.molecule)],
-    [doc.molecule],
-  );
+  // Through `moleculeIssues` rather than chem-core directly, so these badges
+  // and the status bar's count are ONE walk of the molecule. It composes both
+  // families: valence errors and the structural ones stereo perception finds
+  // (a wedge on a non-stereocentre, a wedge drawn backwards). The shared cache
+  // does not help mid-drag — a per-move commit mints a new Molecule every
+  // frame and every frame misses — but it makes every re-render that changed
+  // nothing chemical free, which is most of them.
+  const issues = useMemo(() => moleculeIssues(doc.molecule), [doc.molecule]);
 
   // The atoms the rotate handle is placed around: exactly the ones a drag over
   // the selection would move, so the handle can never appear beside a
@@ -236,21 +235,67 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
   );
 
   const hovering = hoveredAtomId !== null || hoveredBondId !== null;
-  const cursor = isPanning ? "grabbing" : hovering ? "pointer" : "default";
+  // The TOOL owns the resting cursor, and the transient states win over it: a
+  // pan in progress is `grabbing` whatever tool is held, and something under
+  // the pointer is `pointer` unless the tool has said otherwise. The tool
+  // cursor is what tells a user holding the eraser that the next click
+  // deletes, before they find out by deleting.
+  const toolCursor = toolDef(tool).cursor;
+  const cursor = isPanning
+    ? "grabbing"
+    : hovering && toolCursor === "default"
+      ? "pointer"
+      : toolCursor;
 
-  const zoomPercent = Math.round(viewport.zoom * 100);
+  // THE CANVAS PAINTS ITS OWN GROUND, and it is the render style's, not a
+  // Tailwind class. `SCREEN_STYLE` draws near-black bonds on white; a dark UI
+  // theme with a transparent canvas would leave the structure invisible, and a
+  // hardcoded `bg-white` would be a second place that knows what a figure's
+  // background is. `PUBLICATION_STYLE` deliberately declares none — a figure
+  // exported for a journal has no background rect — so the `??` is what keeps
+  // the EDITOR usable under that preset without inventing one for the export.
+  const ground = renderStyleFor(doc).colors.background ?? "#ffffff";
+
+  // Focus has to land SOMEWHERE, or the first arrow press has nothing to move
+  // from and the canvas is a tab stop that does nothing. Seeding only when the
+  // held id is stale keeps a Tab away and back from resetting the traversal.
+  const handleFocus = useCallback(() => {
+    const state = editorStore.getState();
+    const mol = state.document.molecule;
+    const held = state.ui.focusedAtomId;
+    if (held !== null && Object.hasOwn(mol.atoms, held)) return;
+    state.setFocusedAtom(mol.atomIds[0] ?? null);
+  }, []);
 
   return (
-    <div className={`relative h-full w-full ${props.className ?? ""}`}>
+    <div
+      className={`relative h-full w-full ${props.className ?? ""}`}
+      style={{ background: ground }}
+    >
       <svg
         data-canvas-root="true"
         ref={svgRef}
         width="100%"
         height="100%"
+        /*
+          ONE TAB STOP FOR THE WHOLE DRAWING, with the arrow keys roving
+          between atoms from there. A tab stop per atom is the obvious
+          alternative and it is unusable: a fused tetracycle would put twenty
+          stops between the tool rail and the properties panel. `application`
+          rather than `img` or `group` because the arrow keys do something
+          here, and a screen reader in browse mode would otherwise intercept
+          them before the editor saw one.
+        */
+        tabIndex={0}
+        role="application"
+        aria-label="Structure canvas"
+        aria-describedby="canvas-focus-status"
+        onFocus={handleFocus}
         // `touchAction: none` so a one-finger drag pans the canvas instead of
         // scrolling the page — without it the browser claims the gesture
         // before the first pointermove reaches us.
-        style={{ touchAction: "none", cursor }}
+        style={{ touchAction: "none", cursor, outline: "none" }}
+        className="focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-inset"
         {...rootHandlers}
       >
         <g transform={transform}>
@@ -263,36 +308,28 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
             interaction={overlay}
             issues={issues}
             handleAtomIds={handleAtomIds}
+            focusedAtomId={focusedAtomId}
           />
         </g>
       </svg>
 
       {/*
-        The minimum chrome a pannable canvas needs to be recoverable: a way
-        back to the molecule and a statement of where you are. Deliberately NOT
-        a toolbar — there are no editing tools in this task, and a strip that
-        grew buttons for them here would have to be torn out when the real one
-        arrives. It sits outside the `<svg>` so the canvas root stays the only
-        element carrying pointer handlers.
+        WHAT A SCREEN READER HEARS when the arrow keys walk the structure.
+        `aria-live` rather than a label on the `<svg>`: the canvas's name does
+        not change as focus moves, the position does, and re-labelling the
+        widget on every arrow press is what makes some readers announce the
+        role again each time. Visually hidden rather than absent — sighted
+        users have the dashed focus ring.
       */}
-      <div className="text-muted-foreground bg-background/80 absolute bottom-3 right-3 flex items-center gap-1 rounded-md border p-1 text-xs backdrop-blur">
-        <button
-          type="button"
-          onClick={fitToScene}
-          className="hover:bg-muted rounded px-2 py-1"
-        >
-          Fit
-        </button>
-        <button
-          type="button"
-          onClick={() => editorStore.getState().resetViewport()}
-          className="hover:bg-muted rounded px-2 py-1"
-        >
-          Reset
-        </button>
-        <span className="w-12 text-right font-mono tabular-nums">
-          {zoomPercent}%
-        </span>
+      <div
+        id="canvas-focus-status"
+        role="status"
+        aria-live="polite"
+        className="sr-only"
+      >
+        {focusedAtomId === null
+          ? ""
+          : describeAtom(doc.molecule, focusedAtomId)}
       </div>
     </div>
   );
