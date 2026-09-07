@@ -123,7 +123,7 @@ function PaletteList(): ReactElement {
                 key={command.id}
                 value={command.title}
                 keywords={[...command.keywords]}
-                data-command={command.id}
+                data-palette-command={command.id}
                 disabled={!enabled}
                 onSelect={() => {
                   if (!enabled) return;

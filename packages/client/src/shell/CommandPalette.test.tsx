@@ -35,8 +35,13 @@ function open(): void {
   });
 }
 
+/**
+ * `data-palette-command`, NOT `data-command`: the top bar's buttons carry
+ * `data-command` too, and a selector that matched both would report the
+ * palette as populated while it was shut.
+ */
 function items(): HTMLElement[] {
-  return [...document.querySelectorAll("[data-command]")] as HTMLElement[];
+  return [...document.querySelectorAll("[data-palette-command]")] as HTMLElement[];
 }
 
 describe("CommandPalette", () => {
@@ -47,14 +52,14 @@ describe("CommandPalette", () => {
 
   it("lists ONLY registry commands, and every unhidden one", () => {
     open();
-    const shown = items().map((node) => node.getAttribute("data-command"));
+    const shown = items().map((node) => node.getAttribute("data-palette-command"));
     const expected = COMMANDS.filter((c) => c.hidden !== true).map((c) => c.id);
     expect([...shown].sort()).toEqual([...expected].sort());
   });
 
   it("shows every tool from the rail, from the same registry", () => {
     open();
-    const shown = new Set(items().map((node) => node.getAttribute("data-command")));
+    const shown = new Set(items().map((node) => node.getAttribute("data-palette-command")));
     for (const command of COMMANDS.filter((c) => c.group === "tool")) {
       expect(shown.has(command.id), command.id).toBe(true);
     }
@@ -65,14 +70,14 @@ describe("CommandPalette", () => {
     // command exists and is unavailable; no result at all reads as a missing
     // feature.
     open();
-    const paste = document.querySelector('[data-command="edit.paste"]');
+    const paste = document.querySelector('[data-palette-command="edit.paste"]');
     expect(paste).not.toBeNull();
     expect(paste?.getAttribute("data-disabled")).toBe("true");
   });
 
   it("runs a command and closes itself", () => {
     open();
-    const ring = document.querySelector('[data-command="tool.ring"]');
+    const ring = document.querySelector('[data-palette-command="tool.ring"]');
     expect(ring).not.toBeNull();
     act(() => {
       fireEvent.click(ring!);
@@ -89,7 +94,7 @@ describe("CommandPalette", () => {
 
   it("shows a shortcut beside the commands that have one", () => {
     open();
-    const undo = document.querySelector('[data-command="edit.undo"]');
+    const undo = document.querySelector('[data-palette-command="edit.undo"]');
     expect(undo?.textContent).toContain("Undo");
     expect(undo?.textContent).toMatch(/Z/);
   });

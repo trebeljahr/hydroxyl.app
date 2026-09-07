@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { rdkitAssetBase } from "./asset-base.js";
+import { rdkitAssetBase } from "./asset-base";
 
 /**
  * The one piece of URL cleverness in the bridge, and the one that fails

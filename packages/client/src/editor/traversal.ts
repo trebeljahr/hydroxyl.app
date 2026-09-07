@@ -5,19 +5,27 @@
  * against real molecules rather than through a rendered canvas that jsdom
  * gives no layout to.
  *
- * ── TWO RULES, AND THE SECOND ONE IS THE ACCEPTANCE CRITERION ──────────────
+ * ── TWO MODES, BECAUSE ONE KEY CANNOT HONOUR BOTH REQUIREMENTS ────────────
  *
- * 1. AN ARROW FOLLOWS A BOND. From the focused atom, the neighbour whose
- *    bearing is closest to the arrow's is the answer — that is what "move
- *    atom-to-atom along bonds" means, and it makes the traversal match the
- *    picture rather than the id order.
+ * "Arrow keys move focus atom-to-atom ALONG BONDS" and "keyboard traversal
+ * REACHES EVERY ATOM" are both required, and no single rule delivers both.
+ * Following bonds means the walk is a walk on the graph, and a graph walk
+ * driven by one direction gets stuck: on a hexagon, pressing Right from the
+ * bottom vertex takes the bond to the lower-right vertex, from which no bond
+ * points right — so the fallback steps back to the bottom vertex and the two
+ * trade the focus forever. Two of the six are never seen. Any preference for
+ * a bonded neighbour can skip an atom, and any rule that cannot skip is not
+ * following bonds.
  *
- * 2. WHEN NO BOND POINTS THAT WAY, IT STEPS THROUGH `atomIds`. Rule 1 alone
- *    cannot reach every atom: a disconnected fragment has no bond to walk in
- *    on, and a terminal atom in a straight chain has nothing to the side of
- *    it. Falling back to the next id in the molecule's own order guarantees
- *    that repeated presses of one arrow visit every atom in the document,
- *    which is the criterion a screen-reader user's access actually rests on.
+ * So they are two modes on two keys:
+ *
+ *   ARROW           the bonded neighbour lying most nearly that way, else the
+ *                   next atom in the molecule's own order — which is what
+ *                   lets an arrow cross into a disconnected fragment at all.
+ *   SHIFT + ARROW   the next atom in `atomIds` order, bonds ignored. Visits
+ *                   every atom in the document in a fixed number of presses,
+ *                   by construction, and that is the completeness guarantee
+ *                   a screen-reader user's access rests on.
  *
  * MODEL COORDINATES ARE Y-UP, so ArrowUp is +y. The renderer flips; nothing
  * here does, and nothing here converts to pixels — a traversal that depended
@@ -51,6 +59,12 @@ const DIRECTION_THRESHOLD = 0.2588;
 function positionOf(mol: Molecule, id: AtomId): Vec2 | undefined {
   return Object.hasOwn(mol.atoms, id) ? mol.atoms[id]?.pos : undefined;
 }
+
+/**
+ * How an arrow moves the focus: along a bond where it can, or straight
+ * through the document's atom order.
+ */
+export type TraversalMode = "bonded" | "sequential";
 
 /**
  * The bonded neighbour of `from` that lies most nearly in `direction`, or
@@ -97,17 +111,22 @@ export function nextFocusAtom(
   mol: Molecule,
   from: AtomId | undefined,
   direction: ArrowDirection,
+  mode: TraversalMode = "bonded",
 ): AtomId | undefined {
   if (mol.atomIds.length === 0) return undefined;
   if (from === undefined || !Object.hasOwn(mol.atoms, from)) {
     return mol.atomIds[0];
   }
 
-  const bonded = neighbourInDirection(mol, from, direction);
-  if (bonded !== undefined) return bonded;
+  if (mode === "bonded") {
+    const bonded = neighbourInDirection(mol, from, direction);
+    if (bonded !== undefined) return bonded;
+  }
 
-  // Rule 2. Forwards for up/right, backwards for down/left, so the fallback
-  // is itself reversible and a user who overshoots can come back.
+  // Forwards for up/right, backwards for down/left, so the walk is reversible
+  // and a user who overshoots can come straight back. Wrapping is what makes
+  // the sequential mode's completeness a guarantee rather than a hope: from
+  // any atom, `atomIds.length - 1` presses visit every other one.
   const step = direction === "up" || direction === "right" ? 1 : -1;
   const index = mol.atomIds.indexOf(from);
   if (index < 0) return mol.atomIds[0];

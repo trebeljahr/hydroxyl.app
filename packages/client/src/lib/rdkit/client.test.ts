@@ -8,8 +8,8 @@ import {
   fromSmiles,
   toMolblock,
   toSmiles,
-} from "./client.js";
-import type { WorkerRequest } from "./protocol.js";
+} from "./client";
+import type { WorkerRequest } from "./protocol";
 
 /**
  * The boundary's plumbing, with a stub Worker.

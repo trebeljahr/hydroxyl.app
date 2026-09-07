@@ -38,7 +38,7 @@ import {
   type MoleculeDiff,
   type StereoCounts,
   type Verification,
-} from "./types.js";
+} from "./types";
 
 /**
  * One constant for BOTH directions.

@@ -9,7 +9,7 @@ import {
   maxCoordinateDelta,
   moleculeToMolblock,
   molblockToMolecule,
-} from "./translate.js";
+} from "./translate";
 
 /** (CH3)2SO2 — hypervalent sulfur, two S=O, no formal charges. */
 function dimethylSulfone(): Molecule {

@@ -24,9 +24,9 @@
  * structure never fetches 6.9 MB of wasm.
  */
 
-import { inchiAndMolblock, normalizeMolblock, smilesAndMolblock } from "./ops.js";
-import type { OpResult, RDKitLogLike, RDKitModuleLike } from "./ops.js";
-import type { WorkerPayload, WorkerRequest, WorkerResponse } from "./protocol.js";
+import { inchiAndMolblock, normalizeMolblock, smilesAndMolblock } from "./ops";
+import type { OpResult, RDKitLogLike, RDKitModuleLike } from "./ops";
+import type { WorkerPayload, WorkerRequest, WorkerResponse } from "./protocol";
 
 declare function importScripts(...urls: string[]): void;
 declare const self: {

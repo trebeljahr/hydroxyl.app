@@ -7,7 +7,7 @@
  * the main thread and only molblocks cross.
  */
 
-import type { InchiAndMolblock, NormalizedMolblock, OpResult, SmilesAndMolblock } from "./ops.js";
+import type { InchiAndMolblock, NormalizedMolblock, OpResult, SmilesAndMolblock } from "./ops";
 
 /**
  * The three things RDKit is actually asked to do. Every public operation is

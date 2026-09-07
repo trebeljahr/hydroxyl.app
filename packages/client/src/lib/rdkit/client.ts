@@ -15,17 +15,17 @@
 
 import type { Molecule } from "@starter/chem-core";
 
-import { rdkitAssetBase } from "./asset-base.js";
-import type { InchiAndMolblock, OpResult, SmilesAndMolblock } from "./ops.js";
-import { NO_COORDS } from "./ops.js";
-import { isReady, type WorkerMessage, type WorkerPayload, type WorkerRequest } from "./protocol.js";
+import { rdkitAssetBase } from "./asset-base";
+import type { InchiAndMolblock, OpResult, SmilesAndMolblock } from "./ops";
+import { NO_COORDS } from "./ops";
+import { isReady, type WorkerMessage, type WorkerPayload, type WorkerRequest } from "./protocol";
 import {
   buildReport,
   describeError,
   hasMeaningfulCoordinates,
   moleculeToMolblock,
   molblockToMolecule,
-} from "./translate.js";
+} from "./translate";
 import {
   fail,
   ok,
@@ -36,7 +36,7 @@ import {
   type ImportedStructure,
   type InchiResult,
   type Verification,
-} from "./types.js";
+} from "./types";
 
 /**
  * How long an operation waits before giving up on the worker.

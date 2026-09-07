@@ -32,12 +32,12 @@
  *
  * ── ARROWS MEAN TWO DIFFERENT THINGS, AND WHERE FOCUS IS DECIDES WHICH ─────
  *
- * With the canvas focused they walk the roving atom focus along bonds, which
- * is the accessibility contract: Tab reaches the canvas, arrows move
- * atom-to-atom, each announcing itself. Anywhere else — and on the canvas with
- * the platform modifier held — they nudge the selection. Both are wanted, they
- * cannot both be the bare arrow in the same place, and focus is the only
- * signal that is already unambiguous.
+ * With the canvas focused they walk the roving atom focus along bonds, and
+ * with shift held they walk the document's atom order instead — see
+ * traversal.ts for why one key cannot do both. Anywhere else, and on the
+ * canvas with the platform modifier held, they nudge the selection. Both
+ * meanings are wanted, they cannot both be the bare arrow in the same place,
+ * and focus is the only signal that is already unambiguous.
  *
  * ── AND WHY THE NUDGE OPENS A TRANSACTION ──────────────────────────────────
  *
@@ -222,7 +222,15 @@ export function handleEditorKeyDown(
       event.preventDefault();
       endNudge(store);
       const mol = state.document.molecule;
-      const next = nextFocusAtom(mol, state.ui.focusedAtomId ?? undefined, arrow);
+      // Shift steps through the document's atom order instead of following a
+      // bond. See traversal.ts: a bonded walk cannot reach every atom, and
+      // reaching every atom is the accessibility guarantee.
+      const next = nextFocusAtom(
+        mol,
+        state.ui.focusedAtomId ?? undefined,
+        arrow,
+        event.shiftKey ? "sequential" : "bonded",
+      );
       if (next === undefined) return true;
       state.setFocusedAtom(next);
       options.onAnnounce?.(describeAtom(mol, next));

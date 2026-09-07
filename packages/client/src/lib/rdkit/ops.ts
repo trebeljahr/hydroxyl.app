@@ -10,7 +10,7 @@
  * crosses out of it.
  */
 
-import type { ChemIoErrorKind } from "./types.js";
+import type { ChemIoErrorKind } from "./types";
 
 /**
  * The slice of `RDKitModule` this bridge uses.

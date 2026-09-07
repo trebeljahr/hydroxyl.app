@@ -154,11 +154,11 @@ test("the command palette lists the same commands the toolbar exposes", async ({
   );
 
   await page.keyboard.press("ControlOrMeta+k");
-  await expect(page.locator("[data-command]").first()).toBeVisible();
+  await expect(page.locator("[data-palette-command]").first()).toBeVisible();
 
   const listed = await page.evaluate(() =>
-    [...document.querySelectorAll("[data-command]")].map((node) =>
-      node.getAttribute("data-command"),
+    [...document.querySelectorAll("[data-palette-command]")].map((node) =>
+      node.getAttribute("data-palette-command"),
     ),
   );
   for (const id of railTools) expect(listed).toContain(id);
@@ -167,7 +167,7 @@ test("the command palette lists the same commands the toolbar exposes", async ({
   expect(listed).toContain("structure.clean-up");
 
   // It runs what it lists.
-  await page.click('[data-command="tool.eraser"]');
+  await page.click('[data-palette-command="tool.eraser"]');
   expect(await activeTool(page)).toBe("eraser");
 });
 
@@ -209,6 +209,9 @@ test("shortcuts are inert while a text input has focus", async ({ page }) => {
   await page.click('[data-tool="select"]');
 
   await page.click(TITLE);
+  // Explicitly to the end: a click puts the caret where it lands, and the
+  // assertion below is about what the field ENDS with.
+  await page.keyboard.press("End");
   // "d" is the bond tool's letter and "x" is the eraser's. Typed into the
   // title they must be characters, not tool changes.
   await page.keyboard.type("dx ring");
@@ -226,14 +229,14 @@ test("shortcuts are inert while the command palette has focus", async ({ page })
   await openEditor(page);
   await page.click('[data-tool="select"]');
   await page.keyboard.press("ControlOrMeta+k");
-  await expect(page.locator("[data-command]").first()).toBeVisible();
+  await expect(page.locator("[data-palette-command]").first()).toBeVisible();
 
   // Typed into the palette's filter, a tool letter is a search term.
   await page.keyboard.type("dx");
   expect(await activeTool(page)).toBe("select");
 
   await page.keyboard.press("Escape");
-  await expect(page.locator("[data-command]").first()).toBeHidden();
+  await expect(page.locator("[data-palette-command]").first()).toBeHidden();
 });
 
 test("the status bar reports the formula, the masses and the valence issues", async ({
@@ -284,15 +287,25 @@ test("the canvas is focusable and the arrow keys walk it atom to atom", async ({
     .locator('[data-overlay="focus-atom"]')
     .getAttribute("data-overlay-target");
 
-  const visited = new Set<string>([first ?? ""]);
-  for (let i = 0; i < 12; i++) {
-    await page.keyboard.press("ArrowRight");
+  // A bare arrow follows a BOND, so the focus lands on a neighbour of the
+  // atom it started on rather than anywhere in the document.
+  await page.keyboard.press("ArrowRight");
+  const neighbour = await page
+    .locator('[data-overlay="focus-atom"]')
+    .getAttribute("data-overlay-target");
+  expect(neighbour).not.toBe(first);
+
+  // Shift walks the document's atom order instead, and THAT is the mode that
+  // reaches every atom — a bonded walk on a ring cannot, whatever the rule.
+  // See the header of editor/traversal.ts.
+  const visited = new Set<string>();
+  for (let i = 0; i < 8; i++) {
+    await page.keyboard.press("Shift+ArrowRight");
     const id = await page
       .locator('[data-overlay="focus-atom"]')
       .getAttribute("data-overlay-target");
     if (id !== null) visited.add(id);
   }
-  // Every atom of the ring is reachable by pressing one arrow key.
   expect(visited.size).toBe(6);
 
   // And it announces where it is.

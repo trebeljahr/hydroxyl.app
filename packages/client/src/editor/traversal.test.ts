@@ -60,25 +60,49 @@ describe("nextFocusAtom", () => {
     expect(mol.atoms["a1"]!.pos).not.toEqual(mol.atoms[first!]!.pos);
   });
 
-  it("reaches every atom of a DISCONNECTED document", () => {
-    // The criterion the bond-following rule alone cannot meet: two separate
-    // fragments have no bond between them.
-    const mol = buildMolecule((b) => {
-      const a = b.atom("C", { x: 0, y: 0 });
-      const c = b.atom("C", { x: 1, y: 0 });
-      b.bond(a, c);
-      const d = b.atom("O", { x: 10, y: 10 });
-      const e = b.atom("O", { x: 11, y: 10 });
-      b.bond(d, e);
-    });
-
+  it("gets STUCK on a ring in bonded mode, which is why there is a second mode", () => {
+    // Not a defect to be fixed by a cleverer rule: any preference for a bonded
+    // neighbour can skip an atom, and any rule that cannot skip is not
+    // following bonds. Pinned so that a future "improvement" to the bonded
+    // walk has to confront the trade-off rather than rediscover it.
+    const mol = benzene();
     const visited = new Set<string>();
     let current: string | undefined = undefined;
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 30; i++) {
       current = nextFocusAtom(mol, current, "right");
       if (current !== undefined) visited.add(current);
     }
-    expect([...visited].sort()).toEqual([...mol.atomIds].sort());
+    expect(visited.size).toBeLessThan(mol.atomIds.length);
+  });
+
+  it("reaches every atom in sequential mode, ring or not", () => {
+    for (const mol of [
+      benzene(),
+      // Two disconnected fragments: no bond joins them, so no graph walk can
+      // ever cross.
+      buildMolecule((b) => {
+        const a = b.atom("C", { x: 0, y: 0 });
+        const c = b.atom("C", { x: 1, y: 0 });
+        b.bond(a, c);
+        const d = b.atom("O", { x: 10, y: 10 });
+        const e = b.atom("O", { x: 11, y: 10 });
+        b.bond(d, e);
+      }),
+    ]) {
+      const visited = new Set<string>();
+      let current: string | undefined = undefined;
+      for (let i = 0; i < mol.atomIds.length + 2; i++) {
+        current = nextFocusAtom(mol, current, "right", "sequential");
+        if (current !== undefined) visited.add(current);
+      }
+      expect([...visited].sort()).toEqual([...mol.atomIds].sort());
+    }
+  });
+
+  it("walks the sequential mode backwards on the opposite arrow", () => {
+    const mol = benzene();
+    const forward = nextFocusAtom(mol, "a1", "right", "sequential");
+    expect(nextFocusAtom(mol, forward, "left", "sequential")).toBe("a1");
   });
 
   it("returns nothing for an empty molecule", () => {

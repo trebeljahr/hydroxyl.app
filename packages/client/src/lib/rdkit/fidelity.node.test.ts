@@ -19,13 +19,13 @@ import {
   smilesAndMolblock,
   type RDKitLogLike,
   type RDKitModuleLike,
-} from "./ops.js";
+} from "./ops";
 import {
   hasMeaningfulCoordinates,
   maxCoordinateDelta,
   moleculeToMolblock,
   molblockToMolecule,
-} from "./translate.js";
+} from "./translate";
 
 /**
  * The fidelity harness: real RDKit, real chem-core, no Worker.

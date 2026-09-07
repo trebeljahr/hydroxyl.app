@@ -9,7 +9,7 @@ import {
   withMol,
   type JSMolLike,
   type RDKitModuleLike,
-} from "./ops.js";
+} from "./ops";
 
 /**
  * A JSMol that counts its own deletions and can be told to throw.
