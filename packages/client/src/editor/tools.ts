@@ -1,0 +1,165 @@
+/**
+ * The tool registry: one entry per `ToolId`, and the only list of them.
+ *
+ * The rail renders this array in order, the command registry derives a
+ * `tool.<id>` command from every entry, and the keyboard layer matches
+ * `hotkey`. There is deliberately no second list anywhere — the acceptance
+ * criterion "no second list of actions exists" is a property of the code, not
+ * a promise, and `tools.test.ts` asserts the three surfaces agree.
+ *
+ * ── TOOLS ARE STICKY (decision 3) ──────────────────────────────────────────
+ *
+ * A chosen tool stays chosen until another is picked; Escape puts it down.
+ * Nothing in the store resets `tool` after an edit and that absence is the
+ * feature — a chemist drawing a steroid draws thirty bonds in a row.
+ *
+ * ── WHY THE HOTKEYS ARE THE LETTERS THEY ARE ───────────────────────────────
+ *
+ * Tool letters and ELEMENT letters compete for the same bare keystrokes, and
+ * the tool wins. That has a real cost and it is worth stating precisely rather
+ * than discovering: every element whose symbol begins with a tool letter is
+ * unreachable from the keyboard, namely V; Ga Ge Gd; Db Dy Ds; Er Eu Es; Rb Ru
+ * Rh Re Ra Rn Rf Rg; Xe; Zn Zr. All of them remain reachable through the
+ * element popover on the rail and through the properties panel.
+ *
+ * The letters were picked to make that list as cheap as possible. Not one of
+ * `d e g q r v x z` is itself a one-letter element symbol EXCEPT `v`
+ * (vanadium), so the organic set — H B C N O F P S Cl Br I Si Se — is
+ * untouched, which is the set a figure is actually made of. `q` costs nothing
+ * at all: no element symbol begins with it.
+ */
+
+import type { ComponentType } from "react";
+import {
+  EraserIcon,
+  HandIcon,
+  MousePointer2Icon,
+  TypeIcon,
+} from "lucide-react";
+
+import {
+  CarbonChainIcon,
+  ChargeIcon,
+  CyclohexaneIcon,
+  SingleBondIcon,
+} from "@/chem-icons";
+import type { ToolId } from "@/state";
+
+export interface ToolDef {
+  readonly id: ToolId;
+  /** Tooltip, palette title and accessible name. */
+  readonly title: string;
+  /** One sentence for the tooltip's second line — what the gesture does. */
+  readonly hint: string;
+  /** A single bare letter, matched on `event.key.toLowerCase()`. */
+  readonly hotkey: string;
+  /** CSS cursor for the canvas while this tool is held. */
+  readonly cursor: string;
+  /** A `ComponentType` and not a plain function, because lucide's icons are
+   *  `forwardRef` components and the chemistry glyphs are plain functions;
+   *  the rail has to be able to hold either. */
+  readonly Icon: ComponentType<{ readonly className?: string }>;
+  /**
+   * WHICH REDUCER PATHS THIS TOOL CHANGES, named honestly.
+   *
+   * `select` and `pan` change none: `select` IS the fall-through, and the pan
+   * tool is handled by the gesture hook (a left drag becomes a view pan)
+   * rather than by the reducer, which never sees a pixel. Recording that here
+   * rather than implying eight symmetrical branches keeps the next reader from
+   * looking for code that does not exist.
+   */
+  readonly branches: readonly ("click" | "dragStart" | "gesture")[];
+}
+
+export const TOOLS: readonly ToolDef[] = Object.freeze([
+  Object.freeze<ToolDef>({
+    id: "select",
+    title: "Select",
+    hint: "Click to select, drag to draw or move, drag empty space to marquee",
+    hotkey: "v",
+    cursor: "default",
+    Icon: MousePointer2Icon,
+    branches: [],
+  }),
+  Object.freeze<ToolDef>({
+    id: "bond",
+    title: "Draw bond",
+    hint: "Drag from an atom to draw; click an existing bond to retype it",
+    hotkey: "d",
+    cursor: "crosshair",
+    Icon: SingleBondIcon,
+    branches: ["click", "dragStart"],
+  }),
+  Object.freeze<ToolDef>({
+    id: "element",
+    title: "Element",
+    hint: "Click an atom to retype it, or empty canvas to place one",
+    hotkey: "e",
+    cursor: "text",
+    Icon: TypeIcon,
+    branches: ["click", "dragStart"],
+  }),
+  Object.freeze<ToolDef>({
+    id: "ring",
+    title: "Ring template",
+    hint: "Click a bond to fuse, an atom to attach, alt-click for spiro",
+    hotkey: "r",
+    cursor: "copy",
+    Icon: CyclohexaneIcon,
+    branches: ["click"],
+  }),
+  Object.freeze<ToolDef>({
+    id: "chain",
+    title: "Chain",
+    hint: "Click an atom to grow a zig-zag chain off it",
+    hotkey: "z",
+    cursor: "copy",
+    Icon: CarbonChainIcon,
+    branches: ["click"],
+  }),
+  Object.freeze<ToolDef>({
+    id: "charge",
+    title: "Charge",
+    hint: "Click an atom to add a charge, alt-click to subtract",
+    hotkey: "q",
+    cursor: "cell",
+    Icon: ChargeIcon,
+    branches: ["click"],
+  }),
+  Object.freeze<ToolDef>({
+    id: "eraser",
+    title: "Eraser",
+    hint: "Click an atom or a bond to remove it",
+    hotkey: "x",
+    cursor: "crosshair",
+    Icon: EraserIcon,
+    branches: ["click"],
+  }),
+  Object.freeze<ToolDef>({
+    id: "pan",
+    title: "Pan",
+    hint: "Drag to move the view — the same as holding space",
+    hotkey: "g",
+    cursor: "grab",
+    Icon: HandIcon,
+    branches: ["gesture"],
+  }),
+]);
+
+const BY_ID = new Map<ToolId, ToolDef>(TOOLS.map((tool) => [tool.id, tool]));
+
+/**
+ * Total over `ToolId` by construction: the map is built from `TOOLS` and the
+ * test asserts every member of the union appears there, so this never returns
+ * undefined for a real tool and callers need no fallback.
+ */
+export function toolDef(id: ToolId): ToolDef {
+  const found = BY_ID.get(id);
+  if (found === undefined) throw new Error(`No tool registered for "${id}"`);
+  return found;
+}
+
+export function toolByHotkey(key: string): ToolDef | undefined {
+  const lower = key.toLowerCase();
+  return TOOLS.find((tool) => tool.hotkey === lower);
+}
