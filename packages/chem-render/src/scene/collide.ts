@@ -130,8 +130,20 @@ export function detectCollisions(
 
   // Read off the SCENE, so what is checked is what was drawn.
   const lines = new Map<BondId, LinePrimitive[]>();
+  /**
+   * Bonds that drew SOMETHING, whatever shape it was.
+   *
+   * Separate from `lines` because the two answer different questions. The
+   * label and crossing scans want segments, and only a `line` is one. But
+   * "did this bond draw anything at all" has to count the wedge polygon and
+   * the hash and wavy paths too: a wedge emits no line by design — a hairline
+   * down the middle of the triangle is not the picture — and testing `lines`
+   * alone would report every wedge in the corpus as `bond-swallowed-by-labels`.
+   */
+  const drawn = new Set<BondId>();
   const ringCircleIds = new Set<string>();
   for (const primitive of scene.primitives) {
+    if (primitive.source.kind === "bond") drawn.add(primitive.source.bondId);
     if (primitive.type === "line" && primitive.source.kind === "bond") {
       const existing = lines.get(primitive.source.bondId);
       if (existing === undefined) lines.set(primitive.source.bondId, [primitive]);
@@ -162,7 +174,7 @@ export function detectCollisions(
     const from = centres.get(bond.from);
     const to = centres.get(bond.to);
     if (from === undefined || to === undefined) continue;
-    if (lines.has(bondId)) continue;
+    if (drawn.has(bondId)) continue;
     report({
       kind: "bond-swallowed-by-labels",
       a: { kind: "bond", bondId },

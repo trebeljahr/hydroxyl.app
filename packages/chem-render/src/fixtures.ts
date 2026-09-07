@@ -270,9 +270,14 @@ export function methanol13C(): Molecule {
  * reader has to place. C2 therefore draws "CH" while C1, at the wide end,
  * learns nothing about its own configuration and stays a bare vertex.
  *
- * No CIP descriptor appears in this name or these comments on purpose: nothing
- * in this repo assigns R/S, and a fixture called (S)-butan-2-ol that depicted
- * the R enantiomer would be wrong in the one way that renders perfectly.
+ * chem-core now assigns R/S, and this drawing is (R)-butan-2-ol: the hydroxyl
+ * is north on a wedge, the ethyl runs south-east and the methyl south-west, so
+ * with the implicit hydrogen behind the page O -> ethyl -> methyl traces
+ * clockwise. The name stays `butan2olWedged` rather than becoming
+ * `rButan2ol` — the fixture is here to exercise the wedge, and a name carrying
+ * a descriptor would have to be re-derived by hand every time the geometry
+ * moved. `stereo.test.ts` in chem-core pins the letter instead, on the same
+ * coordinates.
  */
 export function butan2olWedged(): Molecule {
   return buildMolecule((b) => {
@@ -289,6 +294,72 @@ export function butan2olWedged(): Molecule {
     b.bond(c2, oxygen, 1, "wedge");
     b.bond(c2, c3, 1);
     b.bond(c3, c4, 1);
+  });
+}
+
+/**
+ * cis-2-butene: (Z)-but-2-ene, both methyls above a horizontal double bond.
+ *
+ * There is no stereo annotation anywhere on it, which is the point. The Z is
+ * read out of the COORDINATES, so this fixture and its trans twin differ in
+ * exactly one atom position and in nothing else — no flag, no wedge, no bond
+ * property. A perception pass that leaned on a stored value would give both
+ * the same answer and both would render identically.
+ */
+export function cis2Butene(): Molecule {
+  return buildMolecule((b) => {
+    const c2 = b.atom("C", ORIGIN);
+    const c3Pos: Vec2 = { x: 1, y: 0 };
+    const c3 = b.atom("C", c3Pos);
+    b.bond(c2, c3, 2);
+    b.bond(c2, b.atom("C", step(ORIGIN, 120)), 1);
+    b.bond(c3, b.atom("C", step(c3Pos, 60)), 1);
+  });
+}
+
+/**
+ * trans-2-butene: (E)-but-2-ene. The cis fixture with one methyl reflected.
+ *
+ * Drawn as the ordinary zig-zag a chemist writes without thinking about it,
+ * which is what makes the pair a fair test: the trans isomer is the DEFAULT
+ * shape of a drawn alkene, so a perception pass that returned E for everything
+ * would pass on this one alone.
+ */
+export function trans2Butene(): Molecule {
+  return buildMolecule((b) => {
+    const c2 = b.atom("C", ORIGIN);
+    const c3Pos: Vec2 = { x: 1, y: 0 };
+    const c3 = b.atom("C", c3Pos);
+    b.bond(c2, c3, 2);
+    b.bond(c2, b.atom("C", step(ORIGIN, 120)), 1);
+    b.bond(c3, b.atom("C", step(c3Pos, -60)), 1);
+  });
+}
+
+/**
+ * Propan-2-ol with the hydroxyl on a wedge — a wedge on a NON-stereocentre.
+ *
+ * Deliberately wrong, in the way `unmergedDropOverlap` is deliberately wrong:
+ * the carbinol carbon carries two methyls, so there is no configuration for
+ * the wedge to state and the drawing asserts one anyway. It is the commonest
+ * error in a hand sketch and the hardest to see, because it renders perfectly
+ * — a crisp triangle pointing at an oxygen, on a molecule that is achiral.
+ *
+ * `structuralIssues` in chem-core reports it. The fixture exists so the report
+ * has a picture beside it on the contact sheet, and so the mark itself keeps
+ * being drawn: the pass REPORTS and never repairs, so the wedge must still
+ * appear exactly as the author drew it.
+ */
+export function wedgeOnNonStereocentre(): Molecule {
+  return buildMolecule((b) => {
+    const c1 = b.atom("C", ORIGIN);
+    const c2Pos = step(ORIGIN, 30);
+    const c2 = b.atom("C", c2Pos);
+    const c3 = b.atom("C", step(c2Pos, -30));
+    const oxygen = b.atom("O", step(c2Pos, 90));
+    b.bond(c1, c2, 1);
+    b.bond(c2, oxygen, 1, "wedge");
+    b.bond(c2, c3, 1);
   });
 }
 
@@ -463,6 +534,12 @@ export const FIXTURES: readonly Fixture[] = Object.freeze([
   }),
   Object.freeze({ name: "methanol13C", molecule: methanol13C() }),
   Object.freeze({ name: "butan2olWedged", molecule: butan2olWedged() }),
+  Object.freeze({ name: "cis2Butene", molecule: cis2Butene() }),
+  Object.freeze({ name: "trans2Butene", molecule: trans2Butene() }),
+  Object.freeze({
+    name: "wedgeOnNonStereocentre",
+    molecule: wedgeOnNonStereocentre(),
+  }),
   Object.freeze({ name: "naphthalene", molecule: naphthalene() }),
   Object.freeze({ name: "dimethylSulfone", molecule: dimethylSulfone() }),
   Object.freeze({ name: "chrysene", molecule: chrysene() }),

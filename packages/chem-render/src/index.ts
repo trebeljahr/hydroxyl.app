@@ -43,11 +43,16 @@ export * from "./text/measurer.js";
 export * from "./label/visibility.js";
 export * from "./label/compose.js";
 export * from "./label/placement.js";
+// Descriptor placement sits with the label layer because it measures text and
+// queries the same obstacle unions, but it is the mirror image of it: an atom
+// label claims space, a descriptor only looks for space nobody claimed.
+export * from "./label/descriptors.js";
 // The bond pass: trimming, the second and third lines, and the aromatic
 // circle. It consumes the label layer's clear space and produces geometry.
 export * from "./bond/geometry.js";
 export * from "./bond/doubleBond.js";
 export * from "./bond/aromatic.js";
+export * from "./bond/stereo.js";
 export * from "./scene/build.js";
 export * from "./scene/bounds.js";
 // Reports overlaps over an already-built scene. Never called by `buildScene`:

@@ -11,6 +11,9 @@
 
 import {
   aromaticRings,
+  cipDescriptor,
+  descriptorText,
+  doubleBondDescriptor,
   formulaParts,
   getAtom,
   neighborIds,
@@ -29,12 +32,20 @@ import {
 import type { BondAxis } from "../bond/geometry.js";
 import { resolveDoubleBondSide } from "../bond/doubleBond.js";
 import {
+  crossedDouble,
+  hashPathData,
+  wavyPathData,
+  wedgePoints,
+} from "../bond/stereo.js";
+import { placeDescriptor } from "../label/descriptors.js";
+import type { DescriptorSegment } from "../label/descriptors.js";
+import {
   composeAtomLabel,
   labelRunId,
   radicalDotId,
 } from "../label/compose.js";
-import { placeAtomLabel } from "../label/placement.js";
-import type { AtomLabelPlacement } from "../label/placement.js";
+import { freeDirection, placeAtomLabel } from "../label/placement.js";
+import type { AtomLabelPlacement, LabelObstacle } from "../label/placement.js";
 import { isStructural } from "../representation.js";
 import type {
   Representation,
@@ -46,6 +57,8 @@ import { sceneBounds } from "./bounds.js";
 import type {
   CirclePrimitive,
   LinePrimitive,
+  PathPrimitive,
+  PolygonPrimitive,
   RenderScene,
   ScenePoint,
   ScenePrimitive,
@@ -67,7 +80,15 @@ import type {
  * therefore nine lines and six bare-vertex dots — six ring edges and the three
  * inner lines of its Kekule double bonds.
  *
- * Stereo marks are still absent; they are `stereochemistry-perception-and-marks`.
+ * Stereo marks ride on the same axis: `showStereoBonds` turns a single bond
+ * carrying a wedge, hash or wavy into that mark INSTEAD of its line, and an
+ * `either` double bond into the crossed pair. Because they are built from the
+ * trimmed axis, whose `a` is `bond.from`, the narrow end lands where chem-core
+ * says it does and `flipBond` inverts the picture with no second rule.
+ *
+ * `showStereoDescriptors` adds a final pass of `(R)`/`(S)`/`(E)`/`(Z)` runs.
+ * It is LAST because it has to see everything else first: a descriptor is
+ * annotation and looks for the hole nothing else wanted.
  */
 export function buildScene(
   mol: Molecule,
@@ -170,6 +191,11 @@ function buildStructural(
     ? aromaticCirclePrimitives(mol, style, centres)
     : EMPTY_CIRCLES;
 
+  // The bond corridors, kept as the descriptor pass sees them: one segment
+  // per bond whatever shape actually drew it, so a wedge and a hash ladder
+  // fence off the same space a plain line would.
+  const corridors = new Map<BondId, DescriptorSegment>();
+
   for (const bondId of mol.bondIds) {
     pushBondPrimitives(
       primitives,
@@ -179,6 +205,8 @@ function buildStructural(
       centres,
       placements,
       circles.suppressedBondIds,
+      representation,
+      corridors,
     );
   }
 
@@ -246,7 +274,126 @@ function buildStructural(
     });
   }
 
+  if (representation.flags.showStereoDescriptors) {
+    pushDescriptorPrimitives(primitives, mol, style, centres, placements, corridors);
+  }
+
   return primitives;
+}
+
+/**
+ * The `(R)`, `(S)`, `(E)` and `(Z)` runs, in the molecule's own order: atoms
+ * first, then bonds.
+ *
+ * ONLY WHERE CHEM-CORE PROVED ONE. `cipDescriptor` returns `undetermined` for
+ * a centre whose ranking it could not resolve and for one nobody drew a wedge
+ * on, and `descriptorText` renders that as nothing at all rather than as a
+ * "(?)" — a question mark beside a centre reads as a wavy bond, which is a
+ * chemical claim, not a note about the software.
+ *
+ * Each placed descriptor becomes an obstacle for the next, so two centres a
+ * bond apart cannot both take the space between them. That makes the result
+ * order-dependent, which is why the order is the molecule's insertion order
+ * and not a sort.
+ */
+function pushDescriptorPrimitives(
+  primitives: ScenePrimitive[],
+  mol: Molecule,
+  style: RenderStyle,
+  centres: ReadonlyMap<AtomId, ScenePoint>,
+  placements: ReadonlyMap<AtomId, AtomLabelPlacement | undefined>,
+  corridors: ReadonlyMap<BondId, DescriptorSegment>,
+): void {
+  const obstacles: LabelObstacle[] = [];
+  for (const atomId of mol.atomIds) {
+    const placement = placements.get(atomId);
+    if (placement !== undefined) obstacles.push(...placement.obstacles);
+  }
+  const segments = [...corridors.values()];
+
+  const emit = (
+    id: string,
+    source: ScenePrimitive["source"],
+    text: string,
+    anchor: ScenePoint,
+    preferred: ScenePoint,
+  ): void => {
+    const placed = placeDescriptor({
+      text,
+      anchor,
+      preferred,
+      style,
+      obstacles,
+      segments,
+    });
+    // Every descriptor blocks the next one, itself included in the union the
+    // following call queries.
+    obstacles.push({ kind: "rect", box: placed.box });
+    const run: TextRunPrimitive = {
+      id,
+      source,
+      type: "textRun",
+      origin: placed.origin,
+      spans: [{ text }],
+      fontFamily: style.fontFamily,
+      fontSizePx: placed.fontSizePx,
+      fill: { color: style.colors.label },
+      anchor: "middle",
+      baseline: "middle",
+    };
+    primitives.push(run);
+  };
+
+  for (const atomId of mol.atomIds) {
+    const centre = centres.get(atomId);
+    if (centre === undefined) continue;
+    const text = descriptorText(cipDescriptor(mol, atomId));
+    if (text === undefined) continue;
+    const placement = placements.get(atomId);
+    // The label pass already worked out the emptiest direction around this
+    // atom; a bare vertex has no placement, so it is asked for directly.
+    const preferred =
+      placement?.freeDirection ??
+      freeDirection(
+        centre,
+        neighborIds(mol, atomId).flatMap((id) => {
+          const point = centres.get(id);
+          return point === undefined ? [] : [point];
+        }),
+      );
+    emit(
+      `atom:${atomId}:descriptor`,
+      { kind: "atom", atomId },
+      text,
+      centre,
+      preferred,
+    );
+  }
+
+  for (const bondId of mol.bondIds) {
+    const text = descriptorText(doubleBondDescriptor(mol, bondId));
+    if (text === undefined) continue;
+    const corridor = corridors.get(bondId);
+    if (corridor === undefined) continue;
+    const midpoint: ScenePoint = {
+      x: (corridor.a.x + corridor.b.x) / 2,
+      y: (corridor.a.y + corridor.b.y) / 2,
+    };
+    const dx = corridor.b.x - corridor.a.x;
+    const dy = corridor.b.y - corridor.a.y;
+    const length = Math.sqrt(dx * dx + dy * dy);
+    // Perpendicular to the bond, which is the only direction with room beside
+    // a double bond. The ladder tries the other side next.
+    const preferred: ScenePoint =
+      length === 0 ? { x: 0, y: -1 } : { x: dy / length, y: -dx / length };
+    emit(
+      `bond:${bondId}:descriptor`,
+      { kind: "bond", bondId },
+      text,
+      midpoint,
+      preferred,
+    );
+  }
 }
 
 /**
@@ -266,6 +413,8 @@ function pushBondPrimitives(
   centres: ReadonlyMap<AtomId, ScenePoint>,
   placements: ReadonlyMap<AtomId, AtomLabelPlacement | undefined>,
   suppressedBondIds: ReadonlySet<BondId>,
+  representation: StructuralRepresentation,
+  corridors: Map<BondId, DescriptorSegment>,
 ): void {
   const bond = mol.bonds[bondId];
   if (bond === undefined) return;
@@ -285,6 +434,7 @@ function pushBondPrimitives(
     style.bondLineWidthPx,
   );
   if (axis === undefined) return;
+  corridors.set(bondId, { a: axis.a, b: axis.b });
 
   const stroke = { color: style.colors.bond, width: style.bondLineWidthPx };
   const line = (
@@ -313,6 +463,73 @@ function pushBondPrimitives(
   // The same floor the axis was held to: below its own stroke width a line is
   // a blob, not a segment.
   const minimum = style.bondLineWidthPx;
+
+  // STEREO FIRST, before order and before the aromatic circle. A wedge is not
+  // a decoration on top of a line, it REPLACES the line: drawing both leaves a
+  // hairline down the middle of the triangle, and on a hash ladder it turns
+  // the rungs into a fishbone.
+  //
+  // Only where the mark means something. wedge/hash/wavy describe a SINGLE
+  // bond and `either` a DOUBLE one (types.ts), so a wedge stored on a double
+  // bond — which an importer can hand you — draws as an ordinary double rather
+  // than as a triangle asserting a configuration nobody can read off it.
+  if (representation.flags.showStereoBonds) {
+    if (bond.order === 1 && bond.stereo === "wedge") {
+      const wedge: PolygonPrimitive = {
+        id: `bond:${bondId}:wedge`,
+        source: { kind: "bond", bondId },
+        type: "polygon",
+        points: wedgePoints(axis, style.stereoWedgeWidthPx),
+        fill: { color: style.colors.bond },
+      };
+      primitives.push(wedge);
+      return;
+    }
+    if (bond.order === 1 && bond.stereo === "hash") {
+      const hash: PathPrimitive = {
+        id: `bond:${bondId}:hash`,
+        source: { kind: "bond", bondId },
+        type: "path",
+        d: hashPathData(
+          axis,
+          style.stereoWedgeWidthPx,
+          style.stereoHashPeriodPx,
+          style.coordinatePrecision,
+          `bond:${bondId}:hash`,
+        ),
+        stroke,
+      };
+      primitives.push(hash);
+      return;
+    }
+    if (bond.order === 1 && bond.stereo === "wavy") {
+      const wavy: PathPrimitive = {
+        id: `bond:${bondId}:wavy`,
+        source: { kind: "bond", bondId },
+        type: "path",
+        d: wavyPathData(
+          axis,
+          style.stereoWavyPeriodPx,
+          style.coordinatePrecision,
+          `bond:${bondId}:wavy`,
+        ),
+        stroke,
+      };
+      primitives.push(wavy);
+      return;
+    }
+    if (bond.order === 2 && bond.stereo === "either") {
+      // The crossed pair speaks for the whole bond, aromatic circle or not:
+      // a ring bond whose geometry was never determined is not a ring bond
+      // anyone should be drawing a delocalisation circle over.
+      const cross = crossedDouble(axis, gap, minimum);
+      if (cross !== undefined) {
+        line("cross", cross.first);
+        line("cross2", cross.second);
+      }
+      return;
+    }
+  }
 
   // A TRIPLE BOND IS ALWAYS CENTRED, and its outer pair sits a FULL gap out,
   // not half of one: a centred double's two lines are a gap apart, so half a

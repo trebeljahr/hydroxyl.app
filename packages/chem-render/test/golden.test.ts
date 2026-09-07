@@ -18,9 +18,17 @@ import { fileURLToPath } from "node:url";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { benzene } from "@starter/chem-core";
+import { benzene, setBondStereo } from "@starter/chem-core";
 
-import { acetate, FIXTURES, naphthalene } from "../src/fixtures.js";
+import {
+  acetate,
+  butan2olWedged,
+  cis2Butene,
+  FIXTURES,
+  naphthalene,
+  trans2Butene,
+  wedgeOnNonStereocentre,
+} from "../src/fixtures.js";
 import { representation } from "../src/representation.js";
 import { buildScene } from "../src/scene/build.js";
 import { RENDER_STYLES } from "../src/style.js";
@@ -100,6 +108,60 @@ describe("golden SVG", () => {
       await expectMatchesGolden(svg, `${name}-aromaticCircles-publication.svg`);
     });
   }
+
+  // The stereo marks and the descriptors are FLAGS too, and the skeletal loop
+  // above draws the marks but never the letters. Four molecules, because the
+  // four things that can go wrong are different things: an apex at the wrong
+  // end of a wedge, a Z read as an E, an E read as a Z, and a descriptor
+  // printed beside a centre that has none.
+  for (const [name, molecule] of [
+    ["butan2olWedged", butan2olWedged()],
+    ["cis2Butene", cis2Butene()],
+    ["trans2Butene", trans2Butene()],
+    ["wedgeOnNonStereocentre", wedgeOnNonStereocentre()],
+  ] as const) {
+    it(`renders ${name} with its stereo descriptors`, async () => {
+      const svg = serializeScene(
+        buildScene(
+          molecule,
+          RENDER_STYLES.publication,
+          representation("skeletal", { showStereoDescriptors: true }),
+        ),
+      );
+      await expectMatchesGolden(svg, `${name}-descriptors-publication.svg`);
+    });
+  }
+
+  // Hash and wavy never appear in the skeletal loop either: no fixture stores
+  // them, because a fixture that did would be a second copy of butan-2-ol
+  // differing in one enum. Derived here instead, from the wedged fixture, so
+  // the three marks are provably the same bond drawn three ways.
+  for (const stereo of ["hash", "wavy"] as const) {
+    it(`draws butan-2-ol's C2-O bond as a ${stereo}`, async () => {
+      const svg = serializeScene(
+        buildScene(
+          setBondStereo(butan2olWedged(), "b7", stereo),
+          RENDER_STYLES.publication,
+          representation("skeletal"),
+        ),
+      );
+      await expectMatchesGolden(svg, `butan2ol-${stereo}-publication.svg`);
+    });
+  }
+
+  it("draws an either double bond as the crossed pair", async () => {
+    // V2000 stereo code 3. The crossed pair is the only depiction that says
+    // "this geometry was never determined"; a plain double bond drawn from the
+    // same coordinates would assert the Z the atoms happen to sit at.
+    const svg = serializeScene(
+      buildScene(
+        setBondStereo(cis2Butene(), "b3", "either"),
+        RENDER_STYLES.publication,
+        representation("skeletal"),
+      ),
+    );
+    await expectMatchesGolden(svg, "cis2Butene-either-publication.svg");
+  });
 
   it("renders acetate's sum formula with its charge superscript", async () => {
     // The only golden covering a glyph run, and the only one where a charge

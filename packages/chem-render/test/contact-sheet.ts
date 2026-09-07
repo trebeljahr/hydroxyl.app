@@ -92,11 +92,16 @@ interface Row {
 /**
  * The rows of one fixture's section.
  *
- * The six view kinds, plus a seventh for the aromatic circle. The circle is a
- * FLAG rather than a kind, so it would otherwise be invisible on the sheet —
- * and the sheet is the only artefact that can catch a delocalisation circle
- * drawn at the wrong radius, or drawn while the Kekule alternation is still
- * underneath it.
+ * The six view kinds, plus one row per display FLAG that changes the picture.
+ * A flag is not a kind, so it would otherwise be invisible on the sheet — and
+ * the sheet is the only artefact that can catch a delocalisation circle drawn
+ * at the wrong radius, a wedge whose apex ended up at the wrong end, or a hash
+ * ladder whose bars all came out the same width.
+ *
+ * The descriptor row is skeletal rather than kekule so the letters are read
+ * against the emptiest drawing there is: if `(R)` clears the bonds and labels
+ * of a bare skeleton it is at least placed, and if it does not, nothing else
+ * on the cell is in the way of seeing that.
  */
 const ROWS: readonly Row[] = Object.freeze([
   ...VIEW_KINDS.map((kind) => ({
@@ -108,6 +113,11 @@ const ROWS: readonly Row[] = Object.freeze([
     label: "skeletal",
     note: "aromatic circles",
     representation: representation("skeletal", { aromaticCircles: true }),
+  }),
+  Object.freeze({
+    label: "skeletal",
+    note: "stereo descriptors",
+    representation: representation("skeletal", { showStereoDescriptors: true }),
   }),
 ]);
 

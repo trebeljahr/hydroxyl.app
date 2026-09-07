@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-8.9 -49.613 80.154 58.513" width="80.154px" height="58.513px">
   <line id="bond:b6:line" data-bond="b6" x1="0" y1="0" x2="15.574" y2="-8.992" stroke="#000000" stroke-width="1.4"/>
-  <polygon id="bond:b7:wedge" data-bond="b7" points="20.785,-17.04 18.685,-30.96 22.885,-30.96" fill="#000000"/>
+  <path id="bond:b7:hash" data-bond="b7" d="M20.365 -17.04 L21.205 -17.04 M20.029 -19.824 L21.541 -19.824 M19.693 -22.608 L21.877 -22.608 M19.357 -25.392 L22.213 -25.392 M19.021 -28.176 L22.549 -28.176 M18.685 -30.96 L22.885 -30.96" fill="none" stroke="#000000" stroke-width="1.4"/>
   <line id="bond:b8:line" data-bond="b8" x1="29.514" y1="-6.96" x2="41.569" y2="0" stroke="#000000" stroke-width="1.4"/>
   <line id="bond:b9:line" data-bond="b9" x1="41.569" y1="0" x2="62.354" y2="-12" stroke="#000000" stroke-width="1.4"/>
   <circle id="atom:a1:dot" data-atom="a1" cx="0" cy="0" r="0.9" fill="#000000"/>

@@ -74,6 +74,37 @@ export interface RenderStyle {
    * bond instead of crossing it.
    */
   readonly aromaticCircleRatio: number;
+  /**
+   * Width of the WIDE end of a solid or hashed wedge, px.
+   *
+   * Physical vocabulary, so it belongs on the style rather than on a
+   * representation: it is the same kind of number as `doubleBondGapPx`, and a
+   * house style that prints heavier bonds prints fatter wedges with them.
+   * Roughly three line widths is where a wedge reads as a triangle rather than
+   * as a thick line at the sizes both presets use.
+   */
+  readonly stereoWedgeWidthPx: number;
+  /** Centre-to-centre spacing of the bars of a hashed wedge, px. */
+  readonly stereoHashPeriodPx: number;
+  /**
+   * Full period of a wavy bond, px — one complete swing out and back.
+   *
+   * FIXED, and deliberately not derived from the bond length: a wavy bond is a
+   * mark with one meaning, and a wave that stretched with the bond would read
+   * as a different mark on a long bond than on a short one. Only the number of
+   * half-waves varies, rounded so the wave lands on both ends.
+   */
+  readonly stereoWavyPeriodPx: number;
+  /**
+   * Size of an `(R)`/`(S)`/`(E)`/`(Z)` label, as a fraction of `fontSizePx`.
+   *
+   * Smaller than an atom label because it is an annotation ABOUT the structure
+   * rather than part of it: set at the same size it competes with the element
+   * symbols for the reader's eye. Not `subscriptScale`, which is a typographic
+   * relationship inside one run and would drag the descriptor along with any
+   * future change to how a subscript is set.
+   */
+  readonly stereoDescriptorScale: number;
   readonly colors: RenderColors;
   /** Decimal places emitted for every coordinate. Fixed so output is byte-deterministic. */
   readonly coordinatePrecision: number;
@@ -119,6 +150,10 @@ export const PUBLICATION_STYLE: RenderStyle = Object.freeze({
   marginPx: 8,
   atomDotRadiusPx: 0.9,
   aromaticCircleRatio: 0.75,
+  stereoWedgeWidthPx: 4.2,
+  stereoHashPeriodPx: 3,
+  stereoWavyPeriodPx: 8,
+  stereoDescriptorScale: 0.85,
   colors: Object.freeze({ bond: "#000000", label: "#000000" }),
   coordinatePrecision: 3,
 });
@@ -146,6 +181,10 @@ export const SCREEN_STYLE: RenderStyle = Object.freeze({
   marginPx: 16,
   atomDotRadiusPx: 2,
   aromaticCircleRatio: 0.75,
+  stereoWedgeWidthPx: 7,
+  stereoHashPeriodPx: 5,
+  stereoWavyPeriodPx: 15,
+  stereoDescriptorScale: 0.85,
   colors: Object.freeze({
     bond: "#1f2937",
     label: "#111827",

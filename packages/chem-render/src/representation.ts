@@ -41,6 +41,25 @@ export interface DisplayFlags {
    * than coming out as a bare hexagon with nothing inside it.
    */
   readonly aromaticCircles: boolean;
+  /**
+   * Set an `(R)`, `(S)`, `(E)` or `(Z)` beside every stereogenic unit whose
+   * configuration chem-core can prove.
+   *
+   * PER STRUCTURE, like `aromaticCircles` and for the same reason: one panel
+   * of a figure often carries the descriptors while its neighbour, drawn
+   * larger for a mechanism, does not. A style preset owns physical vocabulary
+   * — bond length, line width, font — and cannot express "this panel is
+   * annotated"; @starter/shared already stores the choice per panel as
+   * `RepresentationDisplay.showStereoDescriptors`, and a preset may only seed
+   * it the way `AROMATIC_CIRCLES_BY_PRESET` seeds the circle.
+   *
+   * A DIFFERENT THING FROM `showStereoBonds`. Wedges are geometry the author
+   * drew; a descriptor is a computed claim about what that geometry means, and
+   * chem-core returns `undetermined` rather than a letter wherever it cannot
+   * prove one. A centre with no letter simply gets no annotation — a wrong one
+   * is worse than none.
+   */
+  readonly showStereoDescriptors: boolean;
 }
 
 export interface StructuralRepresentation {
@@ -102,6 +121,10 @@ export const DEFAULT_DISPLAY_FLAGS: DisplayFlags = Object.freeze({
   // delocalisation twice. Switching the flag on is what makes the renderer
   // suppress the alternation and draw the circle instead.
   aromaticCircles: false,
+  // Off by default everywhere: descriptors are what a chemist turns on for a
+  // figure that is ABOUT the stereochemistry, and on a busy structure they are
+  // four more glyphs competing with the labels.
+  showStereoDescriptors: false,
 });
 
 /**
@@ -133,6 +156,9 @@ export const DEFAULT_FLAGS_BY_KIND: Readonly<
     showImplicitHydrogens: true,
     showLonePairs: true,
     showStereoBonds: false,
+    // A Lewis diagram makes no 3D claim, so there is no configuration for a
+    // descriptor to describe. Off with the wedges it would be labelling.
+    showStereoDescriptors: false,
   }),
 });
 

@@ -26,6 +26,7 @@ import {
   bromomethane,
   butan2olWedged,
   chrysene,
+  cis2Butene,
   dimethylSulfone,
   ethanol,
   ethanolMirrored,
@@ -38,7 +39,9 @@ import {
   methylRadical,
   naphthalene,
   tertButylCation,
+  trans2Butene,
   unmergedDropOverlap,
+  wedgeOnNonStereocentre,
 } from "../src/fixtures.js";
 import {
   composeAtomLabel,
@@ -122,6 +125,9 @@ describe("fixtures", () => {
       "benzylAlcoholAbbreviated",
       "methanol13C",
       "butan2olWedged",
+      "cis2Butene",
+      "trans2Butene",
+      "wedgeOnNonStereocentre",
       "naphthalene",
       "dimethylSulfone",
       "chrysene",
@@ -143,6 +149,13 @@ describe("fixtures", () => {
     expect(molecularFormula(iodomethane())).toBe("CH3I");
     expect(molecularFormula(methanol13C())).toBe("CH4O");
     expect(molecularFormula(butan2olWedged())).toBe("C4H10O");
+    // The E/Z pair is one compound drawn two ways: same formula, and the only
+    // difference between the two fixtures is where one methyl sits.
+    expect(molecularFormula(cis2Butene())).toBe("C4H8");
+    expect(molecularFormula(trans2Butene())).toBe("C4H8");
+    // Propan-2-ol. The wedge on it is the error the fixture exists for, and it
+    // changes no chemistry at all — which is exactly why it renders perfectly.
+    expect(molecularFormula(wedgeOnNonStereocentre())).toBe("C3H8O");
     // The mirror is a rigid motion: same compound, opposite side of the page.
     expect(molecularFormula(ethanolMirrored())).toBe("C2H6O");
 
@@ -247,7 +260,10 @@ describe("buildScene, structural views", () => {
           // emitted list, which would renumber the whole scene when one bond
           // changed order.
           expect(primitive.id).toMatch(
-            new RegExp(`^bond:${primitive.source.bondId}:line[23]?$`),
+            new RegExp(
+              `^bond:${primitive.source.bondId}:` +
+                `(line[23]?|wedge|hash|wavy|cross2?|descriptor)$`,
+            ),
           );
         } else if (primitive.source.kind === "atom") {
           // Every id is a pure function of the atom it came from. The trailing
@@ -255,7 +271,10 @@ describe("buildScene, structural views", () => {
           // stable too — unlike a counter that advances as iteration reaches
           // atoms, which would renumber the whole scene when one atom changed.
           expect(primitive.id).toMatch(
-            new RegExp(`^atom:${primitive.source.atomId}:(dot|label|radical:\\d+)$`),
+            new RegExp(
+              `^atom:${primitive.source.atomId}:` +
+                `(dot|label|descriptor|radical:\\d+)$`,
+            ),
           );
         }
       }

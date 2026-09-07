@@ -2,7 +2,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-18 -90.98 150.32 108.98" width="150.32px" height="108.98px">
   <rect data-decoration="background" x="-18" y="-90.98" width="150.32" height="108.98" fill="#ffffff"/>
   <line id="bond:b6:line" data-bond="b6" x1="0" y1="0" x2="29.33" y2="-16.93" stroke="#1f2937" stroke-width="2"/>
-  <line id="bond:b7:line" data-bond="b7" x1="38.11" y1="-30.5" x2="38.11" y2="-57.5" stroke="#1f2937" stroke-width="2"/>
+  <polygon id="bond:b7:wedge" data-bond="b7" points="38.11,-30.5 34.61,-57.5 41.61,-57.5" fill="#1f2937"/>
   <line id="bond:b8:line" data-bond="b8" x1="52.83" y1="-13.5" x2="76.21" y2="0" stroke="#1f2937" stroke-width="2"/>
   <line id="bond:b9:line" data-bond="b9" x1="76.21" y1="0" x2="114.32" y2="-22" stroke="#1f2937" stroke-width="2"/>
   <circle id="atom:a1:dot" data-atom="a1" cx="0" cy="0" r="2" fill="#111827"/>

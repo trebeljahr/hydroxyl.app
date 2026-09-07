@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-40 -56.11 124 112.21" width="124px" height="112.21px">
+  <rect data-decoration="background" x="-40" y="-56.11" width="124" height="112.21" fill="#ffffff"/>
+  <line id="bond:b3:line" data-bond="b3" x1="0" y1="-3.5" x2="44" y2="-3.5" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b3:line2" data-bond="b3" x1="0" y1="3.5" x2="44" y2="3.5" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b5:line" data-bond="b5" x1="0" y1="0" x2="-22" y2="-38.11" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b7:line" data-bond="b7" x1="44" y1="0" x2="66" y2="38.11" stroke="#1f2937" stroke-width="2"/>
+  <circle id="atom:a1:dot" data-atom="a1" cx="0" cy="0" r="2" fill="#111827"/>
+  <circle id="atom:a2:dot" data-atom="a2" cx="44" cy="0" r="2" fill="#111827"/>
+  <circle id="atom:a4:dot" data-atom="a4" cx="-22" cy="-38.11" r="2" fill="#111827"/>
+  <circle id="atom:a6:dot" data-atom="a6" cx="66" cy="38.11" r="2" fill="#111827"/>
+</svg>
