@@ -264,7 +264,7 @@ function toolCommands(): Command[] {
   return TOOLS.map((tool) => ({
     id: `tool.${tool.id}`,
     title: tool.title,
-    keywords: ["tool", tool.id, ...tool.hint.toLowerCase().split(/\s+/)],
+    keywords: ["tool", tool.id, ...tool.keywords],
     shortcut: tool.hotkey,
     group: "tool" as const,
     enabled: always,

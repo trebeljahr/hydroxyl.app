@@ -98,12 +98,23 @@ function isApplePlatform(): boolean {
   return /mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent);
 }
 
+/**
+ * A tool button.
+ *
+ * `glyph` OVERRIDES the registry's static icon for the three tools whose
+ * options change what a click does. A ring button that always drew a plain
+ * hexagon would say "ring" when the tool was actually set to place benzene,
+ * and the chemist would find out by placing one; showing the armed template
+ * makes the rail state legible without opening the popover.
+ */
 function ToolButton({
   tool,
   active,
+  glyph,
 }: {
   readonly tool: ToolDef;
   readonly active: boolean;
+  readonly glyph?: ReactNode;
 }): ReactElement {
   const command = commandById(`tool.${tool.id}`);
   const Icon = tool.Icon;
@@ -130,7 +141,7 @@ function ToolButton({
               : "text-foreground hover:bg-accent hover:text-accent-foreground",
           )}
         >
-          <Icon className="size-5" />
+          {glyph ?? <Icon className="size-5" />}
           <span className="sr-only">{tool.title}</span>
         </button>
       </TooltipTrigger>
@@ -371,6 +382,63 @@ const OPTIONS_BY_TOOL: Partial<Record<ToolId, () => ReactElement>> = {
   chain: ChainOptions,
 };
 
+/**
+ * The glyph a tool's CURRENT options call for, or undefined to use the
+ * registry's static one.
+ *
+ * A hook rather than a lookup because it subscribes: the rail has to redraw
+ * when the armed template or bond order changes, and only these three
+ * buttons care.
+ */
+function useToolGlyph(id: ToolId): ReactNode {
+  const ringTemplate = useEditorStore((state) => state.toolOptions.ringTemplate);
+  const bondOrder = useEditorStore((state) => state.toolOptions.bondOrder);
+  const bondStereo = useEditorStore((state) => state.toolOptions.bondStereo);
+  const element = useEditorStore((state) => state.toolOptions.element);
+
+  if (id === "ring") {
+    const Icon = RING_ICONS[ringTemplate];
+    return <Icon className="size-5" />;
+  }
+  if (id === "bond") {
+    // Stereo wins over order in the glyph: a wedge is what the eye reads
+    // first, and a "double wedge" is not a thing the rail can draw anyway.
+    const Icon =
+      bondStereo === "none" ? ORDER_ICONS[bondOrder] : STEREO_ICONS[bondStereo];
+    return <Icon className="size-5" />;
+  }
+  if (id === "element") {
+    // The symbol itself, because no glyph says "nitrogen" better than "N".
+    return (
+      <span className="font-mono text-sm font-semibold leading-none">
+        {element}
+      </span>
+    );
+  }
+  return undefined;
+}
+
+function RailTool({
+  tool,
+  active,
+}: {
+  readonly tool: ToolDef;
+  readonly active: boolean;
+}): ReactElement {
+  const glyph = useToolGlyph(tool.id);
+  const Options = OPTIONS_BY_TOOL[tool.id];
+  return (
+    <div className="flex flex-col items-center">
+      <ToolButton tool={tool} active={active} glyph={glyph} />
+      {Options === undefined ? null : (
+        <OptionsPopover label={`${tool.title} options`}>
+          <Options />
+        </OptionsPopover>
+      )}
+    </div>
+  );
+}
+
 export function ToolRail(): ReactElement {
   const active = useEditorStore((state) => state.tool);
   return (
@@ -379,19 +447,9 @@ export function ToolRail(): ReactElement {
       data-shell="tool-rail"
       className="bg-background flex w-14 shrink-0 flex-col items-center gap-1 border-r py-2"
     >
-      {TOOLS.map((tool) => {
-        const Options = OPTIONS_BY_TOOL[tool.id];
-        return (
-          <div key={tool.id} className="flex flex-col items-center">
-            <ToolButton tool={tool} active={active === tool.id} />
-            {Options === undefined ? null : (
-              <OptionsPopover label={`${tool.title} options`}>
-                <Options />
-              </OptionsPopover>
-            )}
-          </div>
-        );
-      })}
+      {TOOLS.map((tool) => (
+        <RailTool key={tool.id} tool={tool} active={active === tool.id} />
+      ))}
     </nav>
   );
 }

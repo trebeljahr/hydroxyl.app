@@ -25,6 +25,12 @@ beforeEach(() => {
   );
   state.setTool("select");
   state.clearSelection();
+  // The tool OPTIONS survive a tool change by design, so they also survive
+  // between tests in this file and have to be put back by hand.
+  state.setToolOption("element", "C");
+  state.setToolOption("bondStereo", "none");
+  state.setToolOption("bondOrder", 1);
+  state.setToolOption("ringTemplate", "benzene");
 });
 
 function renderRail(): void {
@@ -95,7 +101,12 @@ describe("ToolRail", () => {
     expect(document.querySelectorAll("[data-tool] img")).toHaveLength(0);
     for (const tool of TOOLS) {
       const svg = toolButton(tool.id).querySelector("svg");
-      expect(svg, tool.id).not.toBeNull();
+      // The element button draws its SYMBOL as text — no glyph says
+      // "nitrogen" better than "N" — so it legitimately has no <svg>.
+      if (svg === null) {
+        expect(toolButton(tool.id).textContent, tool.id).not.toBe(tool.title);
+        continue;
+      }
       const painted = [
         svg?.getAttribute("stroke"),
         svg?.getAttribute("fill"),
@@ -107,6 +118,25 @@ describe("ToolRail", () => {
       expect(painted, tool.id).not.toContain("#000");
       expect(painted, tool.id).not.toContain("#000000");
     }
+  });
+
+  it("shows what the tool is ARMED with, not a static glyph", () => {
+    // A ring button that always drew a plain hexagon would say "ring" while
+    // the tool was set to place benzene, and the chemist would find out by
+    // placing one.
+    renderRail();
+    act(() => {
+      editorStore.getState().setToolOption("element", "Br");
+    });
+    expect(toolButton("element").textContent).toContain("Br");
+
+    act(() => {
+      editorStore.getState().setToolOption("bondStereo", "wedge");
+    });
+    // The wedge glyph is the only filled one in the set.
+    expect(
+      toolButton("bond").querySelector('[fill="currentColor"]'),
+    ).not.toBeNull();
   });
 
   it("only offers options for the tools that carry them", () => {

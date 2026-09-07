@@ -51,6 +51,16 @@ export interface ToolDef {
   readonly title: string;
   /** One sentence for the tooltip's second line — what the gesture does. */
   readonly hint: string;
+  /**
+   * Search terms for the palette, BEYOND the title.
+   *
+   * Curated rather than derived from `hint`. Splitting the hint into words
+   * was the first attempt and it made the palette's fuzzy filter useless:
+   * every tool then carried a dozen common words ("click", "an", "atom",
+   * "to"), so almost any query matched almost every tool and the entry the
+   * user was actually looking for sank below the fold.
+   */
+  readonly keywords: readonly string[];
   /** A single bare letter, matched on `event.key.toLowerCase()`. */
   readonly hotkey: string;
   /** CSS cursor for the canvas while this tool is held. */
@@ -74,6 +84,7 @@ export interface ToolDef {
 export const TOOLS: readonly ToolDef[] = Object.freeze([
   Object.freeze<ToolDef>({
     id: "select",
+    keywords: ["pointer", "arrow", "marquee", "move"],
     title: "Select",
     hint: "Click to select, drag to draw or move, drag empty space to marquee",
     hotkey: "v",
@@ -83,6 +94,7 @@ export const TOOLS: readonly ToolDef[] = Object.freeze([
   }),
   Object.freeze<ToolDef>({
     id: "bond",
+    keywords: ["draw", "line", "single", "double", "triple", "wedge"],
     title: "Draw bond",
     hint: "Drag from an atom to draw; click an existing bond to retype it",
     hotkey: "d",
@@ -92,6 +104,7 @@ export const TOOLS: readonly ToolDef[] = Object.freeze([
   }),
   Object.freeze<ToolDef>({
     id: "element",
+    keywords: ["atom", "symbol", "heteroatom", "label"],
     title: "Element",
     hint: "Click an atom to retype it, or empty canvas to place one",
     hotkey: "e",
@@ -101,6 +114,7 @@ export const TOOLS: readonly ToolDef[] = Object.freeze([
   }),
   Object.freeze<ToolDef>({
     id: "ring",
+    keywords: ["cycle", "cyclohexane", "benzene", "template"],
     title: "Ring template",
     hint: "Click a bond to fuse, an atom to attach, alt-click for spiro",
     hotkey: "r",
@@ -110,6 +124,7 @@ export const TOOLS: readonly ToolDef[] = Object.freeze([
   }),
   Object.freeze<ToolDef>({
     id: "chain",
+    keywords: ["alkyl", "zigzag", "backbone"],
     title: "Chain",
     hint: "Click an atom to grow a zig-zag chain off it",
     hotkey: "z",
@@ -119,6 +134,7 @@ export const TOOLS: readonly ToolDef[] = Object.freeze([
   }),
   Object.freeze<ToolDef>({
     id: "charge",
+    keywords: ["cation", "anion", "plus", "minus", "formal"],
     title: "Charge",
     hint: "Click an atom to add a charge, alt-click to subtract",
     hotkey: "q",
@@ -128,6 +144,7 @@ export const TOOLS: readonly ToolDef[] = Object.freeze([
   }),
   Object.freeze<ToolDef>({
     id: "eraser",
+    keywords: ["delete", "remove", "rub out"],
     title: "Eraser",
     hint: "Click an atom or a bond to remove it",
     hotkey: "x",
@@ -137,6 +154,7 @@ export const TOOLS: readonly ToolDef[] = Object.freeze([
   }),
   Object.freeze<ToolDef>({
     id: "pan",
+    keywords: ["scroll", "move view", "hand", "grab"],
     title: "Pan",
     hint: "Drag to move the view — the same as holding space",
     hotkey: "g",
