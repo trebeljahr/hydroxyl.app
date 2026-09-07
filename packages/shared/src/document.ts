@@ -36,7 +36,9 @@ import {
   type AtomId,
   type Bond,
   type BondId,
+  type BondOrder,
   type BondStereo,
+  type DoubleBondSide,
   type Molecule,
 } from "@starter/chem-core";
 import { z } from "zod";
@@ -395,7 +397,7 @@ const atomSchema = z.object({
  * catches one added to it. Between them the next member is a compile error
  * here rather than a runtime rejection in the user's saved file.
  */
-const BOND_STEREO_VALUES = [
+export const BOND_STEREO_VALUES = [
   "none",
   "wedge",
   "hash",
@@ -408,13 +410,43 @@ type StereoListIsTotal =
 const STEREO_LIST_IS_TOTAL: StereoListIsTotal = true;
 void STEREO_LIST_IS_TOTAL;
 
+/**
+ * The other two bond value unions, given the same two-way guard and the same
+ * export.
+ *
+ * EXPORTED because a UI that offers a Select over them needs the list, and a
+ * hand-written literal array in a component is exactly the drift the rule
+ * above exists to prevent — the `either` bug was a hardcoded `z.enum` that had
+ * fallen behind the model, and a third copy in a properties panel is the same
+ * mistake one layer up. There is now ONE list per union, checked in both
+ * directions, and every consumer reads it.
+ */
+export const BOND_ORDER_VALUES = [1, 2, 3] as const satisfies readonly BondOrder[];
+
+type OrderListIsTotal =
+  BondOrder extends (typeof BOND_ORDER_VALUES)[number] ? true : never;
+const ORDER_LIST_IS_TOTAL: OrderListIsTotal = true;
+void ORDER_LIST_IS_TOTAL;
+
+export const DOUBLE_BOND_SIDE_VALUES = [
+  "auto",
+  "left",
+  "right",
+  "centered",
+] as const satisfies readonly DoubleBondSide[];
+
+type SideListIsTotal =
+  DoubleBondSide extends (typeof DOUBLE_BOND_SIDE_VALUES)[number] ? true : never;
+const SIDE_LIST_IS_TOTAL: SideListIsTotal = true;
+void SIDE_LIST_IS_TOTAL;
+
 const bondSchema = z.object({
   id: nonEmptyString,
   from: nonEmptyString,
   to: nonEmptyString,
   order: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   stereo: z.enum(BOND_STEREO_VALUES),
-  doubleBondSide: z.enum(["auto", "left", "right", "centered"]),
+  doubleBondSide: z.enum(DOUBLE_BOND_SIDE_VALUES),
   aromatic: z.boolean(),
 });
 
