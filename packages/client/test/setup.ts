@@ -11,3 +11,41 @@
 // skipLibCheck hides it). types/vitest.d.ts augments vitest's own
 // Assertion interface, which is what makes toBeInTheDocument() typecheck.
 import "@testing-library/jest-dom/vitest";
+
+// ---------------------------------------------------------------------------
+// jsdom shims for Radix and cmdk
+//
+// jsdom implements no pointer capture, no scrollIntoView and no
+// ResizeObserver, and Radix's Select/Dialog and cmdk's list all call at least
+// one of them during a normal open. The failure is a thrown TypeError from
+// inside the primitive, which reads as "the component is broken" rather than
+// "the environment is missing an API", so the shims are here rather than
+// scattered through the tests that trip them.
+//
+// Only the `dom` vitest project loads this file; the `node` and `rdkit`
+// projects deliberately do not, and must not — a store test that needs a DOM
+// shim has grown a DOM dependency and the split is what catches it.
+// ---------------------------------------------------------------------------
+
+if (typeof Element !== "undefined") {
+  if (!Element.prototype.hasPointerCapture) {
+    Element.prototype.hasPointerCapture = () => false;
+  }
+  if (!Element.prototype.setPointerCapture) {
+    Element.prototype.setPointerCapture = () => undefined;
+  }
+  if (!Element.prototype.releasePointerCapture) {
+    Element.prototype.releasePointerCapture = () => undefined;
+  }
+  if (!Element.prototype.scrollIntoView) {
+    Element.prototype.scrollIntoView = () => undefined;
+  }
+}
+
+if (typeof globalThis.ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  } as unknown as typeof ResizeObserver;
+}
