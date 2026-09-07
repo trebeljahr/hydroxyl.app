@@ -23,7 +23,11 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  // Undefined lets Playwright pick ~half the cores, i.e. five concurrent
+  // Chromium instances at several hundred MB each. With several agent
+  // sessions building this repo at once that is what tips the machine
+  // into swap, so cap it locally too.
+  workers: process.env.CI ? 1 : 2,
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
   use: { baseURL, trace: "on-first-retry" },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
