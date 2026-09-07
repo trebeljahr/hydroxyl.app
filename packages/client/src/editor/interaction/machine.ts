@@ -64,12 +64,16 @@ import {
   DEFAULT_ANGLE_STEP,
   DEFAULT_BOND_LENGTH,
   DEFAULT_MERGE_RADIUS,
+  RING_TEMPLATES,
 } from "@starter/chem-core";
 import type {
   AtomId,
   BondId,
   BondOrder,
+  BondStereo,
+  ElementSymbol,
   Molecule,
+  RingTemplate,
   SproutTarget,
   Vec2,
 } from "@starter/chem-core";
@@ -84,6 +88,7 @@ import { guardedOps } from "@/state/chem-guard";
 import type { Selection } from "@/state";
 
 import type {
+  DrawnBond,
   DrawTarget,
   InteractionCommand,
   InteractionContext,
@@ -125,6 +130,12 @@ const LABEL_MOVE = "Move selection";
 const LABEL_ROTATE = "Rotate selection";
 const LABEL_MERGE = "Merge atoms";
 const LABEL_RING = "Add ring";
+const LABEL_CHAIN = "Add chain";
+const LABEL_ERASE = "Erase";
+const LABEL_CHARGE = "Change charge";
+const LABEL_SET_ELEMENT = "Set element";
+const LABEL_ADD_ATOM = "Add atom";
+const LABEL_SET_BOND = "Set bond type";
 
 const MESSAGE_ALREADY_BONDED = "These atoms are already bonded";
 const MESSAGE_FUSED_BOTH_SIDES = "That bond already has a ring on each side";
@@ -348,7 +359,7 @@ function drawFrame(
   base: Molecule,
   from: AtomId,
   target: DrawTarget,
-  order: BondOrder,
+  bond: DrawnBond,
 ): readonly InteractionCommand[] {
   if (target.kind === "ring-closure" && target.refused) {
     return [
@@ -361,7 +372,24 @@ function drawFrame(
     {
       kind: "edit",
       label: LABEL_DRAW_BOND,
-      edit: () => guardedOps.sproutTo(base, from, sproutTarget, { order }).molecule,
+      edit: () => {
+        // `element` is passed only for a NEW atom: a ring closure bonds two
+        // atoms that already exist and re-typing one of them is not what the
+        // gesture said.
+        const grown = guardedOps.sproutTo(base, from, sproutTarget, {
+          order: bond.order,
+          ...(sproutTarget.kind === "new-atom" ? { element: bond.element } : {}),
+        });
+        // STEREO IS CHAINED RATHER THAN PASSED. chem-core's
+        // `SproutBondOptions` is `{ element?, order? }` and has no stereo
+        // member; widening it would put a drawing-tool concern into the
+        // model, whereas the SproutResult already names the bond that was
+        // minted. `sproutTo` reuses no bond, so this never re-types an
+        // existing one — the narrow end lands at `from`, which is the atom
+        // the drag started from, exactly as types.ts specifies.
+        if (bond.stereo === "none") return grown.molecule;
+        return guardedOps.setBondStereo(grown.molecule, grown.bondId, bond.stereo);
+      },
     },
     { kind: "status", message: null },
   ];
@@ -424,17 +452,22 @@ function snapTo(angle: number, step: number): number {
  * `insertFragment` instead. `RING_TEMPLATES` holds no hetero ring today, so
  * nothing is lost by `carbocycle` being unable to express one; when one is
  * added this is the call site that has to grow.
+ *
+ * DRIVEN OFF `template.kekule`, NOT OFF `size === 6`. The size test was the
+ * other half of the ring-template gap: it made a free 6-ring ALWAYS benzene
+ * and cyclohexane unreachable, while the fuse/attach/spiro paths passed
+ * `{ size }` and so made cyclohexane and never benzene. Same option, opposite
+ * failures; both now read the one resolved template.
  */
 function freeRing(
   mol: Molecule,
   centre: Vec2,
-  size: number,
+  template: RingTemplate,
   bondLength: number,
 ): Molecule {
-  const ring =
-    size === 6
-      ? buildBenzene(bondLength, centre)
-      : carbocycle(size, "C", bondLength, centre);
+  const ring = template.kekule
+    ? buildBenzene(bondLength, centre)
+    : carbocycle(template.size, template.elements?.[0] ?? "C", bondLength, centre);
   return guardedOps.insertFragment(mol, ring).molecule;
 }
 
@@ -443,7 +476,7 @@ function ringClick(
   sample: PointerSample,
 ): readonly InteractionCommand[] {
   const mol = ctx.molecule;
-  const size = ctx.toolOptions.ringSize;
+  const template = RING_TEMPLATES[ctx.toolOptions.ringTemplate];
   const bondLength = documentBondLength(mol);
   const options = { bondLength };
   const hit = sample.hit;
@@ -470,7 +503,7 @@ function ringClick(
         kind: "edit",
         label: LABEL_RING,
         edit: (m) =>
-          guardedOps.fuseRingOnBond(m, hit.bondId, { size }, options).molecule,
+          guardedOps.fuseRingOnBond(m, hit.bondId, template, options).molecule,
       },
       { kind: "status", message: null },
     ];
@@ -485,7 +518,7 @@ function ringClick(
       {
         kind: "edit",
         label: LABEL_RING,
-        edit: (m) => place(m, atomId, { size }, options).molecule,
+        edit: (m) => place(m, atomId, template, options).molecule,
       },
       { kind: "status", message: null },
     ];
@@ -495,7 +528,7 @@ function ringClick(
     {
       kind: "edit",
       label: LABEL_RING,
-      edit: (m) => freeRing(m, sample.point, size, bondLength),
+      edit: (m) => freeRing(m, sample.point, template, bondLength),
     },
     { kind: "status", message: null },
   ];
@@ -643,10 +676,16 @@ function onDragStart(
   }
 
   if (hit.kind === "atom") {
-    const drawing =
-      ctx.tool === "bond" || !selectionHasAtom(ctx.selection, hit.atomId);
+    // The tools that draw when dragged off an atom. `element` is here because
+    // dragging from a carbon with nitrogen selected is how a chemist adds an
+    // amine — the tool names what the new atom is, not what the old one
+    // becomes. The eraser, charge and chain tools deliberately are not: all
+    // three are click gestures, and a drag with one of them held falls
+    // through to move/marquee.
+    const drawingTool = ctx.tool === "bond" || ctx.tool === "element";
+    const drawing = drawingTool || !selectionHasAtom(ctx.selection, hit.atomId);
     const started = drawing
-      ? startDrawing(mol, hit.atomId, sample, ctx.toolOptions.bondOrder)
+      ? startDrawing(mol, hit.atomId, sample, drawnBond(ctx.toolOptions))
       : startMoving(mol, ctx.selection, origin.point, sample, ctx);
     return result(started.state, [...stale, ...started.commands]);
   }
@@ -706,11 +745,20 @@ export function gestureBase(state: InteractionState): Molecule | null {
   }
 }
 
+/** The three tool options a sprout honours, read once at drag start. */
+function drawnBond(options: InteractionContext["toolOptions"]): DrawnBond {
+  return {
+    order: options.bondOrder,
+    stereo: options.bondStereo,
+    element: options.element,
+  };
+}
+
 function startDrawing(
   mol: Molecule,
   from: AtomId,
   sample: PointerSample,
-  order: BondOrder,
+  bond: DrawnBond,
 ): InteractionResult {
   const bondLength = documentBondLength(mol);
   const target = resolveDrawTarget(mol, from, sample, bondLength);
@@ -721,12 +769,12 @@ function startDrawing(
       base: mol,
       from,
       bondLength,
-      order,
+      bond,
       target,
     },
     [
       { kind: "beginTransaction", label: LABEL_DRAW_BOND },
-      ...drawFrame(mol, from, target, order),
+      ...drawFrame(mol, from, target, bond),
     ],
   );
 }
@@ -838,7 +886,7 @@ function onDragMove(
       if (sameTarget(target, state.target)) return result(state);
       return result(
         { ...state, target },
-        drawFrame(state.base, state.from, target, state.order),
+        drawFrame(state.base, state.from, target, state.bond),
       );
     }
     case "movingSelection": {
@@ -1008,6 +1056,207 @@ function onCancel(state: InteractionState): InteractionResult {
   }
 }
 
+/**
+ * One click, one undo entry.
+ *
+ * `transact` cannot span a drag, but a click is synchronous, and the
+ * begin/commit pair around a single edit is what makes the entry read "Add
+ * ring" rather than whatever the edit itself was labelled.
+ */
+function clickTransaction(
+  label: string,
+  commands: readonly InteractionCommand[],
+): InteractionResult {
+  return result(IDLE, [
+    { kind: "beginTransaction", label },
+    ...commands,
+    { kind: "commitTransaction" },
+  ]);
+}
+
+/**
+ * The eraser: click what you want gone.
+ *
+ * Removing an ATOM takes its bonds with it (chem-core's `removeAtoms` does),
+ * which is what a chemist means by rubbing out a substituent. Removing a BOND
+ * leaves both atoms — a C-C that becomes two methyls is a real intermediate
+ * step, and deleting the atoms too would erase structure the user never
+ * pointed at.
+ */
+function eraseClick(sample: PointerSample): readonly InteractionCommand[] {
+  const hit = sample.hit;
+  if (hit.kind === "atom") {
+    return [
+      {
+        kind: "edit",
+        label: LABEL_ERASE,
+        edit: (m) => guardedOps.removeAtoms(m, [hit.atomId]),
+      },
+      // The erased atom cannot stay selected; `applyMoleculeEdit` prunes it,
+      // but the bonds it took with it are pruned in the same pass and the
+      // simplest honest answer is an empty selection.
+      { kind: "setSelection", selection: sel(EMPTY_ATOMS, EMPTY_BONDS) },
+      { kind: "status", message: null },
+    ];
+  }
+  if (hit.kind === "bond") {
+    return [
+      {
+        kind: "edit",
+        label: LABEL_ERASE,
+        edit: (m) => guardedOps.removeBonds(m, [hit.bondId]),
+      },
+      { kind: "setSelection", selection: sel(EMPTY_ATOMS, EMPTY_BONDS) },
+      { kind: "status", message: null },
+    ];
+  }
+  return NO_COMMANDS;
+}
+
+/**
+ * The charge tool: one click is one unit, alt reverses the sign.
+ *
+ * Never clamped. A charge of +7 is chemical nonsense, and `valenceIssues`
+ * already says so — refusing the keystroke instead would stop the user
+ * passing THROUGH a wrong value on the way to the right one, which is how a
+ * counter is used.
+ */
+function chargeClick(
+  ctx: InteractionContext,
+  sample: PointerSample,
+): readonly InteractionCommand[] {
+  const hit = sample.hit;
+  if (hit.kind !== "atom") return NO_COMMANDS;
+  const atom = Object.hasOwn(ctx.molecule.atoms, hit.atomId)
+    ? ctx.molecule.atoms[hit.atomId]
+    : undefined;
+  if (atom === undefined) return NO_COMMANDS;
+  const delta = sample.modifiers.alt
+    ? -ctx.toolOptions.chargeDelta
+    : ctx.toolOptions.chargeDelta;
+  const next = atom.charge + delta;
+  return [
+    {
+      kind: "edit",
+      label: LABEL_CHARGE,
+      edit: (m) => guardedOps.setCharge(m, hit.atomId, next),
+    },
+    { kind: "status", message: null },
+  ];
+}
+
+/**
+ * The element tool: retype an atom, or drop a lone one on empty canvas.
+ *
+ * The free-atom case is the only way to start a drawing that does not begin
+ * with a carbon, and it is what makes an empty document reachable by anything
+ * other than the ring tool.
+ */
+function elementClick(
+  ctx: InteractionContext,
+  sample: PointerSample,
+): readonly InteractionCommand[] {
+  const element = ctx.toolOptions.element;
+  const hit = sample.hit;
+  if (hit.kind === "atom") {
+    return [
+      {
+        kind: "edit",
+        label: LABEL_SET_ELEMENT,
+        edit: (m) => guardedOps.setElement(m, hit.atomId, element),
+      },
+      { kind: "status", message: null },
+    ];
+  }
+  if (hit.kind === "bond") return NO_COMMANDS;
+  const pos = sample.point;
+  return [
+    {
+      kind: "edit",
+      label: LABEL_ADD_ATOM,
+      edit: (m) => guardedOps.addAtom(m, { element, pos }).molecule,
+    },
+    { kind: "status", message: null },
+  ];
+}
+
+/**
+ * The chain tool: append `chainLength` atoms of zig-zag off the clicked atom,
+ * or start a fresh chain where the canvas is empty.
+ *
+ * `appendChain` returns the molecule BY REFERENCE for a count of zero, so a
+ * zero-length setting is a genuine no-op and records nothing.
+ */
+function chainClick(
+  ctx: InteractionContext,
+  sample: PointerSample,
+): readonly InteractionCommand[] {
+  const mol = ctx.molecule;
+  const count = ctx.toolOptions.chainLength;
+  const element = ctx.toolOptions.element;
+  const bondLength = documentBondLength(mol);
+  const hit = sample.hit;
+  if (hit.kind === "atom") {
+    return [
+      {
+        kind: "edit",
+        label: LABEL_CHAIN,
+        edit: (m) =>
+          guardedOps.appendChain(m, hit.atomId, count, { bondLength, element })
+            .molecule,
+      },
+      { kind: "status", message: null },
+    ];
+  }
+  if (hit.kind === "bond") return NO_COMMANDS;
+  // A chain of n atoms drawn on empty canvas: one seed plus n-1 appended, so
+  // the count the user set is the number of atoms they get.
+  const pos = sample.point;
+  return [
+    {
+      kind: "edit",
+      label: LABEL_CHAIN,
+      edit: (m) => {
+        const seeded = guardedOps.addAtom(m, { element, pos });
+        return guardedOps.appendChain(seeded.molecule, seeded.id, count - 1, {
+          bondLength,
+          element,
+        }).molecule;
+      },
+    },
+    { kind: "status", message: null },
+  ];
+}
+
+/**
+ * Clicking an EXISTING bond with the bond tool SETS it to the tool's current
+ * order and stereo. It does not cycle.
+ *
+ * The backlog left this open. Setting wins because the tool already carries an
+ * explicit order — you pressed 2, or picked the double-bond button — and a
+ * cycle would ignore the number you just chose: a click on a double bond with
+ * the double-bond tool held would make it a triple. Cycling is still reachable
+ * from the command registry (`bond.cycle-order`) for the keyboard user who
+ * wants it, so nothing is lost.
+ */
+function bondClickOnBond(
+  ctx: InteractionContext,
+  bondId: BondId,
+): readonly InteractionCommand[] {
+  const order = ctx.toolOptions.bondOrder;
+  const stereo = ctx.toolOptions.bondStereo;
+  return [
+    {
+      kind: "edit",
+      label: LABEL_SET_BOND,
+      edit: (m) =>
+        guardedOps.setBondStereo(guardedOps.setBondOrder(m, bondId, order), bondId, stereo),
+    },
+    { kind: "setSelection", selection: sel(EMPTY_ATOMS, [bondId]) },
+    { kind: "status", message: null },
+  ];
+}
+
 function onClick(
   state: InteractionState,
   sample: PointerSample,
@@ -1015,32 +1264,54 @@ function onClick(
 ): InteractionResult {
   if (state.kind === "panning") return result(state);
 
-  if (ctx.tool === "ring") {
-    const commands = ringClick(ctx, sample);
-    // One click, one entry: `transact` cannot span a drag, but a click is
-    // synchronous and the begin/commit pair around a single edit is what makes
-    // the label read "Add ring" rather than the edit's own.
-    return result(IDLE, [
-      { kind: "beginTransaction", label: LABEL_RING },
-      ...commands,
-      { kind: "commitTransaction" },
-    ]);
-  }
-
-  if (ctx.tool === "bond" && sample.hit.kind === "atom") {
-    const atomId = sample.hit.atomId;
-    const bondLength = documentBondLength(ctx.molecule);
-    const order = ctx.toolOptions.bondOrder;
-    return result(IDLE, [
-      { kind: "beginTransaction", label: LABEL_DRAW_BOND },
-      {
-        kind: "edit",
-        label: LABEL_DRAW_BOND,
-        edit: (m) => guardedOps.sprout(m, atomId, { bondLength, order }).molecule,
-      },
-      { kind: "commitTransaction" },
-      { kind: "status", message: null },
-    ]);
+  switch (ctx.tool) {
+    case "ring":
+      return clickTransaction(LABEL_RING, ringClick(ctx, sample));
+    case "chain":
+      return clickTransaction(LABEL_CHAIN, chainClick(ctx, sample));
+    case "eraser":
+      return clickTransaction(LABEL_ERASE, eraseClick(sample));
+    case "charge":
+      return clickTransaction(LABEL_CHARGE, chargeClick(ctx, sample));
+    case "element":
+      return clickTransaction(LABEL_SET_ELEMENT, elementClick(ctx, sample));
+    case "bond": {
+      if (sample.hit.kind === "atom") {
+        const atomId = sample.hit.atomId;
+        const bondLength = documentBondLength(ctx.molecule);
+        const bond = drawnBond(ctx.toolOptions);
+        return clickTransaction(LABEL_DRAW_BOND, [
+          {
+            kind: "edit",
+            label: LABEL_DRAW_BOND,
+            edit: (m) => {
+              const grown = guardedOps.sprout(m, atomId, {
+                bondLength,
+                order: bond.order,
+                element: bond.element,
+              });
+              if (bond.stereo === "none") return grown.molecule;
+              return guardedOps.setBondStereo(
+                grown.molecule,
+                grown.bondId,
+                bond.stereo,
+              );
+            },
+          },
+          { kind: "status", message: null },
+        ]);
+      }
+      if (sample.hit.kind === "bond") {
+        return clickTransaction(
+          LABEL_SET_BOND,
+          bondClickOnBond(ctx, sample.hit.bondId),
+        );
+      }
+      break;
+    }
+    case "select":
+    case "pan":
+      break;
   }
 
   return result(IDLE, selectCommands(sample, ctx));

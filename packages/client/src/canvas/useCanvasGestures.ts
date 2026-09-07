@@ -143,6 +143,19 @@ export interface CanvasGestureHandlers {
   readonly onResize: (size: ViewportSize) => void;
 }
 
+/**
+ * The one piece of editor state this hook is allowed to know about.
+ *
+ * `panTool` is a MODE, not a gesture: with the pan tool held, a plain left
+ * drag pans instead of drawing. It arrives as a prop rather than being read
+ * from the store because this file's whole contract is that it knows nothing
+ * about the store, the scene or chemistry — the caller resolves the tool and
+ * hands down the boolean.
+ */
+export interface CanvasGestureOptions {
+  readonly panTool?: boolean | undefined;
+}
+
 export interface CanvasGestures {
   /** True only while a pan drag is actually in progress — for `cursor: grabbing`. */
   readonly isPanning: boolean;
@@ -251,6 +264,7 @@ function releasePointer(svg: SVGSVGElement, pointerId: number): void {
 export function useCanvasGestures(
   svgRef: React.RefObject<SVGSVGElement | null>,
   handlers: CanvasGestureHandlers,
+  options: CanvasGestureOptions = {},
 ): CanvasGestures {
   /**
    * THE LATEST-REF PATTERN, and why it is not premature.
@@ -272,6 +286,11 @@ export function useCanvasGestures(
   const panRef = useRef<PanDrag | null>(null);
   const pressRef = useRef<PressTrack | null>(null);
   const spaceRef = useRef(false);
+  // Read through a ref for the same reason the handler bag is: the pointerdown
+  // path must see the CURRENT tool, and it is reached from a callback with an
+  // empty dependency list.
+  const panToolRef = useRef(options.panTool === true);
+  panToolRef.current = options.panTool === true;
   const [isPanning, setIsPanning] = useState(false);
 
   const endPan = useCallback((svg: SVGSVGElement | null): void => {
@@ -541,7 +560,8 @@ export function useCanvasGestures(
       // button is the one that works with no keyboard and space is the one
       // that works on a trackpad with no middle button.
       const wantsPan =
-        event.button === 1 || (event.button === 0 && spaceRef.current);
+        event.button === 1 ||
+        (event.button === 0 && (spaceRef.current || panToolRef.current));
 
       if (wantsPan) {
         // Suppresses the middle-click autoscroll widget on platforms that have

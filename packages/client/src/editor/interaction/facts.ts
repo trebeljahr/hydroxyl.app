@@ -36,7 +36,15 @@
  *    from history internals.
  */
 
-import type { AtomId, BondId, BondOrder, Molecule, Vec2 } from "@starter/chem-core";
+import type {
+  AtomId,
+  BondId,
+  BondOrder,
+  BondStereo,
+  ElementSymbol,
+  Molecule,
+  Vec2,
+} from "@starter/chem-core";
 
 import type { MoleculeEdit, Selection, ToolId, ToolOptions } from "@/state";
 
@@ -201,9 +209,11 @@ export type InteractionState =
       readonly base: Molecule;
       readonly from: AtomId;
       readonly bondLength: number;
-      /** Latched at drag start, so switching the bond tool mid-drag does not
-       *  retype a bond the user is still positioning. */
-      readonly order: BondOrder;
+      /**
+       * The bond being drawn, LATCHED AT DRAG START — so a hotkey pressed
+       * mid-drag does not retype a bond the user is still positioning.
+       */
+      readonly bond: DrawnBond;
       /** Where the far end currently is, and what is there. */
       readonly target: DrawTarget;
     }
@@ -237,6 +247,20 @@ export type InteractionState =
       readonly angle: number;
     }
   | { readonly kind: "panning" };
+
+/**
+ * What a drawing gesture is drawing: the three tool options a sprout can
+ * honour, gathered so the state latches one value rather than three.
+ *
+ * `element` applies to the atom a drag MINTS and to nothing else — a ring
+ * closure joins two atoms that already exist and re-typing one of them is not
+ * what the gesture said.
+ */
+export interface DrawnBond {
+  readonly order: BondOrder;
+  readonly stereo: BondStereo;
+  readonly element: ElementSymbol;
+}
 
 /** Where a bond being drawn currently ends. */
 export type DrawTarget =

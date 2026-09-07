@@ -22,11 +22,12 @@ import {
   requireAtom,
   linearChain,
   singleAtom,
+  valenceIssues,
 } from "@starter/chem-core";
 import type { AtomId, Molecule, Vec2 } from "@starter/chem-core";
 
 import { DEFAULT_TOOL_OPTIONS } from "@/state";
-import type { Selection, ToolId } from "@/state";
+import type { Selection, ToolId, ToolOptions } from "@/state";
 
 import type {
   InteractionCommand,
@@ -73,6 +74,8 @@ class Driver {
   molecule: Molecule;
   selection: Selection = EMPTY;
   tool: ToolId = "select";
+  /** Overridable so a test can drive a tool's OPTIONS, not just its id. */
+  toolOptions: ToolOptions = DEFAULT_TOOL_OPTIONS;
   status: string | null = null;
 
   /** Labels of the entries a real history would hold. */
@@ -89,7 +92,7 @@ class Driver {
     return {
       molecule: this.molecule,
       tool: this.tool,
-      toolOptions: DEFAULT_TOOL_OPTIONS,
+      toolOptions: this.toolOptions,
       selection: this.selection,
     };
   }
@@ -783,6 +786,184 @@ describe("ring templates", () => {
     driver.send({ kind: "click", sample: sample({ x: 6, y: 6 }) });
     expect(driver.molecule.atomIds).toHaveLength(12);
     expect(driver.molecule.bondIds).toHaveLength(12);
+  });
+});
+
+describe("ring templates — which ring", () => {
+  /**
+   * THE GAP THIS CLOSES. `ToolOptions` carried `ringSize: number`, and
+   * cyclohexane and benzene are BOTH size 6 — so the option could reach one
+   * of them and never the other. Worse, which one depended on the call site:
+   * fuse/attach/spiro built `{ size }` and always made cyclohexane, while
+   * free placement branched on `size === 6` and always made benzene. Both
+   * paths now read the one resolved template, and both are pinned here.
+   */
+  function ringBondOrders(mol: Molecule): number[] {
+    return mol.bondIds.map((id) => mol.bonds[id]!.order).sort();
+  }
+
+  it("places a free BENZENE with alternating orders", () => {
+    const driver = new Driver(singleAtom("C", { x: -20, y: -20 }));
+    driver.tool = "ring";
+    driver.toolOptions = { ...DEFAULT_TOOL_OPTIONS, ringTemplate: "benzene" };
+    driver.send({ kind: "click", sample: sample({ x: 6, y: 6 }) });
+
+    expect(driver.molecule.bondIds).toHaveLength(6);
+    expect(ringBondOrders(driver.molecule)).toEqual([1, 1, 1, 2, 2, 2]);
+  });
+
+  it("places a free CYCLOHEXANE, which the size test made unreachable", () => {
+    const driver = new Driver(singleAtom("C", { x: -20, y: -20 }));
+    driver.tool = "ring";
+    driver.toolOptions = { ...DEFAULT_TOOL_OPTIONS, ringTemplate: "cyclohexane" };
+    driver.send({ kind: "click", sample: sample({ x: 6, y: 6 }) });
+
+    expect(driver.molecule.bondIds).toHaveLength(6);
+    expect(ringBondOrders(driver.molecule)).toEqual([1, 1, 1, 1, 1, 1]);
+    // A saturated ring of carbons is chemically fine.
+    expect(valenceIssues(driver.molecule)).toEqual([]);
+  });
+
+  it("fuses a BENZENE onto a benzene, which the `{ size }` call made unreachable", () => {
+    const mol = benzene();
+    const driver = new Driver(mol);
+    driver.tool = "ring";
+    driver.toolOptions = { ...DEFAULT_TOOL_OPTIONS, ringTemplate: "benzene" };
+    // b8 is one of the ring bonds; two vertices are shared, so four are added.
+    driver.send({
+      kind: "click",
+      sample: sample({ x: 0.87, y: 0 }, { kind: "bond", bondId: "b8" }),
+    });
+
+    expect(driver.molecule.atomIds).toHaveLength(10);
+    // Naphthalene's ten bond orders, not cyclohexane's all-singles.
+    expect(ringBondOrders(driver.molecule)).toContain(2);
+  });
+
+  it("fuses a saturated ring when the template says so", () => {
+    const mol = benzene();
+    const driver = new Driver(mol);
+    driver.tool = "ring";
+    driver.toolOptions = { ...DEFAULT_TOOL_OPTIONS, ringTemplate: "cyclopentane" };
+    driver.send({
+      kind: "click",
+      sample: sample({ x: 0.87, y: 0 }, { kind: "bond", bondId: "b8" }),
+    });
+    // A five-ring shares two vertices, so three are added.
+    expect(driver.molecule.atomIds).toHaveLength(9);
+  });
+});
+
+describe("the tools that were not wired to the reducer", () => {
+  it("erases the atom under the eraser, and its bonds with it", () => {
+    const driver = new Driver(benzene());
+    driver.tool = "eraser";
+    driver.send({ kind: "click", sample: sample(pos(driver.molecule, "a1"), atomHit("a1")) });
+
+    expect(driver.molecule.atomIds).toHaveLength(5);
+    // The two ring bonds it carried went with it; the rest stayed.
+    expect(driver.molecule.bondIds).toHaveLength(4);
+    expect(driver.entries).toEqual(["Erase"]);
+  });
+
+  it("erases a bond and leaves both its atoms", () => {
+    const driver = new Driver(benzene());
+    driver.tool = "eraser";
+    driver.send({
+      kind: "click",
+      sample: sample({ x: 0.87, y: 0 }, { kind: "bond", bondId: "b8" }),
+    });
+    expect(driver.molecule.atomIds).toHaveLength(6);
+    expect(driver.molecule.bondIds).toHaveLength(5);
+  });
+
+  it("adds and subtracts charge, and never clamps it", () => {
+    const driver = new Driver(benzene());
+    driver.tool = "charge";
+    const at = sample(pos(driver.molecule, "a1"), atomHit("a1"));
+    driver.send({ kind: "click", sample: at });
+    driver.send({ kind: "click", sample: at });
+    expect(driver.molecule.atoms["a1"]!.charge).toBe(2);
+
+    // Alt reverses the sign, so the same button walks back down.
+    const alt = sample(pos(driver.molecule, "a1"), atomHit("a1"), { alt: true });
+    driver.send({ kind: "click", sample: alt });
+    driver.send({ kind: "click", sample: alt });
+    driver.send({ kind: "click", sample: alt });
+    expect(driver.molecule.atoms["a1"]!.charge).toBe(-1);
+  });
+
+  it("retypes an atom with the element tool, and drops a lone one on empty canvas", () => {
+    const driver = new Driver(benzene());
+    driver.tool = "element";
+    driver.toolOptions = { ...DEFAULT_TOOL_OPTIONS, element: "N" };
+    driver.send({ kind: "click", sample: sample(pos(driver.molecule, "a1"), atomHit("a1")) });
+    expect(driver.molecule.atoms["a1"]!.element).toBe("N");
+    expect(driver.molecule.atomIds).toHaveLength(6);
+
+    driver.send({ kind: "click", sample: sample({ x: 8, y: 8 }) });
+    expect(driver.molecule.atomIds).toHaveLength(7);
+    expect(driver.molecule.atoms[driver.molecule.atomIds[6]!]!.element).toBe("N");
+  });
+
+  it("grows a chain of the length the tool is set to", () => {
+    const driver = new Driver(singleAtom("C", { x: 0, y: 0 }));
+    driver.tool = "chain";
+    driver.toolOptions = { ...DEFAULT_TOOL_OPTIONS, chainLength: 5 };
+    driver.send({ kind: "click", sample: sample({ x: 0, y: 0 }, atomHit("a1")) });
+
+    // Five appended to the one clicked.
+    expect(driver.molecule.atomIds).toHaveLength(6);
+    expect(driver.molecule.bondIds).toHaveLength(5);
+    expect(driver.entries).toEqual(["Add chain"]);
+  });
+
+  it("starts a chain of exactly `chainLength` atoms on empty canvas", () => {
+    const driver = new Driver(singleAtom("C", { x: -20, y: -20 }));
+    driver.tool = "chain";
+    driver.toolOptions = { ...DEFAULT_TOOL_OPTIONS, chainLength: 4 };
+    driver.send({ kind: "click", sample: sample({ x: 5, y: 5 }) });
+    // One seed plus three appended: the count the user set is what they get.
+    expect(driver.molecule.atomIds).toHaveLength(5);
+  });
+
+  it("SETS a clicked bond to the tool's order rather than cycling it", () => {
+    // The backlog left this open. Setting wins because the tool already
+    // carries an explicit order: a click on a double bond with the
+    // double-bond tool held would otherwise make it a triple.
+    const driver = new Driver(benzene());
+    driver.tool = "bond";
+    driver.toolOptions = { ...DEFAULT_TOOL_OPTIONS, bondOrder: 2 };
+    const double = driver.molecule.bondIds.find(
+      (id) => driver.molecule.bonds[id]!.order === 2,
+    )!;
+
+    driver.send({
+      kind: "click",
+      sample: sample({ x: 0, y: 0 }, { kind: "bond", bondId: double }),
+    });
+    expect(driver.molecule.bonds[double]!.order).toBe(2);
+    expect(driver.selection.bondIds).toEqual([double]);
+  });
+
+  it("draws the tool's element and stereo when the bond tool is dragged", () => {
+    const driver = new Driver(singleAtom("C", { x: 0, y: 0 }));
+    driver.tool = "bond";
+    driver.toolOptions = {
+      ...DEFAULT_TOOL_OPTIONS,
+      element: "O",
+      bondStereo: "wedge",
+    };
+    const origin = sample({ x: 0, y: 0 }, atomHit("a1"));
+    driver.send({ kind: "dragStart", origin, sample: sample({ x: 1, y: 0 }) });
+    driver.send({ kind: "dragEnd", sample: sample({ x: 1, y: 0 }) });
+
+    const grown = driver.molecule.atomIds[1]!;
+    expect(driver.molecule.atoms[grown]!.element).toBe("O");
+    const bond = driver.molecule.bonds[driver.molecule.bondIds[0]!]!;
+    expect(bond.stereo).toBe("wedge");
+    // The NARROW END is at `from`, which is the atom the drag started from.
+    expect(bond.from).toBe("a1");
   });
 });
 
