@@ -27,6 +27,7 @@ import type {
   BondStereo,
   ElementSymbol,
   Molecule,
+  RingTemplateName,
   Vec2,
 } from "@starter/chem-core";
 import type {
@@ -95,9 +96,22 @@ export interface ToolOptions {
   readonly bondStereo: BondStereo;
   /** What the element tool stamps, and what a new chain is made of. */
   readonly element: ElementSymbol;
-  /** Ring size in atoms. The ring tool owns what it is willing to draw; this
-   *  slice only remembers the number the user last chose. */
-  readonly ringSize: number;
+  /**
+   * WHICH TEMPLATE the ring tool drops, by NAME rather than by size.
+   *
+   * A size cannot express the ring an organic chemist draws most often:
+   * `RING_TEMPLATES.cyclohexane` and `RING_TEMPLATES.benzene` are BOTH size 6
+   * and differ only in `kekule`, so a numeric option can reach one of them
+   * and never the other. Which one it reached depended on the call site —
+   * the fuse/attach/spiro paths built `{ size }` and so could only ever make
+   * cyclohexane, while free placement on empty canvas branched on
+   * `size === 6` and so could only ever make benzene. The name is what
+   * `RING_TEMPLATES` is keyed by, it survives a future hetero ring, and it
+   * makes both paths read the same value.
+   */
+  readonly ringTemplate: RingTemplateName;
+  /** How many atoms one click of the chain tool appends. */
+  readonly chainLength: number;
   /** One click of the charge tool. Alt-click applies the opposite sign. */
   readonly chargeDelta: 1 | -1;
 }
@@ -113,6 +127,18 @@ export interface ToolOptions {
 export interface UiState {
   readonly hoveredAtomId: AtomId | null;
   readonly hoveredBondId: BondId | null;
+  /**
+   * The atom the CANVAS KEYBOARD FOCUS is on, which is a different thing from
+   * both hover and selection.
+   *
+   * The `<svg>` is one tab stop — a thousand tab stops in a fused polycyclic
+   * would be unusable — so it is a roving-focus widget: focus lands on the
+   * canvas, and the arrow keys walk this id along bonds. Hover is where the
+   * pointer is and selection is what an edit would act on; neither answers
+   * "where is the keyboard", and reusing either would mean an arrow key
+   * silently changed what Delete would remove.
+   */
+  readonly focusedAtomId: AtomId | null;
   readonly commandPaletteOpen: boolean;
   /** One line of feedback ("Cannot merge bonded atoms"), or nothing. */
   readonly statusMessage: string | null;
@@ -229,6 +255,7 @@ export interface UiSlice {
 
   setHoveredAtom(id: AtomId | null): void;
   setHoveredBond(id: BondId | null): void;
+  setFocusedAtom(id: AtomId | null): void;
   setStatusMessage(message: string | null): void;
   setCommandPaletteOpen(open: boolean): void;
   toggleCommandPalette(): void;

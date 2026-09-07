@@ -20,16 +20,19 @@ import { castDraft } from "immer";
 import type { EditorSliceCreator, ToolOptions, ToolSlice } from "../types";
 
 /**
- * Carbon, a single bond and a six-ring: the defaults are what an organic
- * chemist draws most of, so the common case needs no setup. `chargeDelta` is
- * +1 because the charge tool's plain click adds a proton's worth and the
- * modifier subtracts.
+ * Carbon, a single bond and benzene: the defaults are what an organic chemist
+ * draws most of, so the common case needs no setup. Benzene rather than
+ * cyclohexane for exactly that reason — an arene is the ring that turns up in
+ * most papers, and the saturated ring is one click away in the template
+ * popover. `chargeDelta` is +1 because the charge tool's plain click adds a
+ * proton's worth and the modifier subtracts.
  */
 export const DEFAULT_TOOL_OPTIONS: ToolOptions = Object.freeze({
   bondOrder: 1,
   bondStereo: "none",
   element: "C",
-  ringSize: 6,
+  ringTemplate: "benzene",
+  chainLength: 4,
   chargeDelta: 1,
 });
 

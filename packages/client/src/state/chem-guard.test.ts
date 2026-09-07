@@ -101,7 +101,19 @@ describe("guardedOps", () => {
       addBond: (d) =>
         void guardedOps.addBond(d, { from: mol.atomIds[0]!, to: mol.atomIds[3]! }),
       extractFragment: (d) => void guardedOps.extractFragment(d, [firstAtom]),
+      duplicateFragment: (d) => void guardedOps.duplicateFragment(d, [firstAtom]),
       insertFragment: (d) => void guardedOps.insertFragment(d, benzene()),
+      setElement: (d) => void guardedOps.setElement(d, firstAtom, "N"),
+      setCharge: (d) => void guardedOps.setCharge(d, firstAtom, 1),
+      setIsotope: (d) => void guardedOps.setIsotope(d, firstAtom, 13),
+      setLabel: (d) => void guardedOps.setLabel(d, firstAtom, "Ph"),
+      setExplicitHydrogenCount: (d) =>
+        void guardedOps.setExplicitHydrogenCount(d, firstAtom, 1),
+      setBondOrder: (d) => void guardedOps.setBondOrder(d, firstBond, 2),
+      cycleBondOrder: (d) => void guardedOps.cycleBondOrder(d, firstBond),
+      setBondStereo: (d) => void guardedOps.setBondStereo(d, firstBond, "wedge"),
+      setDoubleBondSide: (d) => void guardedOps.setDoubleBondSide(d, firstBond, "left"),
+      flipBond: (d) => void guardedOps.flipBond(d, firstBond),
       sprout: (d) => void guardedOps.sprout(d, firstAtom),
       sproutTo: (d) =>
         void guardedOps.sproutTo(d, firstAtom, {
@@ -112,6 +124,7 @@ describe("guardedOps", () => {
       fuseRingOnBond: (d) => void guardedOps.fuseRingOnBond(d, firstBond, "benzene"),
       attachRingToAtom: (d) => void guardedOps.attachRingToAtom(d, firstAtom, "benzene"),
       spiroRingAtAtom: (d) => void guardedOps.spiroRingAtAtom(d, firstAtom, "benzene"),
+      appendChain: (d) => void guardedOps.appendChain(d, firstAtom, 3),
     };
 
     // The facade and the attempts cover each other. Without this the object

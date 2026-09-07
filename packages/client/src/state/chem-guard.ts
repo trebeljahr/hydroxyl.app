@@ -27,8 +27,12 @@ import { isDraft } from "immer";
 import {
   addAtom as coreAddAtom,
   addBond as coreAddBond,
+  appendChain as coreAppendChain,
   attachRingToAtom as coreAttachRingToAtom,
+  cycleBondOrder as coreCycleBondOrder,
+  duplicateFragment as coreDuplicateFragment,
   extractFragment as coreExtractFragment,
+  flipBond as coreFlipBond,
   fuseRingOnBond as coreFuseRingOnBond,
   flipAtoms as coreFlipAtoms,
   insertFragment as coreInsertFragment,
@@ -38,6 +42,14 @@ import {
   rotateAtoms as coreRotateAtoms,
   setAtomPosition as coreSetAtomPosition,
   setAtomPositions as coreSetAtomPositions,
+  setBondOrder as coreSetBondOrder,
+  setBondStereo as coreSetBondStereo,
+  setCharge as coreSetCharge,
+  setDoubleBondSide as coreSetDoubleBondSide,
+  setElement as coreSetElement,
+  setExplicitHydrogenCount as coreSetExplicitHydrogenCount,
+  setIsotope as coreSetIsotope,
+  setLabel as coreSetLabel,
   spiroRingAtAtom as coreSpiroRingAtAtom,
   sprout as coreSprout,
   sproutTo as coreSproutTo,
@@ -108,6 +120,35 @@ export const guardedOps = {
   addAtom: guard("addAtom", coreAddAtom),
   addBond: guard("addBond", coreAddBond),
   extractFragment: guard("extractFragment", coreExtractFragment),
+  duplicateFragment: guard("duplicateFragment", coreDuplicateFragment),
+
+  /**
+   * The per-atom and per-bond edits the properties panel, the charge/element
+   * tools and the command registry commit through.
+   *
+   * Added here with the surfaces that call them, which is what the header
+   * above asks for — `cycleBondOrder` in particular was wrapped once before
+   * anything used it and taken back out again, and it is back now because
+   * `structure.cycle-bond-order` in the command registry calls it. None of
+   * these mint an id, but all of them read `mol.atoms` / `mol.bonds` and
+   * rebuild the record, so a draft reaching one produces a molecule assembled
+   * out of proxy reads exactly as a minting op would.
+   */
+  setElement: guard("setElement", coreSetElement),
+  setCharge: guard("setCharge", coreSetCharge),
+  setIsotope: guard("setIsotope", coreSetIsotope),
+  setLabel: guard("setLabel", coreSetLabel),
+  setExplicitHydrogenCount: guard(
+    "setExplicitHydrogenCount",
+    coreSetExplicitHydrogenCount,
+  ),
+  setBondOrder: guard("setBondOrder", coreSetBondOrder),
+  cycleBondOrder: guard("cycleBondOrder", coreCycleBondOrder),
+  setBondStereo: guard("setBondStereo", coreSetBondStereo),
+  setDoubleBondSide: guard("setDoubleBondSide", coreSetDoubleBondSide),
+  /** Swaps `from`/`to`, which INVERTS a wedge — the narrow end is at `from`,
+   *  never at whichever id sorts first. */
+  flipBond: guard("flipBond", coreFlipBond),
 
   /**
    * The drawing ops the pointer state machine commits through.
@@ -126,6 +167,7 @@ export const guardedOps = {
   fuseRingOnBond: guard("fuseRingOnBond", coreFuseRingOnBond),
   attachRingToAtom: guard("attachRingToAtom", coreAttachRingToAtom),
   spiroRingAtAtom: guard("spiroRingAtAtom", coreSpiroRingAtAtom),
+  appendChain: guard("appendChain", coreAppendChain),
 
   /**
    * Written out rather than wrapped, because BOTH arguments are molecules —

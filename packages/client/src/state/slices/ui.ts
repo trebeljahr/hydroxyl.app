@@ -21,6 +21,7 @@ import type { EditorSliceCreator, UiSlice, UiState } from "../types";
 export const INITIAL_UI_STATE: UiState = Object.freeze({
   hoveredAtomId: null,
   hoveredBondId: null,
+  focusedAtomId: null,
   commandPaletteOpen: false,
   statusMessage: null,
   elementInputBuffer: "",
@@ -47,6 +48,13 @@ export function createUiSlice(
       if (get().ui.hoveredBondId === id) return;
       set((draft) => {
         draft.ui.hoveredBondId = id;
+      });
+    },
+
+    setFocusedAtom(id) {
+      if (get().ui.focusedAtomId === id) return;
+      set((draft) => {
+        draft.ui.focusedAtomId = id;
       });
     },
 
