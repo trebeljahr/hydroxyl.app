@@ -95,9 +95,14 @@ const COORD_WIDTH = 10;
  * logged. Measured: chem-core benzene arrives as `[c]1[c][c][c][c][c]1`, C6
  * rather than C6H6, and ethanol as C2O.
  *
- * `"hhh"` is the default because it is what this writer has always emitted and
- * what its own reader inverts; it is the right choice for a file this package
- * will read back, and for readers that treat `hhh` as an assertion.
+ * `"hhh"` is what this writer originally emitted and what its own reader
+ * inverts, so it remains the right choice for a file this package will read
+ * back and for readers that treat `hhh` as an assertion. It is NOT the
+ * default any more — the signature below says `"valence"`, and this paragraph
+ * went on claiming the opposite two lines above it. Anyone who trusted the
+ * prose would have concluded that `moleculeToMolblock` in the client's RDKit
+ * bridge sets the option redundantly, and deleted the one line standing
+ * between chem-core benzene and RDKit reading it as C6.
  *
  * `"valence"` says nothing at all about an atom whose hydrogens the reader can
  * derive, and states `vvv` (the TOTAL valence, which is not a query field) for
