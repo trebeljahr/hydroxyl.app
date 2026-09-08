@@ -296,8 +296,7 @@ test("the canvas is focusable and the arrow keys walk it atom to atom", async ({
   expect(neighbour).not.toBe(first);
 
   // Shift walks the document's atom order instead, and THAT is the mode that
-  // reaches every atom — a bonded walk on a ring cannot, whatever the rule.
-  // See the header of editor/traversal.ts.
+  // carries the completeness guarantee for any graph. See traversal.ts.
   const visited = new Set<string>();
   for (let i = 0; i < 8; i++) {
     await page.keyboard.press("Shift+ArrowRight");
@@ -310,6 +309,168 @@ test("the canvas is focusable and the arrow keys walk it atom to atom", async ({
 
   // And it announces where it is.
   await expect(page.locator("#canvas-focus-status")).toContainText("bond");
+
+  // The modifier is ADVERTISED. An undiscoverable shortcut is not an
+  // accessibility feature, and Shift+Arrow appeared in no tooltip, no palette
+  // row and no label until this attribute existed.
+  await expect(page.locator(CANVAS)).toHaveAttribute(
+    "aria-keyshortcuts",
+    /Shift\+ArrowRight/,
+  );
+});
+
+test("the BARE arrows reach every atom of the ring too, and say so each time", async ({
+  page,
+}) => {
+  await openEditor(page);
+  await page.locator(CANVAS).focus();
+  await expect(page.locator('[data-overlay="focus-atom"]')).toHaveCount(1);
+
+  // The bonded walk used to trade focus back and forth across one bond: four
+  // of six atoms pressing Right, two of six pressing Down. It now refuses to
+  // step straight back to the atom it came from, which breaks the cycle.
+  const visited = new Set<string>();
+  const heard = new Set<string>();
+  for (let i = 0; i < 8; i++) {
+    await page.keyboard.press("ArrowRight");
+    const id = await page
+      .locator('[data-overlay="focus-atom"]')
+      .getAttribute("data-overlay-target");
+    if (id !== null) visited.add(id);
+    heard.add((await page.locator("#canvas-focus-status").textContent()) ?? "");
+  }
+  expect([...visited].sort()).toEqual(["a1", "a2", "a3", "a4", "a5", "a6"]);
+
+  // Every carbon in benzene is "C, 2 bonds", so the live region used to be
+  // handed a byte-identical string on every press, never mutate, and never
+  // announce. A screen-reader user heard the first move and then silence.
+  expect(heard.size).toBeGreaterThan(1);
+});
+
+test("a letter typed at the properties panel's Select does not edit the molecule", async ({
+  page,
+}) => {
+  await openEditor(page);
+
+  // Pick one ring bond, then put focus on the Order control — a Radix Select,
+  // which renders a `<button role="combobox">` and is NOT a `<select>`. The
+  // key layer's text-entry guard missed it, so `d` switched to the bond tool
+  // AND retyped the bond as a double, and `t` made it a triple with two
+  // valence errors, from a single keystroke with no menu ever opened.
+  const first = await atomCentre(page, "a1");
+  const second = await atomCentre(page, "a2");
+  await page.mouse.click((first.x + second.x) / 2, (first.y + second.y) / 2);
+
+  const combobox = page
+    .locator('[data-shell="properties-panel"] [role="combobox"]')
+    .first();
+  await expect(combobox).toBeVisible();
+  await combobox.focus();
+
+  // WHAT THE WIDGET DOES IS NOT WHAT THE EDITOR DOES. Radix's type-ahead is
+  // entitled to act on `d` — "Double" begins with it, and that is the whole
+  // reason the guard has to exist. What must NOT also happen is the editor
+  // reading the same keystroke: the bug was `d` retyping the bond AND
+  // switching to the bond tool, from one press with no menu open.
+  const atoms = await atomCount(page);
+  const bonds = await bondCount(page);
+
+  // `x` and `3` and Delete match no option, so the widget ignores them
+  // entirely and anything that happens is the editor reaching through.
+  for (const key of ["x", "3", "Delete", "Backspace"]) {
+    await page.keyboard.press(key);
+  }
+  expect(await activeTool(page), "the eraser letter reached the editor").toBe(
+    "select",
+  );
+  expect(await atomCount(page)).toBe(atoms);
+  expect(await bondCount(page)).toBe(bonds);
+
+  // And a letter the widget DOES claim still must not move the tool.
+  await page.keyboard.press("d");
+  expect(await activeTool(page)).toBe("select");
+});
+
+test("a two-letter symbol whose first letter is no element is still typeable", async ({
+  page,
+}) => {
+  await openEditor(page);
+  const atom = await atomCentre(page, "a1");
+  await page.mouse.click(atom.x, atom.y);
+  const element = page.locator('[data-shell="properties-panel"] input').first();
+  await expect(element).toHaveValue("C");
+
+  // "Li" used to arm IODINE: `l` resolved to nothing and was discarded, so
+  // `i` was read as a fresh start.
+  await page.keyboard.press("l");
+  await page.keyboard.press("i");
+  await expect(element).toHaveValue("Li");
+
+  // `g` is the pan tool's letter, but one keystroke into a pending symbol the
+  // only sane reading is magnesium.
+  await page.keyboard.press("m");
+  await page.keyboard.press("g");
+  await expect(element).toHaveValue("Mg");
+  expect(await activeTool(page)).not.toBe("pan");
+
+  // And the organic set stays whole: `r` is the ring tool, `e` the element
+  // tool, and bromine and selenium beat both.
+  await page.keyboard.press("b");
+  await page.keyboard.press("r");
+  await expect(element).toHaveValue("Br");
+  await page.keyboard.press("s");
+  await page.keyboard.press("e");
+  await expect(element).toHaveValue("Se");
+});
+
+test("a run of arrow TAPS is one undo, not one per tap", async ({ page }) => {
+  await openEditor(page);
+  const atom = await atomCentre(page, "a1");
+  await page.mouse.click(atom.x, atom.y);
+
+  const startX = (await atomCentre(page, "a1")).x;
+  // Discrete taps, which is how the key is actually used. Each one released
+  // its own key, and a `keyup` listener committed the transaction on every
+  // release — so the 400 ms coalescing window never once got to run.
+  for (let i = 0; i < 6; i++) await page.keyboard.press("ControlOrMeta+ArrowRight");
+  const movedX = (await atomCentre(page, "a1")).x;
+  expect(movedX).toBeGreaterThan(startX);
+
+  // Let the idle timer close the run, then take it back in ONE undo.
+  await page.waitForTimeout(700);
+  await page.keyboard.press("ControlOrMeta+z");
+  expect((await atomCentre(page, "a1")).x).toBeCloseTo(startX, 0);
+});
+
+test("Fit is a command, reachable from the palette and not only from the status bar", async ({
+  page,
+}) => {
+  await openEditor(page);
+  // It had no registry entry at all: no shortcut, no palette row, reachable
+  // from the status bar and nowhere else.
+  await expect(page.locator('[data-command="view.fit"]')).toBeVisible();
+
+  await page.keyboard.press("ControlOrMeta+k");
+  await expect(
+    page.locator('[data-palette-command="view.fit"]'),
+  ).toBeVisible();
+  await expect(
+    page.locator('[data-palette-command="view.theme"]'),
+  ).toHaveCount(1);
+  await expect(
+    page.locator('[data-palette-command="chain.length.6"]'),
+  ).toHaveCount(1);
+  await page.keyboard.press("Escape");
+
+  // The canvas fits itself on mount, so reset the view first — otherwise Fit
+  // is a no-op and the assertion proves nothing.
+  await page.locator(CANVAS).click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press("ControlOrMeta+0");
+  const reset = await page.locator('[data-status="zoom"]').textContent();
+  await page.keyboard.press("ControlOrMeta+Shift+f");
+  await expect(page.locator('[data-status="zoom"]')).not.toHaveText(
+    reset ?? "",
+  );
 });
 
 test("the canvas stays a white publication ground when the UI goes dark", async ({

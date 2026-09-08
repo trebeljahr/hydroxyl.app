@@ -16,7 +16,7 @@ import { createDocument } from "@starter/shared";
 import { COMMANDS } from "@/editor/commands/registry";
 import { editorStore } from "@/state";
 
-import { CommandPalette } from "./CommandPalette";
+import { CommandPalette, GROUP_ORDER } from "./CommandPalette";
 
 beforeEach(() => {
   const state = editorStore.getState();
@@ -97,5 +97,25 @@ describe("CommandPalette", () => {
     const undo = document.querySelector('[data-palette-command="edit.undo"]');
     expect(undo?.textContent).toContain("Undo");
     expect(undo?.textContent).toMatch(/Z/);
+  });
+});
+
+describe("the palette leaves nothing out", () => {
+  it("orders every group the registry actually uses", () => {
+    // Not a type error if one is missing: the palette iterates GROUP_ORDER
+    // and pulls each group's entries out of COMMANDS, so an uncovered group
+    // renders nowhere — a whole namespace can be added to the registry and
+    // still be invisible on the one surface meant to list everything.
+    const used = new Set(COMMANDS.map((command) => command.group));
+    for (const group of used) expect(GROUP_ORDER).toContain(group);
+  });
+
+  it("lists every non-hidden command exactly once", () => {
+    open();
+    const ids = items().map((node) => node.dataset["paletteCommand"]);
+    const expected = COMMANDS.filter((command) => command.hidden !== true).map(
+      (command) => command.id,
+    );
+    expect([...ids].sort()).toEqual([...expected].sort());
   });
 });

@@ -11,7 +11,8 @@
  * a test that fails if it is removed.
  */
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { act, renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { benzene } from "@starter/chem-core";
 import { createDocument } from "@starter/shared";
@@ -19,7 +20,11 @@ import { createDocument } from "@starter/shared";
 import { createEditorStore } from "@/state";
 import type { EditorStore } from "@/state";
 
-import { handleEditorKeyDown } from "./useKeyBindings";
+import {
+  handleEditorKeyDown,
+  NUDGE_IDLE_MS,
+  useKeyBindings,
+} from "./useKeyBindings";
 
 let store: EditorStore;
 
@@ -95,6 +100,15 @@ describe("the guards", () => {
       "<textarea></textarea>",
       "<select><option>a</option></select>",
       '<div contenteditable="true"></div>',
+      // A RADIX SELECT IS NOT A `<select>`. The properties panel's Order,
+      // Stereo and Isotope controls all render as `<button role="combobox">`,
+      // and while one had focus a single `d` both switched to the bond tool
+      // and retyped the selected bond as a double — one keystroke, two edits,
+      // no menu ever opened. The role is what the guard has to match.
+      '<button type="button" role="combobox" aria-expanded="false">Single</button>',
+      '<div role="listbox"></div>',
+      '<div role="spinbutton"></div>',
+      '<div role="textbox"></div>',
     ]) {
       const element = makeElement(html);
       expect(press({ key: "d", target: element }), html).toBe(false);
@@ -148,6 +162,70 @@ describe("tools and elements share the bare letters", () => {
     store.getState().selectAtoms(["a1"]);
     press({ key: "n" });
     expect(store.getState().document.molecule.atoms["a1"]!.element).toBe("N");
+  });
+
+  it("reaches a symbol whose first letter is not an element at all", () => {
+    // "Li" used to arm IODINE: `l` resolved to nothing and was thrown away,
+    // so `i` was read as a fresh start. Every symbol in this class was either
+    // unreachable or silently wrong.
+    press({ key: "l" });
+    expect(store.getState().toolOptions.element).toBe("C");
+    expect(store.getState().ui.elementInputBuffer).toBe("L");
+    press({ key: "i" });
+    expect(store.getState().toolOptions.element).toBe("Li");
+
+    press({ key: "a" });
+    press({ key: "l" });
+    expect(store.getState().toolOptions.element).toBe("Al");
+  });
+
+  it("lets a pending prefix outrank a tool letter", () => {
+    // `g` is the pan tool, but "M" applies nothing and means nothing on its
+    // own, so one letter into a symbol the only sane reading is magnesium.
+    press({ key: "m" });
+    press({ key: "g" });
+    expect(store.getState().toolOptions.element).toBe("Mg");
+    expect(store.getState().tool).toBe("element");
+
+    // Same for `r`, the ring tool, after a dead "A".
+    press({ key: "a" });
+    press({ key: "r" });
+    expect(store.getState().toolOptions.element).toBe("Ar");
+  });
+
+  it("drops a prefix that led nowhere and reads the key fresh", () => {
+    press({ key: "m" });
+    expect(store.getState().ui.elementInputBuffer).toBe("M");
+    // "Mq" is no element, so the M dies and `q` is the charge tool.
+    press({ key: "q" });
+    expect(store.getState().tool).toBe("charge");
+    expect(store.getState().ui.elementInputBuffer).toBe("");
+  });
+
+  it("keeps the whole organic set typeable, tool letters and all", () => {
+    // Br and Se are the two that need the exception: `r` is the ring tool and
+    // `e` is the element tool, so without it bromine and selenium were
+    // unreachable while tools.ts promised the organic set was untouched.
+    for (const [keys, symbol] of [
+      [["b", "r"], "Br"],
+      [["s", "e"], "Se"],
+      [["s", "i"], "Si"],
+      [["c", "l"], "Cl"],
+    ] as const) {
+      store.getState().clearElementInputBuffer();
+      for (const key of keys) press({ key });
+      expect(store.getState().toolOptions.element, keys.join("")).toBe(symbol);
+    }
+  });
+
+  it("does NOT let an applied single steal a tool letter it has no business taking", () => {
+    // "C" then `d` is retype-an-atom-then-draw-off-it, the commonest sequence
+    // in the editor. Reading it as cadmium would be a disaster for a nuisance
+    // element no figure contains.
+    press({ key: "c" });
+    press({ key: "d" });
+    expect(store.getState().toolOptions.element).toBe("C");
+    expect(store.getState().tool).toBe("bond");
   });
 
   it("clears a half-typed element on Escape", () => {
@@ -289,6 +367,80 @@ describe("arrows", () => {
     Object.defineProperty(event, "target", { value: canvas });
     handleEditorKeyDown(event, { store, onAnnounce: (m) => heard.push(m) });
     expect(heard).toHaveLength(1);
-    expect(heard[0]).toMatch(/^C, \d bonds?$/);
+    expect(heard[0]).toMatch(/^C, \d bonds?, atom \d of 6$/);
+  });
+});
+
+/**
+ * The MOUNTED layer, driven by real events on `window`.
+ *
+ * Everything above calls `handleEditorKeyDown` directly, which is fast and
+ * proves the decisions — but it cannot see the listeners the hook registers
+ * alongside it, and that is exactly where the coalescing bug lived: keydown
+ * opened the transaction and a `keyup` listener closed it again on the same
+ * tap, so the idle timer never fired for the way a chemist actually nudges.
+ */
+describe("the mounted layer", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("coalesces DISCRETE arrow taps, not merely a held key", () => {
+    vi.useFakeTimers();
+    const { unmount } = renderHook(() => {
+      useKeyBindings({ store });
+    });
+    store.getState().selectAtoms(["a1"]);
+    const before = store.getState().history.past.length;
+    const start = store.getState().document.molecule.atoms["a1"]!.pos.x;
+
+    for (let i = 0; i < 6; i++) {
+      // A TAP: down and up, six times over, which is how the key is used.
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowRight", cancelable: true }),
+      );
+      window.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowRight" }));
+    }
+
+    const moved = store.getState().document.molecule.atoms["a1"]!.pos.x;
+    expect(moved).toBeGreaterThan(start);
+    // Nothing recorded yet: the run is still open.
+    expect(store.getState().history.past.length).toBe(before);
+
+    act(() => {
+      vi.advanceTimersByTime(NUDGE_IDLE_MS + 10);
+    });
+    expect(store.getState().history.past.length).toBe(before + 1);
+
+    // ONE undo takes back the WHOLE run, not one 4.4-unit step of it.
+    store.getState().undo();
+    expect(
+      store.getState().document.molecule.atoms["a1"]!.pos.x,
+    ).toBeCloseTo(start, 9);
+
+    unmount();
+  });
+
+  it("closes the element window on a pointer press", () => {
+    const { unmount } = renderHook(() => {
+      useKeyBindings({ store });
+    });
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "c", cancelable: true }),
+    );
+    expect(store.getState().ui.elementInputBuffer).toBe("C");
+
+    // "press C, click somewhere, press L" must not read the two letters as
+    // one symbol: the click ended whatever the C was part of.
+    window.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    expect(store.getState().ui.elementInputBuffer).toBe("");
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "l", cancelable: true }),
+    );
+    expect(store.getState().toolOptions.element).toBe("C");
+    expect(store.getState().ui.elementInputBuffer).toBe("L");
+
+    unmount();
   });
 });

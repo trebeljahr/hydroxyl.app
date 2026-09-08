@@ -4,9 +4,12 @@
  * The top bar: the document's name, the handful of commands worth a permanent
  * button, and the theme switch.
  *
- * EVERY BUTTON HERE IS A REGISTRY ENTRY. Undo, redo and Clean up structure are
- * `commandById(...)`, so their disabled state is the same `enabled(state)` the
- * palette greys on and their behaviour is the same `run` the shortcut fires.
+ * EVERY BUTTON HERE IS A REGISTRY ENTRY. Undo, redo, Clean up structure and
+ * the theme switch are `commandById(...)`, so their disabled state is the same
+ * `enabled(state)` the palette greys on and their behaviour is the same `run`
+ * the shortcut fires. The theme switch still READS the theme through
+ * `useTheme` — it has to know which glyph to draw — but it no longer WRITES
+ * it, which is what kept it out of the palette.
  * The title field is the one control that is not — a text input is not a
  * command — and it is also the reason the keyboard layer's text-entry guard
  * exists: typing "Benzene-1,2-diol" into it must not switch tools eight times.
@@ -88,7 +91,7 @@ function CommandButton({
 
 export function TopBar(): ReactElement {
   const title = useEditorStore((state) => state.document.metadata.title);
-  const { theme, toggleTheme } = useTheme();
+  const { theme } = useTheme();
 
   return (
     <header
@@ -132,8 +135,14 @@ export function TopBar(): ReactElement {
             <button
               type="button"
               data-shell="theme-toggle"
+              data-command="view.theme"
               aria-pressed={theme === "dark"}
-              onClick={toggleTheme}
+              onClick={() => {
+                // The registry entry, not the hook's callback directly: the
+                // palette lists the same command, and one code path is the
+                // point of the registry.
+                void commandById("view.theme").run(editorStore);
+              }}
               className="hover:bg-accent focus-visible:ring-ring flex size-8 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2"
             >
               {theme === "dark" ? (

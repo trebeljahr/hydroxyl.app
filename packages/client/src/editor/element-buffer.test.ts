@@ -8,7 +8,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { couldExtendElement, pressElementKey } from "./element-buffer";
+import {
+  couldExtendElement,
+  isPendingPrefix,
+  pressElementKey,
+} from "./element-buffer";
 
 /** Type a run of letters and report what each one resolved to. */
 function type(keys: string): {
@@ -82,5 +86,57 @@ describe("the element hotkey buffer", () => {
     expect(couldExtendElement("N")).toBe(true);
     // Nothing begins with "Cl" but "Cl" itself.
     expect(couldExtendElement("Cl")).toBe(false);
+  });
+});
+
+describe("a first letter that is not an element on its own", () => {
+  it("is held as a pending prefix instead of being thrown away", () => {
+    // The hole this closes: "Li" used to arm IODINE. `l` resolved to nothing,
+    // the buffer was cleared, and `i` was then read as a fresh start — so
+    // every two-letter symbol whose first letter is not itself an element was
+    // either unreachable or silently the wrong element.
+    const first = pressElementKey("", "l");
+    expect(first.element).toBeUndefined();
+    expect(first.buffer).toBe("L");
+    expect(pressElementKey(first.buffer, "i").element).toBe("Li");
+  });
+
+  it("reaches the whole class the old buffer could not", () => {
+    for (const [keys, symbol] of [
+      ["li", "Li"],
+      ["al", "Al"],
+      ["ar", "Ar"],
+      ["ag", "Ag"],
+      ["au", "Au"],
+      ["mg", "Mg"],
+      ["mn", "Mn"],
+      ["ti", "Ti"],
+      ["te", "Te"],
+      ["as", "As"],
+    ] as const) {
+      expect(type(keys).elements.at(-1), keys).toBe(symbol);
+    }
+  });
+
+  it("holds nothing for a letter that begins no symbol at all", () => {
+    // J and Q start nothing. Keeping them would make the NEXT letter a
+    // two-character attempt against a prefix that can never complete.
+    for (const key of ["j", "q"]) {
+      expect(pressElementKey("", key)).toEqual({
+        buffer: "",
+        element: undefined,
+      });
+    }
+  });
+
+  it("tells a pending prefix apart from an applied one", () => {
+    // The distinction the key layer needs: "L" has applied nothing and so may
+    // claim the next keystroke ahead of a tool letter; "C" has already put
+    // carbon on the atom and may not.
+    expect(isPendingPrefix("L")).toBe(true);
+    expect(isPendingPrefix("M")).toBe(true);
+    expect(isPendingPrefix("C")).toBe(false);
+    expect(isPendingPrefix("S")).toBe(false);
+    expect(isPendingPrefix("")).toBe(false);
   });
 });

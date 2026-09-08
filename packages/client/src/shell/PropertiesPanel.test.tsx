@@ -12,6 +12,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { benzene, buildMolecule } from "@starter/chem-core";
 import { createDocument } from "@starter/shared";
 
+import { handleEditorKeyDown } from "@/editor/useKeyBindings";
 import { editorStore } from "@/state";
 
 import { PropertiesPanel } from "./PropertiesPanel";
@@ -178,5 +179,38 @@ describe("PropertiesPanel — a bond", () => {
     expect(after.from).toBe(before.to);
     expect(after.to).toBe(before.from);
     expect(after.stereo).toBe(before.stereo);
+  });
+});
+
+describe("PropertiesPanel — the keyboard layer must not reach through it", () => {
+  /**
+   * THE REAL RADIX MARKUP, not an approximation of it.
+   *
+   * The guard in `useKeyBindings` used to match `input, textarea, select,
+   * [contenteditable]`, and a Radix Select is none of those — it renders a
+   * `<button role="combobox">`, with no popper wrapper at all while it is
+   * closed. So with a bond selected and the Order control focused, a single
+   * `d` switched to the bond tool AND retyped the bond as a double; `t` made
+   * it a triple and put two valence errors on the canvas. One keystroke, two
+   * edits, no menu ever opened. Rendering the panel and firing at the actual
+   * trigger is the only version of this test that would have caught it.
+   */
+  it("swallows a bare letter typed at a Radix Select trigger", () => {
+    render(<PropertiesPanel />);
+    select([], ["b7"]);
+    const trigger = screen.getAllByRole("combobox")[0];
+    expect(trigger, "the panel should render a Radix Select").toBeTruthy();
+    expect(trigger?.tagName).toBe("BUTTON");
+
+    const before = editorStore.getState().document.molecule.bonds["b7"]?.order;
+    for (const key of ["d", "t", "2", "3", "Delete"]) {
+      const event = new KeyboardEvent("keydown", { key, cancelable: true });
+      Object.defineProperty(event, "target", { value: trigger });
+      expect(handleEditorKeyDown(event), key).toBe(false);
+    }
+    expect(editorStore.getState().document.molecule.bonds["b7"]?.order).toBe(
+      before,
+    );
+    expect(editorStore.getState().tool).toBe("select");
   });
 });

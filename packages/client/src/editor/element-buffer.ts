@@ -19,6 +19,21 @@
  * and the timer only exists to close the window so that "C" typed twice means
  * carbon twice rather than carbon then Cc.
  *
+ * A FIRST LETTER THAT IS NOT ITSELF AN ELEMENT STILL OPENS THE WINDOW. This
+ * was the hole: the buffer only opened after a valid one-letter symbol, so
+ * "Li" typed at the canvas armed IODINE — `l` resolved to nothing and was
+ * thrown away, and `i` was then read as a fresh start. Every two-letter
+ * symbol whose first letter is not a one-letter element was unreachable that
+ * way (Li Al Ar As Ag Au Mg Mn Mo Ti Te Tl Ta and the rest), and the ones
+ * whose SECOND letter happened to be an element silently armed that instead,
+ * with no error. So a letter that cannot be an element on its own but COULD
+ * begin a longer symbol is now held as a PENDING prefix: nothing is applied,
+ * the status bar shows it, and the next letter completes it.
+ *
+ * The pending state is derived rather than stored — `isPendingPrefix` asks
+ * `normalizeElementInput` whether the buffer stands on its own — so there is
+ * still exactly one string of state to reason about.
+ *
  * The buffer is capped at TWO characters because no element symbol in
  * `ELEMENTS` is longer than three and the three-character ones are all
  * placeholder names for unnamed superheavies (Uue and friends) that no figure
@@ -47,6 +62,20 @@ export function couldExtendElement(buffer: string): boolean {
     (element) =>
       element.symbol.length > prefix.length && element.symbol.startsWith(prefix),
   );
+}
+
+/**
+ * Is `buffer` a half-typed symbol that has applied nothing yet?
+ *
+ * True for "L" (no element is just L) and false for "C" (carbon is already
+ * on the atom). The distinction is what lets the key layer give a PENDING
+ * prefix priority over a tool hotkey without giving one to "C", where the
+ * user has already got what they asked for and the next letter is far more
+ * likely to be a tool than the tail of "Cd".
+ */
+export function isPendingPrefix(buffer: string): boolean {
+  if (buffer === "") return false;
+  return normalizeElementInput(buffer) === undefined;
 }
 
 export interface ElementKeyResult {
@@ -85,9 +114,11 @@ export function pressElementKey(
 
   const single = normalizeElementInput(key);
   if (single === undefined || single.length !== 1) {
-    // Not an element start at all — B, C, N and the rest are, but J is not.
-    // Closing the buffer rather than keeping it stops a stray letter from
-    // silently making the NEXT letter a two-character attempt.
+    // Not an element on its own. It may still BEGIN one — L does, J does not
+    // — in which case it is held as a pending prefix and applies nothing.
+    // Cased for the status bar, which renders the buffer verbatim.
+    const prefix = key.toUpperCase();
+    if (couldExtendElement(prefix)) return { buffer: prefix, element: undefined };
     return { buffer: "", element: undefined };
   }
   return {

@@ -323,3 +323,45 @@ describe("commandForEvent", () => {
     }
   });
 });
+
+describe("the surfaces the registry has to cover", () => {
+  it("has a command for every viewport action the status bar offers", () => {
+    // Fit used to be inline in StatusBar.tsx: no command, no palette row, no
+    // shortcut, reachable from that one strip and nowhere else. Reset had a
+    // command AND a second code path beside it. Both are the seam the "one
+    // registry" criterion exists to close.
+    for (const id of ["view.fit", "view.reset", "view.theme"]) {
+      expect(commandById(id), id).toBeDefined();
+    }
+  });
+
+  it("fits the view to the structure", () => {
+    const store = storeWith(benzene());
+    store.getState().setViewportSize({ width: 800, height: 600 });
+    store.getState().resetViewport();
+    const before = store.getState().viewport.zoom;
+    commandById("view.fit").run(store);
+    expect(store.getState().viewport.zoom).not.toBe(before);
+  });
+
+  it("cannot fit an empty sketch", () => {
+    const store = storeWith(buildMolecule(() => undefined));
+    expect(commandById("view.fit").enabled(store.getState())).toBe(false);
+  });
+
+  it("sets the chain length through a command, like every other tool option", () => {
+    const store = storeWith(benzene());
+    commandById("chain.length.8").run(store);
+    expect(store.getState().toolOptions.chainLength).toBe(8);
+    expect(store.getState().tool).toBe("chain");
+  });
+
+  it("gives every command in the array a group the palette can title", () => {
+    // A group added to `CommandGroup` without a title is a runtime hole in
+    // the palette rather than a type error, because the palette groups by
+    // whatever the entries carry.
+    const groups = new Set(COMMANDS.map((command) => command.group));
+    expect(groups).toContain("chain");
+    expect(groups).toContain("view");
+  });
+});

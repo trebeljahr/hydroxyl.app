@@ -21,9 +21,11 @@
  *    the bug the acceptance criterion names.
  *
  * 3. TEXT ENTRY, and then any other Radix overlay. `input`, `textarea`,
- *    `select` and anything contenteditable; then a popover or dialog Radix has
- *    focus inside, so Escape closes the layer without also putting the tool
- *    down.
+ *    `select`, anything contenteditable, and anything carrying a role that
+ *    eats characters — `combobox` above all, because that is what a Radix
+ *    Select's TRIGGER is and it has no popper wrapper while it is closed;
+ *    then a popover or dialog Radix has focus inside, so Escape closes the
+ *    layer without also putting the tool down.
  *    Note this is NOT the canvas's `consumesSpace`, which deliberately also
  *    matches `button`, `a` and `[role=button]` so that space activates a
  *    focused button instead of panning. Reusing it here would make Delete,
@@ -44,9 +46,16 @@
  * A held arrow key auto-repeats at ~30 Hz, and one history entry per repeat
  * would bury the last real edit under a second of nudges. The session below
  * opens ONE transaction on the first nudge and commits it when the nudging
- * stops. That is the failure mode this codebase fears most, so it is closed
- * from five directions: the idle timer, the keyup, any other command, a window
- * blur, and the effect's own teardown.
+ * stops.
+ *
+ * IT IS THE IDLE TIMER THAT DECIDES WHEN THAT IS, AND KEYUP MUST NOT.
+ * Closing on keyup looked like a fifth safety net and was in fact a hole: a
+ * chemist nudges by TAPPING, not by holding, so every tap released its own
+ * key, committed its own transaction, and the 400 ms window never once got to
+ * do its job — six taps of Mod+Right moved an atom 26.4 units and one undo
+ * took back 4.4 of them. The remaining four closers are all events that mean
+ * the run is genuinely over rather than merely paused: the idle timer, any
+ * other command, a pointer press or window blur, and the effect's teardown.
  */
 
 import { useEffect } from "react";
@@ -58,11 +67,14 @@ import {
 } from "@/editor/commands/registry";
 import {
   ELEMENT_BUFFER_WINDOW_MS,
+  isPendingPrefix,
   pressElementKey,
 } from "@/editor/element-buffer";
 import { applyElement } from "@/editor/commands/registry";
 import { ARROW_VECTORS, describeAtom, nextFocusAtom } from "@/editor/traversal";
 import type { ArrowDirection } from "@/editor/traversal";
+import { COMMON_ORGANIC_ELEMENTS } from "@starter/chem-core";
+
 import { editorStore } from "@/state";
 import type { EditorStore } from "@/state";
 
@@ -81,11 +93,29 @@ const ARROW_KEYS: Readonly<Record<string, ArrowDirection>> = {
  *
  * Narrower than the canvas's `consumesSpace` on purpose — see guard 3 in the
  * header. A `<select>` counts: its type-ahead consumes letters.
+ *
+ * THE ROLES ARE NOT BELT-AND-BRACES, they are the whole point. The properties
+ * panel's Order, Stereo and Isotope controls are Radix Selects, and a Radix
+ * Select is NOT a `<select>` — it renders a `<button role="combobox">` whose
+ * closed state has no popper wrapper for `isInsideOverlay` to find either. So
+ * the one widget in the shell whose type-ahead really does eat letters fell
+ * through both guards: with a ring bond selected and the Order combobox
+ * focused, a single `d` switched to the bond tool AND retyped the bond as a
+ * double, and `t` made it a triple with two valence errors, from one
+ * keystroke and with no menu ever opened. Matching the ARIA role rather than
+ * the tag name is what closes that, and it closes it for every future
+ * headless widget too.
  */
 export function isTextEntryTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
-  return target.closest("input, textarea, select, [contenteditable]") !== null;
+  return (
+    target.closest(
+      "input, textarea, select, [contenteditable]," +
+        " [role='combobox'], [role='listbox'], [role='spinbutton']," +
+        " [role='textbox'], [role='searchbox']",
+    ) !== null
+  );
 }
 
 function isOnCanvas(target: EventTarget | null): boolean {
@@ -223,13 +253,16 @@ export function handleEditorKeyDown(
       endNudge(store);
       const mol = state.document.molecule;
       // Shift steps through the document's atom order instead of following a
-      // bond. See traversal.ts: a bonded walk cannot reach every atom, and
-      // reaching every atom is the accessibility guarantee.
+      // bond, and `previousFocusedAtomId` is what stops the bonded walk
+      // trading focus back and forth across one bond. See traversal.ts: the
+      // bonded walk is complete on the rings a figure is made of but not on
+      // every graph, and only the sequential mode guarantees it.
       const next = nextFocusAtom(
         mol,
         state.ui.focusedAtomId ?? undefined,
         arrow,
         event.shiftKey ? "sequential" : "bonded",
+        state.ui.previousFocusedAtomId ?? undefined,
       );
       if (next === undefined) return true;
       state.setFocusedAtom(next);
@@ -244,6 +277,58 @@ export function handleEditorKeyDown(
       nudgeDelta(state.document.molecule, ARROW_VECTORS[arrow], event.shiftKey),
     );
     return true;
+  }
+
+  const bareLetter =
+    event.key.length === 1 &&
+    /^[a-zA-Z]$/.test(event.key) &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.altKey;
+
+  // TWO KINDS OF HALF-TYPED SYMBOL OUTRANK A TOOL LETTER, and nothing else.
+  //
+  // (1) A PENDING PREFIX. "M" applies nothing and means nothing on its own,
+  //     so the `g` that follows it inside the window can only have been meant
+  //     as magnesium — nobody reaches for the pan tool one letter into a
+  //     symbol. This buys back the whole class the old order silently lost:
+  //     Al Ar Ag As At Au Ac Am, Li La Lr Lu Lv, Mg Mn Mo Md, Ti Te Tl Ta Th
+  //     Tc Tb Tm and the rest. Before it, "Li" armed IODINE.
+  //
+  // (2) A PAIR THAT IS IN THE ORGANIC SET. Exactly two symbols need this —
+  //     Br and Se — and they need it because `r` and `e` are tool letters, so
+  //     bromine and selenium were unreachable from the keyboard while
+  //     tools.ts promised the organic set was untouched. Keeping the promise
+  //     is worth more than the sequence it costs (press B, then `r` within
+  //     900 ms meaning the ring tool).
+  //
+  // Deliberately NOT every pair: "C" then `d` stays the draw-bond tool rather
+  // than becoming cadmium, because retype-an-atom-then-draw-off-it is the
+  // commonest sequence in the editor and cadmium appears in no figure.
+  let elementBuffer = state.ui.elementInputBuffer;
+  if (bareLetter && elementBuffer !== "") {
+    const pending = isPendingPrefix(elementBuffer);
+    const outcome = pressElementKey(elementBuffer, event.key);
+    const completed = outcome.element;
+    if (
+      completed !== undefined &&
+      completed.length === 2 &&
+      (pending || COMMON_ORGANIC_ELEMENTS.includes(completed))
+    ) {
+      endNudge(store);
+      armElementWindow(store, outcome.buffer);
+      event.preventDefault();
+      applyElement(store, completed);
+      return true;
+    }
+    // A prefix that led nowhere is dead: drop it and read the key from
+    // scratch below, registry first, so "Mq" is a dead M and then the charge
+    // tool. An APPLIED single is left alone — whichever branch claims the key
+    // closes the window itself.
+    if (pending) {
+      elementBuffer = "";
+      armElementWindow(store, "");
+    }
   }
 
   const command = commandForEvent(event);
@@ -265,15 +350,9 @@ export function handleEditorKeyDown(
   // Bare letters, last: everything the registry did not claim is element
   // input. The tool letters therefore win, which costs exactly the elements
   // listed in the header of tools.ts and keeps the whole organic set typeable.
-  if (
-    event.key.length === 1 &&
-    /^[a-zA-Z]$/.test(event.key) &&
-    !event.metaKey &&
-    !event.ctrlKey &&
-    !event.altKey
-  ) {
+  if (bareLetter) {
     endNudge(store);
-    const outcome = pressElementKey(state.ui.elementInputBuffer, event.key);
+    const outcome = pressElementKey(elementBuffer, event.key);
     armElementWindow(store, outcome.buffer);
     if (outcome.element === undefined) return false;
     event.preventDefault();
@@ -298,19 +377,26 @@ export function useKeyBindings(options: KeyBindingsOptions = {}): void {
     const onKeyDown = (event: KeyboardEvent): void => {
       handleEditorKeyDown(event, { onAnnounce, store: target });
     };
-    const onKeyUp = (event: KeyboardEvent): void => {
-      if (ARROW_KEYS[event.key] !== undefined) endNudge(target);
-    };
     const onBlur = (): void => {
       endNudge(target);
     };
+    // A POINTER PRESS ENDS BOTH TRANSIENT RUNS. The nudge, because whatever
+    // the click is about is a new edit and should be its own history entry.
+    // The half-typed element, because the 900 ms window was otherwise closed
+    // ONLY by the clock, by Escape, or by another key — so "press N, click
+    // somewhere, press O" still read the two letters as one symbol and wrote
+    // nobelium.
+    const onPointerDown = (): void => {
+      endNudge(target);
+      armElementWindow(target, "");
+    };
     window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
     window.addEventListener("blur", onBlur);
+    window.addEventListener("pointerdown", onPointerDown, true);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
+      window.removeEventListener("pointerdown", onPointerDown, true);
       // The teardown is the last of the five ways the transaction closes. An
       // unmount mid-nudge — a route change, a Fast Refresh — would otherwise
       // leave it open, and an open transaction kills undo for the session.

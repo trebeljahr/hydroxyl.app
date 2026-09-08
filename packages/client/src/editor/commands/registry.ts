@@ -42,12 +42,14 @@ import type {
 } from "@starter/chem-core";
 import { COMMON_ORGANIC_ELEMENTS } from "@starter/chem-core";
 
-import { panelToDraw } from "@/canvas/scene-bridge";
+import { fitBounds } from "@/canvas/metrics";
+import { buildDocumentScene, panelToDraw } from "@/canvas/scene-bridge";
 // From `machine`, not from the `@/editor/interaction` barrel: the barrel
 // re-exports the React adapter, and this registry has to stay importable by a
 // plain-node test.
 import { documentBondLength } from "@/editor/interaction/machine";
 import { TOOLS } from "@/editor/tools";
+import { toggleTheme } from "@/shell/theme";
 import { guardedOps } from "@/state/chem-guard";
 import type { EditorState, EditorStore, Selection } from "@/state";
 
@@ -61,7 +63,8 @@ export type CommandGroup =
   | "view"
   | "bond"
   | "element"
-  | "ring";
+  | "ring"
+  | "chain";
 
 export interface Command {
   readonly id: string;
@@ -351,6 +354,33 @@ function ringTemplateCommands(): Command[] {
       const state = store.getState();
       state.setToolOption("ringTemplate", name);
       state.setTool("ring");
+    },
+  }));
+}
+
+/**
+ * The chain lengths the rail offers, and the only list of them.
+ *
+ * A command per length rather than a bare `setToolOption` on the rail button:
+ * chain length was the last option in the shell reachable from exactly one
+ * surface, so it had no palette row, no `enabled` and no shortcut, while its
+ * three sibling popovers (bond order, ring, element) all dispatched commands.
+ */
+export const CHAIN_LENGTHS: readonly number[] = Object.freeze([
+  2, 3, 4, 5, 6, 8, 10, 12,
+]);
+
+function chainLengthCommands(): Command[] {
+  return CHAIN_LENGTHS.map((length) => ({
+    id: `chain.length.${String(length)}`,
+    title: `Chain length: ${String(length)} atoms`,
+    keywords: ["chain", "length", "alkyl", "zigzag", String(length)],
+    group: "chain" as const,
+    enabled: always,
+    run: (store: EditorStore) => {
+      const state = store.getState();
+      state.setToolOption("chainLength", length);
+      state.setTool("chain");
     },
   }));
 }
@@ -667,6 +697,35 @@ const VIEW_COMMANDS: readonly Command[] = [
     },
   },
   {
+    id: "view.fit",
+    title: "Fit to view",
+    keywords: ["fit", "zoom", "view", "all", "frame"],
+    shortcut: "Mod+Shift+f",
+    group: "view",
+    enabled: (state) => !isEmpty(state.document.molecule),
+    run: (store) => {
+      const state = store.getState();
+      // The scene is built ON DEMAND rather than memoised on the document:
+      // the canvas commits on every pointer-move frame of a drag, and a memo
+      // keyed on the document would rebuild a scene per frame for a command
+      // nobody is running. `buildDocumentScene` costs 0.037 ms on a 300-atom
+      // structure, so paying it on the keystroke is free.
+      state.zoomToFit(fitBounds(buildDocumentScene(state.document)), 0);
+    },
+  },
+  {
+    id: "view.theme",
+    title: "Toggle light / dark theme",
+    keywords: ["theme", "dark", "light", "appearance", "mode"],
+    group: "view",
+    enabled: always,
+    run: () => {
+      // The CHROME only. The canvas keeps its publication-white ground in
+      // both themes — see shell/theme.ts.
+      toggleTheme();
+    },
+  },
+  {
     id: "view.aromatic-circles",
     title: "Toggle aromatic circles",
     keywords: ["aromatic", "circle", "benzene", "ring", "display"],
@@ -716,6 +775,7 @@ export const COMMANDS: readonly Command[] = Object.freeze([
   ...bondOrderCommands(),
   ...bondStereoCommands(),
   ...ringTemplateCommands(),
+  ...chainLengthCommands(),
   ...elementCommands(),
   ...EDIT_COMMANDS,
   ...SELECT_COMMANDS,

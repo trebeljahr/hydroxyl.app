@@ -60,19 +60,61 @@ describe("nextFocusAtom", () => {
     expect(mol.atoms["a1"]!.pos).not.toEqual(mol.atoms[first!]!.pos);
   });
 
-  it("gets STUCK on a ring in bonded mode, which is why there is a second mode", () => {
-    // Not a defect to be fixed by a cleverer rule: any preference for a bonded
-    // neighbour can skip an atom, and any rule that cannot skip is not
-    // following bonds. Pinned so that a future "improvement" to the bonded
-    // walk has to confront the trade-off rather than rediscover it.
+  it("gets STUCK on a ring when it is given no memory of where it came from", () => {
+    // The old behaviour, pinned as the reason `previous` exists at all. With
+    // no memory the walk trades focus across one bond forever: four of
+    // benzene's six atoms pressing Right, two of six pressing Down.
     const mol = benzene();
-    const visited = new Set<string>();
-    let current: string | undefined = undefined;
-    for (let i = 0; i < 30; i++) {
-      current = nextFocusAtom(mol, current, "right");
-      if (current !== undefined) visited.add(current);
+    for (const direction of ["right", "down"] as const) {
+      const visited = new Set<string>();
+      let current: string | undefined = undefined;
+      for (let i = 0; i < 30; i++) {
+        current = nextFocusAtom(mol, current, direction);
+        if (current !== undefined) visited.add(current);
+      }
+      expect(visited.size).toBeLessThan(mol.atomIds.length);
     }
-    expect(visited.size).toBeLessThan(mol.atomIds.length);
+  });
+
+  it("reaches every atom of a ring in bonded mode once it remembers the last one", () => {
+    // The bonded walk is not complete for EVERY graph — a preference for a
+    // bonded neighbour can always skip an atom — but the shape that actually
+    // bit was the 2-cycle, and rejecting the atom just left kills it. Benzene
+    // is the molecule /editor loads, so it is the one that has to work.
+    const mol = benzene();
+    for (const direction of ["right", "left", "up", "down"] as const) {
+      const visited = new Set<string>();
+      let previous: string | undefined = undefined;
+      let current: string | undefined = undefined;
+      for (let i = 0; i < mol.atomIds.length * 2; i++) {
+        const next = nextFocusAtom(mol, current, direction, "bonded", previous);
+        previous = current;
+        current = next;
+        if (current !== undefined) visited.add(current);
+      }
+      expect(
+        [...visited].sort(),
+        `bonded ${direction} missed an atom`,
+      ).toEqual([...mol.atomIds].sort());
+    }
+  });
+
+  it("never answers with the atom the focus just came from", () => {
+    const mol = benzene();
+    // a2 is bonded to a1 and a3; coming FROM a1, Right must not go back to it
+    // even when a1 is the best-aligned neighbour.
+    expect(nextFocusAtom(mol, "a2", "left", "bonded", "a1")).not.toBe("a1");
+  });
+
+  it("still hands back the only other atom of a two-atom molecule", () => {
+    // The exclusion is a preference, not a prohibition: with nowhere else to
+    // go, going back is the only honest answer.
+    const mol = buildMolecule((b) => {
+      const a = b.atom("C", { x: 0, y: 0 });
+      const c = b.atom("O", { x: 1, y: 0 });
+      b.bond(a, c);
+    });
+    expect(nextFocusAtom(mol, "a2", "left", "bonded", "a1")).toBe("a1");
   });
 
   it("reaches every atom in sequential mode, ring or not", () => {
@@ -120,13 +162,26 @@ describe("nextFocusAtom", () => {
 describe("describeAtom", () => {
   it("names the element and the bond count a screen reader needs", () => {
     const mol = benzene();
-    expect(describeAtom(mol, "a1")).toBe("C, 2 bonds");
+    expect(describeAtom(mol, "a1")).toBe("C, 2 bonds, atom 1 of 6");
   });
 
   it("mentions a charge and a display label", () => {
     const mol = buildMolecule((b) => {
       b.atom("N", { x: 0, y: 0 }, { charge: 1, label: "NR3" });
     });
-    expect(describeAtom(mol, "a1")).toBe("N, charge +1, labelled NR3, 0 bonds");
+    expect(describeAtom(mol, "a1")).toBe(
+      "N, charge +1, labelled NR3, 0 bonds, atom 1 of 1",
+    );
+  });
+
+  it("describes no two atoms of benzene identically", () => {
+    // THE LIVE REGION ONLY SPEAKS WHEN ITS TEXT CHANGES. Every carbon in
+    // benzene is "C, 2 bonds", so before the ordinal was added React wrote
+    // the same string on every arrow press, the DOM never mutated, and a
+    // screen-reader user heard the first move and then nothing at all for the
+    // rest of the ring. This is that bug, pinned.
+    const mol = benzene();
+    const said = mol.atomIds.map((id) => describeAtom(mol, id));
+    expect(new Set(said).size).toBe(mol.atomIds.length);
   });
 });

@@ -139,6 +139,17 @@ export interface UiState {
    * silently changed what Delete would remove.
    */
   readonly focusedAtomId: AtomId | null;
+  /**
+   * WHERE THE ROVING FOCUS CAME FROM, and nothing else.
+   *
+   * The bonded arrow walk rejects it as a destination, which is what stops
+   * the focus trading back and forth across one bond — see traversal.ts. It
+   * is kept here rather than in the key layer because the canvas also moves
+   * the focus (a click, a tab into the widget), and a "previous" that only
+   * the keyboard updated would go stale the moment a pointer touched an atom
+   * and then block a legitimate arrow press.
+   */
+  readonly previousFocusedAtomId: AtomId | null;
   readonly commandPaletteOpen: boolean;
   /** One line of feedback ("Cannot merge bonded atoms"), or nothing. */
   readonly statusMessage: string | null;

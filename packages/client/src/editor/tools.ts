@@ -13,20 +13,39 @@
  * Nothing in the store resets `tool` after an edit and that absence is the
  * feature — a chemist drawing a steroid draws thirty bonds in a row.
  *
- * ── WHY THE HOTKEYS ARE THE LETTERS THEY ARE ───────────────────────────────
+ * ── WHY THE HOTKEYS ARE THE LETTERS THEY ARE, AND WHAT THEY COST ──────────
  *
  * Tool letters and ELEMENT letters compete for the same bare keystrokes, and
- * the tool wins. That has a real cost and it is worth stating precisely rather
- * than discovering: every element whose symbol begins with a tool letter is
- * unreachable from the keyboard, namely V; Ga Ge Gd; Db Dy Ds; Er Eu Es; Rb Ru
- * Rh Re Ra Rn Rf Rg; Xe; Zn Zr. All of them remain reachable through the
- * element popover on the rail and through the properties panel.
+ * the tool usually wins. The casualty list is worth stating exactly rather
+ * than discovering, and an earlier version of this comment got it wrong in
+ * both directions — it named only symbols BEGINNING with a tool letter, and
+ * it promised an organic set that in fact had two holes in it. The real list
+ * has two classes, and `tools.test.ts` recomputes both from `ELEMENTS` so it
+ * cannot go stale again.
  *
- * The letters were picked to make that list as cheap as possible. Not one of
- * `d e g q r v x z` is itself a one-letter element symbol EXCEPT `v`
- * (vanadium), so the organic set — H B C N O F P S Cl Br I Si Se — is
- * untouched, which is the set a figure is actually made of. `q` costs nothing
- * at all: no element symbol begins with it.
+ * CLASS ONE — the symbol BEGINS with a tool letter, so the first keystroke is
+ * the tool and no element input ever starts:
+ *
+ *     V; Ga Ge Gd; Db Ds Dy; Er Es Eu; Rb Ru Rh Re Ra Rn Rf Rg; Xe; Zn Zr
+ *
+ * CLASS TWO — the FIRST letter is itself a one-letter element, so it applies
+ * immediately, and the SECOND letter is a tool letter, which the registry
+ * claims before the buffer can complete the pair:
+ *
+ *     He Be Ne Cr Fe Kr Sr Pd Cd Ce Pr Nd Ir Hg Fr Sg Og
+ *
+ * Every one of them remains reachable through the element popover on the
+ * rail, the properties panel, and the palette's `element.*` commands.
+ *
+ * WHAT IS NOT A CASUALTY, and why. A symbol whose first letter is NOT an
+ * element (Al, Ar, Ag, Li, Mg, Mn, Ti, Te…) is safe: that letter applies
+ * nothing, so the key layer holds it as a pending prefix and lets it claim
+ * the next keystroke ahead of any tool. And the organic set — H B C N O F P
+ * S Cl Br I Si Se — is genuinely untouched, but Br and Se are untouched only
+ * because the key layer gives a completed COMMON_ORGANIC_ELEMENTS pair
+ * priority over a tool letter as well; without that exception `r` and `e`
+ * would take them. Not one of `d e g q r v x z` is a one-letter symbol except
+ * `v` (vanadium), and `q` costs nothing at all: no element begins with it.
  */
 
 import type { ComponentType } from "react";

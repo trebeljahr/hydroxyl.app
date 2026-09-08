@@ -30,7 +30,7 @@
  * could not export.
  */
 
-import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 
 export type ThemeName = "light" | "dark";
 
@@ -75,6 +75,25 @@ function readStoredTheme(): ThemeName | null {
   }
 }
 
+/**
+ * Flip the theme, outside React.
+ *
+ * A plain function and not only a hook callback, because the command registry
+ * owns every action the shell exposes and a button that bypassed it would be
+ * an action with no palette row and no `enabled` — which is exactly the seam
+ * the "one registry" criterion is about. The hook hands this same function
+ * back, so the top bar's switch and the palette entry are one code path.
+ */
+export function toggleTheme(): void {
+  const next: ThemeName = current === "dark" ? "light" : "dark";
+  setTheme(next);
+  try {
+    window.localStorage.setItem(STORAGE_KEY, next);
+  } catch {
+    // The class is already applied; only the memory of it is lost.
+  }
+}
+
 /** The current theme, and a way to flip it. */
 export function useTheme(): {
   readonly theme: ThemeName;
@@ -92,16 +111,6 @@ export function useTheme(): {
           ? "dark"
           : "light"),
     );
-  }, []);
-
-  const toggleTheme = useCallback(() => {
-    const next: ThemeName = current === "dark" ? "light" : "dark";
-    setTheme(next);
-    try {
-      window.localStorage.setItem(STORAGE_KEY, next);
-    } catch {
-      // The class is already applied; only the memory of it is lost.
-    }
   }, []);
 
   return { theme, toggleTheme };

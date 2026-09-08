@@ -152,3 +152,32 @@ describe("StatusBar — viewport chrome", () => {
     expect(canvas.contains(fit)).toBe(false);
   });
 });
+
+describe("StatusBar — the viewport buttons are registry entries", () => {
+  it("dispatches Fit and Reset through the command registry", () => {
+    // Fit used to build the scene and call `zoomToFit` inline, which made it
+    // the one action in the shell with no command behind it: no palette row,
+    // no shortcut, and reachable from this strip alone.
+    render(<StatusBar />);
+    for (const id of ["view.fit", "view.reset"]) {
+      const button = document.querySelector(`[data-command="${id}"]`);
+      expect(button, id).toBeTruthy();
+    }
+  });
+
+  it("greys Fit out on an empty sketch, the same way the palette does", () => {
+    render(<StatusBar />);
+    act(() => {
+      editorStore
+        .getState()
+        .openDocument(
+          createDocument({
+            molecule: buildMolecule(() => undefined),
+            now: "2024-01-01T00:00:00.000Z",
+          }),
+        );
+    });
+    const button = document.querySelector('[data-command="view.fit"]');
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+  });
+});

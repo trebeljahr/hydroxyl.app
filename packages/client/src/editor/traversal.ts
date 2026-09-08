@@ -5,27 +5,36 @@
  * against real molecules rather than through a rendered canvas that jsdom
  * gives no layout to.
  *
- * ── TWO MODES, BECAUSE ONE KEY CANNOT HONOUR BOTH REQUIREMENTS ────────────
+ * ── TWO MODES, AND WHY THE BONDED ONE NEEDS ONE BIT OF MEMORY ─────────────
  *
  * "Arrow keys move focus atom-to-atom ALONG BONDS" and "keyboard traversal
- * REACHES EVERY ATOM" are both required, and no single rule delivers both.
- * Following bonds means the walk is a walk on the graph, and a graph walk
- * driven by one direction gets stuck: on a hexagon, pressing Right from the
- * bottom vertex takes the bond to the lower-right vertex, from which no bond
- * points right — so the fallback steps back to the bottom vertex and the two
- * trade the focus forever. Two of the six are never seen. Any preference for
- * a bonded neighbour can skip an atom, and any rule that cannot skip is not
- * following bonds.
+ * REACHES EVERY ATOM" pull in different directions, and the first attempt at
+ * reconciling them was stateless: follow a bond where one points the right
+ * way, else step through `atomIds`. That oscillates, and measurably — on
+ * benzene it visited FOUR of six atoms pressing Right and TWO of six pressing
+ * Down, trading the focus back and forth between one pair forever. The cycle
+ * is always the same shape: the ordered fallback steps forward to an atom
+ * whose bond points straight back where it came from.
  *
- * So they are two modes on two keys:
+ * So the bonded walk is given the one fact that breaks it — WHERE IT CAME
+ * FROM. `previous` is rejected as a destination, by the bonded step and by
+ * the ordered fallback alike, which turns every 2-cycle into a step onwards.
+ * With it, Right and Down each visit all six atoms of benzene. That is not a
+ * proof of completeness for every graph (a preference for a bonded neighbour
+ * can still skip an atom, and a rule that cannot skip is not following
+ * bonds), which is why the second mode still exists and still carries the
+ * guarantee:
  *
- *   ARROW           the bonded neighbour lying most nearly that way, else the
- *                   next atom in the molecule's own order — which is what
- *                   lets an arrow cross into a disconnected fragment at all.
- *   SHIFT + ARROW   the next atom in `atomIds` order, bonds ignored. Visits
- *                   every atom in the document in a fixed number of presses,
- *                   by construction, and that is the completeness guarantee
- *                   a screen-reader user's access rests on.
+ *   ARROW           the bonded neighbour lying most nearly that way and not
+ *                   the atom just left, else the next atom in the molecule's
+ *                   own order — which is what lets an arrow cross into a
+ *                   disconnected fragment at all.
+ *   SHIFT + ARROW   the next atom in `atomIds` order, bonds and history
+ *                   ignored. Visits every atom in the document in a fixed
+ *                   number of presses, BY CONSTRUCTION, and that is the
+ *                   completeness guarantee a screen-reader user's access
+ *                   rests on. It is advertised on the canvas element's
+ *                   `aria-keyshortcuts` so it is not folklore.
  *
  * MODEL COORDINATES ARE Y-UP, so ArrowUp is +y. The renderer flips; nothing
  * here does, and nothing here converts to pixels — a traversal that depended
@@ -69,11 +78,17 @@ export type TraversalMode = "bonded" | "sequential";
 /**
  * The bonded neighbour of `from` that lies most nearly in `direction`, or
  * undefined when no bond points that way.
+ *
+ * `exclude` is the atom the focus just came from. Skipping it is what stops
+ * the walk trading focus back and forth across one bond — see the header —
+ * and it is a parameter rather than a module variable so this stays a pure
+ * function a test can drive one press at a time.
  */
 export function neighbourInDirection(
   mol: Molecule,
   from: AtomId,
   direction: ArrowDirection,
+  exclude?: AtomId | undefined,
 ): AtomId | undefined {
   const origin = positionOf(mol, from);
   if (origin === undefined) return undefined;
@@ -82,6 +97,7 @@ export function neighbourInDirection(
   let best: AtomId | undefined;
   let bestScore = DIRECTION_THRESHOLD;
   for (const id of neighborIds(mol, from)) {
+    if (id === exclude) continue;
     const pos = positionOf(mol, id);
     if (pos === undefined) continue;
     const dx = pos.x - origin.x;
@@ -112,14 +128,21 @@ export function nextFocusAtom(
   from: AtomId | undefined,
   direction: ArrowDirection,
   mode: TraversalMode = "bonded",
+  previous?: AtomId | undefined,
 ): AtomId | undefined {
   if (mol.atomIds.length === 0) return undefined;
   if (from === undefined || !Object.hasOwn(mol.atoms, from)) {
     return mol.atomIds[0];
   }
 
+  // SEQUENTIAL IGNORES `previous` DELIBERATELY. Its completeness is an
+  // arithmetic property of stepping through `atomIds` and wrapping; skipping
+  // an entry to avoid a repeat would break the arithmetic and, with it, the
+  // one guarantee this file makes.
+  const avoid = mode === "bonded" ? previous : undefined;
+
   if (mode === "bonded") {
-    const bonded = neighbourInDirection(mol, from, direction);
+    const bonded = neighbourInDirection(mol, from, direction, avoid);
     if (bonded !== undefined) return bonded;
   }
 
@@ -131,8 +154,17 @@ export function nextFocusAtom(
   const index = mol.atomIds.indexOf(from);
   if (index < 0) return mol.atomIds[0];
   const count = mol.atomIds.length;
-  const next = (index + step + count) % count;
-  return mol.atomIds[next];
+  // Bounded, and the plain step is the answer when the search finds nothing:
+  // in a two-atom molecule the only place to go IS the atom just left, and
+  // going back beats standing still. Skipping `from` as well as `avoid` is
+  // what keeps that case from resolving to a no-op.
+  for (let hop = 1; hop <= count; hop++) {
+    const candidate = mol.atomIds[(((index + step * hop) % count) + count) % count];
+    if (candidate === undefined) continue;
+    if (candidate === avoid || candidate === from) continue;
+    return candidate;
+  }
+  return mol.atomIds[(((index + step) % count) + count) % count];
 }
 
 /**
@@ -153,5 +185,17 @@ export function describeAtom(mol: Molecule, id: AtomId): string {
       ? ""
       : `, charge ${atom.charge > 0 ? "+" : ""}${String(atom.charge)}`;
   const label = atom.label === undefined ? "" : `, labelled ${atom.label}`;
-  return `${atom.element}${charge}${label}, ${String(bonds)} ${bonds === 1 ? "bond" : "bonds"}`;
+  const index = mol.atomIds.indexOf(id);
+  // THE ORDINAL IS NOT DECORATION — it is what makes the announcement CHANGE.
+  // A live region is announced when its text mutates, and on benzene every
+  // one of the six carbons described to "C, 2 bonds": React wrote the same
+  // string on every arrow press, the DOM never changed, and a screen-reader
+  // user heard the first move and then silence for the rest of the ring.
+  // Position in the document is the one fact that distinguishes chemically
+  // identical atoms, and it doubles as orientation ("atom 3 of 6").
+  const place =
+    index < 0
+      ? ""
+      : `, atom ${String(index + 1)} of ${String(mol.atomIds.length)}`;
+  return `${atom.element}${charge}${label}, ${String(bonds)} ${bonds === 1 ? "bond" : "bonds"}${place}`;
 }

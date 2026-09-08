@@ -55,15 +55,26 @@ const GROUP_TITLES: Readonly<Record<Group, string>> = {
   bond: "Bonds",
   element: "Elements",
   ring: "Ring templates",
+  chain: "Chains",
 };
 
-const GROUP_ORDER: readonly Group[] = [
+/**
+ * Exported for the test that asserts it covers every group `COMMANDS` uses.
+ *
+ * A group missing from this array is not a type error — the palette iterates
+ * the ARRAY and asks each group for its entries, so an uncovered group means
+ * those commands render nowhere at all, silently. That is how a whole
+ * namespace could be added to the registry and still be absent from the one
+ * surface that is supposed to list everything.
+ */
+export const GROUP_ORDER: readonly Group[] = [
   "tool",
   "edit",
   "select",
   "structure",
   "bond",
   "ring",
+  "chain",
   "element",
   "view",
 ];

@@ -23,14 +23,21 @@
  * the canvas, with a comment saying it was deliberately not a toolbar and
  * would move when the real chrome arrived. This is that move: leaving it there
  * would have put two overlapping strips in the same corner.
+ *
+ * BOTH BUTTONS ARE REGISTRY ENTRIES. Fit used to build the scene and call
+ * `zoomToFit` inline, which made it the one action in the whole shell with no
+ * command behind it — no palette row, no shortcut, reachable from this strip
+ * and nowhere else — and Reset duplicated `view.reset` rather than dispatching
+ * it. Two code paths for one behaviour is exactly what the single registry is
+ * meant to make impossible.
  */
 
-import { useCallback } from "react";
 import type { ReactElement } from "react";
 import { AlertTriangleIcon } from "lucide-react";
 
-import { buildDocumentScene, fitBounds } from "@/canvas";
+import { commandById } from "@/editor/commands/registry";
 import { moleculeIssues, moleculeMass } from "@/editor/derived";
+import { cn } from "@/lib/utils";
 import { editorStore, useEditorStore } from "@/state";
 
 /** Four significant decimals: the precision a monoisotopic mass is quoted to. */
@@ -43,6 +50,37 @@ function formatCharge(charge: number): string {
   return charge > 0 ? `+${String(charge)}` : String(charge);
 }
 
+/**
+ * One of the two viewport buttons, dispatched through the registry so its
+ * disabled state is the same `enabled(state)` the palette greys on.
+ */
+function ViewButton({
+  id,
+  label,
+}: {
+  readonly id: string;
+  readonly label: string;
+}): ReactElement {
+  const command = commandById(id);
+  const enabled = useEditorStore((state) => command.enabled(state));
+  return (
+    <button
+      type="button"
+      data-command={id}
+      disabled={!enabled}
+      onClick={() => {
+        void command.run(editorStore);
+      }}
+      className={cn(
+        "rounded px-2 py-0.5",
+        enabled ? "hover:bg-muted" : "cursor-not-allowed opacity-40",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
 export function StatusBar(): ReactElement {
   const doc = useEditorStore((state) => state.document);
   const zoom = useEditorStore((state) => state.viewport.zoom);
@@ -51,15 +89,6 @@ export function StatusBar(): ReactElement {
 
   const mass = moleculeMass(doc.molecule);
   const issues = moleculeIssues(doc.molecule);
-
-  // Built on demand rather than memoised on the document: the canvas commits
-  // on every pointer-move frame of a drag, and a memo keyed on `doc` would
-  // rebuild a scene per frame for a button nobody is pressing. `buildScene`
-  // costs 0.037 ms on a 300-atom structure, so paying it on the click is free.
-  const fit = useCallback(() => {
-    const state = editorStore.getState();
-    state.zoomToFit(fitBounds(buildDocumentScene(state.document)), 0);
-  }, []);
 
   return (
     <footer
@@ -113,20 +142,8 @@ export function StatusBar(): ReactElement {
         {message ?? ""}
       </span>
 
-      <button
-        type="button"
-        onClick={fit}
-        className="hover:bg-muted rounded px-2 py-0.5"
-      >
-        Fit
-      </button>
-      <button
-        type="button"
-        onClick={() => editorStore.getState().resetViewport()}
-        className="hover:bg-muted rounded px-2 py-0.5"
-      >
-        Reset
-      </button>
+      <ViewButton id="view.fit" label="Fit" />
+      <ViewButton id="view.reset" label="Reset" />
       <span
         data-status="zoom"
         className="w-12 text-right font-mono tabular-nums"

@@ -289,7 +289,13 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
         tabIndex={0}
         role="application"
         aria-label="Structure canvas"
-        aria-describedby="canvas-focus-status"
+        // ADVERTISED, because an undiscoverable modifier is not an
+        // accessibility feature. The bare arrows follow bonds and Shift makes
+        // them step through every atom in document order; the second is the
+        // one that carries the completeness guarantee, and until it was named
+        // here a user had no way to learn it existed.
+        aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight"
+        aria-describedby="canvas-focus-help canvas-focus-status"
         onFocus={handleFocus}
         // `touchAction: none` so a one-finger drag pans the canvas instead of
         // scrolling the page — without it the browser claims the gesture
@@ -321,6 +327,15 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
         role again each time. Visually hidden rather than absent — sighted
         users have the dashed focus ring.
       */}
+      {/* Static, and read once when focus enters the widget: what the arrow
+          keys do here, and which modifier guarantees every atom. Separate
+          from the live region below because a description that changed on
+          every press would be re-read as if it were news. */}
+      <div id="canvas-focus-help" className="sr-only">
+        Arrow keys move between bonded atoms. Hold Shift to step through every
+        atom in the structure in order.
+      </div>
+
       <div
         id="canvas-focus-status"
         role="status"

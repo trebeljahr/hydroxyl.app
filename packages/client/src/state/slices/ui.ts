@@ -22,6 +22,7 @@ export const INITIAL_UI_STATE: UiState = Object.freeze({
   hoveredAtomId: null,
   hoveredBondId: null,
   focusedAtomId: null,
+  previousFocusedAtomId: null,
   commandPaletteOpen: false,
   statusMessage: null,
   elementInputBuffer: "",
@@ -52,8 +53,13 @@ export function createUiSlice(
     },
 
     setFocusedAtom(id) {
-      if (get().ui.focusedAtomId === id) return;
+      const current = get().ui.focusedAtomId;
+      if (current === id) return;
       set((draft) => {
+        // The atom being left becomes "previous" in the same `set`, so no
+        // subscriber ever sees a focus that has moved with a stale history
+        // behind it.
+        draft.ui.previousFocusedAtomId = current;
         draft.ui.focusedAtomId = id;
       });
     },

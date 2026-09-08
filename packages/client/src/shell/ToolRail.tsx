@@ -51,7 +51,11 @@ import {
   WedgeBondIcon,
 } from "@/chem-icons";
 import type { ChemIconProps } from "@/chem-icons";
-import { commandById, formatShortcut } from "@/editor/commands/registry";
+import {
+  CHAIN_LENGTHS,
+  commandById,
+  formatShortcut,
+} from "@/editor/commands/registry";
 import { TOOLS } from "@/editor/tools";
 import type { ToolDef } from "@/editor/tools";
 import { cn } from "@/lib/utils";
@@ -357,14 +361,17 @@ function ChainOptions(): ReactElement {
     <div className="flex w-44 flex-col gap-1">
       <p className="text-muted-foreground text-xs font-medium">Chain length</p>
       <div className="flex flex-wrap gap-1">
-        {[2, 3, 4, 5, 6, 8, 10, 12].map((n) => (
+        {CHAIN_LENGTHS.map((n) => (
           <OptionButton
             key={n}
             active={length === n}
             testId={`chain-${String(n)}`}
             label={`${String(n)} atoms`}
             onSelect={() => {
-              editorStore.getState().setToolOption("chainLength", n);
+              // Through the registry, like every other option popover on this
+              // rail — chain length was the last one setting a tool option
+              // directly, and so the last one absent from the palette.
+              void commandById(`chain.length.${String(n)}`).run(editorStore);
             }}
           >
             <span className="font-mono">{n}</span>
