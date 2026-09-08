@@ -14,8 +14,12 @@
  *
  * WHAT IS IMPLEMENTED, EXACTLY.
  *
- *   CIP RULE 1a — atomic number, compared outward sphere by sphere over the
- *   hierarchical digraph.
+ *   CIP RULE 1a — atomic number, compared outward SPHERE BY SPHERE over the
+ *   hierarchical digraph. Breadth, not depth: the whole of sphere n is
+ *   compared before anything in sphere n+1, so a difference near the centre
+ *   settles the pair and a deeper atom never overturns it. Depth-first is the
+ *   easy mistake and it returns a confident wrong letter on most ring
+ *   stereocentres — see `compareBranches`.
  *
  *   CIP RULE 1b — DUPLICATED ATOMS. A bond of order n contributes n-1 phantom
  *   neighbours of the far element at BOTH ends, and a ring closure terminates
@@ -24,12 +28,23 @@
  *   carbon, and without ring-closure duplicates the traversal of a sugar does
  *   not terminate at all.
  *
- *   MAXIMUM SPHERE DEPTH IS `MAX_SPHERES` (10), and the digraph is additionally
+ *   MAXIMUM SPHERE DEPTH IS `MAX_SPHERES` (64), and the digraph is additionally
  *   capped at `MAX_BRANCH_NODES` nodes per comparison. Two branches still tied
  *   when either cap is reached are reported `ranking-truncated` — never
  *   "identical", which is the failure that would silently delete a
- *   stereocentre. Ten spheres reaches all the way round a pyranose and out the
- *   far side of a steroid's B ring; a molecule that needs more says so.
+ *   stereocentre. 64 spheres covers a steroid's whole ring system plus its
+ *   side chain and every sugar the corpus contains; the node cap, not the
+ *   depth, is what stops a pathological ring system. A molecule that needs
+ *   more says so.
+ *
+ *   TRUNCATION IS NOT FREE, which is why the depth is generous. A truncated
+ *   centre reports `undetermined`, and `stereocenterAtoms` counts an
+ *   undetermined centre as a stereocentre — deliberately, so an undrawn wedge
+ *   still shows up as a real centre. The cost of truncating too eagerly is
+ *   therefore not just a missing letter: non-stereogenic atoms get listed as
+ *   stereocentres, and `structuralIssues` then silently accepts a wedge drawn
+ *   on any of them. At the old depth of 10 that made every atom in a steroid
+ *   look stereogenic.
  *
  * WHAT IS NOT IMPLEMENTED, AND HOW IT SHOWS.
  *
@@ -60,6 +75,13 @@
  * KEKULE IS THE STORAGE FORM, so the digraph duplicates on `bond.order` and
  * ignores `bond.aromatic`. An importer's flagged molecule must go through
  * `kekulize()` first, exactly as it already must for hydrogen counting.
+ *
+ * ONLY MARKS THAT ARE DRAWN MAKE CLAIMS. `wedge`, `hash` and `wavy` describe a
+ * SINGLE bond and `either` a double one, and chem-render's stereo pass skips
+ * any other combination. An importer can hand you a wedge on a double bond —
+ * `bondStereoFromCode` maps V2000 stereo code 1 without consulting the order —
+ * and this module applies the identical `order === 1` filter, so it never
+ * reads, nor complains about, a mark the reader cannot see.
  *
  * PARITY IS READ FROM THE DRAWING, never from a stored flag: the wedge and
  * hash marks on the bonds, with the narrow end at `from` as types.ts fixes it.
@@ -173,8 +195,22 @@ export interface StructuralIssue {
 // The hierarchical digraph
 // ---------------------------------------------------------------------------
 
-/** How many spheres out the comparison may look before giving up. */
-const MAX_SPHERES = 10;
+/**
+ * How many spheres out the comparison may look before giving up.
+ *
+ * A branch's digraph paths are SIMPLE paths through the molecule — a ring
+ * closure terminates in a duplicate — so the depth a real molecule needs is
+ * bounded by its longest chain, not by anything unbounded. Measured on the
+ * corpus, sweeping this constant and counting truncations: at 10, which this
+ * was, cholesterol truncates a centre and reports nine, vitamin D3 reports
+ * twelve, and beta-carotene reports eight stereocentres where it has none. 16
+ * clears every steroid; 24 is the first value that clears the whole corpus,
+ * beta-carotene's 23-sphere polyene included. 64 is that with room to spare.
+ *
+ * Depth is NOT the number that governs work — `MAX_BRANCH_NODES` below is —
+ * so buying the headroom costs nothing on a molecule that never needs it.
+ */
+const MAX_SPHERES = 64;
 
 /**
  * How many digraph nodes one branch comparison may materialise.
@@ -183,12 +219,29 @@ const MAX_SPHERES = 10;
  * rather than with the atom count, so a cap on depth alone is not a cap on
  * work. Exceeding this reports `ranking-truncated`, which is the honest
  * answer: the comparison did not finish.
+ *
+ * THIS, not the sphere depth, is the number that bounds the work, and it is
+ * sized against measurement rather than intuition. Across cholesterol,
+ * morphine, taxol, strychnine, sucrose, artemisinin, erythromycin, cortisol,
+ * quinine, penicillin G and beta-carotene the largest single comparison
+ * materialises 230 nodes, so 20000 leaves nearly two orders of magnitude of
+ * headroom while still stopping a synthetic ring ladder — cost runs about a
+ * microsecond per node — before it becomes a hang.
  */
 const MAX_BRANCH_NODES = 20000;
 
 /** Ordering outcomes. `2` means "cannot be decided", never "equal". */
 const UNDECIDED = 2;
 type Comparison = -1 | 0 | 1 | typeof UNDECIDED;
+
+/**
+ * Which ranking key a comparison context is running.
+ *
+ * It belongs to the CONTEXT rather than to the call because a context owns one
+ * digraph and that digraph memoises a sorted child order per node — an order
+ * that is only meaningful for the key it was produced under.
+ */
+type KeyKind = "rule1" | "extended";
 
 interface BranchNode {
   /** Atomic number. 0 for the phantom that pads a short child list. */
@@ -203,12 +256,26 @@ interface BranchNode {
   readonly parentBondId: BondId | undefined;
   /** Atoms already on the path from the stereo root, for ring closure. */
   readonly path: ReadonlySet<AtomId>;
+  /** Spheres out from the branch root, which is itself sphere 0. */
+  readonly depth: number;
   /** Lazily materialised and then reused; the tree is walked many times. */
   children: BranchNode[] | undefined;
+  /**
+   * `children` in descending priority, memoised.
+   *
+   * A node occupies exactly one place in the digraph, so the order of its
+   * children is a property of the node alone and can be computed once. It has
+   * to be: the sphere-by-sphere walk asks every node on a frontier for its
+   * sorted children, and each of those sorts runs a full sub-comparison per
+   * sibling pair. Without the memo the same subtree is re-ranked once per path
+   * that reaches it. `"undecided"` is a cached failure, not an absent entry.
+   */
+  sorted: BranchNode[] | "undecided" | undefined;
 }
 
 interface BranchContext {
   readonly mol: Molecule;
+  readonly keyKind: KeyKind;
   nodes: number;
   exhausted: boolean;
 }
@@ -221,7 +288,9 @@ const PHANTOM: BranchNode = Object.freeze({
   atomId: undefined,
   parentBondId: undefined,
   path: new Set<AtomId>(),
+  depth: 0,
   children: [],
+  sorted: [],
 });
 
 function realNode(
@@ -229,6 +298,7 @@ function realNode(
   atomId: AtomId,
   parentBondId: BondId | undefined,
   path: ReadonlySet<AtomId>,
+  depth: number,
 ): BranchNode {
   ctx.nodes++;
   if (ctx.nodes > MAX_BRANCH_NODES) ctx.exhausted = true;
@@ -241,7 +311,9 @@ function realNode(
     atomId,
     parentBondId,
     path,
+    depth,
     children: undefined,
+    sorted: undefined,
   };
 }
 
@@ -253,7 +325,11 @@ function realNode(
  * outranks a duplicate carbon one sphere later, and the ring closure that
  * emits one stops the walk without pretending the ring is a dead end.
  */
-function duplicateNode(ctx: BranchContext, atomId: AtomId): BranchNode {
+function duplicateNode(
+  ctx: BranchContext,
+  atomId: AtomId,
+  depth: number,
+): BranchNode {
   ctx.nodes++;
   if (ctx.nodes > MAX_BRANCH_NODES) ctx.exhausted = true;
   const atom = getAtom(ctx.mol, atomId);
@@ -266,11 +342,13 @@ function duplicateNode(ctx: BranchContext, atomId: AtomId): BranchNode {
     atomId: undefined,
     parentBondId: undefined,
     path: PHANTOM.path,
+    depth,
     children: [],
+    sorted: [],
   };
 }
 
-function hydrogenNode(ctx: BranchContext): BranchNode {
+function hydrogenNode(ctx: BranchContext, depth: number): BranchNode {
   ctx.nodes++;
   if (ctx.nodes > MAX_BRANCH_NODES) ctx.exhausted = true;
   return {
@@ -281,7 +359,9 @@ function hydrogenNode(ctx: BranchContext): BranchNode {
     atomId: undefined,
     parentBondId: undefined,
     path: PHANTOM.path,
+    depth,
     children: [],
+    sorted: [],
   };
 }
 
@@ -296,6 +376,7 @@ function childrenOf(ctx: BranchContext, node: BranchNode): BranchNode[] {
   const out: BranchNode[] = [];
   const nextPath = new Set(node.path);
   nextPath.add(atomId);
+  const depth = node.depth + 1;
 
   for (const bond of bondsAt(ctx.mol, atomId)) {
     if (ctx.exhausted) break;
@@ -304,74 +385,116 @@ function childrenOf(ctx: BranchContext, node: BranchNode): BranchNode[] {
     // carbonyl carbon of an aldehyde has to see (O, O, H), not (O, H).
     const duplicates = bond.order - 1;
     if (bond.id === node.parentBondId) {
-      for (let k = 0; k < duplicates; k++) out.push(duplicateNode(ctx, other));
+      for (let k = 0; k < duplicates; k++) {
+        out.push(duplicateNode(ctx, other, depth));
+      }
       continue;
     }
     if (node.path.has(other)) {
       // Ring closure: the atom is already on this path, so it enters as a
       // duplicate and the walk stops rather than circling forever.
-      for (let k = 0; k <= duplicates; k++) out.push(duplicateNode(ctx, other));
+      for (let k = 0; k <= duplicates; k++) {
+        out.push(duplicateNode(ctx, other, depth));
+      }
       continue;
     }
-    out.push(realNode(ctx, other, bond.id, nextPath));
-    for (let k = 0; k < duplicates; k++) out.push(duplicateNode(ctx, other));
+    out.push(realNode(ctx, other, bond.id, nextPath, depth));
+    for (let k = 0; k < duplicates; k++) {
+      out.push(duplicateNode(ctx, other, depth));
+    }
   }
 
   const hydrogens = implicitHydrogenCount(ctx.mol, atomId);
-  for (let k = 0; k < hydrogens; k++) out.push(hydrogenNode(ctx));
+  for (let k = 0; k < hydrogens; k++) out.push(hydrogenNode(ctx, depth));
 
   node.children = out;
   return out;
 }
 
-/** Rule 1a alone. */
-function rankKey(node: BranchNode): number {
-  return node.z;
-}
-
 /**
- * Rule 1a plus the criteria this module can DETECT but not correctly ORDER.
+ * A node's rank under the context's key.
  *
- * Used only on a second pass, and only to tell "these two branches are the
- * same" apart from "these two branches differ somewhere I am not entitled to
- * rank". The numbers are packed rather than compared in sequence because the
- * caller only ever asks whether they are equal.
+ * `rule1` is atomic number alone. `extended` also carries mass number and
+ * formal charge — the criteria this module can DETECT but is not entitled to
+ * ORDER. They are packed into one number rather than compared in sequence
+ * because the caller only ever asks whether two of them are equal.
  */
-function extendedKey(node: BranchNode): number {
+function keyOf(ctx: BranchContext, node: BranchNode): number {
+  if (ctx.keyKind === "rule1") return node.z;
   return node.z * 100000 + node.mass * 100 + (node.charge + 50);
 }
 
-function compareNodes(
+/**
+ * Ranks the subtree at `a` against the subtree at `b`, SPHERE BY SPHERE.
+ *
+ * The breadth is the correctness argument, not a style choice. CIP rule 1a
+ * compares the whole of sphere n before anything in sphere n+1, so a
+ * difference near the centre settles the pair and nothing further out gets a
+ * vote. A depth-first walk — resolve the senior child to its leaves, then move
+ * to the next — inverts that. In 1-bromo-3-fluoro-4-methylpentane the centre's
+ * isopropyl branch beats its 2-bromoethyl branch at sphere 2, (C,C,H) against
+ * (C,H,H); depth-first lets the bromine two spheres further out overturn it
+ * and return the enantiomer's letter, confidently. Rings make it routine
+ * rather than exotic: most stereocentres in a sugar or a terpene tie for
+ * several spheres before they separate, so the deep atom nearly always got the
+ * casting vote.
+ *
+ * The two frontiers stay index-aligned. Each pair of corresponding parents
+ * pads its shorter child list with phantoms so the slots line up, which is
+ * also how "fewer substituents" loses: a phantom's key is 0 and every real
+ * atom's is at least 1.
+ */
+function compareBranches(
   ctx: BranchContext,
   a: BranchNode,
   b: BranchNode,
-  depth: number,
-  key: (node: BranchNode) => number,
 ): Comparison {
   if (ctx.exhausted) return UNDECIDED;
 
-  const ka = key(a);
-  const kb = key(b);
-  if (ka !== kb) return ka > kb ? 1 : -1;
+  const rootA = keyOf(ctx, a);
+  const rootB = keyOf(ctx, b);
+  if (rootA !== rootB) return rootA > rootB ? 1 : -1;
 
-  if (depth >= MAX_SPHERES) {
-    // Both nodes are leaves, so there is nothing deeper to disagree about and
-    // the cap has not actually bitten.
-    const leafA = childrenOf(ctx, a).length === 0;
-    const leafB = childrenOf(ctx, b).length === 0;
-    return leafA && leafB ? 0 : UNDECIDED;
-  }
+  let frontierA: readonly BranchNode[] = [a];
+  let frontierB: readonly BranchNode[] = [b];
+  let depth = a.depth;
 
-  const childrenA = sortedChildren(ctx, a, depth + 1, key);
-  const childrenB = sortedChildren(ctx, b, depth + 1, key);
-  if (childrenA === undefined || childrenB === undefined) return UNDECIDED;
+  while (frontierA.length > 0) {
+    if (depth >= MAX_SPHERES) {
+      // The cap has only actually bitten if something was left to look at.
+      // Two frontiers of leaves are a finished comparison, not a truncated one.
+      for (const node of frontierA) {
+        if (childrenOf(ctx, node).length > 0) return UNDECIDED;
+      }
+      for (const node of frontierB) {
+        if (childrenOf(ctx, node).length > 0) return UNDECIDED;
+      }
+      return 0;
+    }
 
-  const count = Math.max(childrenA.length, childrenB.length);
-  for (let i = 0; i < count; i++) {
-    const x = childrenA[i] ?? PHANTOM;
-    const y = childrenB[i] ?? PHANTOM;
-    const cmp = compareNodes(ctx, x, y, depth + 1, key);
-    if (cmp !== 0) return cmp;
+    const nextA: BranchNode[] = [];
+    const nextB: BranchNode[] = [];
+    for (let i = 0; i < frontierA.length; i++) {
+      const childrenA = sortedChildren(ctx, frontierA[i]!);
+      const childrenB = sortedChildren(ctx, frontierB[i] ?? PHANTOM);
+      if (childrenA === undefined || childrenB === undefined) return UNDECIDED;
+      const width = Math.max(childrenA.length, childrenB.length);
+      for (let j = 0; j < width; j++) {
+        nextA.push(childrenA[j] ?? PHANTOM);
+        nextB.push(childrenB[j] ?? PHANTOM);
+      }
+    }
+    if (ctx.exhausted) return UNDECIDED;
+
+    for (let i = 0; i < nextA.length; i++) {
+      const ka = keyOf(ctx, nextA[i]!);
+      const kb = keyOf(ctx, nextB[i]!);
+      if (ka !== kb) return ka > kb ? 1 : -1;
+    }
+
+    frontierA = nextA;
+    frontierB = nextB;
+    depth++;
   }
   return 0;
 }
@@ -381,7 +504,7 @@ function compareNodes(
  * could not be ordered.
  *
  * The undefined case is conservative on purpose. Two siblings whose relative
- * order is undecided make the concatenated child sequence undecided too, and
+ * order is undecided make the concatenated sphere sequence undecided too, and
  * a comparison run against a sequence that might be in the wrong order is
  * exactly the plausible-wrong-answer this module exists to refuse. Siblings
  * that compare EQUAL are not a problem: swapping two identical branches
@@ -390,14 +513,16 @@ function compareNodes(
 function sortedChildren(
   ctx: BranchContext,
   node: BranchNode,
-  depth: number,
-  key: (node: BranchNode) => number,
 ): BranchNode[] | undefined {
+  const cached = node.sorted;
+  if (cached === "undecided") return undefined;
+  if (cached !== undefined) return cached;
+
   const children = [...childrenOf(ctx, node)];
   if (ctx.exhausted) return undefined;
   let undecided = false;
   children.sort((x, y) => {
-    const cmp = compareNodes(ctx, x, y, depth, key);
+    const cmp = compareBranches(ctx, x, y);
     if (cmp === UNDECIDED) {
       undecided = true;
       return 0;
@@ -405,7 +530,12 @@ function sortedChildren(
     // Descending: the highest-priority branch first.
     return -cmp;
   });
-  return undecided ? undefined : children;
+  if (undecided) {
+    node.sorted = "undecided";
+    return undefined;
+  }
+  node.sorted = children;
+  return children;
 }
 
 /** The result of ranking two substituent branches against each other. */
@@ -413,6 +543,26 @@ type BranchOrder =
   | { readonly kind: "ordered"; readonly aFirst: boolean }
   | { readonly kind: "identical" }
   | { readonly kind: "undetermined"; readonly reason: UndeterminedReason };
+
+interface BranchRoot {
+  readonly atomId: AtomId;
+  readonly bondId: BondId;
+}
+
+/** One full comparison of two branches under one key, in a fresh digraph. */
+function compareUnderKey(
+  mol: Molecule,
+  keyKind: KeyKind,
+  centre: AtomId,
+  a: BranchRoot,
+  b: BranchRoot,
+): Comparison {
+  const root: ReadonlySet<AtomId> = new Set<AtomId>([centre]);
+  const ctx: BranchContext = { mol, keyKind, nodes: 0, exhausted: false };
+  const nodeA = realNode(ctx, a.atomId, a.bondId, root, 0);
+  const nodeB = realNode(ctx, b.atomId, b.bondId, root, 0);
+  return compareBranches(ctx, nodeA, nodeB);
+}
 
 /**
  * Ranks the branch reaching `a` against the branch reaching `b`, both seen
@@ -427,22 +577,16 @@ type BranchOrder =
 function rankBranches(
   mol: Molecule,
   centre: AtomId,
-  a: { readonly atomId: AtomId; readonly bondId: BondId },
-  b: { readonly atomId: AtomId; readonly bondId: BondId },
+  a: BranchRoot,
+  b: BranchRoot,
 ): BranchOrder {
-  const root = new Set<AtomId>([centre]);
-
-  const ctx: BranchContext = { mol, nodes: 0, exhausted: false };
-  const nodeA = realNode(ctx, a.atomId, a.bondId, root);
-  const nodeB = realNode(ctx, b.atomId, b.bondId, root);
-  const first = compareNodes(ctx, nodeA, nodeB, 0, rankKey);
-  if (first === UNDECIDED) return { kind: "undetermined", reason: "ranking-truncated" };
+  const first = compareUnderKey(mol, "rule1", centre, a, b);
+  if (first === UNDECIDED) {
+    return { kind: "undetermined", reason: "ranking-truncated" };
+  }
   if (first !== 0) return { kind: "ordered", aFirst: first > 0 };
 
-  const extendedCtx: BranchContext = { mol, nodes: 0, exhausted: false };
-  const extendedA = realNode(extendedCtx, a.atomId, a.bondId, root);
-  const extendedB = realNode(extendedCtx, b.atomId, b.bondId, root);
-  const second = compareNodes(extendedCtx, extendedA, extendedB, 0, extendedKey);
+  const second = compareUnderKey(mol, "extended", centre, a, b);
   if (second === UNDECIDED) {
     return { kind: "undetermined", reason: "ranking-truncated" };
   }
@@ -512,9 +656,17 @@ function outOfPlaneAt(bond: Bond, atomId: AtomId): number {
   return 0;
 }
 
-/** True when a wavy bond starts at this atom: configuration declined. */
+/**
+ * True when a wavy bond starts at this atom: configuration declined.
+ *
+ * SINGLE BONDS ONLY, matching what chem-render actually draws. `wavy` is a
+ * single-bond mark (types.ts), and the scene builder skips it on a double or
+ * triple bond — so honouring one there would let an invisible mark overrule a
+ * geometry the reader CAN see.
+ */
 function hasWavyAt(mol: Molecule, atomId: AtomId): boolean {
   for (const bond of bondsAt(mol, atomId)) {
+    if (bond.order !== 1) continue;
     if (bond.from === atomId && bond.stereo === "wavy") return true;
   }
   return false;
@@ -953,6 +1105,13 @@ export function structuralIssues(mol: Molecule): readonly StructuralIssue[] {
     const bond = getBond(mol, bondId);
     if (bond === undefined) continue;
     if (bond.stereo !== "wedge" && bond.stereo !== "hash") continue;
+    // SINGLE BONDS ONLY, the same filter chem-render's stereo pass applies.
+    // `bondStereoFromCode` maps V2000 stereo code 1 to `wedge` whatever the
+    // bond order is, so an imported file can carry a wedge on a double bond —
+    // and the scene builder deliberately draws that as an ordinary double.
+    // Badging it would put a warning on the canvas about a mark that is not on
+    // the canvas, which no edit to the drawing can clear.
+    if (bond.order !== 1) continue;
     // Only the atoms a wedge actually touches are tested, so a structure with
     // no stereo marks costs one pass over the bond list and no CIP work at all.
     if (isStereocenter(mol, bond.from)) continue;

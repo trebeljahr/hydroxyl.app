@@ -143,6 +143,94 @@ function trans2Butene() {
   });
 }
 
+/**
+ * 1-bromo-3-fluoro-4-methylpentane, or its bromine-free control.
+ *
+ * The smallest acyclic molecule that separates a sphere-by-sphere CIP
+ * comparison from a depth-first one. C3 carries F (on a wedge), an implicit H,
+ * an isopropyl group and a 2-bromoethyl chain. Sphere 2 already decides the
+ * two carbon branches — isopropyl is (C,C,H) against 2-bromoethyl's (C,H,H) —
+ * so the bromine two spheres further out is never consulted, and swapping it
+ * for a plain methyl must not move the letter.
+ */
+function bromofluoromethylpentane(terminal: "Br" | "C") {
+  return buildMolecule((b) => {
+    const centre = b.atom("C", ORIGIN);
+    b.bond(centre, b.atom("F", step(ORIGIN, 90)), 1, "wedge");
+
+    const isopropylPos = step(ORIGIN, 210);
+    const isopropyl = b.atom("C", isopropylPos);
+    b.bond(centre, isopropyl, 1);
+    b.bond(isopropyl, b.atom("C", step(isopropylPos, 150)), 1);
+    b.bond(isopropyl, b.atom("C", step(isopropylPos, 270)), 1);
+
+    const c2Pos = step(ORIGIN, -30);
+    const c2 = b.atom("C", c2Pos);
+    b.bond(centre, c2, 1);
+    const c1Pos = step(c2Pos, 30);
+    const c1 = b.atom("C", c1Pos);
+    b.bond(c2, c1, 1);
+    b.bond(c1, b.atom(terminal, step(c1Pos, -30)), 1);
+  });
+}
+
+/**
+ * 2-methylcyclohexan-1-ol, hydroxyl on a wedge and the methyl as given.
+ *
+ * A ring pair whose two centres tie for several spheres before they separate.
+ * `"wedge"` draws the trans diastereomer, C[C@@H]1CCCC[C@@H]1O as RDKit reads
+ * the same picture, and `"hash"` the cis one.
+ */
+function methylcyclohexanol(methyl: "wedge" | "hash") {
+  return buildMolecule((b) => {
+    const ring: string[] = [];
+    for (let i = 0; i < 6; i++) ring.push(b.atom("C", fromPolar(i * 60 * DEG, 1)));
+    for (let i = 0; i < 6; i++) b.bond(ring[i]!, ring[(i + 1) % 6]!, 1);
+    b.bond(ring[0]!, b.atom("O", fromPolar(0, 2)), 1, "wedge");
+    b.bond(ring[1]!, b.atom("C", fromPolar(60 * DEG, 2)), 1, methyl);
+  });
+}
+
+/**
+ * `rings` cyclohexanes fused in a line: decalin at 2, perhydroanthracene at 3.
+ *
+ * Built by laying each hexagon down and reusing the two vertices its
+ * predecessor already placed, so the shared edge is a real shared bond rather
+ * than a coincident pair.
+ */
+function fusedAcene(rings: number) {
+  const positions: Vec2[] = [];
+  const edges: [number, number][] = [];
+  const indexAt = (p: Vec2): number => {
+    const found = positions.findIndex(
+      (q) => Math.abs(q.x - p.x) < 1e-6 && Math.abs(q.y - p.y) < 1e-6,
+    );
+    if (found !== -1) return found;
+    positions.push(p);
+    return positions.length - 1;
+  };
+  for (let r = 0; r < rings; r++) {
+    const centre = { x: r * Math.sqrt(3), y: 0 };
+    const vertices: number[] = [];
+    for (let k = 0; k < 6; k++) {
+      const offset = fromPolar((30 + 60 * k) * DEG, 1);
+      vertices.push(indexAt({ x: centre.x + offset.x, y: centre.y + offset.y }));
+    }
+    for (let k = 0; k < 6; k++) {
+      const pair: [number, number] = [vertices[k]!, vertices[(k + 1) % 6]!];
+      const already = edges.some(
+        ([x, y]) =>
+          (x === pair[0] && y === pair[1]) || (x === pair[1] && y === pair[0]),
+      );
+      if (!already) edges.push(pair);
+    }
+  }
+  return buildMolecule((b) => {
+    const ids = positions.map((p) => b.atom("C", p));
+    for (const [x, y] of edges) b.bond(ids[x]!, ids[y]!, 1);
+  });
+}
+
 describe("stereocenterAtoms", () => {
   it("finds the carbinol carbon of butan-2-ol and nothing else", () => {
     const mol = butan2olWedged();
@@ -312,7 +400,77 @@ describe("cipDescriptor", () => {
       b.bond(ids[1]!, b.atom("Cl", fromPolar(60 * DEG, 2)), 1);
     });
     expect(stereocenterAtoms(mol)).toEqual(["a1", "a2"]);
-    expect(kindOf(cipDescriptor(mol, "a1"))).toMatch(/^[RS]$/);
+    // Pinned as a LETTER, not as /[RS]/. A ranking bug on a ring produces a
+    // confident wrong letter and a regex that accepts either one waves it
+    // through, which is how a depth-first comparator survived review here.
+    expect(cipDescriptor(mol, "a1")).toEqual({ kind: "S" });
+  });
+
+  it("assigns both centres of trans-2-methylcyclohexan-1-ol", () => {
+    // RDKit reads this drawing as C[C@@H]1CCCC[C@@H]1O — (1S,2R). Ring
+    // stereocentres tie for several spheres before they separate, which is
+    // exactly where a comparator that looks deep before it looks wide gets
+    // the letter backwards.
+    const mol = methylcyclohexanol("wedge");
+    expect(cipDescriptor(mol, "a1")).toEqual({ kind: "S" });
+    expect(cipDescriptor(mol, "a2")).toEqual({ kind: "R" });
+  });
+
+  it("assigns both centres of the cis diastereomer differently", () => {
+    // The same skeleton with the methyl turned to a hash is
+    // C[C@H]1CCCC[C@@H]1O — (1S,2S). Two diastereomers that share a
+    // constitution have to come out different or the perception is not
+    // reading the drawing at all.
+    const mol = methylcyclohexanol("hash");
+    expect(cipDescriptor(mol, "a1")).toEqual({ kind: "S" });
+    expect(cipDescriptor(mol, "a2")).toEqual({ kind: "S" });
+  });
+
+  it("lets a near sphere settle the ranking before a far one votes", () => {
+    // 1-bromo-3-fluoro-4-methylpentane, the smallest acyclic molecule that
+    // separates a sphere-by-sphere comparison from a depth-first one.
+    //
+    // At the centre: F, H, isopropyl, and 2-bromoethyl. CIP rule 1 compares
+    // the whole of sphere 2 first — isopropyl is (C,C,H), 2-bromoethyl is
+    // (C,H,H) — so isopropyl outranks it and the bromine two spheres further
+    // out never gets a vote. Priorities are F > iPr > CH2CH2Br > H, traced
+    // counter-clockwise on the page with H behind it, which is S. RDKit reads
+    // the same drawing as CC(C)[C@@H](F)CCBr and agrees.
+    //
+    // A depth-first walk resolves the senior child to its leaves first, finds
+    // the bromine, and hands back R: a confident wrong letter, with nothing on
+    // screen to suggest it. The control below removes the bromine and must not
+    // change the answer.
+    expect(cipDescriptor(bromofluoromethylpentane("Br"), "a1")).toEqual({ kind: "S" });
+    expect(cipDescriptor(bromofluoromethylpentane("C"), "a1")).toEqual({ kind: "S" });
+  });
+
+  it("resolves a fused polycyclic instead of truncating it", () => {
+    // Perhydroanthracene has exactly four stereogenic atoms, its ring-fusion
+    // carbons, and RDKit reads the same four off the same structure. Decalin
+    // has none: its two fusion carbons each see two constitutionally identical
+    // ring branches.
+    //
+    // Paths through a fused system run far past a pyranose, and a sphere cap
+    // tight enough to cut them off does not merely lose letters.
+    // `stereocenterAtoms` counts an UNDETERMINED centre as a centre — so an
+    // atom whose ranking was truncated is reported as stereogenic, and
+    // `structuralIssues` then silently accepts a wedge drawn on it. At a cap
+    // of ten spheres all fourteen of these carbons came back as truncated
+    // stereocentres.
+    expect(stereocenterAtoms(fusedAcene(2))).toEqual([]);
+
+    const mol = fusedAcene(3);
+    const centres = stereocenterAtoms(mol);
+    expect(centres).toHaveLength(4);
+    for (const id of centres) {
+      // No wedge is drawn on any of them, so the honest answer is that the
+      // drawing does not say — NOT that the comparison ran out of road.
+      expect(cipDescriptor(mol, id)).toEqual({
+        kind: "undetermined",
+        reason: "no-stereo-bond",
+      });
+    }
   });
 
   it("refuses rather than guesses when only an isotope separates two branches", () => {
@@ -442,6 +600,22 @@ describe("structuralIssues", () => {
   it("reports nothing on a correctly drawn stereocentre", () => {
     expect(structuralIssues(butan2olWedged())).toEqual([]);
     expect(structuralIssues(bromochlorofluoromethaneR())).toEqual([]);
+  });
+
+  it("says nothing about a wedge stored on a bond that is not single", () => {
+    // `bondStereoFromCode` maps V2000 stereo code 1 to `wedge` whatever the
+    // bond order is, so an imported file can carry one on a double bond.
+    // chem-render deliberately draws that as an ordinary double — a triangle
+    // there asserts a configuration nobody can read off it — and a badge for a
+    // mark that is not on the canvas is one no edit to the drawing can clear.
+    const mol = buildMolecule((b) => {
+      const c1 = b.atom("C", ORIGIN);
+      const c2 = b.atom("C", { x: 1, y: 0 });
+      const c3 = b.atom("C", { x: 2, y: 0 });
+      b.bond(c1, c2, 2, "wedge");
+      b.bond(c2, c3, 1);
+    });
+    expect(structuralIssues(mol)).toEqual([]);
   });
 
   it("reports nothing at all on a structure with no stereo marks", () => {
