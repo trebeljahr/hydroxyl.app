@@ -197,26 +197,26 @@ export function atomLabelVisible(
  * hydrogens are inside the abbreviation, not pending beside it. And hydrogen
  * itself never carries hydrogens, or an explicit H₂ molecule sets "HH".
  *
- * `flags.showImplicitHydrogens` IS DELIBERATELY NOT CONSULTED, and the
- * omission is the whole reason this function exists as a named seam.
+ * `flags.showImplicitHydrogens` INVERTS THE ANSWER, and getting the sense of
+ * it right is the whole reason this function exists as a named seam.
  *
- * That flag means "promote hydrogens to their own DRAWN VERTICES" — it is
- * what separates the explicitH and lewis views from kekule, and
+ * The flag means "promote hydrogens to their own DRAWN VERTICES" — it is what
+ * separates the explicitH and lewis views from kekule, and
  * `representation.ts` says so: kekule has it OFF while its comment notes that
- * the hydrogens still ride along on the labels. Reading it as "draw H on
- * labels" would leave ethanol's hydroxyl set as a bare "O" under every
- * skeletal view, which is not a drawing of ethanol — and every existing test
- * would stay green while it happened, because nothing else in the package
- * looks at a label's text.
+ * the hydrogens still ride along on the labels. So it is NOT "draw H on
+ * labels"; reading it that way would leave ethanol's hydroxyl set as a bare
+ * "O" under every skeletal view, which is not a drawing of ethanol, and every
+ * existing test would stay green while it happened, because nothing else in
+ * the package looks at a label's text.
  *
- * When the vertex-hydrogen pass lands it edits exactly this function: an atom
- * whose hydrogens have become real drawn atoms must stop printing them on its
- * label, and this is the one place that can say so.
+ * With the vertex pass landed (`modes/explicitH.ts`) it is the opposite: an
+ * atom whose hydrogens have BECOME drawn atoms must stop printing them on its
+ * label, or a fully-explicit methane reads "CH₄" with four hydrogens hanging
+ * off it as well. This is the one place that can say so, and it is the only
+ * condition that changed — every other view is untouched.
  *
- * `flags.showLonePairs` and `flags.showAtomIndices` are likewise not consulted
- * anywhere in this task. Lone pairs are the Lewis pass's own marks and must
- * not reuse the radical-dot ids; atom indices are a debugging overlay that
- * belongs beside the label rather than inside its run.
+ * `flags.showAtomIndices` is still not consulted here: atom indices are a
+ * debugging overlay that belongs beside the label rather than inside its run.
  */
 export function atomShowsHydrogens(
   mol: Molecule,
@@ -228,5 +228,36 @@ export function atomShowsHydrogens(
   if (!atomLabelVisible(mol, atomId, representation)) return false;
   if (labelOverride(atom) !== undefined) return false;
   if (isHydrogen(atom.element)) return false;
+  // The vertex pass has them. See `drawsHydrogenVertices`, which is the same
+  // predicate from the other side, and is what the explicitH mode iterates.
+  if (drawsHydrogenVertices(mol, atomId, representation)) return false;
   return true;
+}
+
+/**
+ * Whether this atom's implicit hydrogens are drawn as their own vertices,
+ * fanned into the space its bonds leave.
+ *
+ * THE COMPLEMENT of `atomShowsHydrogens`, and deliberately a separate exported
+ * predicate rather than a negation at the call site: `modes/explicitH.ts`
+ * iterates it to decide which atoms sprout phantoms, and the label pass
+ * consults it to decide which labels go quiet. If the two ever disagreed the
+ * symptom would be hydrogens drawn twice or not at all, so there is one rule.
+ *
+ * A DISPLAY OVERRIDE SUPPRESSES THEM, for the reason the label does: "Ph" is
+ * an abbreviation whose hydrogens are inside it, and fanning five of them off
+ * the label would draw a phenyl group as a hypervalent atom. Hydrogen itself
+ * sprouts nothing either, or an explicit H₂ grows a hydrogen off a hydrogen.
+ */
+export function drawsHydrogenVertices(
+  mol: Molecule,
+  atomId: AtomId,
+  representation: StructuralRepresentation,
+): boolean {
+  if (!representation.flags.showImplicitHydrogens) return false;
+  const atom = getAtom(mol, atomId);
+  if (atom === undefined) return false;
+  if (labelOverride(atom) !== undefined) return false;
+  if (isHydrogen(atom.element)) return false;
+  return implicitHydrogenCount(mol, atomId) > 0;
 }

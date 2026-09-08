@@ -62,6 +62,8 @@ interface SourceAttrs {
   readonly "data-atom-id"?: string;
   readonly "data-bond-id"?: string;
   readonly "data-ring-atom-ids"?: string;
+  readonly "data-hydrogen-host"?: string;
+  readonly "data-hydrogen-index"?: string;
   readonly "data-decoration"?: string;
 }
 
@@ -280,6 +282,16 @@ function sourceAttrs(id: string, source: SceneSource): SourceAttrs {
       return { "data-primitive-id": id, "data-atom-id": source.atomId };
     case "bond":
       return { "data-primitive-id": id, "data-bond-id": source.bondId };
+    case "hydrogen":
+      // A derived hydrogen is NOT its host: `data-atom-id` is what the
+      // pointer layer buckets primitives by to size an atom's pick target,
+      // and filing a hydrogen under its host would inflate that target to
+      // enclose the hydrogens.
+      return {
+        "data-primitive-id": id,
+        "data-hydrogen-host": source.hostAtomId,
+        "data-hydrogen-index": String(source.index),
+      };
     case "ring":
       // A ring has no id of its own in chem-core, only an index into a list
       // whose order is insertion order, so it names itself by its atom set.

@@ -26,7 +26,12 @@ import { detectCollisions } from "../src/scene/collide.js";
 import type { CollisionKind } from "../src/scene/collide.js";
 import { PUBLICATION_STYLE, SCREEN_STYLE } from "../src/style.js";
 
-const SKELETAL = representation("skeletal");
+// Skeletal now DEFAULTS to the aromatic circle — the forced consequence of
+// decision 11, which stripped Kekulé's carbon labels and left the circle as
+// the only thing telling the two views apart. This file's baseline is the
+// plain structural drawing with its Kekulé alternation intact, so it asks for
+// the circle to be off rather than relying on a default that has moved.
+const SKELETAL = representation("skeletal", { aromaticCircles: false });
 
 function step(from: Vec2, degrees: number): Vec2 {
   const d = fromPolar(degrees * DEG, 1);

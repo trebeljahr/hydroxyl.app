@@ -38,6 +38,19 @@ export interface ScenePoint {
  * itself by its ATOM SET, ordered by index in `mol.atomIds`. Clicking the
  * circle can then select the ring the delocalisation belongs to.
  *
+ * `hydrogen` is the fully-explicit view's phantom vertex. It has no id in
+ * chem-core either — hydrogens are IMPLICIT, derived from valence and never
+ * stored as atoms — so it names itself by its host and its index within that
+ * host’s own fan.
+ *
+ * IT IS NOT SOURCED FROM THE HOST ATOM, and the temptation to do that is
+ * exactly the trap. The editor buckets primitives by `source.atomId` to size
+ * an atom’s pick target, so a phantom hydrogen filed under its host would
+ * swell that target to enclose the hydrogens and undo the bond-length fix that
+ * pick radius already needed. A separate arm also makes every exhaustive
+ * switch on `SceneSource` a compile error until it is handled, which is how
+ * the SVG serialiser and the canvas layer learned about it.
+ *
  * `decoration` covers the things that belong to no model entity — the
  * background rect, a frame, the glyph run of a sum formula. Hit-testing
  * ignores them, and they must never be handed an atom or bond id just to make
@@ -47,6 +60,11 @@ export type SceneSource =
   | { readonly kind: "atom"; readonly atomId: AtomId }
   | { readonly kind: "bond"; readonly bondId: BondId }
   | { readonly kind: "ring"; readonly atomIds: readonly AtomId[] }
+  | {
+      readonly kind: "hydrogen";
+      readonly hostAtomId: AtomId;
+      readonly index: number;
+    }
   | { readonly kind: "decoration" };
 
 export interface SceneStroke {

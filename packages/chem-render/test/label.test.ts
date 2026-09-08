@@ -50,6 +50,7 @@ import {
   atomLabelReason,
   atomLabelVisible,
   atomShowsHydrogens,
+  drawsHydrogenVertices,
   labelOverride,
   radicalDotCount,
   revealsStereoHydrogen,
@@ -66,8 +67,20 @@ import {
 } from "../src/label/placement.js";
 import type { AtomLabelPlacement } from "../src/label/placement.js";
 
-const SKELETAL = representation("skeletal");
+// Skeletal now DEFAULTS to the aromatic circle — the forced consequence of
+// decision 11, which stripped Kekulé's carbon labels and left the circle as
+// the only thing telling the two views apart. This file's baseline is the
+// plain structural drawing with its Kekulé alternation intact, so it asks for
+// the circle to be off rather than relying on a default that has moved.
+const SKELETAL = representation("skeletal", { aromaticCircles: false });
 const KEKULE = representation("kekule");
+// Kekulé means alternating bonds and BARE carbons (decision 11), so it no
+// longer spells a plain methyl out at all. Where these tests need a carbon
+// label carrying its hydrogens ON THE LABEL — the "H3C" case — they ask for
+// it explicitly: carbon labels on, hydrogen VERTICES off. That is "Kekulé but
+// spelled out", and it is exactly the per-flag override the representation
+// factory exists to allow.
+const SPELLED_OUT = representation("kekule", { showCarbonLabels: true });
 
 /** One unit-length step from `from`, at `degrees` counter-clockwise from +x. */
 function step(from: Vec2, degrees: number): Vec2 {
@@ -332,18 +345,29 @@ describe("atomShowsHydrogens", () => {
     expect(atomShowsHydrogens(mol, "a3", SKELETAL)).toBe(true);
   });
 
-  it("does not consult showImplicitHydrogens", () => {
+  it("reads showImplicitHydrogens as vertices, and therefore inverts on it", () => {
     const mol = ethanol();
-    // Kekule has showImplicitHydrogens OFF while spelling its atoms out, and
-    // its hydrogens ride along on the labels. Reading that flag as "draw H on
-    // labels" would leave every hydroxyl in the package set as a bare "O",
-    // and no other test in the repo would notice.
+    // The flag means "promote the hydrogens to their own DRAWN VERTICES", not
+    // "draw H on labels". Kekulé has it OFF while spelling its heteroatoms
+    // out, and their hydrogens ride along on the labels; reading it the other
+    // way would leave every hydroxyl in the package set as a bare "O", and no
+    // other test in the repo would notice.
     expect(KEKULE.flags.showImplicitHydrogens).toBe(false);
     expect(atomShowsHydrogens(mol, "a3", KEKULE)).toBe(true);
-    expect(atomShowsHydrogens(mol, "a1", KEKULE)).toBe(true);
+    expect(atomShowsHydrogens(mol, "a1", SPELLED_OUT)).toBe(true);
+
+    // With it ON the vertex pass has them, so the label must go quiet or the
+    // hydrogens are drawn twice — "OH" with an H hanging off it as well.
     const explicitH = representation("explicitH");
     expect(explicitH.flags.showImplicitHydrogens).toBe(true);
-    expect(atomShowsHydrogens(mol, "a3", explicitH)).toBe(true);
+    expect(atomShowsHydrogens(mol, "a3", explicitH)).toBe(false);
+    expect(drawsHydrogenVertices(mol, "a3", explicitH)).toBe(true);
+    // An abbreviation sprouts none either way: a phenyl's hydrogens are
+    // inside the abbreviation, and fanning five off it would draw the group
+    // as a hypervalent atom.
+    expect(
+      drawsHydrogenVertices(abbreviatedBenzylAlcohol(), "a1", explicitH),
+    ).toBe(false);
   });
 
   it("is false for an atom with no label", () => {
@@ -378,7 +402,7 @@ describe("composeAtomLabel", () => {
     expect(labelPlainText(label, "east")).toBe("OH");
     expect(labelPlainText(label, "west")).toBe("HO");
 
-    const methyl = composeAtomLabel(ethanol(), "a1", KEKULE)!;
+    const methyl = composeAtomLabel(ethanol(), "a1", SPELLED_OUT)!;
     expect(labelPlainText(methyl, "east")).toBe("CH3");
     expect(labelPlainText(methyl, "west")).toBe("H3C");
     expect(labelSpans(methyl, "west")).toEqual([
@@ -662,12 +686,12 @@ describe("placeAtomLabel", () => {
     expect(plainText(ethanolMirrored(), "a3")).toBe("HO");
   });
 
-  it("sets ethanol's kekule methyl as H3C and its methylene as CH2", () => {
+  it("sets a spelled-out ethanol's methyl as H3C and its methylene as CH2", () => {
     // The two cases the contact sheet is reviewed for: the terminal methyl
     // reads into the chain, and the 30-degree zig-zag apex does not stack.
-    expect(plainText(ethanol(), "a1", KEKULE)).toBe("H3C");
-    expect(plainText(ethanol(), "a2", KEKULE)).toBe("CH2");
-    expect(place(ethanol(), "a2", KEKULE).hydrogenSide).toBe("east");
+    expect(plainText(ethanol(), "a1", SPELLED_OUT)).toBe("H3C");
+    expect(plainText(ethanol(), "a2", SPELLED_OUT)).toBe("CH2");
+    expect(place(ethanol(), "a2", SPELLED_OUT).hydrogenSide).toBe("east");
   });
 
   it("orders a lone atom's hydrogens by the hydride convention", () => {
@@ -711,9 +735,9 @@ describe("placeAtomLabel", () => {
         b.bond(b.atom("C", ORIGIN), b.atom("O", { x: 1, y: 0 }), 1);
       }),
       "a1",
-      KEKULE,
+      SPELLED_OUT,
     );
-    const labelled = place(methanol13C(), "a1", KEKULE);
+    const labelled = place(methanol13C(), "a1", SPELLED_OUT);
     // The prefix is a satellite glued to the symbol's left, so the run starts
     // further left while the C stays exactly on the bond.
     expect(labelled.run.origin.x).toBeLessThan(plain.run.origin.x);

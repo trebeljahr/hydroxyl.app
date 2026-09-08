@@ -32,7 +32,12 @@ import {
 import { BUNDLED_MEASURER } from "../src/text/measurer.js";
 import type { Measurer } from "../src/text/measurer.js";
 
-const SKELETAL = representation("skeletal");
+// Skeletal now DEFAULTS to the aromatic circle — the forced consequence of
+// decision 11, which stripped Kekulé's carbon labels and left the circle as
+// the only thing telling the two views apart. This file's baseline is the
+// plain structural drawing with its Kekulé alternation intact, so it asks for
+// the circle to be off rather than relying on a default that has moved.
+const SKELETAL = representation("skeletal", { aromaticCircles: false });
 
 interface Box {
   minX: number;

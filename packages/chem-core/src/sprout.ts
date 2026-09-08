@@ -254,6 +254,105 @@ export function largestGapBisector(directions: readonly Vec2[]): number {
   return normalizeAngle(bestStart + bestGap / 2);
 }
 
+/**
+ * Relative slack for comparing two gaps' per-slot widths. Angles reached by
+ * different arithmetic routes differ in the last ulp; a tolerance this small
+ * cannot merge two genuinely different gaps and does catch that.
+ */
+const FAN_SCORE_EPSILON = 1e-12;
+
+/**
+ * `count` directions fanned into the empty space `directions` leaves, as
+ * angles in radians.
+ *
+ * `largestGapBisector` generalised from one direction to N, and the caller
+ * this exists for is the fully-explicit view: a heavy atom's derived hydrogens
+ * have to go SOMEWHERE, and the only defensible somewhere is the room its
+ * bonds are not using. Doing it here rather than in the renderer keeps the
+ * geometry in model space, next to the "where is there room" query it
+ * generalises — chem-render's placement pass deliberately refuses to import a
+ * chem-core vector helper, so a copy over there would be a second gap search
+ * with its own rounding.
+ *
+ * THE FREE ATOM SPREADS EVENLY OVER THE WHOLE CIRCLE. With nothing occupied
+ * there is one gap of 2π and no start angle to measure from; slotting N
+ * directions INTO that gap the way a bounded gap is slotted would leave a
+ * double-width hole where the wrap is, so methane would come out as four
+ * hydrogens crowded into three quarters of the circle. Dividing the circle by
+ * N instead gives methane its cross and water its H–O–H.
+ *
+ * SLOTS ARE ALLOCATED WIDEST-FIRST, by the width each gap would give its own
+ * slots — `gap / (slots + 1)` — rather than by raw width. A trigonal carbon's
+ * two hydrogens both belong in its one big gap, not one each side of a bond
+ * it already has. Ties break on raw width and then on start angle, so a
+ * symmetric atom fans the same way every time; the output would otherwise
+ * depend on iteration order, and these coordinates get committed.
+ */
+export function fanDirections(
+  directions: readonly Vec2[],
+  count: number,
+): number[] {
+  if (count <= 0) return [];
+
+  const angles = directions
+    .map((d) => normalizeAnglePositive(angleOf(d)))
+    .sort((a, b) => a - b);
+
+  const first = angles[0];
+  if (first === undefined) {
+    const step = (2 * Math.PI) / count;
+    return Array.from({ length: count }, (_unused, i) => normalizeAngle(i * step));
+  }
+
+  interface Gap {
+    readonly start: number;
+    readonly width: number;
+    slots: number;
+  }
+  const gaps: Gap[] = [];
+  for (let i = 0; i < angles.length; i++) {
+    const start = angles[i]!;
+    // The last gap wraps past 2PI back to the first direction.
+    const end = i + 1 < angles.length ? angles[i + 1]! : first + 2 * Math.PI;
+    gaps.push({ start, width: end - start, slots: 0 });
+  }
+
+  for (let placed = 0; placed < count; placed++) {
+    let best = gaps[0]!;
+    let bestScore = best.width / (best.slots + 1);
+    for (const gap of gaps) {
+      const score = gap.width / (gap.slots + 1);
+      // TIES ARE COMPARED WITH A TOLERANCE, not with `===`. A chain carbon's
+      // two 120-degree bonds leave gaps of 120 and 240 degrees, and once the
+      // wide one holds a slot the two scores are the same angle arrived at by
+      // two different routes — a subtraction and a halving — which land one
+      // ulp apart. Exact equality therefore missed the tie and handed the
+      // second hydrogen to the narrow gap, putting it inside the chain's own
+      // angle. Within the tolerance the WIDER gap wins, and on an exact tie of
+      // widths the earlier one does, which because `angles` is sorted is the
+      // one with the smaller start angle.
+      const difference = score - bestScore;
+      const tolerance = FAN_SCORE_EPSILON * Math.max(1, Math.abs(bestScore));
+      if (
+        difference > tolerance ||
+        (Math.abs(difference) <= tolerance && gap.width > best.width)
+      ) {
+        best = gap;
+        bestScore = score;
+      }
+    }
+    best.slots++;
+  }
+
+  const out: number[] = [];
+  for (const gap of gaps) {
+    for (let k = 0; k < gap.slots; k++) {
+      out.push(normalizeAngle(gap.start + (gap.width * (k + 1)) / (gap.slots + 1)));
+    }
+  }
+  return out;
+}
+
 /** Nearest atom to `point` within `radius`, ignoring `excludeId`. */
 function nearestAtomWithin(
   mol: Molecule,

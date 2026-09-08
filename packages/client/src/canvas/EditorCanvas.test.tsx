@@ -114,12 +114,16 @@ describe("EditorCanvas — the DOM contract", () => {
     expect(scene?.parentElement).toBe(overlay?.parentElement);
   });
 
-  it("renders benzene as six atoms and nine bond elements", () => {
-    // Nine, not six: a Kekule benzene's three double bonds each draw a second
-    // line, and both lines carry the same `data-bond-id`.
+  it("renders benzene as six atoms and six bond elements plus a ring circle", () => {
+    // SIX, not nine. Skeletal defaults to the aromatic circle now, and the
+    // circle REPLACES the alternation's second lines rather than being drawn
+    // on top of them — so an arene's six ring bonds draw one line each and the
+    // delocalisation is stated once, by a primitive that carries
+    // `data-ring-atom-ids` and no `data-bond-id` at all.
     render(<EditorCanvas />);
     expect(document.querySelectorAll("[data-atom-id]")).toHaveLength(6);
-    expect(document.querySelectorAll("[data-bond-id]")).toHaveLength(9);
+    expect(document.querySelectorAll("[data-bond-id]")).toHaveLength(6);
+    expect(document.querySelectorAll("[data-ring-atom-ids]")).toHaveLength(1);
     expect(
       new Set(
         [...document.querySelectorAll("[data-bond-id]")].map((el) =>
@@ -221,7 +225,7 @@ describe("EditorCanvas — selection", () => {
         "data-overlay-target",
       ),
     ).toBe("b9");
-    expect(document.querySelectorAll("[data-bond-id]")).toHaveLength(9);
+    expect(document.querySelectorAll("[data-bond-id]")).toHaveLength(6);
   });
 
   it("extends the selection to two bonds on a shift-click", () => {

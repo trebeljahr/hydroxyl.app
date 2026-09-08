@@ -82,12 +82,40 @@ function hasAromaticPerception(mol: Molecule, atomId: AtomId): boolean {
 }
 
 /**
+ * How many electrons this element brings to its outer shell, or undefined
+ * where the question has no honest answer.
+ *
+ * DOMAIN: main-group elements only, and the guard is the valence list rather
+ * than the group number. Every element in the table that carries a default
+ * valence is in group 1, 2 or 13-17, so `group - 10` is its outer-electron
+ * count and `group` is its own for the first two columns. Outside that the
+ * arithmetic is nonsense — group 3 would read -7, and the f-block, which the
+ * table records as group 0, would read -10 — so an element with no default
+ * valences gets `undefined` instead of a plausible wrong number. A caller
+ * that wants to count lone pairs on a transition metal has to say what it
+ * means by that; this function refuses to invent it, in the same spirit as
+ * `exactMass()`.
+ *
+ * Lifted out of the private helper below so `lewis.ts` can count lone pairs
+ * from it rather than re-deriving the same expression: two copies of the
+ * group-to-electron rule would be two places to get the d-block wrong.
+ */
+export function outerElectronCount(symbol: string): number | undefined {
+  const element = requireElement(symbol);
+  if (element.valences.length === 0) return undefined;
+  const group = element.group;
+  return group <= 2 ? group : group - 10;
+}
+
+/**
  * True when the element sits to the left of carbon in the periodic table, so
  * a positive charge *increases* rather than decreases its bonding capacity.
  */
 function isEarlyAtom(group: number): boolean {
   // Outer electrons for main-group elements; d-block is handled by having no
-  // default valences at all, so it never reaches this.
+  // default valences at all, so it never reaches this — `chargeAdjustment` is
+  // only called after `valences.length > 0` has been checked, which is the
+  // same guard `outerElectronCount` applies.
   const outerElectrons = group <= 2 ? group : group - 10;
   return outerElectrons < 4;
 }

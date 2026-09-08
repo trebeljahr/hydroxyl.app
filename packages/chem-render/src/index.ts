@@ -32,6 +32,7 @@
 
 export * from "./style.js";
 export * from "./representation.js";
+export * from "./availability.js";
 export * from "./scene/types.js";
 // Dependency order: the text layer measures, the label layer decides and
 // places, and the scene layer consumes both. `text/generated/` is deliberately

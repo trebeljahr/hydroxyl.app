@@ -33,8 +33,10 @@
 
 import type { Molecule } from "@starter/chem-core";
 import {
+  DISPLAY_FLAG_KEYS,
   createPanel,
   touchDocument,
+  type DisplayFlagKey,
   type Panel,
   type Representation,
   type RepresentationDisplay,
@@ -108,29 +110,24 @@ function displayEqual(
   a: RepresentationDisplay,
   b: RepresentationDisplay,
 ): boolean {
-  return (
-    a.showCarbonLabels === b.showCarbonLabels &&
-    a.aromaticCircles === b.aromaticCircles &&
-    a.showLonePairs === b.showLonePairs &&
-    a.showStereoDescriptors === b.showStereoDescriptors
-  );
+  // Driven by the key list rather than written out, so a flag added to
+  // chem-render is compared here automatically. A forgotten comparison would
+  // make a real toggle look like a no-op and be dropped by `patchPanel`.
+  return DISPLAY_FLAG_KEYS.every((key) => a[key] === b[key]);
 }
 
 /** Written out key by key instead of `{ ...base, ...patch }` because a spread
  *  of a `Partial` copies keys that are present with the value `undefined`,
- *  which is how a flag would silently become "not a boolean". */
+ *  which is how a flag would silently become "not a boolean". `??`, not `||`:
+ *  `false` is a legitimate patch value. */
 function mergeDisplay(
   base: RepresentationDisplay,
   patch: Partial<RepresentationDisplay> | undefined,
 ): RepresentationDisplay {
   if (!patch) return base;
-  return {
-    showCarbonLabels: patch.showCarbonLabels ?? base.showCarbonLabels,
-    aromaticCircles: patch.aromaticCircles ?? base.aromaticCircles,
-    showLonePairs: patch.showLonePairs ?? base.showLonePairs,
-    showStereoDescriptors:
-      patch.showStereoDescriptors ?? base.showStereoDescriptors,
-  };
+  const merged = {} as { -readonly [K in DisplayFlagKey]: boolean };
+  for (const key of DISPLAY_FLAG_KEYS) merged[key] = patch[key] ?? base[key];
+  return merged;
 }
 
 /**

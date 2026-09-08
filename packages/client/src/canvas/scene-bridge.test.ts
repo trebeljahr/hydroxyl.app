@@ -17,8 +17,18 @@ import {
   SCREEN_STYLE,
   isStructural,
 } from "@starter/chem-render";
-import { createDocument, createPanel, defaultRepresentation } from "@starter/shared";
-import type { Panel, Representation, SketchDocument } from "@starter/shared";
+import {
+  DISPLAY_FLAG_KEYS,
+  createDocument,
+  createPanel,
+  defaultRepresentation,
+} from "@starter/shared";
+import type {
+  DisplayFlagKey,
+  Panel,
+  Representation,
+  SketchDocument,
+} from "@starter/shared";
 import { describe, expect, it } from "vitest";
 
 import { fixtureDocument } from "./fixture";
@@ -30,17 +40,19 @@ import {
 
 /** A stored representation with every display switch turned on, so a flag that
  *  fails to carry across reads as `false` rather than as "the default was
- *  already right". */
+ *  already right". Built from `DISPLAY_FLAG_KEYS` so a flag added to
+ *  chem-render is covered here the moment it exists. */
 function allDisplayOn(kind: Representation["kind"]): Representation {
-  return {
-    kind,
-    display: {
-      showCarbonLabels: true,
-      aromaticCircles: true,
-      showLonePairs: true,
-      showStereoDescriptors: true,
-    },
-  };
+  const display = {} as { -readonly [K in DisplayFlagKey]: boolean };
+  for (const key of DISPLAY_FLAG_KEYS) display[key] = true;
+  return { kind, display };
+}
+
+/** The mirror image: everything off. */
+function allDisplayOff(kind: Representation["kind"]): Representation {
+  const display = {} as { -readonly [K in DisplayFlagKey]: boolean };
+  for (const key of DISPLAY_FLAG_KEYS) display[key] = false;
+  return { kind, display };
 }
 
 function docWithPanels(panels: readonly Panel[]): SketchDocument {
@@ -80,22 +92,17 @@ describe("toRenderRepresentation", () => {
     // Lewis defaults to lone pairs on — that is what makes it a Lewis
     // structure — so a document that stored them off is the case where a
     // "just take the kind's defaults" shortcut silently wins.
-    const stored: Representation = {
-      kind: "lewis",
-      display: {
-        showCarbonLabels: false,
-        aromaticCircles: false,
-        showLonePairs: false,
-        showStereoDescriptors: false,
-      },
-    };
-    const rendered = toRenderRepresentation(stored);
+    const rendered = toRenderRepresentation(allDisplayOff("lewis"));
     if (!isStructural(rendered)) throw new Error("lewis must be structural");
     expect(rendered.flags.showLonePairs).toBe(false);
     expect(rendered.flags.showCarbonLabels).toBe(false);
-    // Untouched by the document: it comes from chem-render's own per-kind
-    // defaults, and lewis deliberately makes no 3D claim.
+    // Lewis's own default is already `false` here, so it proves nothing on its
+    // own — what it does prove is that a stored `false` is not read as
+    // "unset". The four flags below are the ones decision 10 made
+    // persistable, and each defaults to a value the document overrode.
     expect(rendered.flags.showStereoBonds).toBe(false);
+    expect(rendered.flags.showCharges).toBe(false);
+    expect(rendered.flags.showImplicitHydrogens).toBe(false);
   });
 
   it("gives a text kind no flags at all, however many the document stored", () => {
@@ -108,12 +115,11 @@ describe("toRenderRepresentation", () => {
     expect(Object.keys(rendered)).toEqual(["kind"]);
   });
 
-  it("carries every one of the document's four display fields across", () => {
-    // Both of the fields this bridge used to drop are mapped now, each on the
-    // pass that gave the renderer something to draw: `aromaticCircles` when
-    // there was a circle, `showStereoDescriptors` when there was a letter.
-    // Nothing is dropped any more, which is what the sorted key list below is
-    // really asserting — a document field with no renderer counterpart is a
+  it("carries every one of the document's display fields across", () => {
+    // Since decision 10 the document stores chem-render's own flag set, so
+    // this is a pass-through and the sorted key list below is what proves it:
+    // a renderer flag with no persisted home is a toggle a user can set and
+    // cannot save, and a document field with no renderer counterpart is a
     // toggle that lights up and does nothing.
     const rendered = toRenderRepresentation(allDisplayOn("kekule"));
     if (!isStructural(rendered)) throw new Error("kekule must be structural");
@@ -161,7 +167,7 @@ describe("buildDocumentScene", () => {
     const doc = fixtureDocument("2024-01-01T00:00:00.000Z");
     const scene = buildDocumentScene(doc, "panel-that-was-removed");
     expect(scene.representation.kind).toBe("skeletal");
-    expect(scene.primitives).toHaveLength(15);
+    expect(scene.primitives).toHaveLength(13);
   });
 
   it("draws a skeletal molecule for a document with no panels at all", () => {
@@ -170,26 +176,27 @@ describe("buildDocumentScene", () => {
     const doc = docWithPanels([]);
     const scene = buildDocumentScene(doc);
     expect(scene.representation.kind).toBe("skeletal");
-    expect(scene.primitives.filter((p) => p.type === "line")).toHaveLength(9);
+    expect(scene.primitives.filter((p) => p.type === "line")).toHaveLength(6);
   });
 
   it("draws benzene through the document's own style preset", () => {
     const doc = fixtureDocument("2024-01-01T00:00:00.000Z");
     const scene = buildDocumentScene(doc);
-    // Six ring bonds as nine lines and six placeholder dots: benzene is an
-    // explicit Kekule ring, and each of its three double bonds now draws a
-    // second line named from its own bond id rather than from a counter.
+    // Six ring bonds as six lines, one inscribed circle and six placeholder
+    // dots. Skeletal defaults to the circle, which SUPPRESSES the Kekulé
+    // alternation's second lines rather than being drawn over them — and the
+    // circle names itself by its atom set, because a ring has no id of its own
+    // in chem-core and an index into `rings()` is exactly the counter the
+    // determinism rule forbids.
     expect(scene.style).toBe(SCREEN_STYLE);
     expect(scene.primitives.map((p) => p.id)).toEqual([
       "bond:b7:line",
       "bond:b8:line",
-      "bond:b8:line2",
       "bond:b9:line",
       "bond:b10:line",
-      "bond:b10:line2",
       "bond:b11:line",
       "bond:b12:line",
-      "bond:b12:line2",
+      "ring:a1+a2+a3+a4+a5+a6:aromaticCircle",
       "atom:a1:dot",
       "atom:a2:dot",
       "atom:a3:dot",
@@ -202,9 +209,7 @@ describe("buildDocumentScene", () => {
   it("passes the representation through, rather than flattening it to one view", () => {
     // The structural kinds used to be interchangeable here, because labels,
     // trimming, second lines and stereo were all unimplemented and every kind
-    // produced six lines and six dots. Labels landed, so kekule / explicitH /
-    // lewis now set `showCarbonLabels` and benzene's vertices become text runs
-    // while skeletal keeps its bare dots.
+    // produced six lines and six dots.
     //
     // What is actually under test is the BRIDGE: that the panel's chosen
     // representation reaches `buildScene` intact. A view that quietly
@@ -220,22 +225,23 @@ describe("buildDocumentScene", () => {
     const labelled = (kind: "skeletal" | "kekule" | "explicitH" | "lewis") =>
       idsFor(kind).filter((id) => id.endsWith(":label")).length;
 
-    // KNOWN DIVERGENCE, pinned here rather than papered over. This package's
-    // `defaultRepresentation` sets `showCarbonLabels` for explicitH ALONE,
-    // while chem-render's own `DEFAULT_FLAGS_BY_KIND` sets it for kekule,
-    // explicitH and lewis — its comment on kekule reads "spells the atoms
-    // out", and a Lewis structure without atom labels has nothing to hang its
-    // lone pairs on. So a kekule panel in the app currently renders exactly
-    // like a skeletal one.
-    //
-    // Not changed from here: the two defaults belong to the document model,
-    // and reconciling them is a decision about what the view picker MEANS, not
-    // a rendering bug. This assertion is what will fail, loudly and in the
-    // right file, when someone reconciles them.
+    // THE DIVERGENCE THIS TEST USED TO PIN IS RESOLVED (decisions 10 and 11).
+    // `defaultRepresentation` no longer holds an opinion of its own: it reads
+    // chem-render's per-kind table, so there is one answer to "what does
+    // Kekulé mean" rather than two that disagreed. Kekulé means alternating
+    // bonds and BARE carbons, so it labels nothing — and what tells it apart
+    // from skeletal is that skeletal now takes the aromatic circle.
     expect(labelled("skeletal")).toBe(0);
     expect(labelled("kekule")).toBe(0);
-    expect(labelled("explicitH")).toBe(6);
-    expect(labelled("lewis")).toBe(0);
+    // Twelve, not six: explicitH labels every carbon AND draws every hydrogen
+    // as its own vertex, each with a glyph of its own.
+    expect(labelled("explicitH")).toBe(12);
+    expect(labelled("lewis")).toBe(12);
+
+    // And the two views that used to render identically no longer do.
+    expect(idsFor("kekule")).not.toEqual(idsFor("skeletal"));
+    expect(idsFor("skeletal")).toContain("ring:a1+a2+a3+a4+a5+a6:aromaticCircle");
+    expect(idsFor("kekule")).toContain("bond:b8:line2");
 
     // The bridge's own job, which is what this test is really for: the panel's
     // representation reaches `buildScene` intact rather than being flattened.

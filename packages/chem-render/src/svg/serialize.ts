@@ -84,6 +84,14 @@ function sourceAttr(source: SceneSource): string {
       return attr("data-atom", source.atomId);
     case "bond":
       return attr("data-bond", source.bondId);
+    case "hydrogen":
+      // Two attributes, not one: a consumer wants "which atom does this
+      // hydrogen belong to" far more often than it wants the index, and
+      // joining them into one string would make every reader split it again.
+      return (
+        attr("data-hydrogen-host", source.hostAtomId) +
+        attr("data-hydrogen-index", String(source.index))
+      );
     case "ring":
       // Space-separated, which is how SVG spells a list of ids everywhere
       // else. The set IS the ring's name: chem-core gives a ring no id of its

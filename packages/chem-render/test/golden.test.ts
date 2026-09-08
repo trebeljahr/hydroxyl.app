@@ -23,7 +23,10 @@ import { benzene, setBondStereo } from "@starter/chem-core";
 import {
   acetate,
   butan2olWedged,
+  chrysene,
   cis2Butene,
+  dimethylSulfone,
+  ethanol,
   FIXTURES,
   naphthalene,
   trans2Butene,
@@ -89,25 +92,76 @@ describe("golden SVG", () => {
     }
   }
 
-  // The circle is a display FLAG, not a view kind, so the loop above never
-  // reaches it. Two rings and one, because naphthalene's two circles have to
-  // come out the same size and symmetric about the bond they share — which is
-  // what an apothem-derived radius buys and a hand-picked one does not.
+  // The circle is a display FLAG and SKELETAL NOW DEFAULTS TO IT, so the loop
+  // above renders it and this pair renders the alternation the flag replaces.
+  // Two rings and one: naphthalene's two circles have to come out the same
+  // size and symmetric about the bond they share — which is what an
+  // apothem-derived radius buys and a hand-picked one does not — and the
+  // goldens above are where that is now checked.
   for (const [name, molecule] of [
     ["benzene", benzene()],
     ["naphthalene", naphthalene()],
   ] as const) {
-    it(`renders ${name} with aromatic circles instead of the alternation`, async () => {
+    it(`renders ${name} with the Kekule alternation instead of the circle`, async () => {
       const svg = serializeScene(
         buildScene(
           molecule,
           RENDER_STYLES.publication,
-          representation("skeletal", { aromaticCircles: true }),
+          representation("skeletal", { aromaticCircles: false }),
         ),
       );
-      await expectMatchesGolden(svg, `${name}-aromaticCircles-publication.svg`);
+      await expectMatchesGolden(svg, `${name}-kekuleAlternation-publication.svg`);
     });
   }
+
+  // THE FULLY-EXPLICIT VIEW, on the two structures its failure modes live in.
+  // Benzene is the clean case — six hydrogens, one per ring vertex, each on
+  // the exocyclic bisector — and chrysene is the crowded one: four fused
+  // rings, whose inner vertices have nowhere roomy to fan into. Neither is
+  // legible from a primitive count; the picture is the review.
+  for (const [name, molecule] of [
+    ["benzene", benzene()],
+    ["chrysene", chrysene()],
+  ] as const) {
+    it(`renders ${name} with every hydrogen drawn`, async () => {
+      const svg = serializeScene(
+        buildScene(
+          molecule,
+          RENDER_STYLES.publication,
+          representation("explicitH"),
+        ),
+      );
+      await expectMatchesGolden(svg, `${name}-explicitH-publication.svg`);
+    });
+  }
+
+  // THE LEWIS VIEW, on the two things it adds over explicitH: lone pairs on a
+  // heteroatom, and a formal charge that has left the glyph run to take a
+  // free direction. Acetate has both — a carboxylate oxygen carrying three
+  // pairs and the charge — and dimethyl sulfone is the hypervalent reading
+  // decision 4's override exists for, drawn as the model stores it.
+  for (const [name, molecule] of [
+    ["acetate", acetate()],
+    ["dimethylSulfone", dimethylSulfone()],
+  ] as const) {
+    it(`renders ${name} as a Lewis structure`, async () => {
+      const svg = serializeScene(
+        buildScene(molecule, RENDER_STYLES.publication, representation("lewis")),
+      );
+      await expectMatchesGolden(svg, `${name}-lewis-publication.svg`);
+    });
+  }
+
+  it("renders ethanol's condensed formula, which is not its sum formula", async () => {
+    const svg = serializeScene(
+      buildScene(
+        ethanol(),
+        RENDER_STYLES.publication,
+        representation("condensed"),
+      ),
+    );
+    await expectMatchesGolden(svg, "ethanol-condensed-publication.svg");
+  });
 
   // The stereo marks and the descriptors are FLAGS too, and the skeletal loop
   // above draws the marks but never the letters. Four molecules, because the

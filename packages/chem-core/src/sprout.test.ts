@@ -5,6 +5,7 @@ import {
   DEFAULT_ANGLE_STEP,
   defaultSproutAngle,
   defaultSproutPosition,
+  fanDirections,
   sprout,
   sproutDrag,
   sproutTo,
@@ -21,6 +22,7 @@ import {
   distance,
   fromPolar,
   normalizeAngle,
+  normalizeAnglePositive,
   ORIGIN,
   sub,
   toDegrees,
@@ -411,5 +413,53 @@ describe("sprout and sproutTo", () => {
       (issue) => issue.atomId === centre,
     );
     expect(issues.some((issue) => issue.severity === "error")).toBe(true);
+  });
+});
+
+describe("fanDirections", () => {
+  const degrees = (angles: readonly number[]): number[] =>
+    angles.map((a) => Math.round(normalizeAnglePositive(a) / DEG)).sort((x, y) => x - y);
+
+  it("spreads a free atom's hydrogens evenly round the whole circle", () => {
+    // METHANE. Slotting four directions INTO the single 2PI gap the way a
+    // bounded gap is slotted would leave a double-width hole where the wrap
+    // is, and the four hydrogens would crowd into three quarters of the
+    // circle. Dividing the circle by N is what gives methane its cross.
+    expect(degrees(fanDirections([], 4))).toEqual([0, 90, 180, 270]);
+    // Water, drawn as a bare oxygen: H–O–H, with the two lone pairs free to
+    // take north and south.
+    expect(degrees(fanDirections([], 2))).toEqual([0, 180]);
+    expect(degrees(fanDirections([], 1))).toEqual([0]);
+    expect(fanDirections([], 0)).toEqual([]);
+  });
+
+  it("puts a benzene CH's single hydrogen on the exocyclic bisector", () => {
+    // Two ring bonds 120 degrees apart leave a 240-degree gap; its bisector is
+    // the direction pointing straight out of the ring.
+    const ringBonds = [fromPolar(60 * DEG), fromPolar(180 * DEG)];
+    expect(degrees(fanDirections(ringBonds, 1))).toEqual([300]);
+  });
+
+  it("puts both of a CH2's hydrogens in the one big gap, not one each side", () => {
+    // Allocation is widest-FIRST by the width each gap would give its own
+    // slots, so the 240-degree gap takes both before the 120-degree one takes
+    // any. Splitting them would put a hydrogen inside the chain's own angle.
+    const chainBonds = [fromPolar(60 * DEG), fromPolar(180 * DEG)];
+    expect(degrees(fanDirections(chainBonds, 2))).toEqual([260, 340]);
+  });
+
+  it("fans a terminal methyl's three hydrogens away from its one bond", () => {
+    const single = [fromPolar(0)];
+    expect(degrees(fanDirections(single, 3))).toEqual([90, 180, 270]);
+  });
+
+  it("is stable under repetition and under input order", () => {
+    // The output is committed as coordinates in an exported figure, so the
+    // same atom has to fan the same way every time — including when the bonds
+    // arrive in a different order.
+    const bonds = [fromPolar(10 * DEG), fromPolar(130 * DEG), fromPolar(250 * DEG)];
+    const once = degrees(fanDirections(bonds, 2));
+    expect(degrees(fanDirections(bonds, 2))).toEqual(once);
+    expect(degrees(fanDirections([...bonds].reverse(), 2))).toEqual(once);
   });
 });

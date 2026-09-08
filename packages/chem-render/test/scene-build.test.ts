@@ -55,7 +55,12 @@ import type { ScenePrimitive, TextRunPrimitive } from "../src/scene/types.js";
 import { modelToPx, PUBLICATION_STYLE, SCREEN_STYLE, withStyle } from "../src/style.js";
 import { BUNDLED_MEASURER, measureTextRun } from "../src/text/measurer.js";
 
-const SKELETAL = representation("skeletal");
+// Skeletal now DEFAULTS to the aromatic circle — the forced consequence of
+// decision 11, which stripped Kekulé's carbon labels and left the circle as
+// the only thing telling the two views apart. This file's baseline is the
+// plain structural drawing with its Kekulé alternation intact, so it asks for
+// the circle to be off rather than relying on a default that has moved.
+const SKELETAL = representation("skeletal", { aromaticCircles: false });
 
 function ofType(
   primitives: readonly ScenePrimitive[],
@@ -328,36 +333,54 @@ describe("buildScene, structural views", () => {
     expect(ofType(scene.primitives, "circle")).toHaveLength(5);
   });
 
-  it("makes the structural kinds differ, starting with the carbon labels", () => {
-    // This is the first pass at which the four structural views stop being the
-    // same picture. Skeletal leaves benzene's carbons as bare vertices;
-    // kekule, explicitH and lewis all set `showCarbonLabels`, so every vertex
-    // becomes a "CH". Bond ORDER is the same in all four — nine lines
-    // throughout — because it is the molecule's, not the view's; what the
-    // aromaticCircles flag changes is a separate test.
-    const bare = buildScene(benzene(), PUBLICATION_STYLE, SKELETAL);
-    expect(ofType(bare.primitives, "circle")).toHaveLength(6);
-    expect(ofType(bare.primitives, "textRun")).toHaveLength(0);
-
-    for (const kind of ["kekule", "explicitH", "lewis"] as const) {
+  it("makes all four structural kinds different pictures", () => {
+    // THE POINT OF HAVING FOUR OF THEM. Until decision 11 and the vertex pass
+    // landed, skeletal and kekule were the same picture and explicitH and
+    // lewis differed from kekule only in flags nothing honoured.
+    const counts = (kind: "skeletal" | "kekule" | "explicitH" | "lewis") => {
       const scene = buildScene(benzene(), PUBLICATION_STYLE, representation(kind));
-      expect(ofType(scene.primitives, "line")).toHaveLength(9);
-      expect(ofType(scene.primitives, "circle")).toHaveLength(0);
-      const runs = ofType(scene.primitives, "textRun");
-      expect(runs).toHaveLength(6);
+      return {
+        lines: ofType(scene.primitives, "line").length,
+        circles: ofType(scene.primitives, "circle").length,
+        runs: ofType(scene.primitives, "textRun").length,
+      };
+    };
 
-      // Not six identical "CH"s: the hydrogen goes into the free space, which
-      // for a ring vertex is radially OUTWARD. The two vertices on the left of
-      // the ring therefore read "HC", exactly as a chemist would draw them,
-      // and a renderer that wrote "CH" on all six would be making the mistake
-      // this whole pass exists to avoid.
-      const texts = runs.map((run) => {
-        if (run.type !== "textRun") throw new Error("expected a text run");
-        return run.spans.map((s) => s.text).join("");
-      });
-      expect(texts.filter((t) => t === "CH")).toHaveLength(4);
-      expect(texts.filter((t) => t === "HC")).toHaveLength(2);
-    }
+    // Skeletal: six bare vertices, six trimmed ring edges, and ONE inscribed
+    // circle standing for the delocalisation — the alternation's second lines
+    // are suppressed by it.
+    expect(counts("skeletal")).toEqual({ lines: 6, circles: 7, runs: 0 });
+
+    // Kekulé: the same bare vertices (decision 11 — Kekulé does NOT spell its
+    // carbons out) with the localised alternation drawn instead of the
+    // circle. Nine lines: six edges plus the three inner ones.
+    expect(counts("kekule")).toEqual({ lines: 9, circles: 6, runs: 0 });
+
+    // Fully explicit: every carbon labelled and every hydrogen promoted to
+    // its own vertex, so six more stems and twelve more runs — six "C" and
+    // six "H". No bare-vertex dots left, because every carbon now has a
+    // label, and no circle, because the alternation is what a fully explicit
+    // drawing shows.
+    expect(counts("explicitH")).toEqual({ lines: 15, circles: 0, runs: 12 });
+
+    // Lewis: explicitH plus the electron marks. Benzene's carbons have no
+    // lone pairs, so it draws the same picture — which is correct, and is
+    // exactly why the lone-pair count is tested on water and a carbonyl.
+    expect(counts("lewis")).toEqual({ lines: 15, circles: 0, runs: 12 });
+
+    // And the labels are not six identical "CH"s any more either: the
+    // hydrogens are drawn, so the carbon labels are bare.
+    const explicit = buildScene(
+      benzene(),
+      PUBLICATION_STYLE,
+      representation("explicitH"),
+    );
+    const texts = ofType(explicit.primitives, "textRun").map((run) => {
+      if (run.type !== "textRun") throw new Error("expected a text run");
+      return run.spans.map((s) => s.text).join("");
+    });
+    expect(texts.filter((t) => t === "C")).toHaveLength(6);
+    expect(texts.filter((t) => t === "H")).toHaveLength(6);
   });
 
   it("puts a ring vertex's hydrogen on the outside of the ring", () => {
@@ -365,7 +388,15 @@ describe("buildScene, structural views", () => {
     // carbon, the H block must sit on the far side of the atom from the ring
     // centre. Benzene is centred on the origin, so the test is a sign check.
     const mol = benzene();
-    const scene = buildScene(mol, PUBLICATION_STYLE, representation("kekule"));
+    // Carbon labels asked for explicitly: Kekulé leaves them bare (decision
+    // 11), and the rule under test is about where a label's HYDROGEN BLOCK
+    // goes, so the view has to be one that puts hydrogens on labels at all.
+    const scene = buildScene(
+      mol,
+      PUBLICATION_STYLE,
+      representation("kekule", { showCarbonLabels: true }),
+    );
+    let checked = 0;
     for (const primitive of scene.primitives) {
       if (primitive.type !== "textRun" || primitive.source.kind !== "atom") continue;
       const atom = getAtom(mol, primitive.source.atomId);
@@ -374,11 +405,16 @@ describe("buildScene, structural views", () => {
       // A vertex on the vertical axis has both horizontals equally free; the
       // tie-break sends it east, which is a decision, not an accident.
       if (Math.abs(atom.pos.x) < 1e-9) {
+        checked++;
         expect(text).toBe("CH");
         continue;
       }
+      checked++;
       expect(text).toBe(atom.pos.x > 0 ? "CH" : "HC");
     }
+    // A view that stopped drawing carbon labels would make the loop above
+    // vacuous and this test green for the wrong reason.
+    expect(checked).toBeGreaterThan(0);
   });
 });
 
@@ -403,9 +439,15 @@ describe("buildScene, text views", () => {
     ]);
   });
 
-  it("sets acetate's charge as a superscript", () => {
+  it("sets acetate's charge as a superscript, with a real minus sign", () => {
+    // U+2212 MINUS SIGN, not the ASCII hyphen chem-core's `formulaParts`
+    // produces. That divergence is deliberate on chem-core's side — it makes
+    // plain text a user pastes elsewhere — and wrong here: a hyphen is drawn
+    // short and set low in every text face, so beside a superscript it reads
+    // as a bond, which is precisely the wrong thing in a structural drawing.
+    // `compose.ts` makes the same substitution for an atom label's charge.
     const run = textRun(acetate(), "sumFormula");
-    expect(run.spans.at(-1)).toEqual({ text: "-", script: "super" });
+    expect(run.spans.at(-1)).toEqual({ text: "\u2212", script: "super" });
     // The digits stay subscripts; only the charge rises.
     expect(run.spans.filter((s) => s.script === "sub").map((s) => s.text)).toEqual([
       "2",
@@ -420,13 +462,30 @@ describe("buildScene, text views", () => {
     expect(run.id).toBe("text:sumFormula:formula");
   });
 
-  it("gives condensed its own id while it shares the placeholder run", () => {
-    // Condensed is really "CH3CH2OH", walked from the graph. Until that pass
-    // exists it borrows the sum formula, which is at least chemically true.
+  it("walks the graph for the condensed formula instead of summing it", () => {
+    // "CH3CH2OH", not "C2H6O". Ethanol and dimethyl ether have the same sum
+    // formula and different condensed ones, which is the whole reason the
+    // second text view exists.
     const condensed = textRun(ethanol(), "condensed");
     const sum = textRun(ethanol(), "sumFormula");
     expect(condensed.id).toBe("text:condensed:formula");
-    expect(condensed.spans).toEqual(sum.spans);
+    expect(condensed.spans.map((s) => s.text).join("")).toBe("CH3CH2OH");
+    expect(sum.spans.map((s) => s.text).join("")).toBe("C2H6O");
+    expect(condensed.spans).not.toEqual(sum.spans);
+    // Real subscripts, not digits inside a flat string.
+    expect(condensed.spans.filter((s) => s.script === "sub")).toEqual([
+      { text: "3", script: "sub" },
+      { text: "2", script: "sub" },
+    ]);
+  });
+
+  it("falls back to the sum formula for a ring, which has no condensed form", () => {
+    // `representationAvailability` is what a panel consults first, and it
+    // refuses `condensed` for a ring with a reason. A caller that skipped the
+    // check gets a true formula rather than an exception: a scene builder
+    // that throws blanks the canvas.
+    const run = textRun(benzene(), "condensed");
+    expect(run.spans.map((s) => s.text).join("")).toBe("C6H6");
   });
 });
 

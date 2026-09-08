@@ -104,6 +104,7 @@ interface AtomFields {
   readonly aromatic: boolean;
   readonly isotope?: number | undefined;
   readonly explicitHydrogenCount?: number | undefined;
+  readonly lonePairs?: number | undefined;
   readonly label?: string | undefined;
 }
 
@@ -138,6 +139,7 @@ function assembleAtom(id: AtomId, fields: AtomFields): Atom {
   if (fields.explicitHydrogenCount !== undefined) {
     atom.explicitHydrogenCount = fields.explicitHydrogenCount;
   }
+  if (fields.lonePairs !== undefined) atom.lonePairs = fields.lonePairs;
   if (fields.label !== undefined) atom.label = fields.label;
   return atom;
 }
@@ -152,6 +154,7 @@ export function makeAtom(id: AtomId, init: AtomInit): Atom {
     aromatic: init.aromatic ?? false,
     isotope: init.isotope,
     explicitHydrogenCount: init.explicitHydrogenCount,
+    lonePairs: init.lonePairs,
     label: init.label,
   });
 }
@@ -174,6 +177,7 @@ export interface AtomOverrides {
   readonly aromatic?: boolean;
   readonly isotope?: number | undefined;
   readonly explicitHydrogenCount?: number | undefined;
+  readonly lonePairs?: number | undefined;
   readonly label?: string | undefined;
 }
 
@@ -199,6 +203,9 @@ export function cloneAtomWith(source: Atom, overrides: AtomOverrides): Atom {
     explicitHydrogenCount: Object.hasOwn(overrides, "explicitHydrogenCount")
       ? overrides.explicitHydrogenCount
       : source.explicitHydrogenCount,
+    lonePairs: Object.hasOwn(overrides, "lonePairs")
+      ? overrides.lonePairs
+      : source.lonePairs,
     label: Object.hasOwn(overrides, "label") ? overrides.label : source.label,
   });
 }

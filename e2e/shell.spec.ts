@@ -46,6 +46,13 @@ async function lineCount(page: Page): Promise<number> {
   return page.locator("line[data-bond-id]").count();
 }
 
+/** The inscribed circle of a perceived aromatic ring. It carries the ring's
+ *  ATOM SET rather than a bond id, because a ring has no id of its own in
+ *  chem-core, so it is invisible to `lineCount` and to `bondCount` alike. */
+async function ringCircleCount(page: Page): Promise<number> {
+  return page.locator("circle[data-ring-atom-ids]").count();
+}
+
 async function atomCentre(
   page: Page,
   atomId: string,
@@ -112,11 +119,13 @@ test("the ring tool can place benzene, not only cyclohexane", async ({ page }) =
 
   // BOTH ARE SIZE 6 and differ only in `kekule`, which is exactly why the old
   // numeric ring option could reach one of them and never the other. The
-  // discriminator on screen is the number of LINES per bond: a saturated ring
-  // draws six lines for six bonds, an arene draws nine for six because each
-  // of its three double bonds is two lines.
+  // discriminator on screen is what the ring draws: a saturated ring is six
+  // plain lines, and an arene is six lines plus ONE INSCRIBED CIRCLE — the
+  // editor's skeletal panel defaults to the aromatic circle, which suppresses
+  // the alternation's inner lines rather than being drawn over them.
   const baseBonds = await bondCount(page);
   const baseLines = await lineCount(page);
+  const baseCircles = await ringCircleCount(page);
 
   await page.click('[data-tool="ring"]');
   const box = (await page.locator(CANVAS).boundingBox())!;
@@ -133,8 +142,10 @@ test("the ring tool can place benzene, not only cyclohexane", async ({ page }) =
   await page.mouse.click(box.x + box.width - 100, box.y + 80);
 
   expect(await bondCount(page)).toBe(baseBonds + 12);
-  // Nine, not six: the arene really is one.
-  expect(await lineCount(page)).toBe(baseLines + 6 + 9);
+  // Six more lines and one more circle: the arene really is one, and it says
+  // so with the delocalisation circle rather than with three inner lines.
+  expect(await lineCount(page)).toBe(baseLines + 6 + 6);
+  expect(await ringCircleCount(page)).toBe(baseCircles + 1);
 
   // And neither ring is over-valent, which a wrongly kekulised one would be.
   await expect(page.locator('[data-status="issues"]')).toContainText(

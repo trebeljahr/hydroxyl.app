@@ -11,7 +11,9 @@
 
 import {
   aromaticRings,
+  canCondense,
   cipDescriptor,
+  condensedParts,
   descriptorText,
   doubleBondDescriptor,
   formulaParts,
@@ -19,6 +21,7 @@ import {
   neighborIds,
   ringAt,
 } from "@starter/chem-core";
+import type { FormulaPart } from "@starter/chem-core";
 import type { AtomId, BondId, Molecule } from "@starter/chem-core";
 
 import { aromaticCircleId, inscribedCircle } from "../bond/aromatic.js";
@@ -41,15 +44,19 @@ import { placeDescriptor } from "../label/descriptors.js";
 import type { DescriptorSegment } from "../label/descriptors.js";
 import {
   composeAtomLabel,
+  detachedChargeId,
   labelRunId,
+  lonePairDotId,
   radicalDotId,
 } from "../label/compose.js";
+import { phantomHydrogenId, phantomHydrogens } from "../modes/explicitH.js";
 import { freeDirection, placeAtomLabel } from "../label/placement.js";
 import type { AtomLabelPlacement, LabelObstacle } from "../label/placement.js";
 import { isStructural } from "../representation.js";
 import type {
   Representation,
   StructuralRepresentation,
+  TextViewKind,
 } from "../representation.js";
 import { modelToPx } from "../style.js";
 import type { RenderStyle } from "../style.js";
@@ -272,13 +279,118 @@ function buildStructural(
       };
       primitives.push(radicalDot);
     });
+
+    // Lone pairs come back as a flat list of two dots per pair, in pair
+    // order, so the id carries both indices — a pair and a radical on the
+    // same atom must not be able to name the same primitive.
+    placement.lonePairs.forEach((placedDot, index) => {
+      const lonePairDot: CirclePrimitive = {
+        id: lonePairDotId(atomId, Math.floor(index / 2), index % 2),
+        source: { kind: "atom", atomId },
+        type: "circle",
+        centre: placedDot.centre,
+        radius: placedDot.radius,
+        fill: { color: style.colors.label },
+      };
+      primitives.push(lonePairDot);
+    });
+
+    // The Lewis view's charge, which left the glyph run so it could take a
+    // free direction instead of the top-right corner a lone pair is in.
+    const charge = placement.detachedCharge;
+    if (charge !== undefined) {
+      const chargeRun: TextRunPrimitive = {
+        id: detachedChargeId(atomId),
+        source: { kind: "atom", atomId },
+        type: "textRun",
+        origin: charge.origin,
+        spans: charge.spans,
+        fontFamily: style.fontFamily,
+        fontSizePx: charge.fontSizePx,
+        fill: { color: style.colors.label },
+        anchor: charge.anchor,
+        baseline: charge.baseline,
+      };
+      primitives.push(chargeRun);
+    }
   }
+
+  pushHydrogenPrimitives(primitives, mol, style, representation, centres, placements);
 
   if (representation.flags.showStereoDescriptors) {
     pushDescriptorPrimitives(primitives, mol, style, centres, placements, corridors);
   }
 
   return primitives;
+}
+
+/**
+ * The fully-explicit view's derived hydrogens: a stem and an "H" apiece.
+ *
+ * AFTER the atoms, so a hydrogen paints over the bond lines that reach its
+ * host, and in the molecule's own insertion order for the same determinism
+ * reason everything else here follows it.
+ *
+ * The stem goes through `bondAxis`, exactly as a real bond does, so it is
+ * trimmed against the host's label at one end and the hydrogen's own glyph at
+ * the other by the same ray-exit rule. Reimplementing the trim here would be
+ * a second clearance constant, and the symptom — a stem ending inside the "H"
+ * — is only visible at one preset.
+ *
+ * A stem that trims to nothing draws nothing, the same outcome a real bond
+ * between two crowded labels gets. `detectCollisions` reports it.
+ */
+function pushHydrogenPrimitives(
+  primitives: ScenePrimitive[],
+  mol: Molecule,
+  style: RenderStyle,
+  representation: StructuralRepresentation,
+  centres: ReadonlyMap<AtomId, ScenePoint>,
+  placements: ReadonlyMap<AtomId, AtomLabelPlacement | undefined>,
+): void {
+  for (const hydrogen of phantomHydrogens(mol, style, representation)) {
+    const hostCentre = centres.get(hydrogen.hostAtomId);
+    if (hostCentre === undefined) continue;
+    const id = phantomHydrogenId(hydrogen.hostAtomId, hydrogen.index);
+    const source = {
+      kind: "hydrogen",
+      hostAtomId: hydrogen.hostAtomId,
+      index: hydrogen.index,
+    } as const;
+
+    const axis = bondAxis(
+      hostCentre,
+      hydrogen.centre,
+      placements.get(hydrogen.hostAtomId),
+      hydrogen.placement,
+      style.bondLineWidthPx,
+    );
+    if (axis !== undefined) {
+      const stem: LinePrimitive = {
+        id: `${id}:line`,
+        source,
+        type: "line",
+        a: axis.a,
+        b: axis.b,
+        stroke: { color: style.colors.bond, width: style.bondLineWidthPx },
+      };
+      primitives.push(stem);
+    }
+
+    const run: TextRunPrimitive = {
+      id: `${id}:label`,
+      source,
+      type: "textRun",
+      origin: hydrogen.placement.run.origin,
+      spans: hydrogen.placement.run.spans,
+      fontFamily: style.fontFamily,
+      fontSizePx: hydrogen.placement.run.fontSizePx,
+      fill: { color: style.colors.label },
+      anchor: hydrogen.placement.run.anchor,
+      baseline: hydrogen.placement.run.baseline,
+    };
+    primitives.push(run);
+  }
 }
 
 /**
@@ -708,10 +820,18 @@ function aromaticCirclePrimitives(
 /**
  * Condensed and sum-formula views, as one glyph run at the scene origin.
  *
- * Both are placeholders sharing chem-core's Hill-ordered formula parts for
- * now. A condensed formula is really "CH3CH2OH" — walked from the graph, not
- * summed over it — and gets its own pass later; until then showing the sum
- * formula is at least chemically true rather than blank.
+ * TWO DIFFERENT WALKS OF THE MOLECULE, not one shared placeholder any more.
+ * `formulaParts` sums the atoms and orders the totals by Hill — "C2H6O" — and
+ * `condensedParts` walks the graph — "CH3CH2OH". Ethanol and dimethyl ether
+ * are the same sum formula and different condensed ones, which is the whole
+ * reason the second view exists.
+ *
+ * A cyclic molecule has no condensed spelling, and `condensedParts` throws
+ * rather than invent one. It cannot throw HERE, because
+ * `representationAvailability` is what a panel consults before asking for the
+ * scene at all — but the fallback to the sum formula is kept anyway, because
+ * a scene builder that throws blanks a canvas and a caller that skipped the
+ * availability check deserves a true formula rather than an exception.
  *
  * The run belongs to no atom or bond, hence a `decoration` source: a click on
  * "C6H6" selects nothing, which is the correct behaviour for a text view.
@@ -719,11 +839,20 @@ function aromaticCirclePrimitives(
 function buildFormulaRun(
   mol: Molecule,
   style: RenderStyle,
-  kind: string,
+  kind: TextViewKind,
 ): TextRunPrimitive {
-  const spans: TextSpan[] = formulaParts(mol).map((part) => {
+  const parts: readonly FormulaPart[] =
+    kind === "condensed" && canCondense(mol) ? condensedParts(mol) : formulaParts(mol);
+  const spans: TextSpan[] = parts.map((part) => {
     if (part.kind === "count") return { text: part.text, script: "sub" };
-    if (part.kind === "charge") return { text: part.text, script: "super" };
+    // U+2212 MINUS SIGN, not the ASCII hyphen `formulaParts` produces. That
+    // divergence is deliberate on chem-core's side — it is producing plain
+    // text a user pastes elsewhere — and this is the drawing, where a hyphen
+    // beside a superscript reads as a bond. `compose.ts` makes the same
+    // substitution for an atom label's charge, for the same reason.
+    if (part.kind === "charge") {
+      return { text: part.text.replace("-", "\u2212"), script: "super" };
+    }
     return { text: part.text };
   });
 

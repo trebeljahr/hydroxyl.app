@@ -41,6 +41,8 @@ import type {
   Vec2,
 } from "@starter/chem-core";
 import { COMMON_ORGANIC_ELEMENTS } from "@starter/chem-core";
+import { DISPLAY_FLAG_KEYS } from "@starter/shared";
+import type { DisplayFlagKey } from "@starter/shared";
 
 import { fitBounds } from "@/canvas/metrics";
 import { buildDocumentScene, panelToDraw } from "@/canvas/scene-bridge";
@@ -399,6 +401,82 @@ function elementCommands(): Command[] {
 }
 
 /**
+ * One toggle per display flag, all of them saved.
+ *
+ * Every flag chem-render honours is stored on the panel since decision 10, so
+ * there is no longer a class of switch the user can set and not keep. The
+ * table is written out rather than generated from `DISPLAY_FLAG_KEYS` because
+ * a command needs a human title, a set of palette keywords and sometimes a
+ * shortcut, and none of those can be derived from a key name — but the
+ * `satisfies` below makes a flag with no command a compile error, so the two
+ * cannot fall out of step.
+ */
+const DISPLAY_FLAG_LABELS = {
+  aromaticCircles: {
+    title: "Toggle aromatic circles",
+    keywords: ["aromatic", "circle", "benzene", "ring", "display"],
+    shortcut: "Mod+Shift+o",
+  },
+  showCarbonLabels: {
+    title: "Toggle carbon labels",
+    keywords: ["carbon", "label", "vertex", "skeletal", "display"],
+  },
+  showImplicitHydrogens: {
+    title: "Toggle explicit hydrogens",
+    keywords: ["hydrogen", "explicit", "implicit", "H", "display"],
+  },
+  showLonePairs: {
+    title: "Toggle lone pairs",
+    keywords: ["lone", "pair", "electron", "lewis", "dot", "display"],
+  },
+  showCharges: {
+    title: "Toggle formal charges",
+    keywords: ["charge", "formal", "cation", "anion", "display"],
+  },
+  showStereoBonds: {
+    title: "Toggle wedge and hash bonds",
+    keywords: ["wedge", "hash", "stereo", "bond", "display"],
+  },
+  showAtomIndices: {
+    title: "Toggle atom indices",
+    keywords: ["index", "indices", "number", "debug", "display"],
+  },
+  showStereoDescriptors: {
+    title: "Toggle R/S and E/Z descriptors",
+    keywords: ["descriptor", "stereo", "cip", "R", "S", "E", "Z", "display"],
+  },
+} as const satisfies Record<
+  DisplayFlagKey,
+  { readonly title: string; readonly keywords: readonly string[]; readonly shortcut?: string }
+>;
+
+const DISPLAY_FLAG_COMMANDS: readonly Command[] = DISPLAY_FLAG_KEYS.map((key) => {
+  const label = DISPLAY_FLAG_LABELS[key];
+  const command: { -readonly [K in keyof Command]: Command[K] } = {
+    // Kebab-cased from the flag key, so the id is derived from the thing it
+    // toggles rather than invented alongside it.
+    id: `view.${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`,
+    title: label.title,
+    keywords: [...label.keywords],
+    group: "view",
+    enabled: (state) => panelToDraw(state.document) !== undefined,
+    run: (store) => {
+      const state = store.getState();
+      // The panel the CANVAS draws, resolved the same way the canvas resolves
+      // it. Hardcoding "panel-skeletal" would silently target nothing in a
+      // document whose panels were reordered.
+      const panel = panelToDraw(state.document);
+      if (panel === undefined) return;
+      state.updatePanel(panel.id, {
+        display: { [key]: !panel.representation.display[key] },
+      });
+    },
+  };
+  if ("shortcut" in label) command.shortcut = label.shortcut;
+  return command;
+});
+
+/**
  * Set the element: on the selected atoms if there are any, on the tool
  * otherwise — and pick the element tool up either way, so the next click
  * stamps the same atom.
@@ -725,24 +803,7 @@ const VIEW_COMMANDS: readonly Command[] = [
       toggleTheme();
     },
   },
-  {
-    id: "view.aromatic-circles",
-    title: "Toggle aromatic circles",
-    keywords: ["aromatic", "circle", "benzene", "ring", "display"],
-    shortcut: "Mod+Shift+o",
-    group: "view",
-    enabled: (state) => panelToDraw(state.document) !== undefined,
-    run: (store) => {
-      const state = store.getState();
-      // The panel the CANVAS draws, resolved the same way the canvas resolves
-      // it. Hardcoding "panel-skeletal" would silently target nothing in a
-      // document whose panels were reordered.
-      const panel = panelToDraw(state.document);
-      if (panel === undefined) return;
-      const next = !panel.representation.display.aromaticCircles;
-      state.updatePanel(panel.id, { display: { aromaticCircles: next } });
-    },
-  },
+  ...DISPLAY_FLAG_COMMANDS,
   {
     id: "view.command-palette",
     title: "Command palette",

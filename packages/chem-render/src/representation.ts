@@ -83,23 +83,77 @@ export interface TextRepresentation {
  */
 export type Representation = StructuralRepresentation | TextRepresentation;
 
-export const STRUCTURAL_VIEW_KINDS: readonly StructuralViewKind[] = Object.freeze([
+/**
+ * Every view kind and every display-flag key, listed once and checked against
+ * the type in BOTH directions.
+ *
+ * These lists are the contract decision 10 rests on: chem-render owns the
+ * display-flag set and `@starter/shared` imports it, so the document codec's
+ * zod schema is GENERATED from `DISPLAY_FLAG_KEYS` and `VIEW_KINDS` rather
+ * than restating them. A hardcoded `z.enum` over there had already gone stale
+ * once for `BondStereo` — the `either` member encoded fine and then failed to
+ * decode, which made one imported bond enough to render a saved sketch
+ * unopenable.
+ *
+ * `as const satisfies` catches a member REMOVED from the union; the
+ * `…IsTotal` guards catch one ADDED to it. Between them, a new flag or a new
+ * view is a compile error here rather than a toggle the user can set and
+ * never save.
+ */
+export const STRUCTURAL_VIEW_KINDS = [
   "skeletal",
   "kekule",
   "explicitH",
   "lewis",
-]);
+] as const satisfies readonly StructuralViewKind[];
 
-export const TEXT_VIEW_KINDS: readonly TextViewKind[] = Object.freeze([
+type StructuralKindsAreTotal =
+  StructuralViewKind extends (typeof STRUCTURAL_VIEW_KINDS)[number] ? true : never;
+const STRUCTURAL_KINDS_ARE_TOTAL: StructuralKindsAreTotal = true;
+void STRUCTURAL_KINDS_ARE_TOTAL;
+
+export const TEXT_VIEW_KINDS = [
   "condensed",
   "sumFormula",
-]);
+] as const satisfies readonly TextViewKind[];
+
+type TextKindsAreTotal =
+  TextViewKind extends (typeof TEXT_VIEW_KINDS)[number] ? true : never;
+const TEXT_KINDS_ARE_TOTAL: TextKindsAreTotal = true;
+void TEXT_KINDS_ARE_TOTAL;
 
 /** Structural kinds first: that is the order a view picker should offer them. */
-export const VIEW_KINDS: readonly ViewKind[] = Object.freeze([
+export const VIEW_KINDS = [
   ...STRUCTURAL_VIEW_KINDS,
   ...TEXT_VIEW_KINDS,
-]);
+] as const satisfies readonly ViewKind[];
+
+export type DisplayFlagKey = keyof DisplayFlags;
+
+/**
+ * Every key of `DisplayFlags`, in the order a settings surface should offer
+ * them: what is drawn first, then the two per-figure annotations.
+ *
+ * The list, not the interface, is what `@starter/shared` iterates to build
+ * and to reassemble a panel's stored flags — key by key, never by spreading a
+ * parsed object, because a key present with the value `undefined` is a
+ * different object to `toEqual` and to `JSON.stringify` than an absent one.
+ */
+export const DISPLAY_FLAG_KEYS = [
+  "showCarbonLabels",
+  "showImplicitHydrogens",
+  "showLonePairs",
+  "showCharges",
+  "showStereoBonds",
+  "showAtomIndices",
+  "aromaticCircles",
+  "showStereoDescriptors",
+] as const satisfies readonly DisplayFlagKey[];
+
+type FlagKeysAreTotal =
+  DisplayFlagKey extends (typeof DISPLAY_FLAG_KEYS)[number] ? true : never;
+const FLAG_KEYS_ARE_TOTAL: FlagKeysAreTotal = true;
+void FLAG_KEYS_ARE_TOTAL;
 
 /**
  * The neutral baseline: a plain skeletal drawing.
@@ -137,10 +191,23 @@ export const DEFAULT_DISPLAY_FLAGS: DisplayFlags = Object.freeze({
 export const DEFAULT_FLAGS_BY_KIND: Readonly<
   Record<StructuralViewKind, DisplayFlags>
 > = Object.freeze({
-  skeletal: DEFAULT_DISPLAY_FLAGS,
-  // Kekulé draws the localised alternating double bonds and spells the atoms
-  // out; the hydrogens still ride along on the labels rather than as vertices.
-  kekule: Object.freeze({ ...DEFAULT_DISPLAY_FLAGS, showCarbonLabels: true }),
+  // THE ONE PRESET THAT DEFAULTS TO THE CIRCLE, and it is a forced
+  // consequence of decision 11 rather than a taste call of its own. Kekulé
+  // means "alternating bonds, bare carbons"; with its carbon labels gone it
+  // is drawn from exactly the same primitives skeletal was, so leaving both
+  // on the alternation makes the two views byte-identical and the Kekulé
+  // entry in the menu a lie. Skeletal takes the circle, Kekulé keeps the
+  // alternation, and picking a view now changes the picture.
+  //
+  // Reversible in one line, and per structure regardless: `aromaticCircles`
+  // is stored per panel, so a figure that wants the alternation under a
+  // skeletal heading still says so.
+  skeletal: Object.freeze({ ...DEFAULT_DISPLAY_FLAGS, aromaticCircles: true }),
+  // Kekulé draws the localised alternating double bonds — and BARE CARBONS
+  // (decision 11). A ring carbon spelled out as "C" is what `explicitH` is
+  // for; Kekulé's whole content is the alternation, which is why it must not
+  // also take the circle above.
+  kekule: DEFAULT_DISPLAY_FLAGS,
   // Every hydrogen becomes a drawn atom — the view you switch to when a
   // mechanism turns on which proton moved.
   explicitH: Object.freeze({
@@ -201,4 +268,21 @@ export function representation(
     kind,
     flags: flags ? Object.freeze({ ...base, ...flags }) : base,
   });
+}
+
+/**
+ * The flags a view kind opens with — including a TEXT kind, which has none of
+ * its own.
+ *
+ * A text view genuinely ignores every flag (`Representation` makes setting one
+ * on a sum formula unrepresentable), but the DOCUMENT still stores a full set
+ * per panel so that flipping a panel from skeletal to sumFormula and back does
+ * not lose the settings the chemist had chosen. That codec needs an answer for
+ * all six kinds, and this is it: the neutral baseline, so a round trip through
+ * a text kind leaves the flags where they were rather than inventing values.
+ */
+export function defaultFlagsFor(kind: ViewKind): DisplayFlags {
+  return isStructuralViewKind(kind)
+    ? DEFAULT_FLAGS_BY_KIND[kind]
+    : DEFAULT_DISPLAY_FLAGS;
 }

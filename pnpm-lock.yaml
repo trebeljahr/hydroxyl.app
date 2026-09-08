@@ -157,6 +157,9 @@ importers:
       '@starter/chem-core':
         specifier: workspace:*
         version: link:../chem-core
+      '@starter/chem-render':
+        specifier: workspace:*
+        version: link:../chem-render
       zod:
         specifier: ^4.4.3
         version: 4.4.3

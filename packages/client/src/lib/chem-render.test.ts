@@ -34,14 +34,15 @@ describe("@starter/chem-render from the client", () => {
     );
 
     expect(molecularFormula(benzene())).toBe("C6H6");
-    // Nine lines for six ring bonds: benzene is an explicit Kekule ring, and
-    // each of its three double bonds draws a second line.
-    expect(scene.primitives.filter((p) => p.type === "line")).toHaveLength(9);
+    // Six lines for six ring bonds: skeletal defaults to the inscribed
+    // circle, which replaces the Kekulé alternation's second lines rather
+    // than being drawn over them.
+    expect(scene.primitives.filter((p) => p.type === "line")).toHaveLength(6);
 
     const svg = serializeScene(scene, { standalone: false });
     expect(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg"')).toBe(true);
     expect(svg).toContain('data-bond="b7"');
-    expect(svg.match(/<line /g)).toHaveLength(9);
+    expect(svg.match(/<line /g)).toHaveLength(6);
     // The publication style is transparent by design, so nothing dropped into
     // a page brings its own white block with it.
     expect(svg).not.toContain("<rect");

@@ -98,6 +98,21 @@ export interface AtomLabelPlacement {
   readonly centre: ScenePoint;
   readonly run: PlacedTextRun;
   readonly dots: readonly PlacedDot[];
+  /**
+   * The Lewis view's lone pairs, two dots per pair. Empty everywhere else.
+   *
+   * Their padded discs go into `obstacles` with everything else, which is what
+   * makes bond trimming clear them for free — a bond arriving at an oxygen
+   * that has a pair in the way stops short of the pair, with no second rule
+   * anywhere. It does mean the Lewis view's bond GEOMETRY differs from the
+   * other three views', which is correct: there is more on the page.
+   */
+  readonly lonePairs: readonly PlacedDot[];
+  /**
+   * The charge, when it left the run — see `ComposedLabel.chargeDetached`.
+   * Undefined for every view but Lewis, and for a Lewis atom with no charge.
+   */
+  readonly detachedCharge?: PlacedTextRun;
   /** Padded per-span rects and padded dot discs. A union, never one bbox. */
   readonly obstacles: readonly LabelObstacle[];
   /** Bounding box of `obstacles`. Debug and quick-reject only — NOT trimming. */
@@ -692,17 +707,44 @@ export function placeAtomLabel(input: AtomLabelInput): AtomLabelPlacement {
     spanObstacles.push({ kind: "rect", box: rect });
   }
 
-  const dots = placeRadicalDots(
+  // ONE ALLOCATION OF THE EIGHT SLOTS, SHARED. The radical cluster picks
+  // first, because an unpaired electron is a stronger claim on a direction
+  // than a pair is; the lone pairs take what is left; the charge takes the
+  // emptiest slot after both. Running three independent searches instead
+  // would let two marks choose the same direction and draw on top of each
+  // other, which is exactly the failure `radicalDotId`'s note warns about for
+  // the ids.
+  const taken = new Set<string>();
+  if (hydrogenSide === "east") taken.add("E");
+  if (hydrogenSide === "west") taken.add("W");
+
+  const dotRadius = markRadius(style);
+  const dots = placeDotCluster(
     label.radicalDotCount,
     centre,
     bondDirections,
-    hydrogenSide,
+    taken,
     spanObstacles,
-    style,
+    dotRadius,
+    // A radical is ONE cluster of N dots, however many electrons there are:
+    // three dots on a triplet carbene are three marks on one direction, not
+    // three directions.
+    "single-direction",
+  );
+
+  const lonePairs = placeDotCluster(
+    // Two dots per pair, and each PAIR gets its own direction.
+    label.lonePairCount,
+    centre,
+    bondDirections,
+    taken,
+    spanObstacles,
+    dotRadius,
+    "one-direction-each",
   );
 
   const obstacles: LabelObstacle[] = [...spanObstacles];
-  for (const placedDot of dots) {
+  for (const placedDot of [...dots, ...lonePairs]) {
     obstacles.push({
       kind: "disc",
       centre: placedDot.centre,
@@ -710,7 +752,15 @@ export function placeAtomLabel(input: AtomLabelInput): AtomLabelPlacement {
     });
   }
 
-  return {
+  const detachedCharge =
+    label.chargeDetached && label.charge.length > 0
+      ? placeDetachedCharge(label.charge, centre, bondDirections, taken, obstacles, style)
+      : undefined;
+  if (detachedCharge !== undefined) {
+    obstacles.push({ kind: "rect", box: detachedCharge.box });
+  }
+
+  const placement: { -readonly [K in keyof AtomLabelPlacement]: AtomLabelPlacement[K] } = {
     atomId,
     centre,
     run: {
@@ -721,6 +771,7 @@ export function placeAtomLabel(input: AtomLabelInput): AtomLabelPlacement {
       baseline: "alphabetic",
     },
     dots,
+    lonePairs,
     obstacles,
     clearBox: unionOf(obstacles),
     // Always defined: the symbol span index is in range because
@@ -729,31 +780,39 @@ export function placeAtomLabel(input: AtomLabelInput): AtomLabelPlacement {
     hydrogenSide,
     freeDirection: free,
   };
+  // Omitted, not assigned `undefined`: the placement is compared by tests and
+  // the two forms are different objects to `toEqual`.
+  if (detachedCharge !== undefined) placement.detachedCharge = detachedCharge.run;
+  return placement;
 }
 
-function placeRadicalDots(
-  count: number,
-  centre: ScenePoint,
-  bondDirections: readonly ScenePoint[],
-  hydrogenSide: LabelSide | undefined,
-  spanObstacles: readonly LabelObstacle[],
-  style: RenderStyle,
-): PlacedDot[] {
-  if (count <= 0) return [];
-
-  const radius = Math.max(
+/** The radius every electron mark is drawn at — radical dot and lone-pair dot
+ *  alike, because they are the same kind of mark at the same weight. */
+function markRadius(style: RenderStyle): number {
+  return Math.max(
     LABEL_PLACEMENT.radicalDotRadiusEm * style.fontSizePx,
     LABEL_PLACEMENT.radicalDotMinStrokeFactor * style.bondLineWidthPx,
   );
+}
 
-  // The cardinal the hydrogens took is out: a dot beyond the H of "OH" reads
-  // as belonging to the hydrogen rather than to the atom.
-  const forbidden = hydrogenSide === "east" ? "E" : hydrogenSide === "west" ? "W" : "";
-
-  let direction: ScenePoint | undefined;
+/**
+ * The emptiest compass direction not already spoken for, or undefined when
+ * every one of the eight has been taken.
+ *
+ * "Emptiest" is measured against the BONDS, by worst alignment: the candidate
+ * whose closest bond is furthest away wins. Ties fall to the earlier compass
+ * point, which is why `DOT_DIRECTIONS` is ordered by preference rather than
+ * by angle — north first, because that is where a chemist puts an electron.
+ */
+function claimDirection(
+  bondDirections: readonly ScenePoint[],
+  taken: Set<string>,
+): ScenePoint | undefined {
+  let chosen: ScenePoint | undefined;
+  let chosenName: string | undefined;
   let bestScore = Infinity;
   for (const [name, candidate] of DOT_DIRECTIONS) {
-    if (name === forbidden) continue;
+    if (taken.has(name)) continue;
     let score = -Infinity;
     for (const bond of bondDirections) {
       const alignment = dot(candidate, bond);
@@ -763,34 +822,140 @@ function placeRadicalDots(
     // compass point rather than to whichever the loop reached last.
     if (score < bestScore) {
       bestScore = score;
-      direction = candidate;
+      chosen = candidate;
+      chosenName = name;
     }
   }
-  const chosen = direction!;
+  if (chosenName !== undefined) taken.add(chosenName);
+  return chosen;
+}
 
-  // Sit the cluster exactly where a bond arriving along the same direction
-  // would be trimmed to. Deriving it from the same obstacle set means there is
-  // no second clearance constant that could drift out of step with the first.
-  const distance = rayExit(spanObstacles, centre, chosen) + radius;
-  const clusterCentre: ScenePoint = {
-    x: centre.x + chosen.x * distance,
-    y: centre.y + chosen.y * distance,
-  };
-
-  const perpendicular: ScenePoint = { x: -chosen.y, y: chosen.x };
+/**
+ * Electron marks around a label: `count` dots on one direction, or `count`
+ * pairs of two dots each on a direction apiece.
+ *
+ * Both callers place a cluster at the exact distance a bond arriving along the
+ * same direction would be trimmed to — through `rayExit`, over the same
+ * obstacle set — so there is no second clearance constant to drift out of step
+ * with the first. The two dots of a lone pair sit PERPENDICULAR to their
+ * direction, which is what makes a pair read as a pair rather than as a
+ * double-length radical.
+ */
+function placeDotCluster(
+  count: number,
+  centre: ScenePoint,
+  bondDirections: readonly ScenePoint[],
+  taken: Set<string>,
+  spanObstacles: readonly LabelObstacle[],
+  radius: number,
+  mode: "single-direction" | "one-direction-each",
+): PlacedDot[] {
+  if (count <= 0) return [];
   const spacing = LABEL_PLACEMENT.radicalDotSpacingFactor * radius;
   const dots: PlacedDot[] = [];
-  for (let k = 0; k < count; k++) {
-    const offset = (k - (count - 1) / 2) * spacing;
-    dots.push({
-      centre: {
-        x: clusterCentre.x + perpendicular.x * offset,
-        y: clusterCentre.y + perpendicular.y * offset,
-      },
-      radius,
-    });
+
+  const emit = (direction: ScenePoint, howMany: number): void => {
+    const distance = rayExit(spanObstacles, centre, direction) + radius;
+    const clusterCentre: ScenePoint = {
+      x: centre.x + direction.x * distance,
+      y: centre.y + direction.y * distance,
+    };
+    const perpendicular: ScenePoint = { x: -direction.y, y: direction.x };
+    for (let k = 0; k < howMany; k++) {
+      const offset = (k - (howMany - 1) / 2) * spacing;
+      dots.push({
+        centre: {
+          x: clusterCentre.x + perpendicular.x * offset,
+          y: clusterCentre.y + perpendicular.y * offset,
+        },
+        radius,
+      });
+    }
+  };
+
+  if (mode === "single-direction") {
+    const direction = claimDirection(bondDirections, taken);
+    // Every slot gone. An atom that crowded has nowhere honest to put the
+    // mark, and drawing it on top of a bond would state an electron the
+    // reader cannot attribute — `detectCollisions` reports the crowding.
+    if (direction === undefined) return dots;
+    emit(direction, count);
+    return dots;
+  }
+
+  for (let pair = 0; pair < count; pair++) {
+    const direction = claimDirection(bondDirections, taken);
+    if (direction === undefined) break;
+    emit(direction, 2);
   }
   return dots;
+}
+
+/**
+ * The Lewis view's charge, set in the least crowded direction left.
+ *
+ * A STANDALONE RUN, not a span inside the label. `labelSpans` puts the charge
+ * at the end of the run everywhere else and gives a good reason — the
+ * top-right corner is where a chemist reads a charge, and a leading
+ * superscript reads as a mass number. In a Lewis diagram that corner is
+ * usually a lone pair, so the charge has to move, and a span in a text run
+ * cannot. Keeping it a separate primitive leaves the other three views' runs
+ * untouched rather than branching the run's order.
+ *
+ * It is placed AFTER the electrons and queries the obstacle set they are
+ * already in, so it sits clear of them by the same ray-exit rule.
+ */
+function placeDetachedCharge(
+  spans: readonly TextSpan[],
+  centre: ScenePoint,
+  bondDirections: readonly ScenePoint[],
+  taken: Set<string>,
+  obstacles: readonly LabelObstacle[],
+  style: RenderStyle,
+): { readonly run: PlacedTextRun; readonly box: LabelBox } | undefined {
+  const direction = claimDirection(bondDirections, taken);
+  if (direction === undefined) return undefined;
+
+  // Measured as an ordinary run at the label's own size; the spans already
+  // carry `script: "super"`, so the measurer applies the subscript scale.
+  const box = measureTextRun(
+    spans,
+    {
+      fontFamily: style.fontFamily,
+      fontSizePx: style.fontSizePx,
+      subscriptScale: style.subscriptScale,
+      anchor: "start",
+      baseline: "alphabetic",
+    },
+    measurerFor(style),
+  );
+  const halfWidth = box.advanceWidthPx / 2;
+  const halfHeight = box.capHeightPx / 2;
+  // Far enough out that the glyph's own half-diagonal clears whatever the ray
+  // exited, rather than straddling it.
+  const distance =
+    rayExit(obstacles, centre, direction) +
+    Math.sqrt(halfWidth * halfWidth + halfHeight * halfHeight);
+  const anchor: ScenePoint = {
+    x: centre.x + direction.x * distance,
+    y: centre.y + direction.y * distance,
+  };
+  const origin: ScenePoint = { x: anchor.x - halfWidth, y: anchor.y + halfHeight };
+  return {
+    run: {
+      origin,
+      spans,
+      fontSizePx: style.fontSizePx,
+      anchor: "start",
+      baseline: "alphabetic",
+    },
+    box: {
+      minX: origin.x - style.labelPaddingPx,
+      minY: anchor.y - halfHeight - style.labelPaddingPx,
+      maxX: origin.x + box.advanceWidthPx + style.labelPaddingPx,
+      maxY: anchor.y + halfHeight + style.labelPaddingPx,
+    },
+  };
 }
 
 /**

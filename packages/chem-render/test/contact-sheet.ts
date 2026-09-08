@@ -20,6 +20,7 @@ import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { representationAvailability } from "../src/availability.js";
 import { FIXTURES } from "../src/fixtures.js";
 import {
   isStructuralViewKind,
@@ -71,7 +72,9 @@ export function writeContactSheet(): string {
 }
 
 interface Cell {
+  /** The rendered SVG, or the reason there is none. Never both, never blank. */
   readonly svg: string;
+  readonly unavailable: string | undefined;
   readonly primitiveCount: number;
   readonly width: number;
   readonly height: number;
@@ -111,8 +114,12 @@ const ROWS: readonly Row[] = Object.freeze([
   })),
   Object.freeze({
     label: "skeletal",
-    note: "aromatic circles",
-    representation: representation("skeletal", { aromaticCircles: true }),
+    // Skeletal DEFAULTS to the circle now, so the extra row is the picture the
+    // default replaced: a delocalisation drawn as alternating lines. Losing
+    // that row would leave the alternation visible only under `kekule`, whose
+    // bare carbons change a second thing at the same time.
+    note: "kekule alternation",
+    representation: representation("skeletal", { aromaticCircles: false }),
   }),
   Object.freeze({
     label: "skeletal",
@@ -138,11 +145,28 @@ function buildCell(
 ): Cell {
   const fixture = FIXTURES[fixtureIndex];
   if (fixture === undefined) throw new Error(`No fixture ${fixtureIndex}`);
+
+  // A VIEW THAT CANNOT BE PRODUCED PRINTS ITS REASON, and this is the whole
+  // point of the availability function existing: a blank cell on a contact
+  // sheet is indistinguishable from a rendering bug, and a blank cell in an
+  // exported figure is worse.
+  const availability = representationAvailability(fixture.molecule, rep.kind);
+  if (!availability.available) {
+    return {
+      svg: "",
+      unavailable: availability.message,
+      primitiveCount: 0,
+      width: 0,
+      height: 0,
+    };
+  }
+
   const scene = buildScene(fixture.molecule, style, rep);
   return {
     // `standalone: false` drops the XML declaration, which is invalid inside
     // an HTML document and makes browsers refuse the whole page.
     svg: serializeScene(scene, { standalone: false }),
+    unavailable: undefined,
     primitiveCount: countPrimitives(scene),
     width: scene.bounds.width,
     height: scene.bounds.height,
@@ -166,13 +190,23 @@ export function renderContactSheet(): string {
     const rows = ROWS.map((row) => {
       const cells = PRESET_NAMES.map((presetName) => {
         const cell = buildCell(index, row.representation, RENDER_STYLES[presetName]);
+        const body =
+          cell.unavailable === undefined
+            ? `          <div class="stage stage--${presetName}">${cell.svg}</div>`
+            : `          <div class="stage stage--${presetName}"><p class="why">${escapeHtml(cell.unavailable)}</p></div>`;
+        const meta =
+          cell.unavailable === undefined
+            ? [
+                `            <span class="meta">${cell.primitiveCount} primitives</span>`,
+                `            <span class="meta">${round(cell.width)} &times; ${round(cell.height)} px</span>`,
+              ]
+            : [`            <span class="meta">unavailable</span>`];
         return [
           `        <figure class="cell">`,
-          `          <div class="stage stage--${presetName}">${cell.svg}</div>`,
+          body,
           `          <figcaption>`,
           `            <span class="preset">${escapeHtml(presetName)}</span>`,
-          `            <span class="meta">${cell.primitiveCount} primitives</span>`,
-          `            <span class="meta">${round(cell.width)} &times; ${round(cell.height)} px</span>`,
+          ...meta,
           `          </figcaption>`,
           `        </figure>`,
         ].join("\n");
@@ -218,6 +252,7 @@ export function renderContactSheet(): string {
   .kind { font-size: 13px; font-weight: 600; margin: 0; padding-top: 6px; }
   .kind em { display: block; font-weight: 400; font-style: normal; color: var(--dim); font-size: 12px; }
   .cell { margin: 0; display: flex; flex-direction: column; }
+  .why { margin: 0; padding: 8px 10px; color: var(--dim); font-size: 12px; font-style: italic; }
   /* Both stages keep a light ground whatever the page theme is. Publication
      ink is literally #000000 and screen ink is nearly so — previewing either
      on a dark card would hide the very thing the sheet exists to show. */

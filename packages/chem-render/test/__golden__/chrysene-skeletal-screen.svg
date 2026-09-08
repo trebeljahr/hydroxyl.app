@@ -2,35 +2,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-56.11 -62 302.74 190" width="302.74px" height="190px">
   <rect data-decoration="background" x="-56.11" y="-62" width="302.74" height="190" fill="#ffffff"/>
   <line id="bond:b7:line" data-bond="b7" x1="0" y1="44" x2="38.11" y2="22" stroke="#1f2937" stroke-width="2"/>
-  <line id="bond:b8:line" data-bond="b8" x1="34.61" y1="22" x2="34.61" y2="-22" stroke="#1f2937" stroke-width="2"/>
-  <line id="bond:b8:line2" data-bond="b8" x1="41.61" y1="22" x2="41.61" y2="-22" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b8:line" data-bond="b8" x1="38.11" y1="22" x2="38.11" y2="-22" stroke="#1f2937" stroke-width="2"/>
   <line id="bond:b9:line" data-bond="b9" x1="38.11" y1="-22" x2="0" y2="-44" stroke="#1f2937" stroke-width="2"/>
   <line id="bond:b10:line" data-bond="b10" x1="0" y1="-44" x2="-38.11" y2="-22" stroke="#1f2937" stroke-width="2"/>
-  <line id="bond:b10:line2" data-bond="b10" x1="0" y1="-35.92" x2="-31.11" y2="-17.96" stroke="#1f2937" stroke-width="2"/>
   <line id="bond:b11:line" data-bond="b11" x1="-38.11" y1="-22" x2="-38.11" y2="22" stroke="#1f2937" stroke-width="2"/>
   <line id="bond:b12:line" data-bond="b12" x1="-38.11" y1="22" x2="0" y2="44" stroke="#1f2937" stroke-width="2"/>
-  <line id="bond:b12:line2" data-bond="b12" x1="-31.11" y1="17.96" x2="0" y2="35.92" stroke="#1f2937" stroke-width="2"/>
   <line id="bond:b17:line" data-bond="b17" x1="38.11" y1="-22" x2="76.21" y2="-44" stroke="#1f2937" stroke-width="2"/>
   <line id="bond:b18:line" data-bond="b18" x1="76.21" y1="-44" x2="114.32" y2="-22" stroke="#1f2937" stroke-width="2"/>
-  <line id="bond:b18:line2" data-bond="b18" x1="76.21" y1="-35.92" x2="107.32" y2="-17.96" stroke="#1f2937" stroke-width="2"/>
   <line id="bond:b19:line" data-bond="b19" x1="114.32" y1="-22" x2="114.32" y2="22" stroke="#1f2937" stroke-width="2"/>
-  <line id="bond:b20:line" data-bond="b20" x1="116.07" y1="25.03" x2="77.96" y2="47.03" stroke="#1f2937" stroke-width="2"/>
-  <line id="bond:b20:line2" data-bond="b20" x1="112.57" y1="18.97" x2="74.46" y2="40.97" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b20:line" data-bond="b20" x1="114.32" y1="22" x2="76.21" y2="44" stroke="#1f2937" stroke-width="2"/>
   <line id="bond:b21:line" data-bond="b21" x1="76.21" y1="44" x2="38.11" y2="22" stroke="#1f2937" stroke-width="2"/>
   <line id="bond:b26:line" data-bond="b26" x1="76.21" y1="44" x2="76.21" y2="88" stroke="#1f2937" stroke-width="2"/>
   <line id="bond:b27:line" data-bond="b27" x1="76.21" y1="88" x2="114.32" y2="110" stroke="#1f2937" stroke-width="2"/>
-  <line id="bond:b27:line2" data-bond="b27" x1="83.21" y1="83.96" x2="114.32" y2="101.92" stroke="#1f2937" stroke-width="2"/>
   <line id="bond:b28:line" data-bond="b28" x1="114.32" y1="110" x2="152.42" y2="88" stroke="#1f2937" stroke-width="2"/>
-  <line id="bond:b29:line" data-bond="b29" x1="148.92" y1="88" x2="148.92" y2="44" stroke="#1f2937" stroke-width="2"/>
-  <line id="bond:b29:line2" data-bond="b29" x1="155.92" y1="88" x2="155.92" y2="44" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b29:line" data-bond="b29" x1="152.42" y1="88" x2="152.42" y2="44" stroke="#1f2937" stroke-width="2"/>
   <line id="bond:b30:line" data-bond="b30" x1="152.42" y1="44" x2="114.32" y2="22" stroke="#1f2937" stroke-width="2"/>
   <line id="bond:b35:line" data-bond="b35" x1="152.42" y1="44" x2="190.53" y2="22" stroke="#1f2937" stroke-width="2"/>
   <line id="bond:b36:line" data-bond="b36" x1="190.53" y1="22" x2="228.63" y2="44" stroke="#1f2937" stroke-width="2"/>
-  <line id="bond:b36:line2" data-bond="b36" x1="190.53" y1="30.08" x2="221.63" y2="48.04" stroke="#1f2937" stroke-width="2"/>
   <line id="bond:b37:line" data-bond="b37" x1="228.63" y1="44" x2="228.63" y2="88" stroke="#1f2937" stroke-width="2"/>
   <line id="bond:b38:line" data-bond="b38" x1="228.63" y1="88" x2="190.53" y2="110" stroke="#1f2937" stroke-width="2"/>
-  <line id="bond:b38:line2" data-bond="b38" x1="221.63" y1="83.96" x2="190.53" y2="101.92" stroke="#1f2937" stroke-width="2"/>
   <line id="bond:b39:line" data-bond="b39" x1="190.53" y1="110" x2="152.42" y2="88" stroke="#1f2937" stroke-width="2"/>
+  <circle id="ring:a1+a2+a3+a4+a5+a6:aromaticCircle" data-ring="a1 a2 a3 a4 a5 a6" cx="0" cy="0" r="28.58" fill="none" stroke="#1f2937" stroke-width="2"/>
+  <circle id="ring:a2+a3+a13+a14+a15+a16:aromaticCircle" data-ring="a2 a3 a13 a14 a15 a16" cx="76.21" cy="0" r="28.58" fill="none" stroke="#1f2937" stroke-width="2"/>
+  <circle id="ring:a15+a16+a22+a23+a24+a25:aromaticCircle" data-ring="a15 a16 a22 a23 a24 a25" cx="114.32" cy="66" r="28.58" fill="none" stroke="#1f2937" stroke-width="2"/>
+  <circle id="ring:a24+a25+a31+a32+a33+a34:aromaticCircle" data-ring="a24 a25 a31 a32 a33 a34" cx="190.53" cy="66" r="28.58" fill="none" stroke="#1f2937" stroke-width="2"/>
   <circle id="atom:a1:dot" data-atom="a1" cx="0" cy="44" r="2" fill="#111827"/>
   <circle id="atom:a2:dot" data-atom="a2" cx="38.11" cy="22" r="2" fill="#111827"/>
   <circle id="atom:a3:dot" data-atom="a3" cx="38.11" cy="-22" r="2" fill="#111827"/>

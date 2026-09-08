@@ -36,6 +36,7 @@ import { aromaticRings, getAtom, ringAt } from "@starter/chem-core";
 import type { AtomId, BondId, Molecule } from "@starter/chem-core";
 
 import { aromaticCircleId } from "../bond/aromatic.js";
+import { phantomHydrogens } from "../modes/explicitH.js";
 import type { LabelBox, LabelObstacle } from "../label/placement.js";
 import { isStructural } from "../representation.js";
 import { modelToPx, pxPerModelUnit } from "../style.js";
@@ -59,6 +60,19 @@ export type CollisionKind =
   | "bond-crosses-bond"
   /** Both labels' clear space met, so the bond between them drew nothing. */
   | "bond-swallowed-by-labels"
+  /**
+   * A fully-explicit view's derived hydrogen landing on an atom, on another
+   * hydrogen, or across a bond it has nothing to do with.
+   *
+   * THE FAILURE THE EXPLICIT-H VIEW IS TESTED AGAINST. A hydrogen is fanned
+   * into the widest gap its host's bonds leave, which is the best available
+   * direction and on a crowded fused vertex still not a clear one — the gap
+   * points straight at a neighbour two bonds away. Like every other finding
+   * here it is REPORTED and not repaired: moving the hydrogen would be the
+   * renderer inventing geometry, and the honest fix is the author's, either
+   * a re-layout or a view that does not draw every hydrogen.
+   */
+  | "hydrogen-over-atom"
   /** An aromatic ring too distorted for a circle, so none was drawn. */
   | "degenerate-aromatic-ring";
 
@@ -291,6 +305,92 @@ export function detectCollisions(
         overlapPx: style.bondLineWidthPx,
         at,
       });
+    }
+  }
+
+  // --- derived hydrogens against everything already on the page -----------
+  //
+  // Read from the same pass that drew them rather than from the scene, so the
+  // boxes checked are the boxes trimmed against — the scene carries a run's
+  // origin but not the padded per-span rects, and re-measuring here would be
+  // a second measurer with its own answer.
+  const hydrogens = phantomHydrogens(mol, style, representation);
+  for (let i = 0; i < hydrogens.length; i++) {
+    const hydrogen = hydrogens[i]!;
+    const source: SceneSource = {
+      kind: "hydrogen",
+      hostAtomId: hydrogen.hostAtomId,
+      index: hydrogen.index,
+    };
+    const shapes = hydrogen.placement.obstacles;
+
+    // Against every atom's label. Its OWN host is excluded: a hydrogen sits
+    // beside the label it was derived from by construction, and the stem is
+    // trimmed against that label, so an overlap there is the trimming's
+    // business and is already reported as the atom's own.
+    for (const atomId of mol.atomIds) {
+      if (atomId === hydrogen.hostAtomId) continue;
+      const other = obstacles.get(atomId);
+      const centre = centres.get(atomId);
+      if (centre === undefined) continue;
+      const depth =
+        other === undefined
+          ? // A bare vertex has no label to overlap, so the test is against
+            // the point itself: a hydrogen drawn on top of a skeletal carbon
+            // is the crowding failure even though nothing was drawn there.
+            distance(centre, hydrogen.centre) < coincidentPx
+            ? coincidentPx - distance(centre, hydrogen.centre)
+            : 0
+          : obstaclesOverlap(shapes, other);
+      if (depth <= 0) continue;
+      report({
+        kind: "hydrogen-over-atom",
+        a: source,
+        b: { kind: "atom", atomId },
+        overlapPx: depth,
+        at: hydrogen.centre,
+      });
+    }
+
+    // Against each other. Two hosts a bond apart can fan a hydrogen into the
+    // same pocket between them.
+    for (let j = i + 1; j < hydrogens.length; j++) {
+      const other = hydrogens[j]!;
+      const depth = obstaclesOverlap(shapes, other.placement.obstacles);
+      if (depth <= 0) continue;
+      report({
+        kind: "hydrogen-over-atom",
+        a: source,
+        b: {
+          kind: "hydrogen",
+          hostAtomId: other.hostAtomId,
+          index: other.index,
+        },
+        overlapPx: depth,
+        at: hydrogen.centre,
+      });
+    }
+
+    // Against the bonds, skipping the ones at its own host for the reason
+    // above.
+    for (const bondId of mol.bondIds) {
+      const bond = mol.bonds[bondId];
+      if (bond === undefined) continue;
+      if (bond.from === hydrogen.hostAtomId || bond.to === hydrogen.hostAtomId) {
+        continue;
+      }
+      for (const line of lines.get(bondId) ?? []) {
+        if (!boxMeetsSegment(hydrogen.placement.clearBox, line.a, line.b)) continue;
+        const depth = segmentDepthInObstacles(shapes, line.a, line.b);
+        if (depth <= 0) continue;
+        report({
+          kind: "hydrogen-over-atom",
+          a: source,
+          b: { kind: "bond", bondId },
+          overlapPx: depth,
+          at: { x: (line.a.x + line.b.x) / 2, y: (line.a.y + line.b.y) / 2 },
+        });
+      }
     }
   }
 

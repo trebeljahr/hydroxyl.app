@@ -96,6 +96,22 @@ export interface RenderStyle {
    */
   readonly stereoWavyPeriodPx: number;
   /**
+   * Length of a drawn hydrogen's bond in the fully-explicit view, as a
+   * FRACTION OF A STANDARD BOND — model units, not px.
+   *
+   * A ratio rather than a px length, and applied in model space before
+   * `modelToPx`, because the render invariant says `bondLengthPx` is
+   * multiplied in exactly one function. A px constant here would be a second
+   * scale the moment a preset changed its bond length, and the hydrogens
+   * would stop being shorter than the bonds around them.
+   *
+   * Shorter than a real bond on purpose: a C–H drawn full length competes
+   * with the skeleton for the reader's eye, and every drawing package sets it
+   * back. Two thirds is where it still reads as a bond and stops crowding the
+   * next vertex on a fused ring.
+   */
+  readonly explicitHydrogenLengthRatio: number;
+  /**
    * Size of an `(R)`/`(S)`/`(E)`/`(Z)` label, as a fraction of `fontSizePx`.
    *
    * Smaller than an atom label because it is an annotation ABOUT the structure
@@ -153,6 +169,7 @@ export const PUBLICATION_STYLE: RenderStyle = Object.freeze({
   stereoWedgeWidthPx: 4.2,
   stereoHashPeriodPx: 3,
   stereoWavyPeriodPx: 8,
+  explicitHydrogenLengthRatio: 0.66,
   stereoDescriptorScale: 0.85,
   colors: Object.freeze({ bond: "#000000", label: "#000000" }),
   coordinatePrecision: 3,
@@ -184,6 +201,7 @@ export const SCREEN_STYLE: RenderStyle = Object.freeze({
   stereoWedgeWidthPx: 7,
   stereoHashPeriodPx: 5,
   stereoWavyPeriodPx: 15,
+  explicitHydrogenLengthRatio: 0.66,
   stereoDescriptorScale: 0.85,
   colors: Object.freeze({
     bond: "#1f2937",

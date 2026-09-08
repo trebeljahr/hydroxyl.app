@@ -117,13 +117,13 @@ describe("OverlayLayer — the export boundary", () => {
     expect(svg).not.toContain("#3b82f6");
     expect(svg).not.toContain("#2563eb");
 
-    // And exactly the primitive count the scene has: nine lines (six ring
-    // edges plus the inner line of each of benzene's three double bonds) and
-    // six dots. The one extra element is the screen preset's background rect,
-    // which the scene's own style asks for.
-    expect(SCENE.primitives).toHaveLength(15);
-    expect(svg.match(/<line /g)).toHaveLength(9);
-    expect(svg.match(/<circle /g)).toHaveLength(6);
+    // And exactly the primitive count the scene has: six ring edges, six
+    // bare-vertex dots and the one inscribed circle skeletal now defaults to,
+    // which replaces the alternation's inner lines. The extra element is the
+    // screen preset's background rect, which the scene's own style asks for.
+    expect(SCENE.primitives).toHaveLength(13);
+    expect(svg.match(/<line /g)).toHaveLength(6);
+    expect(svg.match(/<circle /g)).toHaveLength(7);
     expect(svg.match(/<rect /g)).toHaveLength(1);
     expect(svg).toContain('data-bond="b7"');
     expect(svg).toContain('data-atom="a1"');
@@ -158,7 +158,7 @@ describe("OverlayLayer — the export boundary", () => {
     );
 
     expect(container.querySelectorAll("[data-atom-id]")).toHaveLength(6);
-    expect(container.querySelectorAll("[data-bond-id]")).toHaveLength(9);
+    expect(container.querySelectorAll("[data-bond-id]")).toHaveLength(6);
     // Every atom and bond selected, plus one hovered atom and one hovered bond.
     expect(container.querySelectorAll("[data-overlay]")).toHaveLength(14);
     // Two sibling layers, both inert to pointers.

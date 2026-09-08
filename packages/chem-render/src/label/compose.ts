@@ -15,7 +15,11 @@
  * blocks and never their contents; see `labelSpans`.
  */
 
-import { getAtom, implicitHydrogenCount } from "@starter/chem-core";
+import {
+  drawnLonePairs,
+  getAtom,
+  implicitHydrogenCount,
+} from "@starter/chem-core";
 import type { Atom, AtomId, ElementSymbol, Molecule } from "@starter/chem-core";
 
 import type { StructuralRepresentation } from "../representation.js";
@@ -72,6 +76,28 @@ export interface ComposedLabel {
    */
   readonly hydrogenCount: number;
   readonly radicalDotCount: number;
+  /**
+   * How many lone pairs to draw around the label — 0 unless `showLonePairs`
+   * is on, which in practice means the Lewis view.
+   *
+   * A COUNT, not positions. Where the pairs sit is a typography question and
+   * belongs to `placement.ts`, exactly as `radicalDotCount` does; this file
+   * has no coordinates in it and must not grow any.
+   */
+  readonly lonePairCount: number;
+  /**
+   * Whether the charge leaves the glyph run and becomes a mark of its own.
+   *
+   * LEWIS ONLY, and it is a deliberate divergence from the rule `labelSpans`
+   * states below. Everywhere else the charge terminates the run, because the
+   * top-right corner of a label is where a chemist reads one. In a Lewis
+   * diagram that corner is a slot the electrons compete for, and the charge
+   * has to take whichever direction the pairs and the bonds left free — which
+   * is a placement decision and cannot be made inside a text run at all. So
+   * the composer keeps the `charge` block (the spans are the same either way)
+   * and says here whether it belongs in the run or beside it.
+   */
+  readonly chargeDetached: boolean;
 }
 
 /**
@@ -146,6 +172,18 @@ export function composeAtomLabel(
     charge,
     hydrogenCount,
     radicalDotCount: radicalDotCount(atom),
+    // chem-core counts them; this file does not reimplement the arithmetic,
+    // for the same reason it asks `implicitHydrogenCount` for the hydrogens.
+    // `drawnLonePairs` reads 0 for an atom whose pairs cannot be counted at
+    // all — a metal — which is a case `representationAvailability` refuses
+    // the whole view for before anything reaches here.
+    lonePairCount: representation.flags.showLonePairs
+      ? drawnLonePairs(mol, atomId)
+      : 0,
+    // An override replaces the element symbol, so there is no octet being
+    // drawn around it and no reason to move the charge off the run.
+    chargeDetached:
+      representation.flags.showLonePairs && override === undefined,
   };
 }
 
@@ -196,9 +234,12 @@ export function labelSpans(
   label: ComposedLabel,
   side: LabelSide,
 ): readonly TextSpan[] {
+  // The Lewis exception: the charge has been promoted to a mark of its own and
+  // must not also appear in the run, or the atom carries two of them.
+  const charge = label.chargeDetached ? [] : label.charge;
   return side === "east"
-    ? [...label.isotope, ...label.symbol, ...label.hydrogens, ...label.charge]
-    : [...label.hydrogens, ...label.isotope, ...label.symbol, ...label.charge];
+    ? [...label.isotope, ...label.symbol, ...label.hydrogens, ...charge]
+    : [...label.hydrogens, ...label.isotope, ...label.symbol, ...charge];
 }
 
 /**
@@ -231,6 +272,28 @@ export function labelPlainText(label: ComposedLabel, side: LabelSide): string {
 /** `atom:a2:label`. One run per label, so there is no part to distinguish. */
 export function labelRunId(atomId: AtomId): string {
   return `atom:${atomId}:label`;
+}
+
+/**
+ * `atom:a2:lonepair:0:1` — the atom, the pair's index in that atom's own
+ * cluster, and which of the pair's two dots.
+ *
+ * A SEPARATE NAMESPACE FROM THE RADICAL DOTS, as `radicalDotId` insists: an
+ * atom can carry both, and two marks sharing an id would silently drop one of
+ * them from the scene. Both indices are pure functions of the atom, never of
+ * a scene-wide counter.
+ */
+export function lonePairDotId(
+  atomId: AtomId,
+  pairIndex: number,
+  dotIndex: number,
+): string {
+  return `atom:${atomId}:lonepair:${pairIndex}:${dotIndex}`;
+}
+
+/** `atom:a2:charge`. The Lewis view's detached charge — see `chargeDetached`. */
+export function detachedChargeId(atomId: AtomId): string {
+  return `atom:${atomId}:charge`;
 }
 
 /**

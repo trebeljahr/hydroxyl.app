@@ -146,6 +146,7 @@ export type AtomPatch = {
   readonly aromatic?: boolean;
   readonly isotope?: number | undefined;
   readonly explicitHydrogenCount?: number | undefined;
+  readonly lonePairs?: number | undefined;
   readonly label?: string | undefined;
 };
 
@@ -263,6 +264,22 @@ export function setExplicitHydrogenCount(
   count: number | undefined,
 ): Molecule {
   return updateAtom(mol, id, { explicitHydrogenCount: count });
+}
+
+/**
+ * Pins the lone-pair count a Lewis structure draws, or `undefined` to hand it
+ * back to `lonePairCount` to derive (decision 4).
+ *
+ * The pin is for the readings no rule can choose between — a sulfone's sulfur
+ * is zero pairs expanded-octet and two charge-separated, and a resonance form
+ * means one of them. It changes nothing about valence, formula or mass.
+ */
+export function setLonePairs(
+  mol: Molecule,
+  id: AtomId,
+  pairs: number | undefined,
+): Molecule {
+  return updateAtom(mol, id, { lonePairs: pairs });
 }
 
 export function setBondOrder(

@@ -26,6 +26,8 @@ export * from "./aromatic.js";
 export * from "./molblock-write.js";
 export * from "./molblock-read.js";
 export * from "./templates.js";
+export * from "./lewis.js";
+export * from "./condensed.js";
 // Perception LAST among the chemistry modules: it reads valence, rings and
 // aromaticity, and nothing reads it.
 export * from "./stereo.js";

@@ -54,7 +54,7 @@ describe("contact sheet", () => {
       const rows = html.split(`class="kind">${kind}`).length - 1;
       expect(rows, kind).toBe(FIXTURES.length * (kind === "skeletal" ? 3 : 1));
     }
-    expect(html).toContain("<em>aromatic circles</em>");
+    expect(html).toContain("<em>kekule alternation</em>");
     expect(html).toContain("<em>stereo descriptors</em>");
     const cells = html.split('class="cell"').length - 1;
     expect(cells).toBe(FIXTURES.length * (VIEW_KINDS.length + 2) * 2);
@@ -68,6 +68,14 @@ describe("contact sheet", () => {
     expect(html).not.toContain("<?xml");
     expect(html).not.toMatch(/<img\b/);
     expect(html).not.toMatch(/https?:\/\/(?!www\.w3\.org)/);
+  });
+
+  it("says why a cell is empty rather than leaving it empty", () => {
+    // Benzene has no condensed formula, and a panel that silently exported a
+    // blank cell for it is exactly what `representationAvailability` exists
+    // to prevent. The sheet is where that gets seen.
+    expect(html).toContain("A ring has no condensed formula");
+    expect(html).toContain(">unavailable<");
   });
 
   it("labels each cell with what it is showing", () => {

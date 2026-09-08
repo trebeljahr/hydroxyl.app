@@ -55,6 +55,29 @@ export interface Atom {
    */
   readonly aromatic: boolean;
   /**
+   * Pins the lone-pair count instead of deriving it from the electron count.
+   * Undefined means "derive", which is what you want for almost every atom.
+   *
+   * DERIVED WITH AN OVERRIDE (decision 4), exactly like the hydrogens, and
+   * for the same reason: a lone pair is bookkeeping the model can do from
+   * valence electrons, formal charge and bonding, so storing one per atom
+   * would be a second copy of a number that is already implied — and the two
+   * would disagree the first time a bond order changed.
+   *
+   * The override exists because two readings of the same drawing are both
+   * standard and no rule can pick between them. A sulfone's sulfur has zero
+   * lone pairs under the expanded-octet reading the model stores and two
+   * under the charge-separated one, and a chemist drawing a resonance form
+   * means a particular one. Same for hypervalent phosphorus. So the pin
+   * carries the reading, and nothing else does.
+   *
+   * PURELY DISPLAY-ADJACENT: it feeds `lonePairCount` and therefore the Lewis
+   * view, and nothing in valence, formula or mass reads it. V2000 has no field
+   * for it, so `writeMolblock` drops it — silently, unlike a display label,
+   * because a dropped lone pair changes no chemistry the file records.
+   */
+  readonly lonePairs?: number;
+  /**
    * Free-text label that replaces the element symbol when drawing, for
    * abbreviations and placeholders: "R", "Ph", "Boc", "X". Purely a display
    * concern — valence and formula still use `element`.
@@ -112,6 +135,7 @@ export interface AtomInit {
   readonly isotope?: number | undefined;
   readonly explicitHydrogenCount?: number | undefined;
   readonly aromatic?: boolean | undefined;
+  readonly lonePairs?: number | undefined;
   readonly label?: string | undefined;
 }
 

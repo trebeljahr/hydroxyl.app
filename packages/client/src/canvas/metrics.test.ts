@@ -110,9 +110,10 @@ describe("createSceneIndex — geometry", () => {
     // one ending at a label — reports where the ink actually is, and a
     // selection halo does not stick out past both ends of it.
     //
-    // Nine lines for six bonds: each of benzene's three double bonds draws a
-    // second, and `bondSegment` takes the FIRST, which is the axis.
-    expect(scene.primitives.filter((p) => p.type === "line")).toHaveLength(9);
+    // Six lines for six bonds: skeletal defaults to the inscribed circle,
+    // which replaces the alternation's second lines. `bondSegment` takes the
+    // FIRST line of a bond either way, which is the axis.
+    expect(scene.primitives.filter((p) => p.type === "line")).toHaveLength(6);
   });
 
   it("still reports a centre for an atom the style draws nothing for", () => {

@@ -41,6 +41,14 @@ import {
   type DoubleBondSide,
   type Molecule,
 } from "@starter/chem-core";
+import {
+  DISPLAY_FLAG_KEYS,
+  VIEW_KINDS,
+  defaultFlagsFor,
+  type DisplayFlagKey,
+  type DisplayFlags,
+  type ViewKind,
+} from "@starter/chem-render";
 import { z } from "zod";
 
 /**
@@ -57,13 +65,25 @@ export const SCHEMA_VERSION = 1;
 /** `publication` is ACS-like (thin bonds, serif labels); `screen` is the editor. */
 export type StylePresetId = "publication" | "screen";
 
-export type RepresentationKind =
-  | "skeletal"
-  | "kekule"
-  | "explicitH"
-  | "lewis"
-  | "condensed"
-  | "sumFormula";
+/**
+ * THE VIEW KINDS AND THE DISPLAY FLAGS ARE CHEM-RENDER'S, IMPORTED (decision
+ * 10).
+ *
+ * They used to be declared here as well, and the two declarations had already
+ * drifted: the document knew four flags and the renderer eight, so a chemist
+ * who turned on `showImplicitHydrogens`, `showCharges`, `showStereoBonds` or
+ * `showAtomIndices` could not SAVE it. The flag set belongs where the drawing
+ * happens — a flag exists the moment a render pass can honour it — and the
+ * codec's job is to persist whatever that set currently is, not to hold an
+ * opinion about it.
+ *
+ * The aliases are kept because the document's vocabulary reads better in a
+ * file format ("this panel's representation and its display") and because
+ * every existing caller names them this way. They are the same types, not
+ * copies: `RepresentationDisplay` IS `DisplayFlags`, so there is nothing left
+ * to drift.
+ */
+export type RepresentationKind = ViewKind;
 
 /**
  * Orthogonal display switches. They only mean anything for the four
@@ -72,11 +92,34 @@ export type RepresentationKind =
  * every panel so that flipping a panel's kind back and forth does not lose
  * the settings the chemist had chosen.
  */
-export interface RepresentationDisplay {
-  readonly showCarbonLabels: boolean;
-  readonly aromaticCircles: boolean;
-  readonly showLonePairs: boolean;
-  readonly showStereoDescriptors: boolean;
+export type RepresentationDisplay = DisplayFlags;
+
+export { DISPLAY_FLAG_KEYS, VIEW_KINDS };
+export type { DisplayFlagKey };
+
+/**
+ * Assembles a full flag set, KEY BY KEY, from a possibly-partial one.
+ *
+ * Driven by `DISPLAY_FLAG_KEYS` rather than written out, so a flag added to
+ * chem-render becomes persistable here with no edit at all — which is the
+ * whole point of decision 10. A key the input does not carry (an older saved
+ * document, written before that flag existed) falls back to the kind's own
+ * default rather than to `false`: a document saved before `showCharges` was
+ * persistable never meant "hide the charges".
+ *
+ * `??`, not `||`: `false` is a legitimate stored value and must survive.
+ */
+export function assembleDisplay(
+  kind: RepresentationKind,
+  // Optionals widened to admit an explicit `undefined`, as `PanelInit` does:
+  // under `exactOptionalPropertyTypes` a bare `Partial` rejects the parsed
+  // zod object, whose absent keys arrive as present-and-undefined.
+  partial: { readonly [K in DisplayFlagKey]?: boolean | undefined } | undefined,
+): RepresentationDisplay {
+  const base = defaultFlagsFor(kind);
+  const display = {} as { -readonly [K in DisplayFlagKey]: boolean };
+  for (const key of DISPLAY_FLAG_KEYS) display[key] = partial?.[key] ?? base[key];
+  return display;
 }
 
 export interface Representation {
@@ -136,7 +179,10 @@ function assemblePanel(id: PanelId, init: PanelInit): Panel {
     id,
     representation: {
       kind: init.representation.kind,
-      display: { ...init.representation.display },
+      display: assembleDisplay(
+        init.representation.kind,
+        init.representation.display,
+      ),
     },
   };
   if (init.caption !== undefined) panel.caption = init.caption;
@@ -185,63 +231,58 @@ void ASSEMBLERS_ARE_COMPLETE;
 // ---------------------------------------------------------------------------
 
 /**
- * Display defaults per representation kind, each one a drawing convention
- * rather than a taste call:
+ * The display flags a panel of this kind opens with.
  *
- * - Carbon labels are shown only for `explicitH`, because a fully explicit
- *   structure spells out every C and H; hiding carbons is the definition of a
- *   skeletal drawing.
- * - Lone pairs are shown only for `lewis`, because a Lewis structure without
- *   them is just a Kekule structure.
- * - Aromatic circles come from the STYLE PRESET, via the table below. The
- *   renderer no longer draws a circle on top of the alternation — switching
- *   the flag on suppresses the second lines and draws one circle instead — so
- *   the old "it would state the delocalisation twice" reasoning no longer
- *   applies, and the default is a house-style question rather than a
- *   correctness one.
- * - Stereo descriptors (R/S, E/Z) default off — they are an annotation the
- *   chemist opts into per figure, and a wrong one is worse than none.
+ * THE DEFAULTS COME FROM CHEM-RENDER (decision 10), through
+ * `defaultFlagsFor`. They used to be restated here — "carbon labels only for
+ * explicitH, lone pairs only for lewis" — and the restatement disagreed with
+ * the renderer's own table on two kinds, so the same view looked different
+ * depending on whether it reached the canvas through a saved document or
+ * through `representation(kind)` in a test. A drawing convention is part of
+ * the drawing vocabulary; the codec's job is to store the answer, not to have
+ * one.
+ *
+ * The preset still gets a say, through `AROMATIC_CIRCLES_BY_PRESET` below.
  */
 export function defaultRepresentation(
   kind: RepresentationKind,
   preset: StylePresetId = "screen",
 ): Representation {
+  const base = defaultFlagsFor(kind);
+  const seed = AROMATIC_CIRCLES_BY_PRESET[preset];
   return {
     kind,
-    display: {
-      showCarbonLabels: kind === "explicitH",
-      aromaticCircles: AROMATIC_CIRCLES_BY_PRESET[preset],
-      showLonePairs: kind === "lewis",
-      showStereoDescriptors: false,
-    },
+    display: assembleDisplay(
+      kind,
+      seed === "kind" ? base : { ...base, aromaticCircles: seed },
+    ),
   };
 }
 
 /**
- * Where the circle-versus-Kekule choice gets its INITIAL value.
+ * Where the circle-versus-Kekule choice gets its INITIAL value, when the
+ * preset has an opinion at all.
  *
  * The choice itself is per panel — `RepresentationDisplay.aromaticCircles` —
  * because a figure has to be able to say "this one draws the circle", which a
  * preset-wide setting cannot express. The preset only seeds it, and a saved
  * document keeps whatever it stored.
  *
- * Both shipped presets seed `false` today: ACS and every house style this
- * project has been calibrated against print the Kekule alternation, and the
- * circle is what a chemist turns on for a particular figure. The table exists
- * anyway rather than a bare literal, because it is the declared home of that
- * decision — a third preset with the opposite convention adds a row here and
- * changes nothing else.
- *
- * The mapping lives in `shared` rather than on `RenderStyle` because `shared`
- * depends on chem-core and zod only; it cannot see chem-render at all, and a
- * `RenderStyle.aromaticCirclesDefault` that the render pass fell back to would
- * put the flag in two places and make "per structure" a lie.
+ * BOTH SHIPPED PRESETS NOW DEFER TO THE VIEW KIND (`"kind"`), which after
+ * decision 11 is what actually distinguishes skeletal from Kekulé: with
+ * Kekulé's carbon labels gone, the circle is the only thing left that tells
+ * the two views apart, so a preset-wide "circles off" would collapse them
+ * back into the same picture. The table survives because it is still the
+ * declared home of a house style that prints one or the other regardless of
+ * view — a third preset adds a row here with a plain boolean and changes
+ * nothing else.
  */
-const AROMATIC_CIRCLES_BY_PRESET: Readonly<Record<StylePresetId, boolean>> =
-  Object.freeze({
-    publication: false,
-    screen: false,
-  });
+const AROMATIC_CIRCLES_BY_PRESET: Readonly<
+  Record<StylePresetId, boolean | "kind">
+> = Object.freeze({
+  publication: "kind",
+  screen: "kind",
+});
 
 /**
  * The panels a fresh document opens with: the structure you draw into, and
@@ -379,6 +420,11 @@ const atomSchema = z.object({
   // A mass number, so at least the proton count of the element.
   isotope: z.number().int().positive().optional(),
   explicitHydrogenCount: z.number().int().min(0).optional(),
+  // Decision 4's per-atom lone-pair override. Persisted because it is the one
+  // thing about a Lewis structure the model cannot re-derive: a sulfone's
+  // sulfur reads zero pairs expanded-octet and two charge-separated, and a
+  // chemist who pinned the second meant it.
+  lonePairs: z.number().int().min(0).optional(),
   label: z.string().optional(),
 });
 
@@ -630,6 +676,7 @@ function rebuildMolecule(mol: MoleculeShape): Molecule {
       aromatic: parsed.aromatic,
       isotope: parsed.isotope,
       explicitHydrogenCount: parsed.explicitHydrogenCount,
+      lonePairs: parsed.lonePairs,
       label: parsed.label,
     });
   }
@@ -659,32 +706,38 @@ export const moleculeSchema = moleculeShapeSchema
   .superRefine(checkMoleculeIntegrity)
   .transform(rebuildMolecule);
 
+/**
+ * The display object, GENERATED from chem-render's key list rather than
+ * written out (decision 10).
+ *
+ * EVERY FLAG IS OPTIONAL, and that is a compatibility requirement, not
+ * laxity. A document saved before a flag existed cannot carry it, and a
+ * required field would make every such file fail to decode — the whole saved
+ * corpus lost the moment the renderer grows a toggle. The transform fills a
+ * missing key from the kind's default, so an old four-flag document decodes
+ * to a full eight-flag panel that means what it always meant.
+ *
+ * The cast is what buys typed inference from a computed shape; the shape
+ * itself comes from `DISPLAY_FLAG_KEYS`, which is checked against
+ * `DisplayFlags` in both directions over in chem-render, so it cannot be
+ * short a key.
+ */
+const displayShape = Object.fromEntries(
+  DISPLAY_FLAG_KEYS.map((key) => [key, z.boolean().optional()]),
+) as { [K in DisplayFlagKey]: z.ZodOptional<z.ZodBoolean> };
+
 export const representationSchema = z
   .object({
-    kind: z.enum([
-      "skeletal",
-      "kekule",
-      "explicitH",
-      "lewis",
-      "condensed",
-      "sumFormula",
-    ]),
-    display: z.object({
-      showCarbonLabels: z.boolean(),
-      aromaticCircles: z.boolean(),
-      showLonePairs: z.boolean(),
-      showStereoDescriptors: z.boolean(),
-    }),
+    kind: z.enum(VIEW_KINDS),
+    display: z.object(displayShape),
   })
   .transform(
     (value): Representation => ({
       kind: value.kind,
-      display: {
-        showCarbonLabels: value.display.showCarbonLabels,
-        aromaticCircles: value.display.aromaticCircles,
-        showLonePairs: value.display.showLonePairs,
-        showStereoDescriptors: value.display.showStereoDescriptors,
-      },
+      // Key by key, through the shared assembler: a spread of the parsed
+      // object would copy keys that are present holding `undefined`, which is
+      // rule 1 of this file.
+      display: assembleDisplay(value.kind, value.display),
     }),
   );
 
@@ -772,6 +825,7 @@ void SCHEMA_PRODUCES_DOCUMENT;
 const OPTIONAL_ATOM_KEYS = [
   "isotope",
   "explicitHydrogenCount",
+  "lonePairs",
   "label",
 ] as const;
 type EncoderCoversOptionalAtomKeys = OptionalKeys<Atom> extends

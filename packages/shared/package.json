@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@starter/chem-core": "workspace:*",
+    "@starter/chem-render": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {

@@ -52,15 +52,18 @@ function tagsOf(container: HTMLElement, selector: string): string[] {
 }
 
 describe("SceneLayer", () => {
-  it("draws benzene as nine bond elements and six atom elements", () => {
+  it("draws benzene as six bond elements, six atom elements and a ring circle", () => {
     const container = renderScene(SCENE);
 
-    // Nine lines for six bonds: benzene is an explicit Kekule ring, and each
-    // of its three double bonds draws a second line carrying the same
-    // `data-bond-id` as the first.
-    expect(container.querySelectorAll("[data-bond-id]")).toHaveLength(9);
+    // Skeletal defaults to the inscribed circle, which REPLACES the Kekulé
+    // alternation's second lines rather than being drawn over them, so each
+    // ring bond contributes exactly one element. The circle itself carries
+    // `data-ring-atom-ids` and no bond id: it belongs to the ring, not to any
+    // one of its bonds, which is what lets a click on it select the ring.
+    expect(container.querySelectorAll("[data-bond-id]")).toHaveLength(6);
+    expect(container.querySelectorAll("[data-ring-atom-ids]")).toHaveLength(1);
     expect(container.querySelectorAll("[data-atom-id]")).toHaveLength(6);
-    expect(tagsOf(container, "[data-bond-id]")).toEqual(Array(9).fill("line"));
+    expect(tagsOf(container, "[data-bond-id]")).toEqual(Array(6).fill("line"));
     expect(tagsOf(container, "[data-atom-id]")).toEqual(Array(6).fill("circle"));
     expect(
       new Set(
@@ -82,7 +85,11 @@ describe("SceneLayer", () => {
     expect(ids).toEqual(SCENE.primitives.map((p) => p.id));
     expect(ids).toContain("bond:b7:line");
     expect(ids).toContain("atom:a1:dot");
-    for (const id of ids) expect(id).toMatch(/^(atom|bond):[ab]\d+:/);
+    // A ring has no id of its own in chem-core, so its circle names itself by
+    // its atom SET — still derived from the source, still never a counter.
+    for (const id of ids) {
+      expect(id).toMatch(/^(atom|bond):[ab]\d+:|^ring:[a-z0-9+]+:/);
+    }
   });
 
   it("points each element back at the atom or bond it was drawn for", () => {
@@ -190,6 +197,6 @@ describe("SceneLayer", () => {
       buildScene(MOL, withStyle(SCREEN_STYLE, { atomDotRadiusPx: 0 }), SKELETAL),
     );
     expect(container.querySelectorAll("[data-atom-id]")).toHaveLength(0);
-    expect(container.querySelectorAll("[data-bond-id]")).toHaveLength(9);
+    expect(container.querySelectorAll("[data-bond-id]")).toHaveLength(6);
   });
 });

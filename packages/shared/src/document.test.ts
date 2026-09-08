@@ -1,8 +1,10 @@
 import { benzene, buildMolecule, elementCounts, emptyMolecule } from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
+import { DEFAULT_DISPLAY_FLAGS } from "@starter/chem-render";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PANELS,
+  DISPLAY_FLAG_KEYS,
   defaultPanelsFor,
   SCHEMA_VERSION,
   createDocument,
@@ -173,6 +175,42 @@ describe("round trip", () => {
       "Figure 1. Lone pairs on oxygen.",
     );
     expect(decoded.stylePreset).toBe("publication");
+  });
+
+  it("still decodes a v1 document written before four of the flags existed", () => {
+    // THE COMPATIBILITY CASE DECISION 10 CREATED. Every document saved before
+    // the unification carries exactly four display fields; making the other
+    // four required in the schema would have made the entire saved corpus
+    // fail to decode, and no fixture-based test would have caught it because
+    // the fixtures get regenerated with the new fields present. So the
+    // four-field object below is written out by hand, deliberately, and must
+    // keep working.
+    const encoded = encodeDocument(
+      createDocument({ id: "doc-old", molecule: ethanol(), now: NOW }),
+    ) as {
+      panels: { representation: { kind: string; display: Record<string, boolean> } }[];
+    };
+    for (const panel of encoded.panels) {
+      panel.representation.display = {
+        showCarbonLabels: panel.representation.display.showCarbonLabels!,
+        aromaticCircles: panel.representation.display.aromaticCircles!,
+        showLonePairs: panel.representation.display.showLonePairs!,
+        showStereoDescriptors: panel.representation.display.showStereoDescriptors!,
+      };
+    }
+    const decoded = decodeDocument(encoded);
+    const skeletal = decoded.panels[0]!.representation.display;
+    // The four it carried survive verbatim...
+    expect(skeletal.aromaticCircles).toBe(true);
+    expect(skeletal.showCarbonLabels).toBe(false);
+    // ...and the four it could not carry come from the kind's defaults rather
+    // than from `false`: a document saved before `showCharges` was
+    // persistable never meant "hide the charges".
+    expect(skeletal.showCharges).toBe(true);
+    expect(skeletal.showStereoBonds).toBe(true);
+    expect(skeletal.showImplicitHydrogens).toBe(false);
+    expect(skeletal.showAtomIndices).toBe(false);
+    expect(undefinedValuedPaths(decoded)).toEqual([]);
   });
 });
 
@@ -400,42 +438,63 @@ describe("factories", () => {
   });
 
   it("defaults display flags per representation kind", () => {
+    // THE DEFAULTS ARE CHEM-RENDER'S (decision 10), so this asserts the
+    // conventions rather than a table that lives here. Skeletal is the
+    // neutral baseline plus the aromatic circle; a fully explicit structure
+    // spells out its carbons; a Lewis structure is defined by its lone pairs.
     expect(defaultRepresentation("skeletal").display).toEqual({
-      showCarbonLabels: false,
-      aromaticCircles: false,
-      showLonePairs: false,
-      showStereoDescriptors: false,
+      ...DEFAULT_DISPLAY_FLAGS,
+      aromaticCircles: true,
     });
-    // A fully explicit structure spells out its carbons; a Lewis structure is
-    // defined by its lone pairs.
     expect(defaultRepresentation("explicitH").display.showCarbonLabels).toBe(true);
     expect(defaultRepresentation("lewis").display.showLonePairs).toBe(true);
+    // Kekulé means alternating bonds and BARE carbons (decision 11): no
+    // labels, and no circle, which is the only thing distinguishing it from
+    // skeletal once the labels are gone.
+    expect(defaultRepresentation("kekule").display.showCarbonLabels).toBe(false);
+    expect(defaultRepresentation("kekule").display.aromaticCircles).toBe(false);
     expect(defaultRepresentation("sumFormula").display.showCarbonLabels).toBe(
       false,
+    );
+  });
+
+  it("stores every flag the renderer honours, not a subset of them", () => {
+    // The drift decision 10 closed: four of chem-render's eight flags had no
+    // persisted home, so a chemist could turn one on and not save it. The
+    // display object is now generated from chem-render's own key list.
+    expect(Object.keys(defaultRepresentation("skeletal").display).sort()).toEqual(
+      [...DISPLAY_FLAG_KEYS].sort(),
     );
   });
 
   it("takes the aromatic-circle default from the style preset", () => {
     // Circle-versus-Kekule is a PER-PANEL choice — a figure has to be able to
     // say "this one draws the circle" — and the preset supplies only its
-    // initial value. Both shipped presets seed `false`, because ACS and the
-    // house styles this project is calibrated against print the alternation
-    // and the circle is what a chemist turns on for a particular figure.
+    // initial value. Both shipped presets now DEFER TO THE VIEW KIND, because
+    // after decision 11 stripped Kekulé's carbon labels the circle is the only
+    // thing left distinguishing the two views; a preset-wide "circles off"
+    // would collapse them back into one picture.
     //
     // The point of the assertion is that the parameter is WIRED, not that the
     // two answers differ today: a third preset with the opposite convention
     // adds a row to the table and this test is where it would show.
     for (const preset of ["publication", "screen"] as const) {
       expect(defaultRepresentation("skeletal", preset).display.aromaticCircles).toBe(
-        false,
+        true,
       );
       expect(
         createPanel("skeletal", undefined, preset).representation.display
           .aromaticCircles,
+      ).toBe(true);
+      expect(
+        createPanel("kekule", undefined, preset).representation.display
+          .aromaticCircles,
       ).toBe(false);
       expect(
         defaultPanelsFor(preset).every(
-          (panel) => panel.representation.display.aromaticCircles === false,
+          (panel) =>
+            panel.representation.display.aromaticCircles ===
+            (panel.representation.kind === "skeletal"),
         ),
       ).toBe(true);
     }

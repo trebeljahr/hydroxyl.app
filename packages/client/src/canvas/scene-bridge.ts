@@ -1,48 +1,26 @@
 /**
  * Document -> scene. The seam where the persisted format meets the renderer.
  *
- * THE CONTRACT DISAGREEMENT THIS FILE EXISTS TO RESOLVE:
+ * THE DISAGREEMENT THIS FILE USED TO RESOLVE IS GONE (decision 10).
+ * `@starter/shared` no longer declares its own display-flag set; it imports
+ * chem-render's, so `RepresentationDisplay` IS `DisplayFlags` and the
+ * translation below is a pass-through rather than a lossy projection. What
+ * remains is the SHAPE difference, and it is a real one worth keeping:
  *
- *   @starter/shared and @starter/chem-render BOTH export a type called
- *   `Representation`, and they are NOT the same type.
- *
- *     shared      { kind: RepresentationKind; display: RepresentationDisplay }
- *                 display = showCarbonLabels, aromaticCircles, showLonePairs,
- *                           showStereoDescriptors
+ *     shared      { kind: ViewKind; display: DisplayFlags }
+ *                 — one struct, flags stored for EVERY panel whatever its
+ *                   kind, so flipping a panel between skeletal and sumFormula
+ *                   and back does not lose the chemist's settings.
  *
  *     chem-render { kind: StructuralViewKind; flags: DisplayFlags }
  *                 | { kind: TextViewKind }
- *                 flags   = showCarbonLabels, showImplicitHydrogens,
- *                           showLonePairs, showCharges, showStereoBonds,
- *                           showAtomIndices, aromaticCircles,
- *                           showStereoDescriptors
+ *                 — a discriminated union, so "lone pairs on a sum formula"
+ *                   is unrepresentable at the point of drawing.
  *
- * That is not an oversight to be tidied away by making one import the other.
- * The document's version is the PERSISTED TRUTH: it is what a saved file
- * carries, it stores flags for every panel regardless of kind so flipping a
- * panel between skeletal and sumFormula does not lose the chemist's settings,
- * and its shape is frozen by `SCHEMA_VERSION`. The renderer's version is the
- * DRAWING VOCABULARY: a discriminated union that makes "lone pairs on a sum
- * formula" unrepresentable, and free to grow a flag the moment a new pass can
- * honour it — without that being a file-format change. Translating between
- * them is a real, lossy step, and this is where it happens once.
- *
- * ALL FOUR of the document's display fields are now mapped; everything else in
- * `DisplayFlags` comes from chem-render's per-kind defaults via the
- * `representation(kind, partialFlags)` factory, which layers over
- * `DEFAULT_FLAGS_BY_KIND`.
- *
- * `aromaticCircles` was dropped here until `chem-render-bond-geometry` gave
- * the renderer a circle to draw, and `showStereoDescriptors` until
- * `stereochemistry-perception-and-marks` gave it a letter to set. Each cost
- * exactly the one line this header predicted, and nothing else moved. Nothing
- * is dropped any more — a flag the renderer cannot honour would be a toggle
- * that lights up and does nothing, which is worse than a missing toggle.
- *
- * The two `Representation` types are imported under explicit aliases below.
- * A bare import of both is a collision waiting for whoever edits this file
- * next: with one of them auto-imported, the mistake compiles anywhere the
- * fields happen not to be touched.
+ * Both are right for their job, and converting one to the other is this
+ * function. The two `Representation` types are still imported under explicit
+ * aliases: they remain different types, and with one of them auto-imported
+ * the mistake compiles anywhere the fields happen not to be touched.
  */
 
 import {
@@ -119,12 +97,10 @@ export function toRenderRepresentation(
 ): RenderRepresentation {
   const { kind, display } = panelRepresentation;
   if (!isStructuralViewKind(kind)) return representation(kind);
-  return representation(kind, {
-    showCarbonLabels: display.showCarbonLabels,
-    showLonePairs: display.showLonePairs,
-    aromaticCircles: display.aromaticCircles,
-    showStereoDescriptors: display.showStereoDescriptors,
-  });
+  // A total pass-through since decision 10 — `display` is chem-render's own
+  // `DisplayFlags`. Enumerating the fields here again would be the drift the
+  // unification removed, and the first flag added would be dropped silently.
+  return representation(kind, display);
 }
 
 /**
