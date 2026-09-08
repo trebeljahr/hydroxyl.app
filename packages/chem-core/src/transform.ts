@@ -180,12 +180,24 @@ function mirrorDoubleBondSide(side: DoubleBondSide): DoubleBondSide {
  * Reflection of a point about a unit direction d, in coordinates relative to
  * a point on the line: v' = 2*(v . d)*d - v.
  *
- * STEREO IS SWAPPED, deliberately. The mirror image of a structure depicts the
- * mirror-image molecule — the opposite enantiomer. Leaving the wedges as drawn
- * would make the flipped picture claim it is still the original enantiomer,
- * which is a silently wrong chemical statement, and the worst kind: it renders
- * perfectly. So every bond with BOTH endpoints in the mirrored set has wedge
- * and hash exchanged.
+ * STEREO IS SWAPPED, and the effect is to PRESERVE configuration, not to
+ * invert it. This comment used to claim the opposite; the claim was wrong and
+ * nothing could catch it until stereo.ts could assign R/S.
+ *
+ * The geometry: reflecting x negates x, and exchanging wedge for hash negates
+ * z. Negating x and z together is a half turn about y — a proper rotation, not
+ * a reflection — so the flipped drawing depicts the SAME enantiomer, re-posed
+ * facing the other way. Mirroring the positions while leaving the marks as
+ * drawn is what would give the opposite enantiomer.
+ *
+ * That is the intended behaviour, ruled by the repo owner: flip is a LAYOUT
+ * operation, for re-posing a fragment so a scheme reads left to right, and it
+ * must never silently change which enantiomer the drawing states. Two tests in
+ * stereo.test.ts pin both halves — the mirror-positions-only case gives S, and
+ * flipAtoms gives back R.
+ *
+ * So every bond with BOTH endpoints in the mirrored set has wedge and hash
+ * exchanged.
  *
  * A MANUAL `doubleBondSide` IS SWAPPED for the same reason, on the same
  * both-endpoints gate: `left`/`right` are relative to the bond's own
