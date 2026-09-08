@@ -24,6 +24,15 @@
  * would move when the real chrome arrived. This is that move: leaving it there
  * would have put two overlapping strips in the same corner.
  *
+ * ── THE SAVE INDICATOR IS NOT DECORATION ──────────────────────────────────
+ *
+ * A write to IndexedDB fails silently by default: the abort carries its reason
+ * and no listener, and the chemist keeps drawing on a document that stopped
+ * being saved several minutes ago. So the failure state is rendered in the
+ * destructive colour with the reason beside it, and the aria-live message line
+ * says it too — a full disk is actionable (delete a sketch, export this one)
+ * and only if someone is told.
+ *
  * BOTH BUTTONS ARE REGISTRY ENTRIES. Fit used to build the scene and call
  * `zoomToFit` inline, which made it the one action in the whole shell with no
  * command behind it — no palette row, no shortcut, reachable from this strip
@@ -36,6 +45,7 @@ import type { ReactElement } from "react";
 import { AlertTriangleIcon } from "lucide-react";
 
 import { commandById } from "@/editor/commands/registry";
+import { useSaveState } from "@/persistence/save-state";
 import { moleculeIssues, moleculeMass } from "@/editor/derived";
 import { cn } from "@/lib/utils";
 import { editorStore, useEditorStore } from "@/state";
@@ -78,6 +88,32 @@ function ViewButton({
     >
       {label}
     </button>
+  );
+}
+
+/** The save indicator. Four states, and the error one carries its reason. */
+function SaveIndicator(): ReactElement {
+  const save = useSaveState();
+  const label =
+    save.status === "saving"
+      ? "Saving…"
+      : save.status === "saved"
+        ? "Saved"
+        : save.status === "error"
+          ? (save.message ?? "Not saved")
+          : "Not saved yet";
+  return (
+    <span
+      data-status="save-state"
+      data-save-status={save.status}
+      title={save.status === "error" ? label : undefined}
+      className={cn(
+        "min-w-0 max-w-[28rem] truncate",
+        save.status === "error" ? "text-destructive font-medium" : "",
+      )}
+    >
+      {label}
+    </span>
   );
 }
 
@@ -141,6 +177,8 @@ export function StatusBar(): ReactElement {
       >
         {message ?? ""}
       </span>
+
+      <SaveIndicator />
 
       <ViewButton id="view.fit" label="Fit" />
       <ViewButton id="view.reset" label="Reset" />

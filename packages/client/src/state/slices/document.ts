@@ -298,6 +298,24 @@ export function createDocumentSlice(
         commit(label, { document, selection: EMPTY_SELECTION });
       },
 
+      /**
+       * The restore path. Wholesale assignment, no history entry, fresh
+       * history — see the note on `DocumentSlice.loadDocument`.
+       *
+       * `restore` is reused deliberately: it is already the "assign a
+       * snapshot verbatim and push nothing" primitive that undo, redo and
+       * abort share, and a second one would be a second place for the
+       * document and the selection to get out of step.
+       */
+      loadDocument(document) {
+        assertNotDraft(document, "loadDocument");
+        assertNotDraft(document.molecule, "loadDocument(molecule)");
+        restore(
+          { document, selection: EMPTY_SELECTION },
+          createHistory<UndoableState>(options.historyLimit),
+        );
+      },
+
       applyMoleculeEdit(label, edit) {
         const before = snapshot();
         // OUTSIDE the recipe, against the real molecule. The guarded facade in

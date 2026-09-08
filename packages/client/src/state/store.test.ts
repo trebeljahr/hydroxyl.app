@@ -550,6 +550,36 @@ describe("documents and panels", () => {
     expect(store.getState().selection.atomIds).toHaveLength(1);
   });
 
+  it("RESTORES a document without making it undoable, and forgets the history", () => {
+    // `loadDocument` is the reload path, not the import path, and the
+    // difference is the whole reason it exists. Restoring a saved sketch
+    // through `openDocument` would push an entry whose base is the empty
+    // startup document, so the first Ctrl+Z after a reload would wipe the
+    // canvas — and autosave would then persist the empty document over the
+    // good one.
+    const store = makeStore();
+    store.getState().applyMoleculeEdit("Retype", (m) =>
+      guardedOps.setElement(m, firstAtomId(store), "N"),
+    );
+    expect(store.getState().canUndo()).toBe(true);
+
+    const restored: SketchDocument = createDocument({
+      molecule: ethanol(),
+      title: "Restored from storage",
+      now: "2024-06-01T12:00:00.000Z",
+    });
+    store.getState().selectAtoms([firstAtomId(store)]);
+    store.getState().loadDocument(restored);
+
+    expect(store.getState().document).toBe(restored);
+    expect(store.getState().selection.atomIds).toEqual([]);
+    // No entry pushed, and the entries that were there described a document
+    // that is no longer loaded.
+    expect(store.getState().canUndo()).toBe(false);
+    expect(store.getState().canRedo()).toBe(false);
+    expect(store.getState().history.past).toHaveLength(0);
+  });
+
   it("adds, captions, reorders and removes panels as undoable steps", () => {
     const store = makeStore();
     const initial = store.getState().document.panels;

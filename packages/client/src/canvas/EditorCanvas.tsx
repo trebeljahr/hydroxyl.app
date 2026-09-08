@@ -52,6 +52,7 @@ import { toolDef } from "@/editor/tools";
 import { describeAtom } from "@/editor/traversal";
 import { editorStore, useEditorStore } from "@/state";
 
+import { consumeCanvasCrash } from "./crash";
 import { buildDocumentScene, renderStyleFor } from "./scene-bridge";
 import { createSceneIndex, fitBounds } from "./metrics";
 import { type PickContext } from "./pick";
@@ -83,6 +84,11 @@ function svgNumber(n: number): number {
 }
 
 export function EditorCanvas(props: EditorCanvasProps): ReactElement {
+  // A no-op unless the `?crash=canvas` affordance armed it. See crash.ts: it
+  // is how `CanvasErrorBoundary`'s promise — that a render exception does not
+  // cost the drawing — is proven against the running app instead of asserted.
+  consumeCanvasCrash();
+
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   // Named `doc`, never `document`: this file runs in the browser and a local

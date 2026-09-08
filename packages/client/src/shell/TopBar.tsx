@@ -91,11 +91,16 @@ function CommandButton({
 
 export function TopBar(): ReactElement {
   const title = useEditorStore((state) => state.document.metadata.title);
+  // Rendered as an attribute rather than as text: the e2e specs need to know
+  // which document is loaded in order to reopen it at `/editor?doc=<id>`, and
+  // a raw id is not something to put in front of a chemist.
+  const docId = useEditorStore((state) => state.document.id);
   const { theme } = useTheme();
 
   return (
     <header
       data-shell="top-bar"
+      data-doc-id={docId}
       className="bg-background flex h-11 shrink-0 items-center gap-2 border-b px-3"
     >
       <input

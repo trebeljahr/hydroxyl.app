@@ -188,6 +188,20 @@ export interface DocumentSlice {
   /** Replaces the whole document — a dropped .mol file, a new sketch. This IS
    *  undoable; see the note on the implementation. */
   openDocument(document: SketchDocument, label?: string): void;
+  /**
+   * Replaces the document AND RESETS THE HISTORY, without recording a step.
+   *
+   * This is the RESTORE path, not the import path, and the difference matters:
+   * a saved sketch read back out of IndexedDB on page load is not an edit the
+   * user made, so it must not be undoable. Routing it through `openDocument`
+   * would push an entry whose base is the empty startup document, and the
+   * first Ctrl+Z after a reload would wipe the canvas — which autosave would
+   * then persist over the good copy.
+   *
+   * The history is cleared rather than kept because the entries that were in
+   * it describe a document that is no longer loaded.
+   */
+  loadDocument(document: SketchDocument): void;
   applyMoleculeEdit(label: string, edit: MoleculeEdit): void;
   setStylePreset(preset: StylePresetId): void;
   setDocumentTitle(title: string): void;
