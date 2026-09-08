@@ -72,10 +72,15 @@ describe("no RDKit at module scope", () => {
     // mentions are everywhere and are the point: the comments explain why
     // nothing imports it.
     const hits = grep(src, /(?:^\s*import[^\n]*|\bimport\(|\brequire\()["']@rdkit\/rdkit["']/m);
-    // The fidelity harness is allowed one: it runs in node, never in a
-    // browser bundle, and it is a *.node.test.ts file.
+    // The *.node.test.ts files are allowed: they run in node, never in a
+    // browser bundle. That filter is the invariant; the count below only
+    // stops the exemption quietly growing to cover a real source file that
+    // someone happened to name `*.node.test.ts`.
     expect(hits.filter((f) => !f.endsWith(".node.test.ts"))).toEqual([]);
-    expect(hits).toHaveLength(1);
+    expect(hits.map((f) => path.basename(f)).toSorted()).toEqual([
+      "fidelity.node.test.ts",
+      "inchi.node.test.ts",
+    ]);
   });
 });
 

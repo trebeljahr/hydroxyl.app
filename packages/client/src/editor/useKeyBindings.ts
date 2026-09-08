@@ -338,11 +338,18 @@ export function handleEditorKeyDown(
     // came next.
     endNudge(store);
     armElementWindow(store, "");
+    const enabled = command.enabled(state);
     // A DISABLED command still swallows its key: letting Mod+Z fall through
     // when there is nothing to undo would hand the browser a shortcut the
     // editor has claimed.
-    event.preventDefault();
-    if (!command.enabled(state)) return true;
+    //
+    // ONE EXCEPTION, and it is opted into per command rather than inferred.
+    // `edit.paste` is disabled until something is on the EDITOR's clipboard,
+    // and swallowing Mod+V in that state also suppresses the browser's own
+    // `paste` event — which is the only route a SMILES or a molblock copied
+    // out of a paper has onto the canvas. See `passThroughWhenDisabled`.
+    if (enabled || command.passThroughWhenDisabled !== true) event.preventDefault();
+    if (!enabled) return true;
     void command.run(store);
     return true;
   }

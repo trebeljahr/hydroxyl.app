@@ -56,8 +56,15 @@ import { guardedOps } from "@/state/chem-guard";
 import type { EditorState, EditorStore, Selection } from "@/state";
 
 import { cleanUpStructure } from "./cleanup";
+import {
+  exportCurrent,
+  newSketch,
+  openFromDisk,
+  saveNow,
+} from "./file";
 
 export type CommandGroup =
+  | "file"
   | "tool"
   | "edit"
   | "select"
@@ -86,6 +93,20 @@ export interface Command {
    * duplicate row with a different key beside the same title.
    */
   readonly hidden?: boolean;
+  /**
+   * Let the BROWSER have this key when the command is disabled.
+   *
+   * The key layer's default is the opposite and is right almost everywhere: a
+   * disabled command still swallows its shortcut, or Mod+Z would type a "z"
+   * into nothing once history ran out. Paste is the exception, and it is a
+   * real one. `edit.paste` is disabled until something has been copied INSIDE
+   * the editor, and swallowing Mod+V in that state also suppresses the
+   * browser's own `paste` event — which is the only way a SMILES or a molblock
+   * copied out of a paper reaches the canvas at all. There is nothing to
+   * swallow the key for: with no internal clipboard the command does nothing,
+   * so letting the platform paste is strictly better than nothing happening.
+   */
+  readonly passThroughWhenDisabled?: boolean;
   enabled(state: EditorState): boolean;
   run(store: EditorStore): void | Promise<void>;
 }
@@ -611,6 +632,10 @@ const EDIT_COMMANDS: readonly Command[] = [
     keywords: ["paste", "clipboard"],
     shortcut: "Mod+v",
     group: "edit",
+    // See `passThroughWhenDisabled`: with nothing on the internal clipboard,
+    // Mod+V has to reach the browser so the window `paste` listener can read
+    // a structure someone copied out of a paper.
+    passThroughWhenDisabled: true,
     enabled: () => clipboard !== null && clipboard.atomIds.length > 0,
     run: (store) => {
       const fragment = clipboard;
@@ -831,7 +856,68 @@ function changeCharge(store: EditorStore, delta: number): void {
   );
 }
 
+// ---------------------------------------------------------------------------
+// File
+//
+// The behaviour lives in `./file.ts`, which is async and touches storage and
+// the file system; this file stays importable by a plain-node test.
+//
+// SHORTCUTS ARE ONLY CLAIMED WHERE THE BROWSER WILL GIVE THEM UP. Mod+S and
+// Mod+O are preventable in every engine. Mod+N is NOT — Chrome opens a new
+// window before a page script sees the event — so "New sketch" is
+// palette-only rather than advertising a key that does something else.
+// ---------------------------------------------------------------------------
+
+const FILE_COMMANDS: readonly Command[] = [
+  {
+    id: "file.new",
+    title: "New sketch",
+    keywords: ["new", "blank", "empty", "create"],
+    group: "file",
+    enabled: () => true,
+    run: (store) => newSketch(store),
+  },
+  {
+    id: "file.open",
+    title: "Open a file…",
+    keywords: ["open", "import", "mol", "molfile", "sdf", "smiles", "file"],
+    shortcut: "Mod+o",
+    group: "file",
+    enabled: () => true,
+    run: (store) => openFromDisk(store),
+  },
+  {
+    id: "file.save",
+    title: "Save",
+    keywords: ["save", "store", "persist"],
+    shortcut: "Mod+s",
+    group: "file",
+    enabled: () => true,
+    run: (store) => saveNow(store),
+  },
+  {
+    id: "file.export-sketch",
+    title: "Export as a sketch file",
+    keywords: ["export", "download", "json", "backup", "sketch"],
+    shortcut: "Mod+Shift+s",
+    group: "file",
+    enabled: () => true,
+    run: (store) => exportCurrent(store, "sketch"),
+  },
+  {
+    id: "file.export-mol",
+    title: "Export as a molfile",
+    keywords: ["export", "download", "mol", "molfile", "v2000", "mdl"],
+    group: "file",
+    // An empty sketch writes a molblock with no atoms, which no other program
+    // will do anything useful with.
+    enabled: (state) => !isEmpty(state.document.molecule),
+    run: (store) => exportCurrent(store, "mol"),
+  },
+];
+
 export const COMMANDS: readonly Command[] = Object.freeze([
+  ...FILE_COMMANDS,
   ...toolCommands(),
   ...bondOrderCommands(),
   ...bondStereoCommands(),

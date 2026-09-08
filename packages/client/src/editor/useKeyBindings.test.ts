@@ -20,6 +20,7 @@ import { createDocument } from "@starter/shared";
 import { createEditorStore } from "@/state";
 import type { EditorStore } from "@/state";
 
+import { setClipboardForTest } from "./commands/registry";
 import {
   handleEditorKeyDown,
   NUDGE_IDLE_MS,
@@ -47,6 +48,25 @@ interface KeyInit {
   readonly alt?: boolean;
   readonly target?: Element;
   readonly defaultPrevented?: boolean;
+}
+
+/** Like `press`, but hands back the event so a test can read
+ *  `defaultPrevented` — which is the whole subject of the paste case. */
+function pressEvent(init: KeyInit): KeyboardEvent {
+  const event = new KeyboardEvent("keydown", {
+    key: init.key,
+    ctrlKey: init.mod === true,
+    shiftKey: init.shift === true,
+    altKey: init.alt === true,
+    cancelable: true,
+    bubbles: true,
+  });
+  Object.defineProperty(event, "target", {
+    value: init.target ?? document.body,
+    configurable: true,
+  });
+  handleEditorKeyDown(event, { store });
+  return event;
 }
 
 function press(init: KeyInit): boolean {
@@ -284,6 +304,38 @@ describe("editing shortcuts", () => {
     press({ key: "-" });
     press({ key: "-" });
     expect(store.getState().document.molecule.atoms["a1"]!.charge).toBe(-1);
+  });
+});
+
+describe("Mod+V, which two things want", () => {
+  afterEach(() => {
+    setClipboardForTest(null);
+  });
+
+  it("swallows the key when the editor's own clipboard has something", () => {
+    setClipboardForTest(benzene());
+    const event = pressEvent({ key: "v", mod: true });
+    expect(event.defaultPrevented).toBe(true);
+    expect(store.getState().document.molecule.atomIds.length).toBe(12);
+  });
+
+  it("LETS THE BROWSER HAVE IT when the clipboard is empty", () => {
+    // `edit.paste` is disabled with nothing copied inside the editor, and the
+    // key layer's default is that a disabled command still swallows its key.
+    // Here that would also suppress the browser's own `paste` event — the only
+    // route a SMILES or a molblock copied out of a paper has onto the canvas.
+    // Hence `passThroughWhenDisabled`, which is opted into per command rather
+    // than inferred.
+    const event = pressEvent({ key: "v", mod: true });
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("still swallows a DISABLED shortcut that did not opt in", () => {
+    // The general rule is unchanged: Mod+Z with nothing to undo must not
+    // reach the browser.
+    expect(store.getState().canUndo()).toBe(false);
+    const event = pressEvent({ key: "z", mod: true });
+    expect(event.defaultPrevented).toBe(true);
   });
 });
 

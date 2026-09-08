@@ -47,6 +47,7 @@ import type {
 import { editorStore, useEditorStore } from "@/state";
 
 const GROUP_TITLES: Readonly<Record<Group, string>> = {
+  file: "File",
   tool: "Tools",
   edit: "Edit",
   select: "Selection",
@@ -68,6 +69,7 @@ const GROUP_TITLES: Readonly<Record<Group, string>> = {
  * surface that is supposed to list everything.
  */
 export const GROUP_ORDER: readonly Group[] = [
+  "file",
   "tool",
   "edit",
   "select",

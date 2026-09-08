@@ -14,6 +14,8 @@
  */
 
 export { EditorShell } from "./EditorShell";
+export { CanvasErrorBoundary } from "./CanvasErrorBoundary";
+export { useFileDrop } from "./useFileDrop";
 export { CommandPalette } from "./CommandPalette";
 export { PropertiesPanel } from "./PropertiesPanel";
 export { StatusBar } from "./StatusBar";

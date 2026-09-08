@@ -14,6 +14,13 @@
  * tool rail shows the second tooltip immediately instead of waiting the full
  * delay again at every button.
  *
+ * THE CANVAS IS WRAPPED IN AN ERROR BOUNDARY and the rest of the shell is
+ * not. A throw from the tool rail is a bug in a button; a throw from the
+ * canvas is a bug in geometry over a molecule the user is free to draw into
+ * any shape, and unmounting the tree would cost them the drawing. Keeping the
+ * chrome mounted also means the fallback appears in place, with the title, the
+ * status bar and the save-state indicator still readable.
+ *
  * THE LIVE REGION IS HERE, not in the canvas, because it announces things the
  * canvas does not own: the keyboard traversal is dispatched by the key layer,
  * and a region that lived inside the component being navigated would be
@@ -26,8 +33,11 @@ import type { ReactElement } from "react";
 import { EditorCanvas } from "@/canvas";
 import { useKeyBindings } from "@/editor/useKeyBindings";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { flushEditorDocument } from "@/persistence/session";
 
+import { CanvasErrorBoundary } from "./CanvasErrorBoundary";
 import { CommandPalette } from "./CommandPalette";
+import { useFileDrop } from "./useFileDrop";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { StatusBar } from "./StatusBar";
 import { ToolRail } from "./ToolRail";
@@ -40,6 +50,10 @@ export function EditorShell(): ReactElement {
   }, []);
 
   useKeyBindings({ onAnnounce: announce });
+  // Mounted beside the keyboard layer and for the same reason: both listen on
+  // `window`, both must exist exactly once, and the order they are registered
+  // in is part of how Mod+V resolves. See useFileDrop's header.
+  useFileDrop();
 
   return (
     <TooltipProvider delayDuration={400} skipDelayDuration={200}>
@@ -48,7 +62,12 @@ export function EditorShell(): ReactElement {
         <div className="flex min-h-0 flex-1">
           <ToolRail />
           <main className="min-w-0 flex-1">
-            <EditorCanvas />
+            {/* OUTSIDE the canvas, necessarily: the scene is built in a
+                `useMemo` inside `EditorCanvas`, so a boundary mounted within
+                it could not catch its own render throw. */}
+            <CanvasErrorBoundary onFlush={flushEditorDocument}>
+              <EditorCanvas />
+            </CanvasErrorBoundary>
           </main>
           <PropertiesPanel />
         </div>
