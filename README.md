@@ -3,8 +3,9 @@
 A chemical structure editor aimed at producing figures for papers — draw a
 molecule once, then export it in whichever representation the figure needs.
 
-Status: **early**. The chemistry core is built and tested; the canvas is not
-written yet.
+Status: **early**. The chemistry core, the renderer and the editor canvas are
+built and tested: `/editor` draws, edits, and renders every 2D representation
+listed below.
 
 ## What it is for
 
@@ -12,13 +13,12 @@ Most structure editors optimise for entering a molecule and exporting one
 picture. This one treats the representation as a view over a single model, so
 the same structure can be shown as:
 
-- skeletal (implicit carbons and hydrogens)
-- Kekulé, with explicit heteroatom hydrogens
-- fully explicit, every atom labelled
+- skeletal (implicit carbons and hydrogens, aromatic rings as one circle)
+- Kekulé (localised alternating double bonds, carbons still bare)
+- fully explicit, every atom labelled and every hydrogen drawn
 - Lewis dot structures, with lone pairs and formal charges
-- condensed formula
+- condensed formula — `CH3CH2OH`, walked from the graph
 - sum formula, molecular weight, exact mass
-- 3D — wireframe, ball-and-stick, space-filling
 
 …and rendered under a chosen style preset (ACS bond lengths, line widths and
 fonts), including a panel mode that lays several representations side by side
@@ -37,6 +37,23 @@ packages/
 `chem-core` is deliberately framework-free so the chemistry can be tested
 without a browser and reused headlessly. There is no server package — the
 editor runs entirely in the browser.
+
+## 3D is post-v1, and the reason is settled
+
+Wireframe, ball-and-stick and space-filling views are **not** in v1, and
+neither are the projections that need real geometry (chair, Newman, sawhorse).
+This is a decision, not a backlog item that slipped.
+
+RDKit-WASM is this project's import/export oracle, and the MinimalLib build it
+ships contains **no conformer generation at all** — no DistGeom, no ETKDG, no
+`EmbedMolecule`, no force field. It does 2D depiction (RDDepict + CoordGen) and
+nothing else. `has_coords()` can report `3` for a conformer read out of a file,
+but nothing in this build can generate or minimise one.
+
+So a 3D view is not a rendering feature bolted onto what is here; it needs a
+different component entirely — a full RDKit build, OpenBabel-wasm, or
+hand-rolled geometry — with its own size, licence and correctness questions.
+Anything drawn from 2D coordinates alone would be a picture of a guess.
 
 ### Design decisions worth knowing
 
