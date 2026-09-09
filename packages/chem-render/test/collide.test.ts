@@ -127,6 +127,11 @@ describe("detectCollisions", () => {
         }
       }
     }
+    // No raised timeout. The sweep is every fixture at nine rotations through
+    // every view at both presets and still runs in about a tenth of a second,
+    // because a scene is pure arithmetic over a few dozen atoms. Pinning a
+    // generous budget here would only hide it the day one of these passes
+    // does turn superlinear, which is the day this test should fail.
   });
 
   it("never reports a label lying on its OWN bond", () => {

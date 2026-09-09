@@ -66,7 +66,56 @@ describe("condensedFormula", () => {
       b.bond(c2, o1);
       b.bond(c2, o2, 2);
     });
-    expect(condensedFormula(acetate)).toBe("CH3C(O-)O");
+    expect(condensedFormula(acetate)).toBe("CH3C(O-)=O");
+  });
+
+  it("writes the multiple bonds, which are half of what connectivity means", () => {
+    // Without them but-2-ene and the butane skeleton spell the same string,
+    // and propyne states a divalent middle carbon.
+    const butene = buildMolecule((b) => {
+      const c1 = b.atom("C", vec(0, 0));
+      const c2 = b.atom("C", vec(1, 0));
+      const c3 = b.atom("C", vec(2, 0));
+      const c4 = b.atom("C", vec(3, 0));
+      b.bond(c1, c2);
+      b.bond(c2, c3, 2);
+      b.bond(c3, c4);
+    });
+    expect(condensedFormula(butene)).toBe("CH3CH=CHCH3");
+
+    const propyne = buildMolecule((b) => {
+      const c1 = b.atom("C", vec(0, 0));
+      const c2 = b.atom("C", vec(1, 0));
+      const c3 = b.atom("C", vec(2, 0));
+      b.bond(c1, c2);
+      b.bond(c2, c3, 3);
+    });
+    expect(condensedFormula(propyne)).toBe("CH3C≡CH");
+
+    const butadiene = buildMolecule((b) => {
+      const c1 = b.atom("C", vec(0, 0));
+      const c2 = b.atom("C", vec(1, 0));
+      const c3 = b.atom("C", vec(2, 0));
+      const c4 = b.atom("C", vec(3, 0));
+      b.bond(c1, c2, 2);
+      b.bond(c2, c3);
+      b.bond(c3, c4, 2);
+    });
+    expect(condensedFormula(butadiene)).toBe("CH2=CHCH=CH2");
+  });
+
+  it("puts a branch's bond order inside the branch's own bracket", () => {
+    // Pentan-3-one, whose carbonyl oxygen really is off the main chain — the
+    // five carbons are the diameter. "C=(O)" would read as a double bond to
+    // the bracket itself, which is not a notation anybody writes.
+    const pentan3one = buildMolecule((b) => {
+      const carbons = [0, 1, 2, 3, 4].map((i) => b.atom("C", vec(i, 0)));
+      for (let i = 0; i + 1 < carbons.length; i++) {
+        b.bond(carbons[i]!, carbons[i + 1]!);
+      }
+      b.bond(carbons[2]!, b.atom("O", vec(2, 1)), 2);
+    });
+    expect(condensedFormula(pentan3one)).toBe("CH3CH2C(=O)CH2CH3");
   });
 
   it("sets its counts as real subscripts and its charges as superscripts", () => {

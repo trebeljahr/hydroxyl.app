@@ -49,7 +49,11 @@ import {
   lonePairDotId,
   radicalDotId,
 } from "../label/compose.js";
-import { phantomHydrogenId, phantomHydrogens } from "../modes/explicitH.js";
+import {
+  derivedHydrogenDirections,
+  phantomHydrogenId,
+  phantomHydrogens,
+} from "../modes/explicitH.js";
 import { freeDirection, placeAtomLabel } from "../label/placement.js";
 import type { AtomLabelPlacement, LabelObstacle } from "../label/placement.js";
 import { isStructural } from "../representation.js";
@@ -160,9 +164,47 @@ export function atomLabelPlacement(
     atomId,
     centre: modelToPx(style, atom.pos),
     neighbourCentres,
+    // The hydrogens the explicitH and Lewis views are about to fan off this
+    // atom. They are not in the graph, so nothing above finds them, and a
+    // lone pair that does not know they are coming picks the same direction
+    // one of them will take. Empty for every other view.
+    derivedHydrogenDirections: derivedHydrogenDirections(
+      mol,
+      atomId,
+      style,
+      representation,
+    ),
     label,
     style,
   });
+}
+
+/**
+ * Every atom's label placement, in the molecule's own insertion order.
+ *
+ * ONE MAP, built once and passed down. `atomLabelPlacement` is pure but
+ * deliberately not memoised, and three passes want it: the bonds want it at
+ * both ends of every bond, the phantom hydrogens want their host's to know how
+ * far to stand off it, and `detectCollisions` wants all of them. Placing each
+ * label afresh in each pass measured a benzene carbon's label three times over
+ * — and, once the hydrogens started reading the host's obstacles, opened the
+ * door to two passes trimming against two different measurements of the same
+ * glyph.
+ *
+ * An atom whose element the periodic table does not know THROWS out of here,
+ * as it always has. `representationAvailability` is the total, non-throwing
+ * question a caller asks first.
+ */
+export function atomLabelPlacements(
+  mol: Molecule,
+  style: RenderStyle,
+  representation: StructuralRepresentation,
+): Map<AtomId, AtomLabelPlacement | undefined> {
+  const out = new Map<AtomId, AtomLabelPlacement | undefined>();
+  for (const atomId of mol.atomIds) {
+    out.set(atomId, atomLabelPlacement(mol, atomId, style, representation));
+  }
+  return out;
 }
 
 /**
@@ -183,16 +225,12 @@ function buildStructural(
   const primitives: ScenePrimitive[] = [];
 
   const centres = new Map<AtomId, ScenePoint>();
-  const placements = new Map<AtomId, AtomLabelPlacement | undefined>();
   for (const atomId of mol.atomIds) {
     const atom = getAtom(mol, atomId);
     if (atom === undefined) continue;
     centres.set(atomId, modelToPx(style, atom.pos));
-    placements.set(
-      atomId,
-      atomLabelPlacement(mol, atomId, style, representation),
-    );
   }
+  const placements = atomLabelPlacements(mol, style, representation);
 
   const circles = representation.flags.aromaticCircles
     ? aromaticCirclePrimitives(mol, style, centres)
@@ -337,8 +375,13 @@ function buildStructural(
  * a second clearance constant, and the symptom — a stem ending inside the "H"
  * — is only visible at one preset.
  *
- * A stem that trims to nothing draws nothing, the same outcome a real bond
- * between two crowded labels gets. `detectCollisions` reports it.
+ * A STEM CANNOT TRIM TO NOTHING, unlike a real bond between two crowded
+ * labels. `phantomHydrogens` has already stood the hydrogen far enough off its
+ * host for the two trims to leave `MIN_STEM_LINE_WIDTHS` line widths between
+ * them, using these very placements, so `bondAxis` always returns an axis
+ * here. The `undefined` branch is the type's, not a case: dropping it would
+ * mean asserting non-null on a function that is honestly allowed to return
+ * one.
  */
 function pushHydrogenPrimitives(
   primitives: ScenePrimitive[],
@@ -348,7 +391,7 @@ function pushHydrogenPrimitives(
   centres: ReadonlyMap<AtomId, ScenePoint>,
   placements: ReadonlyMap<AtomId, AtomLabelPlacement | undefined>,
 ): void {
-  for (const hydrogen of phantomHydrogens(mol, style, representation)) {
+  for (const hydrogen of phantomHydrogens(mol, style, representation, placements)) {
     const hostCentre = centres.get(hydrogen.hostAtomId);
     if (hostCentre === undefined) continue;
     const id = phantomHydrogenId(hydrogen.hostAtomId, hydrogen.index);

@@ -89,6 +89,25 @@ export interface AtomLabelInput {
   readonly centre: ScenePoint;
   /** Scene px, y-down, one per bonded neighbour. Order is irrelevant. */
   readonly neighbourCentres: readonly ScenePoint[];
+  /**
+   * UNIT directions, scene px y-down, of the phantom hydrogens the
+   * fully-explicit and Lewis views fan off this atom. Empty everywhere else.
+   *
+   * A DERIVED HYDROGEN IS A BOND AS FAR AS THIS FILE IS CONCERNED. It is not
+   * in the graph, so it never reaches `neighbourCentres`, and the electron
+   * marks below choose their slots by asking which direction the bonds leave
+   * emptiest — the same question `fanDirections` asks to place the hydrogen.
+   * Ask it of the same inputs and the two agree; ask it of the real bonds
+   * alone and they pick the SAME direction, which put a lone pair on
+   * ethanol's O–H and let `rayExit` trim the whole stem away, leaving an "H"
+   * floating with no bond to it.
+   *
+   * Directions rather than centres because the caller has already normalised
+   * them: a hydrogen's distance from its host depends on how far the host's
+   * own label reaches, which is decided from THIS placement's obstacles and
+   * therefore cannot be known before it exists. The direction can.
+   */
+  readonly derivedHydrogenDirections?: readonly ScenePoint[];
   readonly label: ComposedLabel;
   readonly style: RenderStyle;
 }
@@ -647,6 +666,13 @@ export function placeAtomLabel(input: AtomLabelInput): AtomLabelPlacement {
   }
 
   const bondDirections = bondDirectionsOf(centre, input.neighbourCentres);
+  // Every direction an electron mark has to keep out of: the real bonds, plus
+  // the derived hydrogens this view will draw. See `derivedHydrogenDirections`.
+  const derivedHydrogens = input.derivedHydrogenDirections ?? [];
+  const markDirections =
+    derivedHydrogens.length === 0
+      ? bondDirections
+      : [...bondDirections, ...derivedHydrogens];
   const free = freeDirection(centre, input.neighbourCentres);
   const hydrogenSide =
     label.hydrogens.length > 0
@@ -717,12 +743,20 @@ export function placeAtomLabel(input: AtomLabelInput): AtomLabelPlacement {
   const taken = new Set<string>();
   if (hydrogenSide === "east") taken.add("E");
   if (hydrogenSide === "west") taken.add("W");
+  // A derived hydrogen occupies its nearest slot outright, on top of scoring
+  // against it above. Scoring alone already pushes a mark away from a
+  // hydrogen's direction, but only until every better slot is gone; the
+  // reservation is what makes "a pair never shares a hydrogen's slot" a
+  // property of the code rather than of how crowded the atom happens to be.
+  for (const direction of derivedHydrogens) {
+    taken.add(nearestDirectionName(direction));
+  }
 
   const dotRadius = markRadius(style);
   const dots = placeDotCluster(
     label.radicalDotCount,
     centre,
-    bondDirections,
+    markDirections,
     taken,
     spanObstacles,
     dotRadius,
@@ -736,7 +770,7 @@ export function placeAtomLabel(input: AtomLabelInput): AtomLabelPlacement {
     // Two dots per pair, and each PAIR gets its own direction.
     label.lonePairCount,
     centre,
-    bondDirections,
+    markDirections,
     taken,
     spanObstacles,
     dotRadius,
@@ -754,7 +788,7 @@ export function placeAtomLabel(input: AtomLabelInput): AtomLabelPlacement {
 
   const detachedCharge =
     label.chargeDetached && label.charge.length > 0
-      ? placeDetachedCharge(label.charge, centre, bondDirections, taken, obstacles, style)
+      ? placeDetachedCharge(label.charge, centre, markDirections, taken, obstacles, style)
       : undefined;
   if (detachedCharge !== undefined) {
     obstacles.push({ kind: "rect", box: detachedCharge.box });
@@ -828,6 +862,27 @@ function claimDirection(
   }
   if (chosenName !== undefined) taken.add(chosenName);
   return chosen;
+}
+
+/**
+ * Which of the eight slots a direction sits in.
+ *
+ * The compass points are 45 degrees apart, so every direction is within 22.5
+ * degrees of exactly one of them and "nearest" is never a judgement call. Ties
+ * — a direction exactly on a boundary — fall to the earlier compass point, the
+ * same rule `claimDirection` uses, so the reservation is deterministic.
+ */
+function nearestDirectionName(direction: ScenePoint): string {
+  let best = DOT_DIRECTIONS[0]![0];
+  let bestScore = -Infinity;
+  for (const [name, candidate] of DOT_DIRECTIONS) {
+    const alignment = dot(candidate, direction);
+    if (alignment > bestScore) {
+      bestScore = alignment;
+      best = name;
+    }
+  }
+  return best;
 }
 
 /**

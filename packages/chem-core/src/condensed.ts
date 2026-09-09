@@ -11,6 +11,14 @@
  * set real subscripts and superscripts rather than a flat string a renderer
  * would have to parse digits back out of.
  *
+ * MULTIPLE BONDS ARE SPELLED OUT, as "=" and the triple-bond "≡". They have
+ * to be: the sum formula already gives the atom counts, so connectivity is the
+ * whole of what this view adds, and bond order is half of connectivity. Left
+ * out, but-2-ene and butane's own skeleton both read "CH3CHCHCH3"; worse,
+ * "CH3CCH" for propyne states a divalent middle carbon that no chemist would
+ * accept. The marker sits between the two atom blocks, and inside the bracket
+ * for a branch, so acetone is CH3C(=O)CH3.
+ *
  * IT REFUSES A RING, and the refusal is the point rather than a limitation
  * quietly worked around. There is no linear spelling of benzene: "C6H6" is the
  * sum formula and "CH:CH:CH:CH:CH:CH" is not a notation anybody uses. A view
@@ -22,6 +30,7 @@
 import { requireElement } from "./elements.js";
 import type { FormulaPart } from "./formula.js";
 import {
+  bondBetween,
   bondsAt,
   connectedComponents,
   neighborIds,
@@ -34,6 +43,21 @@ import { implicitHydrogenCount } from "./valence.js";
 
 /** Separates the components of a mixture, as a hydrate's dot does. */
 const COMPONENT_SEPARATOR = "·";
+
+/**
+ * How each bond order is written between two atom blocks.
+ *
+ * U+2261 IDENTICAL TO, not three hyphens and not "#". The triple bond has a
+ * character, a condensed formula is set as text a reader reads rather than as
+ * a machine format, and "#" is SMILES' spelling, which this file is not.
+ * A single bond writes nothing at all — "CH3-CH2-OH" is a different notation,
+ * and mixing the two would make the ordinary case the noisy one.
+ */
+const BOND_MARKERS: Readonly<Record<1 | 2 | 3, string>> = Object.freeze({
+  1: "",
+  2: "=",
+  3: "≡",
+});
 
 /** Whether a condensed formula exists for this molecule at all. */
 export function canCondense(mol: Molecule): boolean {
@@ -92,16 +116,37 @@ function walkComponent(mol: Molecule, component: readonly AtomId[]): FormulaPart
   const chain = orient(mol, longestPath(mol, farthestFrom(mol, start)));
   const onChain = new Set(chain);
   const parts: FormulaPart[] = [];
-  for (const atomId of chain) {
+  chain.forEach((atomId, index) => {
+    const previous = index === 0 ? undefined : chain[index - 1];
+    if (previous !== undefined) parts.push(...bondParts(mol, previous, atomId));
     parts.push(...atomParts(mol, atomId));
     for (const neighbourId of neighborIds(mol, atomId)) {
       if (onChain.has(neighbourId)) continue;
+      // The marker goes INSIDE the bracket: "C(=O)" attaches the double bond
+      // to the branch it belongs to, while "C=(O)" reads as a double bond to
+      // the bracket itself and is not a notation anybody writes.
       parts.push({ kind: "symbol", text: "(" });
+      parts.push(...bondParts(mol, atomId, neighbourId));
       parts.push(...subtreeParts(mol, neighbourId, atomId));
       parts.push({ kind: "symbol", text: ")" });
     }
-  }
+  });
   return parts;
+}
+
+/**
+ * The "=" or the triple-bond glyph between two bonded atoms, or nothing.
+ *
+ * AROMATICITY IS NOT CONSULTED, and cannot be: `condensedParts` has already
+ * refused every ring, and chem-core stores Kekule bond orders anyway — the
+ * aromatic flag is derived, never the storage form. What is written is the
+ * order the model holds.
+ */
+function bondParts(mol: Molecule, from: AtomId, to: AtomId): FormulaPart[] {
+  const bond = bondBetween(mol, from, to);
+  if (bond === undefined) return [];
+  const marker = BOND_MARKERS[bond.order];
+  return marker === "" ? [] : [{ kind: "symbol", text: marker }];
 }
 
 /** A branch, spelled outward from `atomId` away from `cameFrom`. Branches of
@@ -114,13 +159,14 @@ function subtreeParts(
   const parts = atomParts(mol, atomId);
   for (const neighbourId of neighborIds(mol, atomId)) {
     if (neighbourId === cameFrom) continue;
+    const bond = bondParts(mol, atomId, neighbourId);
     const child = subtreeParts(mol, neighbourId, atomId);
     // A straight continuation needs no brackets: an ethyl branch is
     // "(CH2CH3)", not "(CH2(CH3))".
     if (neighborIds(mol, atomId).length === 2) {
-      parts.push(...child);
+      parts.push(...bond, ...child);
     } else {
-      parts.push({ kind: "symbol", text: "(" }, ...child, {
+      parts.push({ kind: "symbol", text: "(" }, ...bond, ...child, {
         kind: "symbol",
         text: ")",
       });

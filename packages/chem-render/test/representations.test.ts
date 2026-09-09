@@ -29,12 +29,17 @@ import {
   FIXTURES,
   naphthalene,
 } from "../src/fixtures.js";
-import { phantomHydrogens } from "../src/modes/explicitH.js";
+import {
+  derivedHydrogenDirections,
+  phantomHydrogens,
+} from "../src/modes/explicitH.js";
 import { representation } from "../src/representation.js";
-import { buildScene } from "../src/scene/build.js";
+import { atomLabelPlacements, buildScene } from "../src/scene/build.js";
 import { detectCollisions } from "../src/scene/collide.js";
 import type { CirclePrimitive, RenderScene, ScenePoint } from "../src/scene/types.js";
 import { modelToPx, PUBLICATION_STYLE, RENDER_STYLES, SCREEN_STYLE } from "../src/style.js";
+import type { RenderStyle } from "../src/style.js";
+import type { StructuralRepresentation } from "../src/representation.js";
 
 const EXPLICIT_H = representation("explicitH");
 const LEWIS = representation("lewis");
@@ -43,6 +48,21 @@ const PRESETS = [PUBLICATION_STYLE, SCREEN_STYLE] as const;
 function hydrogenPrimitives(scene: RenderScene, type: "line" | "textRun") {
   return scene.primitives.filter(
     (p) => p.type === type && p.source.kind === "hydrogen",
+  );
+}
+
+/** The derived hydrogens, placed against the same label map `buildScene` uses
+ *  — which is the only way to get the positions the scene actually drew. */
+function hydrogensOf(
+  mol: Molecule,
+  style: RenderStyle,
+  view: StructuralRepresentation,
+) {
+  return phantomHydrogens(
+    mol,
+    style,
+    view,
+    atomLabelPlacements(mol, style, view),
   );
 }
 
@@ -71,7 +91,7 @@ describe("the fully-explicit view", () => {
     // each hydrogen must be further from the centre than its host is. A fan
     // that put one INSIDE would be the failure the whole gap search exists to
     // avoid, and it is invisible in a primitive count.
-    for (const hydrogen of phantomHydrogens(mol, PUBLICATION_STYLE, EXPLICIT_H)) {
+    for (const hydrogen of hydrogensOf(mol, PUBLICATION_STYLE, EXPLICIT_H)) {
       const host = modelToPx(
         PUBLICATION_STYLE,
         mol.atoms[hydrogen.hostAtomId]!.pos,
@@ -87,7 +107,7 @@ describe("the fully-explicit view", () => {
 
   it("gives methane four hydrogens no two of which are on top of each other", () => {
     const mol = singleAtom("C");
-    const hydrogens = phantomHydrogens(mol, PUBLICATION_STYLE, EXPLICIT_H);
+    const hydrogens = hydrogensOf(mol, PUBLICATION_STYLE, EXPLICIT_H);
     expect(hydrogens).toHaveLength(4);
     for (let i = 0; i < hydrogens.length; i++) {
       for (let j = i + 1; j < hydrogens.length; j++) {
@@ -146,6 +166,34 @@ describe("the fully-explicit view", () => {
         }
       }
     }
+    // No raised timeout: the whole sweep runs in well under a tenth of a
+    // second. See the sibling sweep in `collide.test.ts` for why that is left
+    // on the default budget rather than given a generous one.
+  });
+
+  it("gives every derived hydrogen a stem, however wide its host's label", () => {
+    // A hydrogen stands at a FIXED fraction of a bond length from its host,
+    // and 0.66 of one is not always past the host's own glyphs: methanol-13C
+    // sets its mass number as a superscript to the west, swallowed the whole
+    // stem of the hydrogen fanned that way, and drew a floating "H" with no
+    // bond to it. The stand-off now clears the host's obstacles, so a bondless
+    // hydrogen is not a thing this view can produce.
+    for (const view of [EXPLICIT_H, LEWIS]) {
+      for (const fixture of FIXTURES) {
+        for (const style of PRESETS) {
+          const scene = buildScene(fixture.molecule, style, view);
+          const stems = new Set(
+            hydrogenPrimitives(scene, "line").map((p) => p.id),
+          );
+          for (const glyph of hydrogenPrimitives(scene, "textRun")) {
+            expect(
+              stems.has(glyph.id.replace(/:label$/, ":line")),
+              `${fixture.name} ${view.kind} ${style.name} ${glyph.id}`,
+            ).toBe(true);
+          }
+        }
+      }
+    }
   });
 
   it("does not regress the trimming: no label lies across its own bond", () => {
@@ -197,22 +245,32 @@ describe("the Lewis view", () => {
     expect(dotsOf(scene, "a2")).toHaveLength(0);
   });
 
-  it("keeps every pair clear of the directions the bonds occupy", () => {
+  it("keeps every pair clear of the bonds AND of its own hydrogens", () => {
     // The rule stated where it can fail: for each drawn pair, the direction
     // from the atom to the pair's midpoint must not point along any bond.
     // cos 45 degrees is the threshold — the eight slots are 45 apart, so a
     // pair aligned closer than that to a bond took a slot the bond was in.
-    for (const mol of [acetate(), dimethylSulfone(), ethanol()]) {
+    //
+    // THE DERIVED HYDROGENS COUNT AS BONDS HERE, and they are the half of this
+    // that was wrong: they are not in `mol.bondIds`, the earlier version of
+    // this test iterated only that, and so it passed while a lone pair sat on
+    // ethanol's O–H and trimmed the whole stem away. Every fixture, not three,
+    // because the failure needed an atom that has both a pair and a hydrogen.
+    for (const fixture of FIXTURES) {
+      const mol = fixture.molecule;
       const scene = buildScene(mol, PUBLICATION_STYLE, LEWIS);
       for (const atomId of mol.atomIds) {
         const centre = modelToPx(PUBLICATION_STYLE, mol.atoms[atomId]!.pos);
-        const bonds = mol.bondIds
-          .map((id) => mol.bonds[id]!)
-          .filter((bond) => bond.from === atomId || bond.to === atomId)
-          .map((bond) => {
-            const otherId = bond.from === atomId ? bond.to : bond.from;
-            return unit(centre, modelToPx(PUBLICATION_STYLE, mol.atoms[otherId]!.pos));
-          });
+        const bonds = [
+          ...mol.bondIds
+            .map((id) => mol.bonds[id]!)
+            .filter((bond) => bond.from === atomId || bond.to === atomId)
+            .map((bond) => {
+              const otherId = bond.from === atomId ? bond.to : bond.from;
+              return unit(centre, modelToPx(PUBLICATION_STYLE, mol.atoms[otherId]!.pos));
+            }),
+          ...derivedHydrogenDirections(mol, atomId, PUBLICATION_STYLE, LEWIS),
+        ];
         const dots = dotsOf(scene, atomId);
         for (let i = 0; i < dots.length; i += 2) {
           const midpoint: ScenePoint = {
@@ -223,7 +281,7 @@ describe("the Lewis view", () => {
           for (const bond of bonds) {
             expect(
               direction.x * bond.x + direction.y * bond.y,
-              `${atomId} pair ${i / 2}`,
+              `${fixture.name} ${atomId} pair ${i / 2}`,
             ).toBeLessThan(Math.SQRT1_2);
           }
         }
@@ -324,6 +382,67 @@ describe("representationAvailability", () => {
     expect(representationAvailability(ferrocene, "skeletal").available).toBe(true);
   });
 
+  it("says over-valent when the atom is over-valent, not that it has no valences", () => {
+    // The two arms of chem-core's `LonePairReason` are different sentences and
+    // only one of them is true of a carbon. Collapsing them printed "C has no
+    // default valences" — a factual falsehood — into the cell of a figure.
+    const hypervalentCarbon = buildMolecule((b) => {
+      const carbon = b.atom("C", vec(0, 0));
+      for (let i = 0; i < 5; i++) {
+        b.bond(carbon, b.atom("F", vec(Math.cos(i), Math.sin(i))));
+      }
+    });
+    const lewis = representationAvailability(hypervalentCarbon, "lewis");
+    expect(lewis.available).toBe(false);
+    if (lewis.available) throw new Error("unreachable");
+    expect(lewis.reason).toBe("over-valent");
+    expect(lewis.message).toMatch(/^C has more bonds than/);
+    expect(lewis.message).not.toMatch(/no default valences/);
+    expect(lewis.atomIds).toEqual(["a1"]);
+  });
+
+  it("refuses both text views for a structure drawn with an abbreviation", () => {
+    // Benzyl alcohol drawn as Ph–CH2–OH. The graph under the "Ph" is a bare
+    // carbon, so the condensed formula reads "CH3CH2OH" and the sum formula
+    // "C2H6O" — both of them ethanol, confidently and wrongly. A cell that
+    // states the wrong molecule is worse than the empty one this function
+    // exists to prevent.
+    const mol = FIXTURES.find((f) => f.name === "benzylAlcoholAbbreviated")!.molecule;
+    for (const kind of ["condensed", "sumFormula"] as const) {
+      const verdict = representationAvailability(mol, kind);
+      expect(verdict.available, kind).toBe(false);
+      if (verdict.available) throw new Error("unreachable");
+      expect(verdict.reason).toBe("abbreviated-label");
+      // The WHOLE sentence, because the half that was wrong was the tail: the
+      // message is printed verbatim into the cell the view would have filled,
+      // and one "Ph" takes "what it stands for". Matching only the prefix let
+      // "Ph … what they stand for" through.
+      expect(verdict.message).toBe(
+        "Ph is drawn as an abbreviation, so a formula cannot state what it stands for.",
+      );
+      expect(verdict.atomIds).toEqual(["a1"]);
+    }
+    // The structural views draw the abbreviation, which is what the author
+    // asked for, and are unaffected.
+    for (const kind of ["skeletal", "kekule", "explicitH", "lewis"] as const) {
+      expect(representationAvailability(mol, kind).available, kind).toBe(true);
+    }
+
+    // The plural branch of the same sentence. Two abbreviations take "they",
+    // and the singular and plural forms are two different strings rather than
+    // one string with an "(s)" in it.
+    const twoLabels = buildMolecule((b) => {
+      const left = b.atom("C", vec(0, 0), { label: "Ph" });
+      b.bond(left, b.atom("N", vec(1, 0), { label: "Boc" }));
+    });
+    const verdict = representationAvailability(twoLabels, "sumFormula");
+    expect(verdict.available).toBe(false);
+    if (verdict.available) throw new Error("unreachable");
+    expect(verdict.message).toBe(
+      "Ph, Boc are drawn as abbreviations, so a formula cannot state what they stand for.",
+    );
+  });
+
   it("refuses every view for an element the table has never heard of", () => {
     // A live crash path, not a hypothetical: `atomSchema` deliberately does
     // NOT validate the symbol — a saved document has to survive a placeholder
@@ -352,11 +471,17 @@ describe("representationAvailability", () => {
     }
   });
 
-  it("allows every view for every fixture that is not a ring", () => {
+  it("allows every view for every fixture but the rings and the abbreviation", () => {
     for (const fixture of FIXTURES) {
       for (const [kind, verdict] of availabilityByKind(fixture.molecule)) {
         if (kind === "condensed" && !verdict.available) {
-          expect(verdict.reason, fixture.name).toBe("cyclic");
+          expect(["cyclic", "abbreviated-label"], fixture.name).toContain(
+            verdict.reason,
+          );
+          continue;
+        }
+        if (kind === "sumFormula" && !verdict.available) {
+          expect(verdict.reason, fixture.name).toBe("abbreviated-label");
           continue;
         }
         expect(verdict.available, `${fixture.name} ${kind}`).toBe(true);

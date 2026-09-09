@@ -40,7 +40,7 @@ import { phantomHydrogens } from "../modes/explicitH.js";
 import type { LabelBox, LabelObstacle } from "../label/placement.js";
 import { isStructural } from "../representation.js";
 import { modelToPx, pxPerModelUnit } from "../style.js";
-import { atomLabelPlacement } from "./build.js";
+import { atomLabelPlacements } from "./build.js";
 import type { LinePrimitive, RenderScene, ScenePoint, SceneSource } from "./types.js";
 
 export type CollisionKind =
@@ -168,6 +168,10 @@ export function detectCollisions(
     }
   }
 
+  // THE SAME MAP `buildScene` USED, built the same way. A phantom hydrogen's
+  // stand-off is measured against its host's obstacles, so a second, separate
+  // measurement here would check hydrogens the scene never drew.
+  const placements = atomLabelPlacements(mol, style, representation);
   const centres = new Map<AtomId, ScenePoint>();
   const obstacles = new Map<AtomId, readonly LabelObstacle[]>();
   const boxes = new Map<AtomId, LabelBox>();
@@ -175,7 +179,7 @@ export function detectCollisions(
     const atom = getAtom(mol, atomId);
     if (atom === undefined) continue;
     centres.set(atomId, modelToPx(style, atom.pos));
-    const placement = atomLabelPlacement(mol, atomId, style, representation);
+    const placement = placements.get(atomId);
     if (placement === undefined) continue;
     obstacles.set(atomId, placement.obstacles);
     boxes.set(atomId, placement.clearBox);
@@ -314,7 +318,7 @@ export function detectCollisions(
   // boxes checked are the boxes trimmed against — the scene carries a run's
   // origin but not the padded per-span rects, and re-measuring here would be
   // a second measurer with its own answer.
-  const hydrogens = phantomHydrogens(mol, style, representation);
+  const hydrogens = phantomHydrogens(mol, style, representation, placements);
   for (let i = 0; i < hydrogens.length; i++) {
     const hydrogen = hydrogens[i]!;
     const source: SceneSource = {

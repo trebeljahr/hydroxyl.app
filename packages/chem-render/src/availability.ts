@@ -21,10 +21,16 @@
  * called first and safely.
  */
 
-import { atomsWithUncountableLonePairs, canCondense, isKnownElement } from "@starter/chem-core";
-import type { AtomId, Molecule } from "@starter/chem-core";
+import {
+  atomsWithUncountableLonePairs,
+  canCondense,
+  isKnownElement,
+  lonePairCount,
+} from "@starter/chem-core";
+import type { AtomId, LonePairReason, Molecule } from "@starter/chem-core";
 
-import { VIEW_KINDS } from "./representation.js";
+import { labelOverride } from "./label/visibility.js";
+import { isTextViewKind, VIEW_KINDS } from "./representation.js";
 import type { ViewKind } from "./representation.js";
 
 export type UnavailableReason =
@@ -38,8 +44,30 @@ export type UnavailableReason =
   | "unknown-element"
   /** Lewis only: an element with no default valences has no honest count. */
   | "no-lone-pair-data"
+  /**
+   * Lewis only, and a DIFFERENT failure from the one above: the element's
+   * valences are known perfectly well, and the atom has more bonds than they
+   * allow, so the electron budget the count subtracts from is already
+   * negative. chem-core distinguishes the two as `LonePairReason`, and
+   * collapsing them here printed "C has no default valences" over a carbon —
+   * a sentence that is simply false, in the cell of a published figure.
+   */
+  | "over-valent"
   /** Condensed only: there is no linear spelling of a ring. */
-  | "cyclic";
+  | "cyclic"
+  /**
+   * Text views only: an atom is drawn as an abbreviation — "Ph", "Boc", "R'" —
+   * and a formula cannot say what it stands for.
+   *
+   * The graph under a "Ph" is whatever the author actually drew, usually a
+   * bare carbon, so the formula is not merely incomplete: benzyl alcohol drawn
+   * as Ph–CH2–OH condenses to "CH3CH2OH" and sums to "C2H6O", which is
+   * ethanol. A cell that confidently states the wrong molecule is worse than
+   * the empty one this whole module exists to prevent. The STRUCTURAL views
+   * are unaffected — they draw the abbreviation, which is exactly what the
+   * author asked for.
+   */
+  | "abbreviated-label";
 
 export type ViewAvailability =
   | { readonly available: true }
@@ -85,13 +113,39 @@ export function representationAvailability(
   }
 
   if (kind === "lewis") {
-    const uncountable = atomsWithUncountableLonePairs(mol);
-    if (uncountable.length > 0) {
+    // Both arms of chem-core's `LonePairReason`, kept apart. The element-level
+    // failure is reported first: an atom whose element has no valences at all
+    // cannot also be over-valent, and a molecule holding one of each is
+    // better described by the more fundamental of the two.
+    const uncountable = byLonePairReason(mol);
+    const noData = uncountable.get("no-valence-data") ?? [];
+    if (noData.length > 0) {
       return {
         available: false,
         reason: "no-lone-pair-data",
-        message: `${describe(mol, uncountable, "has")} no default valences, so their lone pairs cannot be counted.`,
-        atomIds: uncountable,
+        message: `${describe(mol, noData, "has")} no default valences, so their lone pairs cannot be counted.`,
+        atomIds: noData,
+      };
+    }
+    const overValent = uncountable.get("over-subscribed") ?? [];
+    if (overValent.length > 0) {
+      return {
+        available: false,
+        reason: "over-valent",
+        message: `${describe(mol, overValent, "has")} more bonds than its valence allows, so the lone pairs cannot be counted.`,
+        atomIds: overValent,
+      };
+    }
+  }
+
+  if (isTextViewKind(kind)) {
+    const abbreviated = atomsDrawnAsAbbreviations(mol);
+    if (abbreviated.length > 0) {
+      return {
+        available: false,
+        reason: "abbreviated-label",
+        message: labelRefusal(mol, abbreviated),
+        atomIds: abbreviated,
       };
     }
   }
@@ -138,6 +192,82 @@ function atomsWithUnknownElements(mol: Molecule): AtomId[] {
     if (!isKnownElement(atom.element)) out.push(atomId);
   }
   return out;
+}
+
+/**
+ * The atoms whose lone pairs cannot be counted, split by chem-core's reason.
+ *
+ * `atomsWithUncountableLonePairs` answers "which", `lonePairCount` answers
+ * "why", and this asks the second of the first's answers rather than walking
+ * the molecule twice — so the two can never disagree about which atoms are in
+ * the report.
+ */
+function byLonePairReason(mol: Molecule): Map<LonePairReason, AtomId[]> {
+  const out = new Map<LonePairReason, AtomId[]>();
+  for (const atomId of atomsWithUncountableLonePairs(mol)) {
+    const result = lonePairCount(mol, atomId);
+    // Narrowing, not a default: `atomsWithUncountableLonePairs` returns
+    // exactly the atoms whose count came back `unknown`.
+    if (result.kind !== "unknown") continue;
+    const bucket = out.get(result.reason);
+    if (bucket === undefined) out.set(result.reason, [atomId]);
+    else bucket.push(atomId);
+  }
+  return out;
+}
+
+/**
+ * Atoms carrying a display override.
+ *
+ * Through `labelOverride`, which is this package's single source of truth for
+ * "is there an override" — a label of one space is not one, and a second test
+ * here would be a second answer.
+ */
+function atomsDrawnAsAbbreviations(mol: Molecule): AtomId[] {
+  const out: AtomId[] = [];
+  for (const atomId of mol.atomIds) {
+    const atom = mol.atoms[atomId];
+    if (atom === undefined) continue;
+    if (labelOverride(atom) !== undefined) out.push(atomId);
+  }
+  return out;
+}
+
+/**
+ * "Ph is drawn as an abbreviation, so a formula cannot state what it stands
+ * for." / "Ph, Boc are drawn as abbreviations, so … what they stand for."
+ *
+ * The abbreviations THEMSELVES, not their elements, because "C is drawn as an
+ * abbreviation" tells a reader nothing about which atom to look at.
+ *
+ * The WHOLE sentence, unlike `describe` below, which returns a subject the
+ * caller completes. The trailing clause has to agree in number with the
+ * subject — one "Ph" takes "what it stands for", two take "what they stand
+ * for" — and a fixed clause bolted on at the call site printed "Ph … what they
+ * stand for" into the cell of a figure, which is the register this whole
+ * module exists to keep out of one.
+ */
+function labelRefusal(mol: Molecule, atomIds: readonly AtomId[]): string {
+  const labels = [
+    ...new Set(
+      atomIds.flatMap((id) => {
+        const atom = mol.atoms[id];
+        const label = atom === undefined ? undefined : labelOverride(atom);
+        return label === undefined ? [] : [label];
+      }),
+    ),
+  ];
+  const tail = "so a formula cannot state what";
+  if (labels.length === 1) {
+    return `${labels[0]} is drawn as an abbreviation, ${tail} it stands for.`;
+  }
+  // Named while there are few enough to read, counted past that — the same
+  // rule `describe` follows, for the same reason.
+  const subject =
+    labels.length > 1 && labels.length <= 3
+      ? labels.join(", ")
+      : `${atomIds.length} atoms`;
+  return `${subject} are drawn as abbreviations, ${tail} they stand for.`;
 }
 
 /** "Fe has" / "R, X are" / "7 atoms have" — the subject of the messages
