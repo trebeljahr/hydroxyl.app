@@ -60,4 +60,10 @@ export * from "./scene/bounds.js";
 // a report on the scene is a field somebody eventually serialises.
 export * from "./scene/collide.js";
 export * from "./svg/serialize.js";
+// Panel figures: N representations of the one molecule on a grid, composed
+// with ONE style (decision 5) and serialised as one namespaced SVG root.
+// `svg/emit.js` is deliberately not re-exported; it is the shared mechanics.
+export * from "./figure/compose.js";
+export * from "./figure/physical.js";
+export * from "./svg/figure.js";
 export * from "./fixtures.js";

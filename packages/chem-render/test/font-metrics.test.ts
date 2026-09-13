@@ -39,6 +39,7 @@ import {
   UNITS_PER_EM,
   X_HEIGHT,
 } from "../src/text/generated/arimo-metrics.js";
+import { ARIMO_WOFF_BASE64 } from "../src/text/generated/arimo-woff.js";
 import {
   EM_ASCENT,
   EM_CAP_HEIGHT,
@@ -155,5 +156,17 @@ describe("metrics.ts derives em fractions from the table", () => {
     }
     // Greek omega is not in a latin subset.
     expect(advanceWidthUnits(0x03a9)).toBe(NOTDEF_ADVANCE);
+  });
+});
+
+describe("the embeddable font string is the vendored font", () => {
+  it("decodes to the exact bytes the metrics were measured from", () => {
+    // An exported figure embeds this string. If it drifted from the WOFF the
+    // table was generated against, labels would be laid out for one face and
+    // drawn in another — the failure the whole metrics pipeline exists to
+    // rule out.
+    const decoded = Buffer.from(ARIMO_WOFF_BASE64, "base64");
+    expect(fontSha256(decoded)).toBe(FONT_SHA256);
+    expect(decoded.equals(FONT_BYTES)).toBe(true);
   });
 });

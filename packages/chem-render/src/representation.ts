@@ -286,3 +286,18 @@ export function defaultFlagsFor(kind: ViewKind): DisplayFlags {
     ? DEFAULT_FLAGS_BY_KIND[kind]
     : DEFAULT_DISPLAY_FLAGS;
 }
+
+/**
+ * What each view is called where a person reads it: the panel list, the
+ * representation switcher, and the marked placeholder a figure draws for a
+ * panel whose view cannot be produced. One table, so the placeholder in an
+ * exported file and the menu item that created the panel use the same words.
+ */
+export const VIEW_KIND_TITLES: Readonly<Record<ViewKind, string>> = Object.freeze({
+  skeletal: "Skeletal",
+  kekule: "Kekulé",
+  explicitH: "Explicit H",
+  lewis: "Lewis",
+  condensed: "Condensed formula",
+  sumFormula: "Sum formula",
+});
