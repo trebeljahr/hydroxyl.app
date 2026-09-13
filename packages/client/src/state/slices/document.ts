@@ -36,6 +36,7 @@ import {
   DISPLAY_FLAG_KEYS,
   createPanel,
   touchDocument,
+  withFigureLayout,
   type DisplayFlagKey,
   type Panel,
   type Representation,
@@ -411,6 +412,24 @@ export function createDocumentSlice(
         }
         if (next.every((panel, i) => panel === panels[i])) return;
         commitPanels("Reorder panels", next);
+      },
+
+      movePanel(id, delta) {
+        const panels = get().document.panels;
+        const from = panels.findIndex((panel) => panel.id === id);
+        const to = from + delta;
+        if (from < 0 || to < 0 || to >= panels.length) return;
+        const order = panels.map((panel) => panel.id);
+        order[from] = order[to]!;
+        order[to] = id;
+        get().reorderPanels(order);
+      },
+
+      setFigureColumns(columns) {
+        const before = get().document;
+        const next = withFigureLayout(before, columns === null ? null : { columns });
+        if ((next.figure?.columns ?? null) === (before.figure?.columns ?? null)) return;
+        commitDocument(columns === null ? "Reset figure columns" : "Set figure columns", next);
       },
 
       beginTransaction(label) {

@@ -89,9 +89,45 @@ export async function writeTextFile(
   description: string,
   extension: string,
 ): Promise<WriteOutcome> {
-  const blob = new Blob([text], { type: mimeType });
+  return writeBlobFile(new Blob([text], { type: mimeType }), filename, mimeType, description, extension);
+}
+
+/**
+ * Write a blob, or a blob that is still being produced.
+ *
+ * WHY `content` MAY BE A FUNCTION. `showSaveFilePicker` requires transient
+ * user activation, which an `await` spends: a PNG that is rasterised first
+ * and offered for saving second opens no picker at all in Chromium. So the
+ * picker is opened FIRST, while the click that asked for the export still
+ * counts, and only then is the content produced. The download fallback has
+ * no such constraint and produces the content before clicking its anchor.
+ *
+ * A producer that throws is reported as a failure with its message, never as
+ * a silent empty file.
+ */
+export async function writeBlobFile(
+  content: Blob | (() => Promise<Blob>),
+  filename: string,
+  mimeType: string,
+  description: string,
+  extension: string,
+): Promise<WriteOutcome> {
+  const produce = async (): Promise<Blob> =>
+    typeof content === "function" ? content() : content;
+  const failure = (error: unknown): WriteOutcome => ({
+    ok: false,
+    cancelled: false,
+    message: error instanceof Error ? error.message : String(error),
+  });
+
   const picker = fsaWindow()?.showSaveFilePicker;
-  if (typeof picker !== "function") return downloadBlob(blob, filename);
+  if (typeof picker !== "function") {
+    try {
+      return downloadBlob(await produce(), filename);
+    } catch (error) {
+      return failure(error);
+    }
+  }
 
   let handle: FileSystemFileHandle;
   try {
@@ -100,10 +136,22 @@ export async function writeTextFile(
       types: [{ description, accept: { [mimeType]: [extension] } }],
     });
   } catch (error) {
+    // Dismissed: the user said no. Anything else (a sandboxed iframe, a
+    // blocked picker): fall back to a plain download rather than failing an
+    // export the browser is perfectly able to deliver.
     if (isDismissal(error)) return { ok: false, cancelled: true };
-    // A picker that is present but refused — a cross-origin iframe, a
-    // permissions policy — is not a reason to lose the export.
-    return downloadBlob(blob, filename);
+    try {
+      return downloadBlob(await produce(), filename);
+    } catch (produceError) {
+      return failure(produceError);
+    }
+  }
+
+  let blob: Blob;
+  try {
+    blob = await produce();
+  } catch (error) {
+    return failure(error);
   }
 
   try {

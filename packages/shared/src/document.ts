@@ -146,12 +146,31 @@ export interface DocumentMetadata {
   readonly notes?: string;
 }
 
+/**
+ * How the panels are laid out when they are exported as one figure.
+ *
+ * FIGURE-LEVEL, not per panel and not on the molecule (decision 12 keeps view
+ * state off the molecule). The key is OMITTED when the document has never set
+ * a layout, and the renderer then picks a default from the panel count; that
+ * is what lets this land without a schema version bump — a document written
+ * before the field existed decodes to exactly what it always meant.
+ */
+export interface FigureLayout {
+  /** Panels per row, at least 1. */
+  readonly columns: number;
+}
+
+/** Upper bound on `FigureLayout.columns`. A wider grid is not a figure. */
+export const MAX_FIGURE_COLUMNS = 12;
+
 export interface SketchDocument {
   readonly schemaVersion: number;
   readonly id: string;
   readonly molecule: Molecule;
   readonly stylePreset: StylePresetId;
   readonly panels: readonly Panel[];
+  /** Omitted, never `undefined`, when no layout has been chosen. */
+  readonly figure?: FigureLayout;
   readonly metadata: DocumentMetadata;
 }
 
@@ -346,6 +365,7 @@ export interface CreateDocumentInit {
   readonly molecule?: Molecule | undefined;
   readonly stylePreset?: StylePresetId | undefined;
   readonly panels?: readonly Panel[] | undefined;
+  readonly figure?: FigureLayout | undefined;
   /** Injectable ISO-8601 "now", so tests are deterministic and an importer
    *  can stamp a document with the file's own timestamp. */
   readonly now?: string | undefined;
@@ -354,7 +374,7 @@ export interface CreateDocumentInit {
 export function createDocument(init: CreateDocumentInit = {}): SketchDocument {
   const now = init.now ?? new Date().toISOString();
   const stylePreset = init.stylePreset ?? "screen";
-  return {
+  const doc: SketchDocument = {
     schemaVersion: SCHEMA_VERSION,
     id: init.id ?? generateId("doc"),
     molecule: init.molecule ?? emptyMolecule(),
@@ -370,6 +390,25 @@ export function createDocument(init: CreateDocumentInit = {}): SketchDocument {
       modifiedAt: now,
     }),
   };
+  // Assigned only when present, so a document with no layout has no key.
+  return init.figure === undefined ? doc : withFigureLayout(doc, init.figure);
+}
+
+/**
+ * `doc` with its figure layout replaced, or removed with `null`. The one
+ * place a `figure` key is written, so it is never `undefined`-valued and the
+ * column count is always a whole number in range.
+ */
+export function withFigureLayout(
+  doc: SketchDocument,
+  layout: FigureLayout | null,
+): SketchDocument {
+  const { figure: _previous, ...rest } = doc;
+  void _previous;
+  if (layout === null) return rest;
+  const columns = Math.max(1, Math.min(MAX_FIGURE_COLUMNS, Math.floor(layout.columns)));
+  if (!Number.isFinite(columns)) return rest;
+  return { ...rest, figure: { columns } };
 }
 
 /**
@@ -782,6 +821,11 @@ export const sketchDocumentSchema = z
     molecule: moleculeSchema,
     stylePreset: z.enum(["publication", "screen"]),
     panels: z.array(panelSchema),
+    // Optional and additive: a file from before the field existed has no key,
+    // and still decodes at SCHEMA_VERSION 1. See `FigureLayout`.
+    figure: z
+      .object({ columns: z.number().int().min(1).max(MAX_FIGURE_COLUMNS) })
+      .optional(),
     metadata: documentMetadataSchema,
   })
   .superRefine((doc, ctx) => {
@@ -798,6 +842,20 @@ export const sketchDocumentSchema = z
       }
       seen.add(panel.id);
     });
+  })
+  .transform((doc): SketchDocument => {
+    // Rebuilt key by key rather than spread: a spread would carry a `figure`
+    // key holding `undefined` whenever the parser saw one, which is rule 1 of
+    // this file, and it would keep the parser's own object identity.
+    const base: SketchDocument = {
+      schemaVersion: doc.schemaVersion,
+      id: doc.id,
+      molecule: doc.molecule,
+      stylePreset: doc.stylePreset,
+      panels: doc.panels,
+      metadata: doc.metadata,
+    };
+    return doc.figure === undefined ? base : withFigureLayout(base, doc.figure);
   });
 
 /** Compile-time guard that the schema really produces a `SketchDocument`;
@@ -917,14 +975,16 @@ function encodeMetadata(metadata: DocumentMetadata): JsonObject {
 /** A JSON-safe plain value: no class instances, no `undefined`-valued keys,
  *  nothing that `structuredClone` or `JSON.stringify` would alter. */
 export function encodeDocument(doc: SketchDocument): unknown {
-  return {
+  const encoded: JsonObject = {
     schemaVersion: doc.schemaVersion,
     id: doc.id,
     molecule: encodeMolecule(doc.molecule),
     stylePreset: doc.stylePreset,
     panels: doc.panels.map(encodePanel),
-    metadata: encodeMetadata(doc.metadata),
   };
+  if (doc.figure !== undefined) encoded.figure = { columns: doc.figure.columns };
+  encoded.metadata = encodeMetadata(doc.metadata);
+  return encoded;
 }
 
 /** Throws a `ZodError` listing every problem with the input. */

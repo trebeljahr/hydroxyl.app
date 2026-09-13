@@ -83,6 +83,9 @@ export function copyOf(
     title: options.title ?? `${doc.metadata.title} copy`,
     stylePreset: doc.stylePreset,
     panels: doc.panels,
+    // Field by field through `createDocument`, so a new document-level field
+    // has to be named here or a Duplicate silently drops it.
+    figure: doc.figure,
     now: options.now,
   });
 }

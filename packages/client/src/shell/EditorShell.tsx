@@ -31,12 +31,14 @@ import { useCallback, useState } from "react";
 import type { ReactElement } from "react";
 
 import { EditorCanvas } from "@/canvas";
+import { RepresentationSwitcher } from "@/canvas/RepresentationSwitcher";
 import { useKeyBindings } from "@/editor/useKeyBindings";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { flushEditorDocument } from "@/persistence/session";
 
 import { CanvasErrorBoundary } from "./CanvasErrorBoundary";
 import { CommandPalette } from "./CommandPalette";
+import { ExportDialog } from "./ExportDialog";
 import { useFileDrop } from "./useFileDrop";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { StatusBar } from "./StatusBar";
@@ -61,13 +63,16 @@ export function EditorShell(): ReactElement {
         <TopBar />
         <div className="flex min-h-0 flex-1">
           <ToolRail />
-          <main className="min-w-0 flex-1">
-            {/* OUTSIDE the canvas, necessarily: the scene is built in a
-                `useMemo` inside `EditorCanvas`, so a boundary mounted within
-                it could not catch its own render throw. */}
-            <CanvasErrorBoundary onFlush={flushEditorDocument}>
-              <EditorCanvas />
-            </CanvasErrorBoundary>
+          <main className="flex min-w-0 flex-1 flex-col">
+            <RepresentationSwitcher />
+            <div className="min-h-0 flex-1">
+              {/* OUTSIDE the canvas, necessarily: the scene is built in a
+                  `useMemo` inside `EditorCanvas`, so a boundary mounted within
+                  it could not catch its own render throw. */}
+              <CanvasErrorBoundary onFlush={flushEditorDocument}>
+                <EditorCanvas />
+              </CanvasErrorBoundary>
+            </div>
           </main>
           <PropertiesPanel />
         </div>
@@ -82,6 +87,7 @@ export function EditorShell(): ReactElement {
       </div>
 
       <CommandPalette />
+      <ExportDialog />
     </TooltipProvider>
   );
 }

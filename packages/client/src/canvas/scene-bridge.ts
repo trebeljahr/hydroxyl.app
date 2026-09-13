@@ -28,6 +28,7 @@ import {
   buildScene,
   isStructuralViewKind,
   representation,
+  representationAvailability,
 } from "@starter/chem-render";
 import type {
   RenderScene,
@@ -150,4 +151,55 @@ export function buildDocumentScene(
       ? representation("skeletal")
       : toRenderRepresentation(panel.representation);
   return buildScene(doc.molecule, renderStyleFor(doc), rep);
+}
+
+/**
+ * The panel the EDITOR CANVAS draws, given the switcher's active panel.
+ *
+ * The active panel wins only when the canvas can honestly edit through it: a
+ * STRUCTURAL view whose availability holds (or whose only complaint is that
+ * nothing has been drawn yet — an empty canvas is where drawing starts).
+ * Otherwise the canvas keeps the default structural panel, and the switcher
+ * says why:
+ *
+ *   - a text view has no atoms to click, and the drawing tools would sprout
+ *     atoms onto a canvas that only shows "C6H6";
+ *   - an unavailable view either throws (an unknown element) or draws a
+ *     picture its own availability check calls wrong.
+ *
+ * The view flag commands and Fit act on THIS panel, so a toggle always edits
+ * the panel that is on screen rather than a different one.
+ */
+export function canvasPanelFor(
+  doc: SketchDocument,
+  activePanelId: PanelId | null,
+): Panel | undefined {
+  if (activePanelId !== null) {
+    const active = doc.panels.find((panel) => panel.id === activePanelId);
+    if (active !== undefined && canvasCanDraw(doc, active)) return active;
+  }
+  return panelToDraw(doc);
+}
+
+/** Why the canvas is not showing `panel`, or null when it can. */
+export function canvasRefusal(doc: SketchDocument, panel: Panel): string | null {
+  const { kind } = panel.representation;
+  if (!isStructuralViewKind(kind)) {
+    return "A text view has no atoms to edit, so the canvas keeps the structure. The figure export shows this panel.";
+  }
+  const availability = representationAvailability(doc.molecule, kind);
+  if (availability.available || availability.reason === "empty-molecule") return null;
+  return availability.message;
+}
+
+function canvasCanDraw(doc: SketchDocument, panel: Panel): boolean {
+  return canvasRefusal(doc, panel) === null;
+}
+
+/** The scene the editor canvas shows. */
+export function buildCanvasScene(
+  doc: SketchDocument,
+  activePanelId: PanelId | null,
+): RenderScene {
+  return buildDocumentScene(doc, canvasPanelFor(doc, activePanelId)?.id);
 }

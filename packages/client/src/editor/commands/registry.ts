@@ -41,11 +41,12 @@ import type {
   Vec2,
 } from "@starter/chem-core";
 import { COMMON_ORGANIC_ELEMENTS } from "@starter/chem-core";
-import { DISPLAY_FLAG_KEYS } from "@starter/shared";
+import { DISPLAY_FLAG_KEYS, VIEW_KINDS } from "@starter/shared";
+import { VIEW_KIND_TITLES, panelLetter, representationAvailability } from "@starter/chem-render";
 import type { DisplayFlagKey } from "@starter/shared";
 
 import { fitBounds } from "@/canvas/metrics";
-import { buildDocumentScene, panelToDraw } from "@/canvas/scene-bridge";
+import { buildCanvasScene, canvasPanelFor } from "@/canvas/scene-bridge";
 // From `machine`, not from the `@/editor/interaction` barrel: the barrel
 // re-exports the React adapter, and this registry has to stay importable by a
 // plain-node test.
@@ -56,6 +57,13 @@ import { guardedOps } from "@/state/chem-guard";
 import type { EditorState, EditorStore, Selection } from "@/state";
 
 import { cleanUpStructure } from "./cleanup";
+import {
+  copyFigure,
+  copyMolblock,
+  copySmiles,
+  exportFigurePng,
+  exportFigureSvg,
+} from "./figure";
 import {
   exportCurrent,
   newSketch,
@@ -73,7 +81,8 @@ export type CommandGroup =
   | "bond"
   | "element"
   | "ring"
-  | "chain";
+  | "chain"
+  | "figure";
 
 export interface Command {
   readonly id: string;
@@ -480,13 +489,15 @@ const DISPLAY_FLAG_COMMANDS: readonly Command[] = DISPLAY_FLAG_KEYS.map((key) =>
     title: label.title,
     keywords: [...label.keywords],
     group: "view",
-    enabled: (state) => panelToDraw(state.document) !== undefined,
+    enabled: (state) => canvasPanelFor(state.document, state.ui.activePanelId) !== undefined,
     run: (store) => {
       const state = store.getState();
       // The panel the CANVAS draws, resolved the same way the canvas resolves
-      // it. Hardcoding "panel-skeletal" would silently target nothing in a
-      // document whose panels were reordered.
-      const panel = panelToDraw(state.document);
+      // it — including the switcher's active panel. Hardcoding
+      // "panel-skeletal" would silently target nothing in a document whose
+      // panels were reordered, and ignoring the active panel would toggle a
+      // flag on a panel that is not on screen.
+      const panel = canvasPanelFor(state.document, state.ui.activePanelId);
       if (panel === undefined) return;
       state.updatePanel(panel.id, {
         display: { [key]: !panel.representation.display[key] },
@@ -813,7 +824,10 @@ const VIEW_COMMANDS: readonly Command[] = [
       // keyed on the document would rebuild a scene per frame for a command
       // nobody is running. `buildDocumentScene` costs 0.037 ms on a 300-atom
       // structure, so paying it on the keystroke is free.
-      state.zoomToFit(fitBounds(buildDocumentScene(state.document)), 0);
+      state.zoomToFit(
+        fitBounds(buildCanvasScene(state.document, state.ui.activePanelId)),
+        0,
+      );
     },
   },
   {
@@ -916,8 +930,92 @@ const FILE_COMMANDS: readonly Command[] = [
   },
 ];
 
+// ---------------------------------------------------------------------------
+// Figure: panels, export and the structure clipboard
+// ---------------------------------------------------------------------------
+
+const hasPanels = (state: EditorState): boolean =>
+  state.document.panels.length > 0 && !isEmpty(state.document.molecule);
+
+const hasStructure = (state: EditorState): boolean => !isEmpty(state.document.molecule);
+
+const FIGURE_COMMANDS: readonly Command[] = [
+  {
+    id: "figure.export-dialog",
+    title: "Export figure…",
+    keywords: ["export", "figure", "svg", "png", "publication", "journal", "dpi", "panels"],
+    shortcut: "Mod+Shift+e",
+    group: "figure",
+    enabled: always,
+    run: (store) => {
+      store.getState().setExportDialogOpen(true);
+    },
+  },
+  {
+    id: "figure.export-svg",
+    title: "Export figure as SVG",
+    keywords: ["export", "figure", "svg", "vector", "illustrator", "inkscape"],
+    group: "figure",
+    enabled: hasPanels,
+    run: (store) => exportFigureSvg(store),
+  },
+  {
+    id: "figure.export-png",
+    title: "Export figure as PNG",
+    keywords: ["export", "figure", "png", "raster", "image", "dpi"],
+    group: "figure",
+    enabled: hasPanels,
+    run: (store) => exportFigurePng(store),
+  },
+  {
+    id: "figure.copy",
+    title: "Copy figure",
+    keywords: ["copy", "clipboard", "figure", "svg", "png", "image"],
+    group: "figure",
+    enabled: hasPanels,
+    run: (store) => copyFigure(store),
+  },
+  {
+    id: "figure.copy-smiles",
+    title: "Copy as SMILES",
+    keywords: ["copy", "clipboard", "smiles", "rdkit", "text"],
+    group: "figure",
+    enabled: hasStructure,
+    run: (store) => copySmiles(store),
+  },
+  {
+    id: "figure.copy-molblock",
+    title: "Copy as molfile",
+    keywords: ["copy", "clipboard", "molfile", "molblock", "mol", "v2000", "mdl"],
+    group: "figure",
+    enabled: hasStructure,
+    run: (store) => copyMolblock(store),
+  },
+  // One per view kind, gated by the availability function — the palette shows
+  // the kinds this molecule cannot be drawn as disabled rather than hiding
+  // them, so the choice is visible and the panel list says why.
+  ...VIEW_KINDS.map(
+    (kind): Command => ({
+      id: `figure.add-panel.${kind}`,
+      title: `Add panel: ${VIEW_KIND_TITLES[kind]}`,
+      keywords: ["add", "panel", "figure", "view", "representation", kind, VIEW_KIND_TITLES[kind]],
+      group: "figure",
+      enabled: (state) =>
+        isEmpty(state.document.molecule) ||
+        representationAvailability(state.document.molecule, kind).available,
+      run: (store) => {
+        const state = store.getState();
+        state.addPanel(kind);
+        const index = store.getState().document.panels.length - 1;
+        state.setStatusMessage(`Added panel (${panelLetter(index)}): ${VIEW_KIND_TITLES[kind]}`);
+      },
+    }),
+  ),
+];
+
 export const COMMANDS: readonly Command[] = Object.freeze([
   ...FILE_COMMANDS,
+  ...FIGURE_COMMANDS,
   ...toolCommands(),
   ...bondOrderCommands(),
   ...bondStereoCommands(),

@@ -53,7 +53,7 @@ import { describeAtom } from "@/editor/traversal";
 import { editorStore, useEditorStore } from "@/state";
 
 import { consumeCanvasCrash } from "./crash";
-import { buildDocumentScene, renderStyleFor } from "./scene-bridge";
+import { buildCanvasScene, renderStyleFor } from "./scene-bridge";
 import { createSceneIndex, fitBounds } from "./metrics";
 import { type PickContext } from "./pick";
 import { SceneLayer } from "./SceneLayer";
@@ -111,7 +111,13 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
   // when an op changes nothing). So a pan, a hover or a selection change
   // re-renders this component without rebuilding the scene, and only a genuine
   // document change pays for a rebuild.
-  const scene = useMemo(() => buildDocumentScene(doc), [doc]);
+  const activePanelId = useEditorStore((state) => state.ui.activePanelId);
+  // The switcher's panel when the canvas can edit through it, the default
+  // structural panel otherwise — see `canvasPanelFor`.
+  const scene = useMemo(
+    () => buildCanvasScene(doc, activePanelId),
+    [doc, activePanelId],
+  );
   const index = useMemo(
     () => createSceneIndex(scene, doc.molecule),
     [scene, doc.molecule],

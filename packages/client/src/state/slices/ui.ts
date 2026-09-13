@@ -26,6 +26,9 @@ export const INITIAL_UI_STATE: UiState = Object.freeze({
   commandPaletteOpen: false,
   statusMessage: null,
   elementInputBuffer: "",
+  activePanelId: null,
+  exportDialogOpen: false,
+  figureExport: Object.freeze({ width: "single", customWidthCm: 12, dpi: 300 }),
 });
 
 export interface UiSliceOptions {
@@ -89,6 +92,40 @@ export function createUiSlice(
       if (get().ui.elementInputBuffer === buffer) return;
       set((draft) => {
         draft.ui.elementInputBuffer = buffer;
+      });
+    },
+
+    setActivePanel(id) {
+      if (get().ui.activePanelId === id) return;
+      set((draft) => {
+        draft.ui.activePanelId = id;
+      });
+    },
+
+    setExportDialogOpen(open) {
+      if (get().ui.exportDialogOpen === open) return;
+      set((draft) => {
+        draft.ui.exportDialogOpen = open;
+      });
+    },
+
+    setFigureExport(patch) {
+      const current = get().ui.figureExport;
+      const next = { ...current };
+      if (patch.width !== undefined) next.width = patch.width;
+      if (patch.dpi !== undefined) next.dpi = patch.dpi;
+      if (patch.customWidthCm !== undefined && Number.isFinite(patch.customWidthCm)) {
+        next.customWidthCm = patch.customWidthCm;
+      }
+      if (
+        next.width === current.width &&
+        next.dpi === current.dpi &&
+        next.customWidthCm === current.customWidthCm
+      ) {
+        return;
+      }
+      set((draft) => {
+        draft.ui.figureExport = next;
       });
     },
 

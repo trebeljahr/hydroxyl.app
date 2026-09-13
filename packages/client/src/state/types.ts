@@ -159,6 +159,28 @@ export interface UiState {
    * flushes and clears it; Escape clears it unconditionally.
    */
   readonly elementInputBuffer: string;
+  /**
+   * The panel the canvas shows and the view options act on. NOT persisted and
+   * not undoable: which panel you are looking at is a viewing choice, like
+   * the viewport, and an undo that flipped the canvas to another view would
+   * look like the edit had been lost. `null` means the default panel.
+   */
+  readonly activePanelId: PanelId | null;
+  readonly exportDialogOpen: boolean;
+  readonly figureExport: FigureExportSettings;
+}
+
+/**
+ * The physical size a figure is exported at. A journal specifies a figure as
+ * a printed width and a resolution, so that is what is chosen; pixels are
+ * derived. Session-only for now — see the report on whether it belongs in
+ * the document.
+ */
+export interface FigureExportSettings {
+  readonly width: "single" | "double" | "custom";
+  /** Used when `width` is "custom". */
+  readonly customWidthCm: number;
+  readonly dpi: 300 | 600;
 }
 
 // ---------------------------------------------------------------------------
@@ -215,6 +237,10 @@ export interface DocumentSlice {
   setPanelCaption(id: PanelId, caption: string | null): void;
   /** `order` must be a permutation of the current panel ids. */
   reorderPanels(order: readonly PanelId[]): void;
+  /** Move one panel up (-1) or down (+1) in the figure order. */
+  movePanel(id: PanelId, delta: -1 | 1): void;
+  /** Panels per row in the exported figure; null returns to the default. */
+  setFigureColumns(columns: number | null): void;
 
   beginTransaction(label: string): void;
   commitTransaction(): void;
@@ -285,6 +311,9 @@ export interface UiSlice {
   setCommandPaletteOpen(open: boolean): void;
   toggleCommandPalette(): void;
   setElementInputBuffer(buffer: string): void;
+  setActivePanel(id: PanelId | null): void;
+  setExportDialogOpen(open: boolean): void;
+  setFigureExport(patch: Partial<FigureExportSettings>): void;
   clearElementInputBuffer(): void;
 }
 

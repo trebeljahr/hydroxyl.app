@@ -18,6 +18,7 @@
 import type { ReactElement } from "react";
 import {
   CommandIcon,
+  ImageDownIcon,
   MoonIcon,
   Redo2Icon,
   SparklesIcon,
@@ -127,6 +128,12 @@ export function TopBar(): ReactElement {
           <>
             <SparklesIcon className="size-4" />
             <span aria-hidden="true">Clean up</span>
+          </>
+        </CommandButton>
+        <CommandButton id="figure.export-dialog">
+          <>
+            <ImageDownIcon className="size-4" />
+            <span aria-hidden="true">Export</span>
           </>
         </CommandButton>
         <CommandButton id="view.command-palette">

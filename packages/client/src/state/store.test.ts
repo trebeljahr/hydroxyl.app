@@ -619,6 +619,45 @@ describe("documents and panels", () => {
     expect(store.getState().canUndo()).toBe(false);
   });
 
+  it("moves a panel one step at a time, and ignores a move off either end", () => {
+    const store = makeStore();
+    const added = store.getState().addPanel("lewis");
+    const ids = (): string[] => store.getState().document.panels.map((p) => p.id);
+    const [first, second] = ids();
+    expect(ids()).toEqual([first, second, added]);
+
+    store.getState().movePanel(added, -1);
+    expect(ids()).toEqual([first, added, second]);
+    const pastBefore = store.getState().history.past.length;
+    store.getState().movePanel(first!, -1);
+    store.getState().movePanel(second!, 1);
+    expect(store.getState().history.past).toHaveLength(pastBefore);
+
+    store.getState().undo();
+    expect(ids()).toEqual([first, second, added]);
+  });
+
+  it("sets and resets the figure column count as an undoable document edit", () => {
+    const store = makeStore();
+    expect(store.getState().document.figure).toBeUndefined();
+    store.getState().setFigureColumns(2);
+    expect(store.getState().document.figure).toEqual({ columns: 2 });
+    const past = store.getState().history.past.length;
+    store.getState().setFigureColumns(2);
+    expect(store.getState().history.past).toHaveLength(past);
+    store.getState().setFigureColumns(null);
+    expect(Object.hasOwn(store.getState().document, "figure")).toBe(false);
+    store.getState().undo();
+    expect(store.getState().document.figure).toEqual({ columns: 2 });
+  });
+
+  it("keeps the active panel out of history", () => {
+    const store = makeStore();
+    store.getState().setActivePanel("panel-sum-formula");
+    expect(store.getState().ui.activePanelId).toBe("panel-sum-formula");
+    expect(store.getState().history.past).toHaveLength(0);
+  });
+
   it("ignores a reorder that is not a permutation", () => {
     const store = makeStore();
     const panels = store.getState().document.panels;

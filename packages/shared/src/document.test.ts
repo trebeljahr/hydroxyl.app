@@ -15,6 +15,8 @@ import {
   moleculeSchema,
   safeDecodeDocument,
   touchDocument,
+  withFigureLayout,
+  MAX_FIGURE_COLUMNS,
   type SketchDocument,
 } from "./document.js";
 
@@ -515,3 +517,50 @@ describe("factories", () => {
     expect(createPanel("kekule", "Scheme 2").caption).toBe("Scheme 2");
   });
 });
+
+describe("figure layout (additive, no schema bump)", () => {
+  it("round-trips a column count", () => {
+    const original = createDocument({
+      id: "doc-figure",
+      molecule: ethanol(),
+      figure: { columns: 2 },
+      now: NOW,
+    });
+    const encoded = JSON.parse(JSON.stringify(encodeDocument(original))) as Record<string, unknown>;
+    expect(encoded.figure).toEqual({ columns: 2 });
+    expect(encoded.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(SCHEMA_VERSION).toBe(1);
+    const decoded = decodeDocument(encoded);
+    expect(decoded.figure).toEqual({ columns: 2 });
+    expect(decoded).toEqual(original);
+  });
+
+  it("decodes a v1 document written before the field existed, with no key", () => {
+    const old = JSON.parse(
+      JSON.stringify(encodeDocument(createDocument({ id: "old", molecule: ethanol(), now: NOW }))),
+    ) as Record<string, unknown>;
+    expect(Object.hasOwn(old, "figure")).toBe(false);
+    const decoded = decodeDocument(old);
+    expect(Object.hasOwn(decoded, "figure")).toBe(false);
+    expect(Object.hasOwn(encodeDocument(decoded) as object, "figure")).toBe(false);
+  });
+
+  it("rejects a column count that is not a whole number in range", () => {
+    const base = JSON.parse(
+      JSON.stringify(encodeDocument(createDocument({ id: "bad", molecule: ethanol(), now: NOW }))),
+    ) as Record<string, unknown>;
+    for (const columns of [0, -1, 1.5, MAX_FIGURE_COLUMNS + 1, "2"]) {
+      expect(safeDecodeDocument({ ...base, figure: { columns } }).ok).toBe(false);
+    }
+  });
+
+  it("sets and clears the layout without leaving an undefined-valued key", () => {
+    const doc = createDocument({ molecule: ethanol(), now: NOW });
+    const set = withFigureLayout(doc, { columns: 3 });
+    expect(set.figure).toEqual({ columns: 3 });
+    expect(withFigureLayout(doc, { columns: 99 }).figure).toEqual({ columns: MAX_FIGURE_COLUMNS });
+    const cleared = withFigureLayout(set, null);
+    expect(Object.hasOwn(cleared, "figure")).toBe(false);
+  });
+});
+

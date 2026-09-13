@@ -57,6 +57,7 @@ const GROUP_TITLES: Readonly<Record<Group, string>> = {
   element: "Elements",
   ring: "Ring templates",
   chain: "Chains",
+  figure: "Figure",
 };
 
 /**
@@ -70,6 +71,7 @@ const GROUP_TITLES: Readonly<Record<Group, string>> = {
  */
 export const GROUP_ORDER: readonly Group[] = [
   "file",
+  "figure",
   "tool",
   "edit",
   "select",

@@ -62,22 +62,34 @@ export function SelectContent({
 export function SelectItem({
   className,
   children,
+  description,
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.Item>) {
+}: React.ComponentProps<typeof SelectPrimitive.Item> & {
+  /**
+   * A second line under the item, OUTSIDE `ItemText` so the trigger shows only
+   * the item's name. Used to say why a disabled option is disabled.
+   */
+  readonly description?: React.ReactNode;
+}) {
   return (
     <SelectPrimitive.Item
       className={cn(
-        "focus:bg-accent focus:text-accent-foreground relative flex cursor-default select-none items-center rounded-sm py-1 pl-6 pr-2 text-xs outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+        "focus:bg-accent focus:text-accent-foreground relative flex cursor-default select-none flex-col items-start rounded-sm py-1 pl-6 pr-2 text-xs outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
         className,
       )}
       {...props}
     >
-      <span className="absolute left-1 flex size-3.5 items-center justify-center">
+      <span className="absolute left-1 top-1.5 flex size-3.5 items-center justify-center">
         <SelectPrimitive.ItemIndicator>
           <CheckIcon className="size-3" />
         </SelectPrimitive.ItemIndicator>
       </span>
       <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+      {description === undefined ? null : (
+        <span className="text-muted-foreground max-w-56 text-[11px] leading-tight">
+          {description}
+        </span>
+      )}
     </SelectPrimitive.Item>
   );
 }

@@ -55,6 +55,8 @@ import { cn } from "@/lib/utils";
 import { guardedOps } from "@/state/chem-guard";
 import { editorStore, useEditorStore } from "@/state";
 
+import { FigurePanels } from "./FigurePanels";
+
 function Field({
   label,
   hint,
@@ -424,6 +426,11 @@ export function PropertiesPanel(): ReactElement {
             : `${total} things selected. The panel edits one atom or one bond at a time; the command palette acts on the whole selection.`}
         </p>
       )}
+      {/* Below the selection, always present: the figure is a property of the
+          document, not of whatever happens to be selected. */}
+      <div className="mt-5 border-t pt-3">
+        <FigurePanels />
+      </div>
     </aside>
   );
 }
