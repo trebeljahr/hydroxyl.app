@@ -13,9 +13,12 @@
  * One accessor keeps it to one connection per tab.
  */
 
+import { createDocument } from "@starter/shared";
 import type { SketchDocument } from "@starter/shared";
 
+import { announceDocumentChange } from "./broadcast";
 import { createIndexedDbStore } from "./idb-store";
+import { clearJournal, clearJournalSupersededBy, journalSequence } from "./journal";
 import { recordFor } from "./record";
 import { markSaveFailed, markSaved, markSaving } from "./save-state";
 import { documentThumbnail } from "./thumbnail";
@@ -43,9 +46,65 @@ export function setDocumentStore(next: DocumentStore | null): void {
  */
 export async function saveDocument(doc: SketchDocument): Promise<StoreResult<void>> {
   markSaving();
+  // Captured BEFORE the await: a journal written while this write is in flight
+  // may hold a newer document than this one, and must survive it.
+  const startedAt = journalSequence();
   const result = await documentStore().put(recordFor(doc, documentThumbnail(doc)));
-  if (result.ok) markSaved();
-  else markSaveFailed(result.error.message);
+  if (result.ok) {
+    markSaved();
+    // The journal was a stand-in for THIS write. Now that the write has
+    // landed, leaving it in place would mean a later startup restoring an
+    // older copy over a newer one. Cleared only for the document just saved —
+    // a journal belonging to some other sketch is still the only copy of that
+    // sketch — and only if it was not written after this save began.
+    clearJournalSupersededBy(doc.id, startedAt);
+    // So a recents grid open in another tab stops advertising a stale row,
+    // and so an editor holding the same id learns it is no longer alone.
+    announceDocumentChange({ kind: "put", id: doc.id });
+  } else markSaveFailed(result.error.message);
+  return result;
+}
+
+/**
+ * A copy of `doc` under a FRESH id.
+ *
+ * The id must be new. All three object stores key on `doc.id` and the canvas
+ * frames its view on it, so a copy that kept the original's would overwrite
+ * its own source the first time either was saved. Used by the grid's
+ * Duplicate and by the import path, which forks rather than clobbering a
+ * stored document that is newer than the file being read.
+ */
+export function copyOf(
+  doc: SketchDocument,
+  options: { readonly title?: string | undefined; readonly now?: string | undefined } = {},
+): SketchDocument {
+  return createDocument({
+    molecule: doc.molecule,
+    title: options.title ?? `${doc.metadata.title} copy`,
+    stylePreset: doc.stylePreset,
+    panels: doc.panels,
+    now: options.now,
+  });
+}
+
+/** Rename, and tell the other tabs. */
+export async function renameDocument(id: string, title: string): Promise<StoreResult<void>> {
+  const result = await documentStore().rename(id, title);
+  if (result.ok) announceDocumentChange({ kind: "rename", id });
+  return result;
+}
+
+/** Delete, and tell the other tabs — an editor still holding this id would
+ *  otherwise resurrect it on its next autosave without anyone noticing. */
+export async function removeDocument(id: string): Promise<StoreResult<void>> {
+  const result = await documentStore().remove(id);
+  if (result.ok) {
+    // A journal about the deleted document would put it back on the next
+    // load, which is the same resurrection the cross-tab signal exists to
+    // stop — just via the other route into storage.
+    clearJournal(id);
+    announceDocumentChange({ kind: "remove", id });
+  }
   return result;
 }
 
@@ -69,5 +128,6 @@ export async function duplicateDocument(
   const copy = makeCopy(loaded.value);
   const written = await documentStore().put(recordFor(copy, documentThumbnail(copy)));
   if (!written.ok) return written;
+  announceDocumentChange({ kind: "put", id: copy.id });
   return storeOk(copy);
 }

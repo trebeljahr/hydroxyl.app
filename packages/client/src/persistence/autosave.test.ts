@@ -121,6 +121,74 @@ describe("autosave", () => {
     handle.stop();
   });
 
+  it("reports the document DIRTY on the first changed frame, mid-drag included", async () => {
+    // The window between an edit and its write is exactly the window in which
+    // that edit can still be lost — a navigation during it does not wait for
+    // IndexedDB — and the save indicator used to spend the whole of it still
+    // reading "Saved" from the previous write. So the dirty signal is raised
+    // before the debounce and before the transaction closes.
+    const store = makeStore();
+    const sink = recorder();
+    const dirty = vi.fn();
+    startAutosave(store, sink.sink, { onDirty: dirty });
+
+    store.getState().beginTransaction("Move atom");
+    store
+      .getState()
+      .applyMoleculeEdit("Move atom", (m) =>
+        guardedOps.setAtomPositions(m, [[m.atomIds[0]!, vec(0.1, 0)]]),
+      );
+
+    expect(dirty, "a drag in progress is unsaved work").toHaveBeenCalled();
+    expect(sink.saved, "and it is still not written").toHaveLength(0);
+
+    store.getState().commitTransaction();
+    await tick();
+    expect(sink.saved).toHaveLength(1);
+  });
+
+  it("does not call back dirty for a document it has already written", async () => {
+    const store = makeStore();
+    const sink = recorder();
+    const dirty = vi.fn();
+    startAutosave(store, sink.sink, { onDirty: dirty });
+
+    store.getState().applyMoleculeEdit("Retype", (m) => guardedOps.setElement(m, m.atomIds[0]!, "N"));
+    await tick();
+    expect(sink.saved).toHaveLength(1);
+    const afterWrite = dirty.mock.calls.length;
+
+    // A selection change mints no new document, so nothing is dirty.
+    store.getState().setStatusMessage("hello");
+    expect(dirty.mock.calls.length).toBe(afterWrite);
+  });
+
+  it("flush answers with a write still IN FLIGHT rather than claiming nothing is left", async () => {
+    // The canvas error boundary prints "saved" or "not saved" off this result.
+    // Resolving null for a document merely HANDED to storage let it claim a
+    // save that storage then refused.
+    const store = makeStore();
+    let settle: (result: StoreResult<void>) => void = () => undefined;
+    const handle = startAutosave(
+      store,
+      () =>
+        new Promise<StoreResult<void>>((resolve) => {
+          settle = resolve;
+        }),
+      { debounceMs: 10 },
+    );
+    handle.baseline(store.getState().document);
+    store.getState().applyMoleculeEdit("Retype", (m) => guardedOps.setElement(m, m.atomIds[0]!, "N"));
+    await tick(20);
+
+    const flushed = handle.flush();
+    settle(storeFail<void>("quota", "No room."));
+    const result = await flushed;
+    expect(result?.ok).toBe(false);
+    // And once it has actually landed, there really is nothing left.
+    handle.stop();
+  });
+
   it("coalesces a burst of untransacted edits into one write", async () => {
     const store = makeStore();
     const sink = recorder();

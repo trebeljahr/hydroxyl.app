@@ -48,6 +48,16 @@ const nextConfig: NextConfig = {
   // route table has; a route at `/a/b` would need the prefix problem solved
   // properly instead.
   trailingSlash: !isExport,
+  // WHICH BUILD THIS IS, readable from client code.
+  //
+  // The recents grid has to link at the editor, and the two builds disagree
+  // about what that URL is: a route in dev and standalone, a flat
+  // `editor.html` beside the current document in the export. Sniffing the
+  // answer off a script tag at runtime works but cannot answer during the
+  // prerender, so the emitted HTML would carry the wrong href until hydration
+  // — and in the export "/editor" is a file that does not exist. `env` is
+  // substituted at build time, so the very first byte of HTML is right.
+  env: { NEXT_PUBLIC_FILE_EXPORT: isExport ? "1" : "0" },
   images: { unoptimized: true },
   transpilePackages: ["@starter/shared", "@starter/chem-core", "@starter/chem-render"],
 };

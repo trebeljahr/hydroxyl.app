@@ -229,11 +229,54 @@ export function createIndexedDbStore(options: IndexedDbStoreOptions = {}): Docum
    */
   let connection: Promise<IDBDatabase> | null = null;
 
+  /**
+   * The SAME database, held synchronously once it has been opened.
+   *
+   * `await connect()` — even on a promise that resolved minutes ago — puts a
+   * microtask between the caller and the `put`, and the warm path has no need
+   * of one. Holding the handle keeps a flush synchronous from the event that
+   * triggered it all the way to the queued request.
+   *
+   * IT DOES NOT MAKE A TEARDOWN WRITE SURVIVE, and it was once claimed here
+   * that it did. Measured in Chrome afterwards: with the handle warm and the
+   * whole path synchronous, the three requests really are queued before
+   * `pagehide` returns — and the transaction still never commits, because the
+   * document is destroyed first. No `complete` event, no row. Rescuing an edit
+   * from a teardown needs something synchronous all the way to storage, which
+   * IndexedDB is not; see `journal.ts`.
+   *
+   * Cleared alongside `connection` whenever the handle stops being usable.
+   */
+  let ready: IDBDatabase | null = null;
+
+  function forget(): void {
+    connection = null;
+    ready = null;
+  }
+
   function connect(): Promise<IDBDatabase> {
-    connection ??= openDatabase(name, version).catch((error: unknown) => {
-      connection = null;
-      throw error;
-    });
+    connection ??= openDatabase(name, version).then(
+      (db) => {
+        ready = db;
+        // Both ways a connection can stop being usable have to drop the
+        // cached handle, or every later write would be issued against a dead
+        // database. `close` fires when the browser loses the connection on its
+        // own; `versionchange` is another tab upgrading the schema, and
+        // `openDatabase` already closes on it — that path does NOT fire
+        // `close`, so it is chained here rather than replaced.
+        db.addEventListener("close", forget);
+        const closeForUpgrade = db.onversionchange;
+        db.onversionchange = (event) => {
+          closeForUpgrade?.call(db, event);
+          forget();
+        };
+        return db;
+      },
+      (error: unknown) => {
+        forget();
+        throw error;
+      },
+    );
     return connection;
   }
 
@@ -243,15 +286,21 @@ export function createIndexedDbStore(options: IndexedDbStoreOptions = {}): Docum
     context: string,
     body: (tx: IDBTransaction) => Promise<T>,
   ): Promise<StoreResult<T>> {
-    let db: IDBDatabase;
-    try {
-      db = await connect();
-    } catch (error) {
-      const kind: StoreErrorKind = factory() === undefined ? "unavailable" : "blocked";
-      return storeFail<T>(
-        kind,
-        error instanceof Error ? error.message : `${context} could not reach storage.`,
-      );
+    // NO `await` on the warm path — see `ready` above. Everything before the
+    // first await in an async function runs synchronously with the caller, so
+    // a flush fired from `pagehide` gets its requests onto the transaction in
+    // the same task the event was dispatched in.
+    let db = ready;
+    if (db === null) {
+      try {
+        db = await connect();
+      } catch (error) {
+        const kind: StoreErrorKind = factory() === undefined ? "unavailable" : "blocked";
+        return storeFail<T>(
+          kind,
+          error instanceof Error ? error.message : `${context} could not reach storage.`,
+        );
+      }
     }
     try {
       const tx = db.transaction([...stores], mode);
@@ -265,7 +314,7 @@ export function createIndexedDbStore(options: IndexedDbStoreOptions = {}): Docum
     } catch (error) {
       // A connection closed under us — another tab upgraded the schema — is
       // worth one retry on the next call rather than for the life of the page.
-      if (error instanceof DOMException && error.name === "InvalidStateError") connection = null;
+      if (error instanceof DOMException && error.name === "InvalidStateError") forget();
       return { ok: false, error: classifyStorageError(error, context) };
     }
   }

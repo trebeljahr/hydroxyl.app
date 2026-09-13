@@ -9,6 +9,8 @@
  */
 
 export * from "./types";
+export * from "./broadcast";
+export * from "./journal";
 export * from "./migrate";
 export * from "./record";
 export * from "./memory-store";

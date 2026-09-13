@@ -36,6 +36,7 @@ beforeEach(() => {
 afterEach(() => {
   setDocumentStore(null);
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 describe("the recents grid", () => {
@@ -76,6 +77,53 @@ describe("the recents grid", () => {
       "/editor?doc=doc_1",
     );
   });
+
+  it("addresses the editor as a FLAT html file in the static export", async () => {
+    // The blocking regression this replaces: `next/link href="/editor?doc=…"`
+    // made the export's client router push `/editor/?doc=…` without loading a
+    // document, after which the page's relative `./_next/…` prefix resolved
+    // into a directory with no assets and every later chunk 404'd. A plain
+    // anchor at a relative href loads a real file beside this one, at the
+    // depth its asset prefix was written for. See @/lib/deployment.
+    vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "1");
+    await store.put(seed("doc_1", "Benzene", "2024-01-01T00:00:00.000Z"));
+    render(<RecentsPage />);
+    await screen.findByText("Benzene");
+    // `getAttribute`, not `toHaveAttribute` on a resolved href: what matters
+    // is the RELATIVE string, which the browser resolves against whatever
+    // directory the bundle was opened from.
+    expect(screen.getByText("Benzene").closest("a")?.getAttribute("href")).toBe(
+      "editor.html?doc=doc_1",
+    );
+    expect(screen.getByText("New sketch").closest("a")?.getAttribute("href")).toBe(
+      "editor.html",
+    );
+  });
+
+  // jsdom does not implement BroadcastChannel; node's global is what makes
+  // this runnable at all, and its absence is a no-op in production too.
+  it.skipIf(typeof BroadcastChannel === "undefined")(
+    "re-lists when another tab changes the library",
+    async () => {
+      // One origin, one IndexedDB. Deleting a sketch in another tab used to
+      // leave this grid still offering the card.
+      await store.put(seed("doc_1", "Benzene", "2024-01-01T00:00:00.000Z"));
+      render(<RecentsPage />);
+      await screen.findByText("Benzene");
+
+      await store.remove("doc_1");
+      // Posted from a SECOND channel object, because a BroadcastChannel never
+      // delivers to the object that sent the message — which is what stops
+      // this tab reacting to its own writes.
+      const other = new BroadcastChannel("chemistry-sketcher/documents");
+      other.postMessage({ kind: "remove", id: "doc_1" });
+      other.close();
+
+      await waitFor(() => {
+        expect(screen.queryByText("Benzene")).not.toBeInTheDocument();
+      });
+    },
+  );
 
   it("shows the newest first", async () => {
     await store.put(seed("old", "Older", "2024-01-01T00:00:00.000Z"));

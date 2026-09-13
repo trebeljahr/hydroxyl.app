@@ -26,20 +26,45 @@
  *
  * ── AND A DUPLICATE MUST MINT A NEW ID ─────────────────────────────────────
  *
- * `createDocument` does. All three object stores key on `doc.id`, and the
- * canvas frames its view on `doc.id` too, so a copy that kept the original's
- * id would overwrite its own source the first time either was saved.
+ * `copyOf` does. All three object stores key on `doc.id`, and the canvas
+ * frames its view on `doc.id` too, so a copy that kept the original's id
+ * would overwrite its own source the first time either was saved.
+ *
+ * ── THE CARDS ARE PLAIN ANCHORS, NOT `next/link`, AND THAT IS A FIX ────────
+ *
+ * Measured in the static export: a client-side router navigation to
+ * `/editor?doc=…` pushed `/editor/?doc=…` — with a trailing slash, and without
+ * loading a document — after which the page's own relative `./_next/…` prefix
+ * resolved into a directory that has no assets, every later chunk 404'd, and
+ * reloading the URL the router had left in the address bar rendered nothing
+ * at all. Before this page existed nothing in the app linked to another route,
+ * so the export was only ever entered by direct URL and the failure had
+ * nowhere to appear. `@/lib/deployment` computes an href that is correct in
+ * both builds — from the BUILD FLAG, so the prerendered HTML is already right
+ * and there is no window in which the link points at a file that does not
+ * exist — and a full-page navigation loads a real document at the depth its
+ * asset prefix was written for.
+ *
+ * ── AND THE GRID LISTENS FOR THE OTHER TABS ────────────────────────────────
+ *
+ * One origin has one IndexedDB. Deleting a sketch in this tab used to leave
+ * another tab's grid still offering the card. See persistence/broadcast.ts.
  */
 
-import Link from "next/link";
 import { useCallback, useEffect, useState, type ReactElement } from "react";
 import { FilePlus2Icon, PencilIcon, CopyIcon, Trash2Icon } from "lucide-react";
 
-import { createDocument } from "@starter/shared";
-import type { SketchDocument } from "@starter/shared";
-
-import { documentStore, duplicateDocument } from "@/persistence/documents";
+import { onDocumentChange } from "@/persistence/broadcast";
+import {
+  copyOf,
+  documentStore,
+  duplicateDocument,
+  removeDocument,
+  renameDocument,
+} from "@/persistence/documents";
+import { recoverJournaledDocuments } from "@/persistence/session";
 import type { DocumentMeta } from "@/persistence/types";
+import { editorHref } from "@/lib/deployment";
 import { cn } from "@/lib/utils";
 
 interface Row {
@@ -59,17 +84,10 @@ function formatWhen(iso: string): string {
   });
 }
 
-/** A copy of `doc` under a fresh id, named the way every file manager names
- *  one. `createDocument` mints the id; see the header for why that matters. */
-export function copyOf(doc: SketchDocument, now?: string): SketchDocument {
-  return createDocument({
-    molecule: doc.molecule,
-    title: `${doc.metadata.title} copy`,
-    stylePreset: doc.stylePreset,
-    panels: doc.panels,
-    now,
-  });
-}
+/** Re-exported so the grid's own test can reach it and so this file still
+ *  reads as owning the rule in its header. The function lives beside the
+ *  store, because the import path forks a document for the same reason. */
+export { copyOf };
 
 export default function RecentsPage(): ReactElement {
   const [rows, setRows] = useState<readonly Row[] | null>(null);
@@ -113,22 +131,35 @@ export default function RecentsPage(): ReactElement {
 
   useEffect(() => {
     let cancelled = false;
-    void read().then((next) => {
-      if (cancelled) return;
-      setRows(next.rows);
-      setError(next.error);
-    });
+    // RECOVERED BEFORE THE FIRST LISTING. The journal holds a sketch whose
+    // write the last teardown interrupted, and navigating away from the editor
+    // is the commonest way to strand one — so this page is very often the
+    // first thing loaded after it happened. Listing first would show the
+    // superseded row, or no row at all for a sketch that had never reached
+    // storage. Recovery only writes; the listing below then sees it.
+    void recoverJournaledDocuments()
+      .then(() => read())
+      .then((next) => {
+        if (cancelled) return;
+        setRows(next.rows);
+        setError(next.error);
+      });
     return () => {
       cancelled = true;
     };
   }, [read]);
+
+  // Another tab saved, renamed or deleted something. Without this the grid
+  // keeps offering a card whose document is gone, and opening it lands on
+  // "No saved document with the id …".
+  useEffect(() => onDocumentChange(() => void refresh()), [refresh]);
 
   const onRename = useCallback(
     async (meta: DocumentMeta) => {
       const next = window.prompt("Rename this sketch", meta.title);
       if (next === null || next.trim() === "" || next === meta.title) return;
       setError(null);
-      const result = await documentStore().rename(meta.id, next.trim());
+      const result = await renameDocument(meta.id, next.trim());
       if (!result.ok) setError(result.error.message);
       await refresh();
     },
@@ -149,7 +180,7 @@ export default function RecentsPage(): ReactElement {
     async (meta: DocumentMeta) => {
       if (!window.confirm(`Delete “${meta.title}”? This cannot be undone.`)) return;
       setError(null);
-      const result = await documentStore().remove(meta.id);
+      const result = await removeDocument(meta.id);
       if (!result.ok) setError(result.error.message);
       await refresh();
     },
@@ -160,14 +191,14 @@ export default function RecentsPage(): ReactElement {
     <div className="bg-background text-foreground min-h-screen">
       <header className="flex items-center gap-4 border-b px-6 py-4">
         <h1 className="text-xl font-semibold tracking-tight">Chemistry Sketcher</h1>
-        <Link
-          href="/editor"
+        <a
+          href={editorHref()}
           data-recents="new"
           className="bg-primary text-primary-foreground ml-auto flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium"
         >
           <FilePlus2Icon className="size-4" />
           New sketch
-        </Link>
+        </a>
       </header>
 
       <main className="p-6">
@@ -205,8 +236,8 @@ export default function RecentsPage(): ReactElement {
                 data-doc-id={meta.id}
                 className="bg-card flex flex-col overflow-hidden rounded-lg border"
               >
-                <Link
-                  href={`/editor?doc=${encodeURIComponent(meta.id)}`}
+                <a
+                  href={editorHref(meta.id)}
                   data-recents="open"
                   className="focus-visible:ring-ring flex flex-1 flex-col focus-visible:outline-none focus-visible:ring-2"
                 >
@@ -244,7 +275,7 @@ export default function RecentsPage(): ReactElement {
                       {formatWhen(meta.modifiedAt)}
                     </p>
                   </div>
-                </Link>
+                </a>
                 <div className="flex items-center gap-1 border-t px-2 py-1.5">
                   <CardButton
                     label="Rename"

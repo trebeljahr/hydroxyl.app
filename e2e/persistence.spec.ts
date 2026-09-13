@@ -151,6 +151,93 @@ test("a restored sketch is not an undo step", async ({ page }) => {
   await expect(page.locator(FORMULA)).toHaveText(restored ?? "");
 });
 
+test("an edit followed IMMEDIATELY by a navigation still reaches storage", async ({
+  page,
+}) => {
+  // The autosave debounce is a window in which the drawing exists only in
+  // memory, and the last-resort flush has to close it. An IndexedDB flush
+  // cannot: measured in Chrome with the connection warm and the whole path to
+  // `IDBObjectStore.put` synchronous, the requests are queued and the
+  // transaction still never commits, because the document is destroyed first.
+  // The teardown handlers therefore write the document to `localStorage`
+  // first, which returns with the value already committed, and the next load
+  // puts it back into IndexedDB. See `persistence/journal.ts`.
+  await page.goto("/editor");
+  await chargeUpEverything(page);
+  const id = await currentDocId(page);
+  await waitForSaved(page);
+
+  // A second edit, then straight away — nothing awaited in between that would
+  // give the debounce time to fire on its own, so the write that saves this
+  // edit is the `pagehide` flush.
+  await page.keyboard.press("+");
+  await page.goto(`/editor?doc=${id}`);
+
+  await expect(page.locator(CHARGE)).toContainText("+12");
+});
+
+test("a tab CLOSED inside the debounce still gives the sketch back", async ({
+  page,
+  context,
+}) => {
+  // The case the journal exists for, and the one no flush can cover: there is
+  // no next task in which an IndexedDB transaction could commit, because the
+  // document is gone. `localStorage.setItem` has already returned by then.
+  await page.goto("/editor");
+  await chargeUpEverything(page);
+  const id = await currentDocId(page);
+  await waitForSaved(page);
+
+  await page.keyboard.press("+");
+  await page.close({ runBeforeUnload: true });
+
+  const reopened = await context.newPage();
+  await reopened.goto(`/editor?doc=${id}`);
+  await expect(reopened.locator(CHARGE)).toContainText("+12");
+  // And the rescue copy is gone once it has been honoured, so a later load
+  // cannot restore it over newer work.
+  await expect
+    .poll(() =>
+      reopened.evaluate(
+        (docId) => localStorage.getItem(`chemistry-sketcher/unsaved/${docId}`),
+        id,
+      ),
+    )
+    .toBeNull();
+});
+
+test("a document deleted in another tab does not go on looking saved", async ({ page }) => {
+  // One origin has one IndexedDB and the recents cards are ordinary links, so
+  // two tabs on one library is a single gesture away. Without a signal the
+  // editor's next autosave RESURRECTS the deleted document and nobody is told.
+  await page.goto("/editor");
+  await chargeUpEverything(page);
+  const id = await currentDocId(page);
+  await waitForSaved(page);
+
+  const other = await page.context().newPage();
+  await other.goto("/");
+  const card = other.locator(`[data-recents="card"][data-doc-id="${id}"]`);
+  await expect(card).toBeVisible();
+  other.once("dialog", (dialog) => void dialog.accept());
+  await card.locator('[data-recents="delete"]').click();
+  await expect(other.locator('[data-recents="card"]')).toHaveCount(0);
+
+  const indicator = page.locator(`${SAVE_STATE}[data-save-status="error"]`);
+  await expect(indicator).toBeVisible({ timeout: 10_000 });
+  await expect(indicator).toContainText(/deleted in another tab/i);
+
+  // And the next edit here must NOT quietly write it back. Well past the
+  // autosave debounce, the other tab's grid is still empty and the warning
+  // still stands.
+  await page.keyboard.press("+");
+  await page.waitForTimeout(1_000);
+  await expect(indicator).toContainText(/deleted in another tab/i);
+  await other.reload();
+  await expect(other.locator('[data-recents="empty"]')).toBeVisible();
+  await other.close();
+});
+
 test("an untouched visit to /editor does not litter the recents grid", async ({ page }) => {
   // The fixture is BASELINED rather than saved, so opening the editor and
   // leaving again leaves nothing behind. The first real edit is the first
@@ -174,6 +261,68 @@ test("the recents grid lists what was saved, and opens it", async ({ page }) => 
 
   await card.locator('[data-recents="open"]').click();
   await expect(page.locator(CHARGE)).toContainText("+6");
+});
+
+test("?doc= opens THAT document, not whichever one the tab saw last", async ({ page }) => {
+  // The blocking regression this pins. `editorStore` is a module singleton, so
+  // the load used to be skipped whenever the molecule was already non-empty —
+  // the URL named one document, the canvas showed another, and the first edit
+  // forked a new record while the indicator said "Saved". The decision is made
+  // on the document's ID now, so a second visit loads rather than adopting.
+  await page.goto("/editor");
+  await chargeUpEverything(page);
+  const first = await currentDocId(page);
+  await waitForSaved(page);
+
+  // A second, visibly different document: ethanol rather than a charged benzene.
+  await page.goto("/editor");
+  await dropFile(page, "ethanol.mol", ETHANOL_MOLBLOCK);
+  await expect(page.locator(FORMULA)).toHaveText("C₂H₆O");
+  const second = await currentDocId(page);
+  await waitForSaved(page);
+  expect(second).not.toBe(first);
+
+  // Each id opens its own sketch, and the top bar agrees with the URL.
+  await page.goto(`/editor?doc=${first}`);
+  await expect(page.locator('[data-shell="top-bar"]')).toHaveAttribute("data-doc-id", first);
+  await expect(page.locator(CHARGE)).toContainText("+6");
+
+  await page.goto(`/editor?doc=${second}`);
+  await expect(page.locator('[data-shell="top-bar"]')).toHaveAttribute("data-doc-id", second);
+  await expect(page.locator(FORMULA)).toHaveText("C₂H₆O");
+});
+
+test("the grid links at a file the export actually has, with no trailing slash", async ({
+  page,
+}) => {
+  // The other blocking regression. `next/link href="/editor?doc=…"` made the
+  // static export's client router push `/editor/?doc=…` — no document loaded,
+  // and every later `./_next/…` chunk resolved into a directory with none, so
+  // the RDKit import died with "Failed to load chunk" and reloading that URL
+  // rendered nothing. Plain anchors at a build-appropriate href, and a real
+  // navigation, are the fix. Here (standalone) the correct href is `/editor`.
+  await page.goto("/editor");
+  await chargeUpEverything(page);
+  const id = await currentDocId(page);
+  await waitForSaved(page);
+
+  await page.goto("/");
+  const open = page.locator(`[data-recents="card"][data-doc-id="${id}"] [data-recents="open"]`);
+  await expect(open).toHaveAttribute("href", `/editor?doc=${id}`);
+
+  // A marker that only a REAL document load can clear. `next/link` would push
+  // the URL and keep this window object — and in the export that push is the
+  // whole failure, because the pushed path is a directory with no assets under
+  // it and no HTML document at it.
+  await page.evaluate(() => {
+    (window as unknown as Record<string, unknown>)["__navigationWitness"] = true;
+  });
+  await open.click();
+  await expect(page.locator(CHARGE)).toContainText("+6");
+  const survived = await page.evaluate(
+    () => (window as unknown as Record<string, unknown>)["__navigationWitness"],
+  );
+  expect(survived, "the card must navigate, not push a route").toBeUndefined();
 });
 
 test("a sketch can be renamed, duplicated and deleted from the grid", async ({ page }) => {
@@ -222,6 +371,21 @@ test("a rejected write is visible, not silent", async ({ page }) => {
   await expect(indicator).toContainText(/no room left/i);
 });
 
+test("there is no debug switch that quietly stops saving", async ({ page }) => {
+  // `?storage=memory` used to swap in a store that kept nothing while the
+  // indicator went on reporting "Saved" — the exact silent loss this whole
+  // feature exists to remove, reachable by anyone who pasted a URL out of a
+  // bug report. `full` and `crash` stay because both put a visible error on
+  // the screen; a debug affordance may break the app, it may not lie about it.
+  await page.goto("/editor?storage=memory");
+  await chargeUpEverything(page);
+  const id = await currentDocId(page);
+  await waitForSaved(page);
+
+  await page.goto(`/editor?doc=${id}`);
+  await expect(page.locator(CHARGE)).toContainText("+6");
+});
+
 // ---------------------------------------------------------------------------
 // The canvas error boundary
 // ---------------------------------------------------------------------------
@@ -250,6 +414,55 @@ test("a throw inside the canvas flushes the sketch and the drawing survives a re
   // BOTH edits are there. The second one only reached storage through the
   // boundary's flush.
   await expect(page.locator(CHARGE)).toContainText("+12");
+});
+
+test("the crash fallback offers an exit that is NOT the document that crashed", async ({
+  page,
+}) => {
+  // React retries a failed concurrent render and swallows a one-shot throw, so
+  // a throw that reaches `componentDidCatch` is deterministic over this
+  // document. Reload is the same URL and the recents card links at the same
+  // id, which left a sketch that reliably breaks the canvas permanently
+  // unopenable — the boundary's own flush cementing the trap.
+  await page.goto("/editor?crash=canvas");
+  await expect(page.locator(FORMULA)).toHaveText("C₆H₆");
+  await chargeUpEverything(page);
+  await page.evaluate(() => {
+    (window as unknown as Record<string, () => void>)["__chemistrySketcherArmCanvasCrash"]!();
+  });
+  await page.keyboard.press("+");
+
+  const fallback = page.locator('[data-shell="canvas-error"]');
+  await expect(fallback).toBeVisible();
+  // And it says what the rescue write actually did, rather than asserting a
+  // save it never checked.
+  await expect(page.locator('[data-shell="canvas-error-rescue"]')).toHaveAttribute(
+    "data-rescue",
+    "saved",
+  );
+
+  await page.locator('[data-shell="canvas-error-new"]').click();
+  // A blank editor, with no `?doc=` and no crash armed.
+  await expect(page.locator(CANVAS)).toBeVisible();
+  await expect(page.locator('[data-shell="canvas-error"]')).toHaveCount(0);
+});
+
+test("the fallback does NOT claim a save that was refused", async ({ page }) => {
+  // `saveDocument` RESOLVES `{ok:false}` on a quota refusal — it never rejects
+  // — so a boundary that handled only a rejection printed "Your sketch has
+  // been saved" over a write that had not happened, beside a status bar
+  // showing the quota error.
+  await page.goto("/editor?crash=canvas&storage=full");
+  await expect(page.locator(FORMULA)).toHaveText("C₆H₆");
+  await chargeUpEverything(page);
+  await page.evaluate(() => {
+    (window as unknown as Record<string, () => void>)["__chemistrySketcherArmCanvasCrash"]!();
+  });
+  await page.keyboard.press("+");
+
+  const rescue = page.locator('[data-shell="canvas-error-rescue"]');
+  await expect(rescue).toHaveAttribute("data-rescue", "failed", { timeout: 10_000 });
+  await expect(rescue).toContainText(/could NOT be saved/);
 });
 
 // ---------------------------------------------------------------------------

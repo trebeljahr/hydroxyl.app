@@ -91,7 +91,14 @@ function ViewButton({
   );
 }
 
-/** The save indicator. Four states, and the error one carries its reason. */
+/**
+ * The save indicator. Five states, and the error one carries its reason.
+ *
+ * "Unsaved changes" is not padding between "Saved" and "Saving…": an edit made
+ * inside the autosave debounce and followed immediately by a navigation does
+ * not reach storage, and the indicator used to go on saying "Saved" for the
+ * whole of that window. See persistence/save-state.ts.
+ */
 function SaveIndicator(): ReactElement {
   const save = useSaveState();
   const label =
@@ -101,7 +108,9 @@ function SaveIndicator(): ReactElement {
         ? "Saved"
         : save.status === "error"
           ? (save.message ?? "Not saved")
-          : "Not saved yet";
+          : save.status === "unsaved"
+            ? "Unsaved changes"
+            : "Not saved yet";
   return (
     <span
       data-status="save-state"

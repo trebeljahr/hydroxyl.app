@@ -40,6 +40,24 @@
  * `baseline` marks it as already accounted for, so opening the editor and
  * closing it again does not leave an untouched benzene in the grid. The first
  * real edit is the first write.
+ *
+ * ── THE LOAD DECISION IS MADE ON THE DOCUMENT'S ID, NOT ON EMPTINESS ───────
+ *
+ * It used to read `?doc=` only inside `if (isEmpty(molecule))`, and that was
+ * silently wrong for every visit after the first. `editorStore` is a module
+ * singleton that survives a client-side navigation, so ANY prior visit to the
+ * editor in the same tab left the molecule non-empty, the whole load branch
+ * was skipped, and the leftover document was baselined instead. Measured: the
+ * URL said one id, the top bar reported another, the formula was the previous
+ * sketch's — and the first edit forked a new record while autosave reported
+ * "Saved". The chemist edits what they believe is their saved sketch, is told
+ * it saved, and the sketch never changes.
+ *
+ * Comparing `state.document.id` with the requested id is what makes the effect
+ * both correct and idempotent: StrictMode's double mount and a Fast Refresh
+ * both find the requested document already open and baseline it, while a
+ * genuine change of `?doc=` loads. The emptiness check survives only where it
+ * still means something — bare `/editor`, where there is no id to compare.
  */
 
 import { useEffect, type ReactElement } from "react";
@@ -54,7 +72,12 @@ import {
   baselineEditorDocument,
   createMemoryDocumentStore,
   flushEditorDocument,
+  holdEditorDocument,
+  journalEditorDocument,
   loadDocument as readStoredDocument,
+  onDocumentChange,
+  recoverJournaledDocuments,
+  releaseEditorDocument,
   setDocumentStore,
   startEditorPersistence,
   stopEditorPersistence,
@@ -100,14 +123,23 @@ export function documentIdFromSearch(search: string): string | null {
 }
 
 /**
- * `?storage=memory` swaps the IndexedDB store for one that keeps nothing, and
- * `?storage=full` for one that refuses every write with a quota error.
+ * `?storage=full` swaps the IndexedDB store for one that refuses every write
+ * with a quota error.
  *
  * SAME FAMILY AS `?fixture=stress`. "A rejected or quota-exhausted write
  * surfaces visibly" is a claim about the running app, and the alternative ways
  * to test it are to genuinely exhaust a browser's storage — minutes of writes,
  * and flaky — or to assert it only in a unit test, which proves the save path
  * and not the wiring from that path to the indicator a person reads.
+ *
+ * THERE WAS A `?storage=memory` HERE AND IT HAD TO GO. It swapped in a store
+ * that silently kept nothing while the indicator went on reporting "Saved",
+ * which is the exact silent-loss failure this whole task exists to remove —
+ * reachable in the production bundle by anyone who pasted a URL out of a bug
+ * report. `full` and `crash` stay because they are self-announcing: both put a
+ * visible error on the screen, so nobody who lands on one is misled about the
+ * state of their work. A debug affordance may break the app; it may not lie
+ * about it.
  */
 function installStorageOverride(search: string): void {
   const mode = new URLSearchParams(search).get("storage");
@@ -115,10 +147,6 @@ function installStorageOverride(search: string): void {
   // navigating from `?storage=full` back to a plain `/editor` would otherwise
   // keep the refusing store for the life of the tab.
   setDocumentStore(null);
-  if (mode === "memory") {
-    setDocumentStore(createMemoryDocumentStore());
-    return;
-  }
   if (mode === "full") {
     const store = createMemoryDocumentStore();
     store.failWith(
@@ -149,58 +177,137 @@ export default function EditorPage(): ReactElement {
     // one. `pagehide` fires on a closed tab and on a back/forward navigation
     // where `beforeunload` does not, and it is the only lifecycle event
     // Safari on iOS reliably delivers.
-    const onPageHide = (): void => {
+    //
+    // THE JOURNAL GOES FIRST, AND IT IS THE ONE THAT ACTUALLY SAVES THE WORK.
+    // A flush to IndexedDB started here does not commit — measured in Chrome
+    // against the production build, with the connection warm and the whole
+    // path to `IDBObjectStore.put` made synchronous: the three requests are
+    // queued, `pagehide` fires, and no `complete` event ever arrives.
+    // Navigating 50 ms after an edit loses it exactly as reliably as
+    // navigating in the same tick. `localStorage.setItem` returns with the
+    // value already committed, so that is what the rescue uses; see
+    // `persistence/journal.ts`. The flush stays because it is the write that
+    // matters whenever the page SURVIVES — a tab switch, a hidden tab — and
+    // the next successful save deletes the journal again.
+    const rescue = (): void => {
+      journalEditorDocument();
       void flushEditorDocument();
     };
+    const onPageHide = (): void => {
+      rescue();
+    };
     window.addEventListener("pagehide", onPageHide);
+    // Earlier than `pagehide`: `visibilitychange` fires while the tab is still
+    // fully alive — on a tab switch, on an app switch, and on mobile before
+    // the OS suspends the page, which may never deliver anything later.
+    const onHidden = (): void => {
+      if (document.visibilityState === "hidden") rescue();
+    };
+    document.addEventListener("visibilitychange", onHidden);
 
     let cancelled = false;
     const state = editorStore.getState();
+    const savedId = documentIdFromSearch(search);
 
-    // Load into an EMPTY sketch only.
-    //
-    // The guard is what makes this idempotent, and it has to be: React runs
-    // effects twice on mount in development StrictMode, and a Fast Refresh
-    // remounts the page while the module-level store keeps its state. An
-    // unconditional open would therefore throw away whatever was on the
-    // canvas. Checking the molecule rather than a "have I loaded" flag also
-    // survives the module being re-evaluated, since the answer lives in the
-    // store rather than in this closure.
-    if (isEmpty(state.document.molecule)) {
-      const savedId = documentIdFromSearch(search);
-      if (savedId !== null) {
-        void readStoredDocument(savedId).then((result) => {
-          if (cancelled) return;
-          const next = editorStore.getState();
-          // Re-checked after the await: the store is a singleton and the user
-          // has had a moment in which to draw.
-          if (!isEmpty(next.document.molecule)) return;
-          if (result.ok) {
-            // NOT `openDocument`, which is undoable by design. A restore is
-            // not an edit: routing it through the undo stack would make the
-            // first Ctrl+Z after a reload wipe the canvas, and autosave would
-            // then persist the empty document over the good one.
-            next.loadDocument(result.value);
-            baselineEditorDocument(editorStore.getState().document);
-          } else {
-            next.setStatusMessage(result.error.message);
-            next.openDocument(fixtureDocument(), "Open Benzene");
-            baselineEditorDocument(editorStore.getState().document);
-          }
-        });
+    // Started ONCE, on every mount, whichever document this page is about.
+    // The journal holds work whose write the last teardown interrupted, and
+    // that work is not necessarily about the sketch being opened now — the way
+    // to strand an edit is to navigate away from it, so the journalled
+    // document is usually the one the chemist just left. Recovery writes it
+    // back to IndexedDB under its own id and never touches this canvas.
+    const recovered = recoverJournaledDocuments();
+
+    if (savedId !== null) {
+      if (state.document.id === savedId) {
+        // Already the one the URL names. StrictMode's second mount and a Fast
+        // Refresh both land here, and neither may re-read a document the user
+        // has since drawn on.
+        baselineEditorDocument(state.document);
       } else {
-        const requested = documentFromSearch(search);
-        state.openDocument(requested ?? fixtureDocument(),
-          requested === null ? "Open Benzene" : "Open stress fixture");
-        baselineEditorDocument(editorStore.getState().document);
+        // Baselined BEFORE the read, so the leftover cannot be written. The
+        // autosave loop is already running by this point (see above) and it
+        // has no reference document until something baselines one; a state
+        // change arriving during the few milliseconds of a database read
+        // would otherwise be debounced into a write of the PREVIOUS route's
+        // document, under an id the URL never named.
+        baselineEditorDocument(state.document);
+        // AWAITED BEFORE THE READ. If the journal is about THIS document,
+        // reading storage first would restore the older copy over it and then
+        // baseline that older copy as correct. Recovery puts the newer content
+        // back under its own id, so the read below sees it.
+        void recovered
+          .then(() => readStoredDocument(savedId))
+          .then((result) => {
+            if (cancelled) return;
+            const next = editorStore.getState();
+            // NOT re-checked for emptiness. The URL names the document and that
+            // is the whole contract of the route; whatever is on the canvas
+            // during a few milliseconds of a local database read is the previous
+            // route's leftover, not work the visitor did here.
+            if (result.ok) {
+              // NOT `openDocument`, which is undoable by design. A restore is
+              // not an edit: routing it through the undo stack would make the
+              // first Ctrl+Z after a reload wipe the canvas, and autosave would
+              // then persist the empty document over the good one.
+              next.loadDocument(result.value);
+              baselineEditorDocument(editorStore.getState().document);
+            } else {
+              next.setStatusMessage(result.error.message);
+              next.openDocument(fixtureDocument(), "Open Benzene");
+              baselineEditorDocument(editorStore.getState().document);
+            }
+          });
       }
+    } else if (isEmpty(state.document.molecule)) {
+      // Bare `/editor`, nothing open. There is no id to compare against, so
+      // emptiness is still the honest test for "this is a fresh mount".
+      const requested = documentFromSearch(search);
+      state.openDocument(requested ?? fixtureDocument(),
+        requested === null ? "Open Benzene" : "Open stress fixture");
+      baselineEditorDocument(editorStore.getState().document);
     } else {
       baselineEditorDocument(state.document);
     }
 
+    // Another tab is writing the same library. One origin has one IndexedDB
+    // and the recents cards are ordinary links, so two tabs on one document is
+    // a single gesture away; without this, the later write wins in silence and
+    // a document deleted over there is resurrected by this tab's next
+    // autosave. Reported rather than reconciled — see persistence/broadcast.ts.
+    const unlisten = onDocumentChange((change) => {
+      const open = editorStore.getState().document;
+      if (change.id !== open.id) return;
+      if (change.kind === "remove") {
+        // HELD, not merely reported: this tab's next autosave would otherwise
+        // put the deleted rows straight back and replace this warning with
+        // "Saved". Only an explicit Save brings it back.
+        holdEditorDocument(
+          open.id,
+          `“${open.metadata.title}” was deleted in another tab, so this tab has stopped saving it. ` +
+            `Use Save to keep it, or it will only exist on this screen.`,
+        );
+        return;
+      }
+      // Written back by the other tab, so it exists again and there is nothing
+      // left to hold. A NOTICE, not a save failure: this tab's own writes are
+      // still landing. There is no compare-and-swap on `modifiedAt` and
+      // reconciling two divergent edits of one molecule is a different
+      // feature, so the honest thing is to say that the last writer wins and
+      // let the chemist decide.
+      if (change.kind === "put") releaseEditorDocument(open.id);
+      editorStore
+        .getState()
+        .setStatusMessage(
+          `“${open.metadata.title}” is open in another tab, which has just written over it — ` +
+            `whichever tab saves last wins.`,
+        );
+    });
+
     return () => {
       cancelled = true;
+      unlisten();
       window.removeEventListener("pagehide", onPageHide);
+      document.removeEventListener("visibilitychange", onHidden);
       // Flushed on the way out: a route change away from the editor is exactly
       // as much of a "the tab is gone" moment as a close, from the document's
       // point of view.

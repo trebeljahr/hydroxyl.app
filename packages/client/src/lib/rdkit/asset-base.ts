@@ -1,23 +1,13 @@
 /**
  * Where `public/rdkit/` is being served from, in every build mode.
  *
- * Three shapes have to work and they disagree about what a URL means:
- *
- *   dev / `output:"standalone"` — Next emits `<script src="/_next/static/…">`
- *     and serves `public/` at the site root, so the answer is `/rdkit/`.
- *
- *   `output:"export"` with `assetPrefix:"./"` — Next emits
- *     `<script src="./_next/static/…">`. `public/` is copied to `out/`
- *     UNPREFIXED, and the app may be opened from any directory (an Electron
- *     custom protocol, a Capacitor server, a subdirectory on a static host).
- *     The answer has to be relative to wherever the document actually is.
- *
- * The document's own script tags are the only thing that knows the
- * difference, because the browser has ALREADY resolved whatever Next wrote
- * into an absolute `HTMLScriptElement.src`. Slicing the prefix back off it
- * gives the deployment root in every case. `document.baseURI` alone does not:
- * it would be right for the export and wrong for a standalone deployment
- * whose page happens to sit at `/editor/`.
+ * The hard part — deriving the deployment root from a script tag the browser
+ * has already resolved — now lives in `@/lib/deployment`, because the recents
+ * grid needs the same answer to link at the editor. This module is the wasm's
+ * name for it, kept so the bridge reads as owning its own asset base and so
+ * `asset-base.test.ts` keeps pinning the behaviour the worker depends on: a
+ * bad base 404s the worker script, and a 404 on a worker produces an error
+ * event whose `.message` is the empty string.
  *
  * DEPENDS ON A FLAT EXPORT, and cannot fix it from here: under
  * `assetPrefix:"./"` Next writes the same relative `./_next/…` into NESTED
@@ -29,13 +19,8 @@
  * `scripts/check-export.mjs` fails the build if a nested page ever reappears.
  */
 
-const ASSET_MARKER = "/_next/static/";
+import { deploymentRoot } from "@/lib/deployment";
 
 export function rdkitAssetBase(): string {
-  if (typeof document === "undefined") return "/rdkit/";
-  const script = document.querySelector<HTMLScriptElement>(`script[src*="${ASSET_MARKER}"]`);
-  const src = script?.src;
-  const marker = src ? src.indexOf(ASSET_MARKER) : -1;
-  const root = marker >= 0 && src ? src.slice(0, marker + 1) : new URL(".", document.baseURI).href;
-  return `${root}rdkit/`;
+  return `${deploymentRoot()}rdkit/`;
 }

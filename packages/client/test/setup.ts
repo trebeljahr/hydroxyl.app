@@ -49,3 +49,51 @@ if (typeof globalThis.ResizeObserver === "undefined") {
     disconnect(): void {}
   } as unknown as typeof ResizeObserver;
 }
+
+// ---------------------------------------------------------------------------
+// localStorage
+//
+// Node 25+ ships an experimental global `localStorage` that is UNDEFINED
+// unless the process was started with `--localstorage-file`, and it shadows
+// jsdom's own implementation — so under this runner `localStorage.clear()`
+// throws "Cannot read properties of undefined". The persistence journal
+// (src/persistence/journal.ts) is the one production user, and production
+// degrades to a no-op without it, which is exactly what a test must not
+// silently fall into. An in-memory Storage with the spec's surface is enough.
+// ---------------------------------------------------------------------------
+
+function storageUsable(): boolean {
+  try {
+    return typeof globalThis.localStorage?.getItem === "function";
+  } catch {
+    return false;
+  }
+}
+
+if (!storageUsable()) {
+  class MemoryStorage {
+    #items = new Map<string, string>();
+    get length(): number {
+      return this.#items.size;
+    }
+    key(index: number): string | null {
+      return [...this.#items.keys()][index] ?? null;
+    }
+    getItem(key: string): string | null {
+      return this.#items.get(String(key)) ?? null;
+    }
+    setItem(key: string, value: string): void {
+      this.#items.set(String(key), String(value));
+    }
+    removeItem(key: string): void {
+      this.#items.delete(String(key));
+    }
+    clear(): void {
+      this.#items.clear();
+    }
+  }
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: new MemoryStorage() as unknown as Storage,
+  });
+}

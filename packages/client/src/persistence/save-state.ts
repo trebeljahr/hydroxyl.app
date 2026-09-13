@@ -16,6 +16,16 @@
  * AND keeps the message, and the status bar renders it in the destructive
  * colour rather than as an absence.
  *
+ * AND "SAVED" MUST NOT OUTLIVE THE EDIT THAT INVALIDATED IT. Measured: an
+ * edit made inside the autosave debounce, followed immediately by a
+ * navigation, does not reach IndexedDB — the flush starts an asynchronous
+ * write that the teardown does not wait for — and the indicator went on
+ * reading "Saved" for the whole of that window, which is the app asserting
+ * that work is safe at precisely the moment it is not. `markUnsaved` is
+ * therefore raised on the first changed frame, BEFORE the debounce and even
+ * during a drag, so the only thing the indicator ever says about a document
+ * that is not in storage is that it is not in storage.
+ *
  * NOTHING HERE CALLS `console.error`. `e2e/editor.spec.ts` fails a spec on any
  * console error, deliberately — a persistence layer that reported its failures
  * only to a console nobody has open is exactly the silence this module exists
@@ -24,7 +34,7 @@
 
 import { useSyncExternalStore } from "react";
 
-export type SaveStatus = "idle" | "saving" | "saved" | "error";
+export type SaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error";
 
 export interface SaveState {
   readonly status: SaveStatus;
@@ -60,6 +70,36 @@ function getServerSnapshot(): SaveState {
 
 export function saveState(): SaveState {
   return current;
+}
+
+/**
+ * The document has changed and is not in storage yet.
+ *
+ * Does NOT clobber an error: a failed write leaves the document unsaved too,
+ * and replacing the quota message with a bland "Unsaved changes" would throw
+ * away the only actionable half of it.
+ */
+export function markUnsaved(): void {
+  if (current.status === "unsaved" || current.status === "error") return;
+  emit({ status: "unsaved" });
+}
+
+/**
+ * This document IS the one in storage after all — cancel an unsaved claim.
+ *
+ * Needed because `markUnsaved` fires on the first frame the document changes,
+ * and a RESTORE changes the document too: opening `?doc=` installs the stored
+ * sketch, which trips the dirty signal on its way in. Baselining is the moment
+ * the session says "this one is already written", so the indicator has to stop
+ * saying otherwise or every restored sketch would sit there reading "Unsaved
+ * changes" until its first edit.
+ *
+ * Only "unsaved" is cleared. An error still needs its message, and a "saved"
+ * with its timestamp is a stronger statement of the same fact.
+ */
+export function clearUnsaved(): void {
+  if (current.status !== "unsaved") return;
+  emit(IDLE);
 }
 
 export function markSaving(): void {
