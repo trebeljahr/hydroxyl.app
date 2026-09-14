@@ -36,7 +36,10 @@
  * superscript to the west, and the hydrogen fanned west landed inside it, so
  * the stem trimmed to nothing and the "H" drew with no bond at all. So the
  * distance, and only the distance, is pushed out until the stem clears both
- * labels by `MIN_STEM_LINE_WIDTHS` line widths. Moving a mark out of the way
+ * labels by `style.explicitHydrogenMinStemRatio` of a bond (and never less
+ * than `MIN_STEM_LINE_WIDTHS` line widths). At Publication's 10 pt labels
+ * that push applies to nearly every hydrogen, not just the wide-label ones:
+ * the two trims alone exceed the 0.66 stand-off. Moving a mark out of the way
  * of the renderer's OWN glyphs is not the same act as moving it out of the way
  * of an atom the author placed.
  */
@@ -73,7 +76,8 @@ export interface PhantomHydrogen {
 }
 
 /**
- * How much clear stem a derived hydrogen is guaranteed, in bond line widths.
+ * The least clear stem a derived hydrogen gets, in bond line widths, whatever
+ * the style's `explicitHydrogenMinStemRatio` says.
  *
  * Two, not one. `scene/build.ts` passes `style.bondLineWidthPx` to `bondAxis`
  * as the length below which a bond draws nothing, so one line width is exactly
@@ -174,6 +178,17 @@ export function phantomHydrogens(
       y: atom.pos.y,
     });
     const baseDistance = Math.abs(ratioTip.x - hostCentre.x);
+    // The visible-stem floor, measured the same way. Never below the
+    // line-width floor, which is what keeps a style with a tiny or zero ratio
+    // from drawing a stem `bondAxis` would refuse.
+    const stemTip = modelToPx(style, {
+      x: atom.pos.x + style.explicitHydrogenMinStemRatio,
+      y: atom.pos.y,
+    });
+    const minStem = Math.max(
+      Math.abs(stemTip.x - hostCentre.x),
+      MIN_STEM_LINE_WIDTHS * style.bondLineWidthPx,
+    );
 
     directions.forEach((direction, index) => {
       const id = phantomHydrogenId(atomId, index);
@@ -199,8 +214,7 @@ export function phantomHydrogens(
       // of themselves and this reach does not change when the glyph moves.
       const hostReach = hostPlacement === undefined ? 0 : trimDistance(hostPlacement, direction);
       const hydrogenReach = trimDistance(placement, back);
-      const clear =
-        hostReach + hydrogenReach + MIN_STEM_LINE_WIDTHS * style.bondLineWidthPx;
+      const clear = hostReach + hydrogenReach + minStem;
       if (clear > baseDistance) {
         centre = along(hostCentre, direction, clear);
         placement = place(centre);

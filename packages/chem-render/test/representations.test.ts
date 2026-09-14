@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import {
   benzene,
   buildMolecule,
+  ORIGIN,
   rotateAtoms,
   singleAtom,
   vec,
@@ -35,9 +36,16 @@ import {
 } from "../src/modes/explicitH.js";
 import { representation } from "../src/representation.js";
 import { atomLabelPlacements, buildScene } from "../src/scene/build.js";
+import { PRINTED_BOND_LENGTH_CM } from "../src/figure/physical.js";
 import { detectCollisions } from "../src/scene/collide.js";
 import type { CirclePrimitive, RenderScene, ScenePoint } from "../src/scene/types.js";
-import { modelToPx, PUBLICATION_STYLE, RENDER_STYLES, SCREEN_STYLE } from "../src/style.js";
+import {
+  modelToPx,
+  PUBLICATION_STYLE,
+  pxPerModelUnit,
+  RENDER_STYLES,
+  SCREEN_STYLE,
+} from "../src/style.js";
 import type { RenderStyle } from "../src/style.js";
 import type { StructuralRepresentation } from "../src/representation.js";
 
@@ -49,6 +57,45 @@ function hydrogenPrimitives(scene: RenderScene, type: "line" | "textRun") {
   return scene.primitives.filter(
     (p) => p.type === type && p.source.kind === "hydrogen",
   );
+}
+
+/**
+ * `hydrogen-over-atom` findings per "fixture view", over every fixture at nine
+ * rotations in both views that draw hydrogens. Every key is present, zero
+ * included, so a caller asserting a count cannot miss a fixture.
+ *
+ * `unmergedDropOverlap` is excluded: it deliberately holds two fragments
+ * dropped on top of each other, so its heavy atoms already collide and its
+ * hydrogens have to.
+ */
+function crowdingReport(style: RenderStyle): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const view of [EXPLICIT_H, LEWIS]) {
+    for (const fixture of FIXTURES) {
+      if (fixture.name === "unmergedDropOverlap") continue;
+      const key = `${fixture.name} ${view.kind}`;
+      out.set(key, 0);
+      for (let step = 0; step < 9; step++) {
+        const degrees = step * 40;
+        const mol = rotateAtoms(
+          fixture.molecule,
+          fixture.molecule.atomIds,
+          ORIGIN,
+          (degrees * Math.PI) / 180,
+        );
+        const probe = mol.atomIds[0];
+        if (probe !== undefined) {
+          // A rotation that produced NaN is the bug this helper replaced.
+          expect(Number.isFinite(mol.atoms[probe]!.pos.x), key).toBe(true);
+        }
+        const found = detectCollisions(buildScene(mol, style, view), mol).collisions.filter(
+          (c) => c.kind === "hydrogen-over-atom",
+        );
+        out.set(key, out.get(key)! + found.length);
+      }
+    }
+  }
+  return out;
 }
 
 /** The derived hydrogens, placed against the same label map `buildScene` uses
@@ -132,43 +179,89 @@ describe("the fully-explicit view", () => {
     }
   });
 
-  it("never stacks a hydrogen on an atom, a bond or another hydrogen", () => {
+  it("never stacks a hydrogen on an atom, a bond or another hydrogen at Screen", () => {
     // THE CROWDING ACCEPTANCE, run over the whole fixture set — naphthalene
     // and chrysene included, which are the fused systems whose inner vertices
-    // have the least room — at nine rotations, both presets and both views
-    // that draw hydrogens, at nine rotations each. Rotations matter because
-    // the fan is computed from angular gaps, and a structure sitting square
-    // with the page is the one arrangement most likely to work by accident.
+    // have the least room — at nine rotations and both views that draw
+    // hydrogens. Rotations matter because the fan is computed from angular
+    // gaps, and a structure sitting square with the page is the one
+    // arrangement most likely to work by accident.
     //
-    // `unmergedDropOverlap` is excluded and asserted separately below: it is
-    // the fixture that deliberately holds two fragments dropped on top of
-    // each other, so its heavy atoms already collide and its hydrogens have
-    // to.
+    // THE PIVOT IS PASSED. This sweep used to call `rotateAtoms(mol, ids,
+    // angle)`, which reads the angle as the pivot and leaves the angle
+    // undefined: every coordinate came out NaN, no collision could fire, and
+    // the sweep passed from the day it was written. `crowdingReport` above
+    // asserts every rotated position is finite, so it cannot go vacuous that
+    // way again.
+    for (const [key, count] of crowdingReport(SCREEN_STYLE)) {
+      expect(count, key).toBe(0);
+    }
+  });
+
+  it("pins the hydrogen crowding Publication reports", () => {
+    // At the ACS 1996 setting (decision 26) the "H" glyphs are 10 pt on a
+    // 14.4 pt bond, and a hydrogen on one carbon and a hydrogen on the next
+    // can fan into the same pocket: cis-2-butene's two inner hydrogens, the
+    // hydrogens beside butan-2-ol's wedge. The renderer reports that rather
+    // than moving anything, so this is not zero. It is PINNED instead: a
+    // change that makes any fixture more crowded fails here, and one that
+    // makes it less crowded has to come and lower the number. Every other
+    // fixture, the fused rings included, must stay at zero.
+    //
+    // Summed over the nine rotations. 78 before the minimum visible stem
+    // (`explicitHydrogenMinStemRatio`) went in; the longer stem is the 6 more.
+    const pinned: Record<string, number> = {
+      "ethanol explicitH": 1,
+      "ethanol lewis": 1,
+      "ethanolMirrored explicitH": 1,
+      "ethanolMirrored lewis": 1,
+      "butan2olWedged explicitH": 17,
+      "butan2olWedged lewis": 19,
+      "cis2Butene explicitH": 9,
+      "cis2Butene lewis": 9,
+      "wedgeOnNonStereocentre explicitH": 12,
+      "wedgeOnNonStereocentre lewis": 14,
+    };
+    for (const [key, count] of crowdingReport(PUBLICATION_STYLE)) {
+      expect(count, key).toBe(pinned[key] ?? 0);
+    }
+  });
+
+  it("gives every derived hydrogen at least the style's minimum visible stem", () => {
+    // Before the floor, every Publication hydrogen drew a 2 px stub — 0.42 mm
+    // at the printed bond — because the two label trims came to more than
+    // the 0.66 stand-off. The floor is a fraction of a bond, so this checks
+    // it in those units at both presets.
     for (const view of [EXPLICIT_H, LEWIS]) {
       for (const fixture of FIXTURES) {
-        if (fixture.name === "unmergedDropOverlap") continue;
         for (const style of PRESETS) {
-          for (let step = 0; step < 9; step++) {
-            const mol = rotateAtoms(
-              fixture.molecule,
-              fixture.molecule.atomIds,
-              (step * 40 * Math.PI) / 180,
-            );
-            const scene = buildScene(mol, style, view);
-            const found = detectCollisions(scene, mol).collisions.filter(
-              (c) => c.kind === "hydrogen-over-atom",
+          const floor =
+            style.explicitHydrogenMinStemRatio * pxPerModelUnit(style);
+          const scene = buildScene(fixture.molecule, style, view);
+          for (const stem of hydrogenPrimitives(scene, "line")) {
+            if (stem.type !== "line") throw new Error("expected a line");
+            const length = Math.sqrt(
+              (stem.b.x - stem.a.x) ** 2 + (stem.b.y - stem.a.y) ** 2,
             );
             expect(
-              found,
-              `${fixture.name} ${view.kind} ${style.name} rotated ${step * 40}deg`,
-            ).toEqual([]);
+              length,
+              `${fixture.name} ${view.kind} ${style.name} ${stem.id}`,
+            ).toBeGreaterThanOrEqual(floor - 1e-9);
           }
         }
       }
     }
-    // No raised timeout: the whole sweep runs in well under a tenth of a
-    // second. See the sibling sweep in `collide.test.ts` for why that is left
-    // on the default budget rather than given a generous one.
+    // The case that motivated it, stated plainly: ethanol's O–H at the
+    // printed bond is a millimetre, not a smudge.
+    const scene = buildScene(ethanol(), PUBLICATION_STYLE, EXPLICIT_H);
+    const oh = scene.primitives.find((p) => p.id === "atom:a3:h:0:line");
+    if (oh?.type !== "line") throw new Error("expected ethanol's O–H stem");
+    const printedMm =
+      (Math.sqrt((oh.b.x - oh.a.x) ** 2 + (oh.b.y - oh.a.y) ** 2) *
+        PRINTED_BOND_LENGTH_CM *
+        10) /
+      pxPerModelUnit(PUBLICATION_STYLE);
+    expect(printedMm).toBeGreaterThan(1);
   });
 
   it("gives every derived hydrogen a stem, however wide its host's label", () => {

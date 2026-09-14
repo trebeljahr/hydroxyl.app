@@ -112,6 +112,27 @@ export interface RenderStyle {
    */
   readonly explicitHydrogenLengthRatio: number;
   /**
+   * The shortest VISIBLE stem a drawn hydrogen may have — what is left of its
+   * bond after trimming against the host's label and the "H" — as a FRACTION
+   * OF A STANDARD BOND, model units, for the same reason as the ratio above.
+   *
+   * Needed because trimming eats a fixed number of px at each end while the
+   * bond is a fraction of the page. At Publication's 10 pt labels the two
+   * trims of an O–H come to about 18 of the bond's 24 px, more than the 0.66
+   * stand-off itself, so every derived hydrogen fell back to a two-line-width
+   * stub: 2 px, 0.42 mm at the printed 0.508 cm bond, which reads as a smudge
+   * between two glyphs rather than a bond. A floor on the stem, not a longer
+   * ratio: a longer ratio lengthens every stem, including the ones the labels
+   * already leave room for, while a floor only reaches the ones they choke.
+   *
+   * 0.2 at both presets: 1.02 mm printed, and at Screen it only lifts the
+   * stems already shorter than that. Measured against the explicit-H crowding
+   * sweep, the floor has a price. Pushing a hydrogen further out brings it
+   * nearer a hydrogen on the next carbon, and the Publication count rose from
+   * 78 to 84 (0.25 gave 108). Screen stayed at zero.
+   */
+  readonly explicitHydrogenMinStemRatio: number;
+  /**
    * Size of an `(R)`/`(S)`/`(E)`/`(Z)` label, as a fraction of `fontSizePx`.
    *
    * Smaller than an atom label because it is an annotation ABOUT the structure
@@ -180,6 +201,7 @@ export const PUBLICATION_STYLE: RenderStyle = Object.freeze({
   stereoHashPeriodPx: 3,
   stereoWavyPeriodPx: 8,
   explicitHydrogenLengthRatio: 0.66,
+  explicitHydrogenMinStemRatio: 0.2,
   stereoDescriptorScale: 0.85,
   colors: Object.freeze({ bond: "#000000", label: "#000000" }),
   coordinatePrecision: 3,
@@ -212,6 +234,7 @@ export const SCREEN_STYLE: RenderStyle = Object.freeze({
   stereoHashPeriodPx: 5,
   stereoWavyPeriodPx: 15,
   explicitHydrogenLengthRatio: 0.66,
+  explicitHydrogenMinStemRatio: 0.2,
   stereoDescriptorScale: 0.85,
   colors: Object.freeze({
     bond: "#1f2937",

@@ -377,8 +377,8 @@ function buildStructural(
  *
  * A STEM CANNOT TRIM TO NOTHING, unlike a real bond between two crowded
  * labels. `phantomHydrogens` has already stood the hydrogen far enough off its
- * host for the two trims to leave `MIN_STEM_LINE_WIDTHS` line widths between
- * them, using these very placements, so `bondAxis` always returns an axis
+ * host for the two trims to leave its minimum stem between them (see
+ * `style.explicitHydrogenMinStemRatio`), using these very placements, so `bondAxis` always returns an axis
  * here. The `undefined` branch is the type's, not a case: dropping it would
  * mean asserting non-null on a function that is honestly allowed to return
  * one.
