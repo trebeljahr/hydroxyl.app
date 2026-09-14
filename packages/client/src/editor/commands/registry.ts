@@ -848,8 +848,8 @@ const VIEW_COMMANDS: readonly Command[] = [
     },
   },
   ...DISPLAY_FLAG_COMMANDS,
-  // The document's style preset, which the canvas AND every export draw with
-  // (decision 21). Through `setStylePreset`, so a switch is one undo step and
+  // The document's style preset, which the canvas draws with and a
+  // canvas-style export follows (decisions 21 and 50). Through `setStylePreset`, so a switch is one undo step and
   // is saved with the document. Disabled for the preset already in use, so
   // the palette shows which one that is.
   ...STYLE_PRESETS.map(

@@ -93,7 +93,8 @@ function CommandButton({
 
 /**
  * Screen / Publication: the document's style preset, which the canvas draws
- * with and every export writes (decision 21). Two registry commands, so the
+ * with, and every export writes when its style choice is "As shown on the canvas"
+ * (decisions 21 and 50; exports default to Publication). Two registry commands, so the
  * palette offers the same switch and a click is the same undoable
  * `setStylePreset` the command runs. The active preset is `aria-pressed`
  * rather than disabled, so it stays focusable and announced.

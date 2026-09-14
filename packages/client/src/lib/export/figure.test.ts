@@ -13,6 +13,7 @@ import type { Molecule } from "@starter/chem-core";
 import { createDocument, createPanel, defaultPanelsFor } from "@starter/shared";
 import type { SketchDocument } from "@starter/shared";
 
+import { INITIAL_UI_STATE } from "@/state/slices/ui";
 import type { FigureExportSettings } from "@/state/types";
 
 import {
@@ -22,6 +23,7 @@ import {
   figurePreviewSvg,
   figureSvgForFile,
   figureSvgForRaster,
+  figureStyleNotice,
   formatPt,
   labelSizeNotice,
   prepareFigure,
@@ -32,7 +34,7 @@ import {
 } from "./figure";
 
 const NOW = "2024-01-01T00:00:00.000Z";
-const SINGLE_300: FigureExportSettings = { width: "single", customWidthCm: 12, dpi: 300 };
+const SINGLE_300: FigureExportSettings = { width: "single", customWidthCm: 12, dpi: 300, style: "publication" };
 
 function threePanelDoc(molecule = ethanol()): SketchDocument {
   const [skeletal, sum] = defaultPanelsFor("screen");
@@ -80,10 +82,10 @@ function prepared(doc: SketchDocument, settings = SINGLE_300) {
 
 describe("the figure a document exports", () => {
   it("composes the document's panels in order, with its column count", () => {
-    const figure = documentFigure({ ...threePanelDoc(), figure: { columns: 2 } });
+    const figure = documentFigure({ ...threePanelDoc(), figure: { columns: 2 } }, "publication");
     expect(figure.cells.map((c) => c.representation.kind)).toEqual(["skeletal", "lewis", "sumFormula"]);
     expect(figure.columns).toBe(2);
-    expect(documentFigure(threePanelDoc()).columns).toBe(3);
+    expect(documentFigure(threePanelDoc(), "publication").columns).toBe(3);
   });
 
   it("writes a small figure at its natural size, narrower than the column, with a 0.508 cm bond", () => {
@@ -93,7 +95,7 @@ describe("the figure a document exports", () => {
     expect(scaleNotice(p.size, SINGLE_300)).toBeNull();
     const svg = figureSvgForFile(p);
     expect(svg).not.toContain('width="8.25cm"');
-    expect(printedBondCm(svg, SCREEN_STYLE.bondLengthPx)).toBeCloseTo(PRINTED_BOND_LENGTH_CM, 4);
+    expect(printedBondCm(svg, PUBLICATION_STYLE.bondLengthPx)).toBeCloseTo(PRINTED_BOND_LENGTH_CM, 4);
     expect(svg).toMatch(/height="[\d.]+cm"/);
     expect(svg).toContain("@font-face");
     expect(svg).not.toContain("var(--");
@@ -128,33 +130,55 @@ describe("the figure a document exports", () => {
     expect(p.size.widthPx).toBe(974);
     const svg = figureSvgForFile(p);
     expect(svg).toContain('width="8.25cm"');
-    expect(printedBondCm(svg, SCREEN_STYLE.bondLengthPx)).toBeCloseTo(
+    expect(printedBondCm(svg, PUBLICATION_STYLE.bondLengthPx)).toBeCloseTo(
       PRINTED_BOND_LENGTH_CM * p.size.scale,
       4,
     );
     const percent = Math.floor(p.size.scale * 100);
     expect(scaleNotice(p.size, SINGLE_300)).toBe(`Scaled to ${percent}% to fit a single column.`);
     expect(
-      scaleNotice(p.size, { width: "custom", customWidthCm: 8.25, dpi: 300 }),
+      scaleNotice(p.size, { width: "custom", customWidthCm: 8.25, dpi: 300, style: "publication" }),
     ).toBe(`Scaled to ${percent}% to fit the 8.25 cm custom width.`);
   });
 
   it("derives the double-column pixel width at 600 dpi for a figure that fills it", () => {
-    const p = prepared(onePanelDoc(linearChain(80)), { width: "double", customWidthCm: 12, dpi: 600 });
+    const p = prepared(onePanelDoc(linearChain(80)), { width: "double", customWidthCm: 12, dpi: 600, style: "publication" });
     expect(p.size.scaled).toBe(true);
     expect(p.size.widthCm).toBe(17.8);
     expect(p.size.widthPx).toBe(4205);
   });
 
-  it("exports in the document's own style preset, the one the canvas draws with (decision 21)", () => {
+  it("exports in Publication by default, whatever the canvas shows (decision 50)", () => {
     const screen = threePanelDoc();
     expect(screen.stylePreset).toBe("screen");
-    expect(documentFigure(screen).style).toBe(SCREEN_STYLE);
-    const publication: SketchDocument = { ...screen, stylePreset: "publication" };
-    expect(documentFigure(publication).style).toBe(PUBLICATION_STYLE);
+    expect(INITIAL_UI_STATE.figureExport.style).toBe("publication");
+    expect(documentFigure(screen, "publication").style).toBe(PUBLICATION_STYLE);
 
-    const screenSvg = figureSvgForFile(prepared(screen));
-    const publicationSvg = figureSvgForFile(prepared(publication));
+    const publication: SketchDocument = { ...screen, stylePreset: "publication" };
+    // The default file of a Screen document IS the Publication document's file.
+    expect(figureSvgForFile(prepared(screen))).toBe(figureSvgForFile(prepared(publication)));
+    const p = prepared(screen);
+    expect(p.figure.style).toBe(PUBLICATION_STYLE);
+    expect(p.size.fontSizePt).toBeCloseTo(10, 9);
+    // The preview follows the choice, not the canvas.
+    expect(figurePreviewSvg(screen, "publication")).toBe(figurePreviewSvg(publication, "publication"));
+
+    expect(figureStyleNotice(screen, SINGLE_300)).toBe(
+      "The canvas shows the Screen style. The export uses the Publication style.",
+    );
+    expect(figureStyleNotice(publication, SINGLE_300)).toBeNull();
+    expect(labelSizeNotice(p, SINGLE_300)).toBeNull();
+  });
+
+  it("exports the canvas's own preset when that is chosen, and says what it prints", () => {
+    const screen = threePanelDoc();
+    const publication: SketchDocument = { ...screen, stylePreset: "publication" };
+    const asCanvas: FigureExportSettings = { ...SINGLE_300, style: "canvas" };
+    expect(documentFigure(screen, "canvas").style).toBe(SCREEN_STYLE);
+    expect(documentFigure(publication, "canvas").style).toBe(PUBLICATION_STYLE);
+
+    const screenSvg = figureSvgForFile(prepared(screen, asCanvas));
+    const publicationSvg = figureSvgForFile(prepared(publication, asCanvas));
     expect(screenSvg).not.toBe(publicationSvg);
     // Same printed bond either way: the physical scale divides by the style used.
     expect(printedBondCm(screenSvg, SCREEN_STYLE.bondLengthPx)).toBeCloseTo(PRINTED_BOND_LENGTH_CM, 4);
@@ -164,8 +188,16 @@ describe("the figure a document exports", () => {
     );
     expect(screenSvg).toContain(`stroke-width="${SCREEN_STYLE.bondLineWidthPx}"`);
     expect(publicationSvg).toContain(`stroke-width="${PUBLICATION_STYLE.bondLineWidthPx}"`);
-    // And the preview follows it too.
-    expect(figurePreviewSvg(screen)).not.toBe(figurePreviewSvg(publication));
+    expect(figurePreviewSvg(screen, "canvas")).not.toBe(figurePreviewSvg(publication, "canvas"));
+
+    // Screen at the fixed printed bond: 16 px on a 44 px bond of 14.4 pt.
+    const p = prepared(screen, asCanvas);
+    expect(p.size.fontSizePt).toBeCloseTo((16 * 14.4) / 44, 6);
+    // No style sentence (the file matches the canvas), but decision 51's
+    // label warning points back to Publication.
+    expect(figureStyleNotice(screen, asCanvas)).toBeNull();
+    expect(labelSizeNotice(p, asCanvas)?.advice).toContain("such as Publication");
+    expect(figureStyleNotice(publication, asCanvas)).toBeNull();
   });
 
   it("reports the bond as drawn, and says why, for a drawing not at the standard bond", () => {
@@ -179,7 +211,7 @@ describe("the figure a document exports", () => {
     expect(short.size.scaled).toBe(false);
     expect(short.size.bondLengthMm).toBeCloseTo(5.08 * 0.55, 9);
     // The file agrees with the read-out: its drawn bond is what prints.
-    expect(printedBondCm(figureSvgForFile(short), SCREEN_STYLE.bondLengthPx * 0.55)).toBeCloseTo(
+    expect(printedBondCm(figureSvgForFile(short), PUBLICATION_STYLE.bondLengthPx * 0.55)).toBeCloseTo(
       short.size.bondLengthMm / 10,
       4,
     );
@@ -189,7 +221,7 @@ describe("the figure a document exports", () => {
   });
 
   it("warns when scaling takes the labels under 8 pt, names the printed size, and still exports (decision 51)", () => {
-    const DOUBLE_300: FigureExportSettings = { width: "double", customWidthCm: 12, dpi: 300 };
+    const DOUBLE_300: FigureExportSettings = { width: "double", customWidthCm: 12, dpi: 300, style: "publication" };
     // A C40 chain in Publication is about 17 cm: 10 pt labels at its natural
     // size, under 8 pt in a single column.
     const doc = onePanelDoc(linearChain(40), "publication");
@@ -221,8 +253,8 @@ describe("the figure a document exports", () => {
   });
 
   it("warns that no width helps when the style's labels are under 8 pt at full size", () => {
-    // Screen: 16 px labels on a 44 px bond print at 5.2 pt unscaled.
-    const p = prepared(onePanelDoc(benzene()));
+    // Screen, chosen for the export: 16 px labels on a 44 px bond print at 5.2 pt unscaled.
+    const p = prepared(onePanelDoc(benzene()), { ...SINGLE_300, style: "canvas" });
     expect(p.size.scaled).toBe(false);
     expect(labelSizeNotice(p, SINGLE_300)).toEqual({
       summary: "Labels print at 5.2 pt, below the 8 pt minimum ACS asks for in figures.",
@@ -238,12 +270,12 @@ describe("the figure a document exports", () => {
   });
 
   it("accepts a custom width in range and refuses one outside it", () => {
-    expect(exportWidthCm({ width: "custom", customWidthCm: 12.5, dpi: 300 })).toEqual({
+    expect(exportWidthCm({ width: "custom", customWidthCm: 12.5, dpi: 300, style: "publication" })).toEqual({
       ok: true,
       widthCm: 12.5,
     });
-    expect(exportWidthCm({ width: "custom", customWidthCm: 0, dpi: 300 }).ok).toBe(false);
-    expect(exportWidthCm({ width: "custom", customWidthCm: Number.NaN, dpi: 300 }).ok).toBe(false);
+    expect(exportWidthCm({ width: "custom", customWidthCm: 0, dpi: 300, style: "publication" }).ok).toBe(false);
+    expect(exportWidthCm({ width: "custom", customWidthCm: Number.NaN, dpi: 300, style: "publication" }).ok).toBe(false);
   });
 
   it("refuses a raster a browser canvas cannot hold", () => {
@@ -255,7 +287,7 @@ describe("the figure a document exports", () => {
         b.atom("C", { x: 0, y: 300 });
       }),
     );
-    const p = prepared(tall, { width: "custom", customWidthCm: 60, dpi: 600 });
+    const p = prepared(tall, { width: "custom", customWidthCm: 60, dpi: 600, style: "publication" });
     expect(p.size.scaled).toBe(false);
     expect(p.size.heightPx).toBeGreaterThan(MAX_RASTER_SIDE_PX);
     // Past the hard limits no probe is asked: no engine could say yes.
@@ -268,7 +300,7 @@ describe("the figure a document exports", () => {
     // taller than about 0.95 of that it is past iOS Safari's 16,777,216 px
     // area, and still far inside Chromium's. A 40-bond square fills it.
     const square = onePanelDoc(methaneSquare(40));
-    const p = prepared(square, { width: "double", customWidthCm: 12, dpi: 600 });
+    const p = prepared(square, { width: "double", customWidthCm: 12, dpi: 600, style: "publication" });
     expect(p.size.scaled).toBe(true);
     expect(p.size.widthPx).toBe(4205);
     expect(p.size.widthPx * p.size.heightPx).toBeGreaterThan(SAFE_RASTER_AREA_PX);
@@ -311,7 +343,7 @@ describe("refusals", () => {
   });
 
   it("still previews that figure, with the unavailable panel marked rather than empty", () => {
-    const svg = figurePreviewSvg(threePanelDoc(benzylAlcoholAbbreviated()));
+    const svg = figurePreviewSvg(threePanelDoc(benzylAlcoholAbbreviated()), "publication");
     expect(svg).toContain('data-unavailable="abbreviated-label"');
     expect(svg).toContain("Sum formula view unavailable.");
   });

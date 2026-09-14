@@ -181,7 +181,16 @@ export interface FigureExportSettings {
   /** Used when `width` is "custom". */
   readonly customWidthCm: number;
   readonly dpi: 300 | 600;
+  /**
+   * Which render style the export draws with (decision 50). "publication" is
+   * the default whatever the canvas shows, because Screen at the fixed
+   * printed bond sets 5.2 pt labels; "canvas" is the document's own preset.
+   * A per-export choice: it never touches the document or the undo history.
+   */
+  readonly style: FigureStyleChoice;
 }
+
+export type FigureStyleChoice = "publication" | "canvas";
 
 // ---------------------------------------------------------------------------
 // Slices

@@ -21,10 +21,13 @@
  * 8 pt, the dialog warns with the printed size and what would help. Every
  * button stays enabled: the warning informs, it does not refuse.
  *
- * STYLE (decision 21). The export draws with the document's preset, the one
- * the canvas shows. The dialog names it, and when it is the screen preset it
- * says so plainly and offers the switch to publication — through the same
- * undoable registry command the top bar uses.
+ * STYLE (decision 50). The export draws with Publication by default, whatever
+ * the canvas shows; "As shown on the canvas" is the other choice. It is a
+ * per-export setting beside width and dpi, not the document's preset, so
+ * picking it changes neither the canvas nor the undo history. When the file
+ * and the canvas differ the dialog says so. Screen chosen for print needs no
+ * warning of its own: its 5.2 pt labels are under decision 51's 8 pt minimum,
+ * so the label-size warning names the size and points back to Publication.
  *
  * Every button runs a registry command synchronously inside its click, which
  * is what keeps the clipboard and the save picker inside the user gesture.
@@ -42,6 +45,7 @@ import {
   CUSTOM_WIDTH_RANGE_CM,
   bondLengthNotice,
   figurePreviewSvg,
+  figureStyleNotice,
   formatPt,
   labelSizeNotice,
   prepareFigure,
@@ -94,11 +98,11 @@ export function ExportDialog(): ReactElement {
   const preview = useMemo(() => {
     if (!open) return null;
     try {
-      return svgDataUri(figurePreviewSvg(doc));
+      return svgDataUri(figurePreviewSvg(doc, settings.style));
     } catch (error) {
       return error instanceof Error ? error : new Error(String(error));
     }
-  }, [open, doc]);
+  }, [open, doc, settings.style]);
 
   const prepared = useMemo(() => (open ? prepareFigure(doc, settings) : null), [open, doc, settings]);
   const tooLarge = prepared?.ok === true ? rasterTooLarge(prepared.value, canvasCanHold) : null;
@@ -106,6 +110,8 @@ export function ExportDialog(): ReactElement {
   const bondNotice = prepared?.ok === true ? bondLengthNotice(prepared.value) : null;
   const labelNotice = prepared?.ok === true ? labelSizeNotice(prepared.value, settings) : null;
   const canExport = prepared?.ok === true;
+  const styleNotice = figureStyleNotice(doc, settings);
+  const exportPreset = settings.style === "canvas" ? doc.stylePreset : "publication";
 
   return (
     <Dialog open={open} onOpenChange={(next) => editorStore.getState().setExportDialogOpen(next)}>
@@ -118,25 +124,32 @@ export function ExportDialog(): ReactElement {
 
         <div
           data-shell="figure-style"
-          data-style-preset={doc.stylePreset}
-          className="mb-3 flex flex-wrap items-center gap-2 text-xs"
+          data-style-preset={exportPreset}
+          data-document-preset={doc.stylePreset}
+          className="mb-3 flex flex-col gap-1"
         >
-          <span>
-            Style: <span className="font-medium">{STYLE_PRESET_TITLES[doc.stylePreset]}</span>
-            {doc.stylePreset === "screen"
-              ? " — the editing style the canvas shows, not the publication style. The export uses it as shown."
-              : " — the style the canvas shows."}
-          </span>
-          {doc.stylePreset === "screen" ? (
-            <button
-              type="button"
-              className={button}
-              data-command="view.style-publication"
-              onClick={() => run("view.style-publication")}
-            >
-              Switch to publication style
-            </button>
-          ) : null}
+          <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <legend className="text-muted-foreground mb-1 text-xs font-medium">Style</legend>
+            <Choice
+              name="figure-style"
+              value="publication"
+              checked={settings.style === "publication"}
+              label="Publication (ACS 1996)"
+              onSelect={() => set({ style: "publication" })}
+            />
+            <Choice
+              name="figure-style"
+              value="canvas"
+              checked={settings.style === "canvas"}
+              label={`As shown on the canvas (${STYLE_PRESET_TITLES[doc.stylePreset]})`}
+              onSelect={() => set({ style: "canvas" })}
+            />
+          </fieldset>
+          {styleNotice === null ? null : (
+            <p data-shell="figure-style-notice" className="text-muted-foreground text-xs">
+              {styleNotice}
+            </p>
+          )}
         </div>
 
         <div className="mb-3 flex max-h-72 min-h-24 items-center justify-center overflow-auto rounded-md border bg-white p-2">

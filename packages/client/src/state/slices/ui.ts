@@ -28,7 +28,7 @@ export const INITIAL_UI_STATE: UiState = Object.freeze({
   elementInputBuffer: "",
   activePanelId: null,
   exportDialogOpen: false,
-  figureExport: Object.freeze({ width: "single", customWidthCm: 12, dpi: 300 }),
+  figureExport: Object.freeze({ width: "single", customWidthCm: 12, dpi: 300, style: "publication" }),
 });
 
 export interface UiSliceOptions {
@@ -114,12 +114,14 @@ export function createUiSlice(
       const next = { ...current };
       if (patch.width !== undefined) next.width = patch.width;
       if (patch.dpi !== undefined) next.dpi = patch.dpi;
+      if (patch.style !== undefined) next.style = patch.style;
       if (patch.customWidthCm !== undefined && Number.isFinite(patch.customWidthCm)) {
         next.customWidthCm = patch.customWidthCm;
       }
       if (
         next.width === current.width &&
         next.dpi === current.dpi &&
+        next.style === current.style &&
         next.customWidthCm === current.customWidthCm
       ) {
         return;

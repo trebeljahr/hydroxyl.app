@@ -311,7 +311,7 @@ describe("view commands", () => {
 });
 
 describe("style preset commands (decision 21)", () => {
-  it("switch the preset the export draws with, as ONE undo step", () => {
+  it("switch the preset a canvas-style export draws with, as ONE undo step", () => {
     const store = storeWith(benzene());
     const state = () => store.getState();
     // New documents still open in the screen style.
@@ -319,19 +319,19 @@ describe("style preset commands (decision 21)", () => {
     expect(commandById("view.style-screen").enabled(state())).toBe(false);
     expect(commandById("view.style-publication").enabled(state())).toBe(true);
 
-    const screenSvg = serializeFigure(documentFigure(state().document));
+    const screenSvg = serializeFigure(documentFigure(state().document, "canvas"));
     const before = state().history.past.length;
     commandById("view.style-publication").run(store);
 
     expect(state().document.stylePreset).toBe("publication");
     expect(state().history.past.length).toBe(before + 1);
-    expect(documentFigure(state().document).style).toBe(PUBLICATION_STYLE);
-    expect(serializeFigure(documentFigure(state().document))).not.toBe(screenSvg);
+    expect(documentFigure(state().document, "canvas").style).toBe(PUBLICATION_STYLE);
+    expect(serializeFigure(documentFigure(state().document, "canvas"))).not.toBe(screenSvg);
     expect(commandById("view.style-publication").enabled(state())).toBe(false);
 
     state().undo();
     expect(state().document.stylePreset).toBe("screen");
-    expect(serializeFigure(documentFigure(state().document))).toBe(screenSvg);
+    expect(serializeFigure(documentFigure(state().document, "canvas"))).toBe(screenSvg);
   });
 
   it("records nothing when the preset is already in use", () => {

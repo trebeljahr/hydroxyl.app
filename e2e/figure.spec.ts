@@ -209,8 +209,9 @@ test("exports ONE self-contained SVG: labelled panels, one bond length, unique i
   expect(widthCm).toBeLessThan(8.25);
   const [, , vbW, vbH] = attr(svg, "viewBox").split(" ").map(Number);
   expect(Number.parseFloat(attr(svg, "height"))).toBeCloseTo((widthCm * vbH!) / vbW!, 3);
-  // New documents are in the screen preset, and the export draws with it (decision 21).
-  expect(printedBondCm(svg, 44)).toBeCloseTo(0.508, 3);
+  // New documents are in the screen preset, but the export defaults to
+  // Publication's 24 px bond (decision 50).
+  expect(printedBondCm(svg, 24)).toBeCloseTo(0.508, 3);
   await expect(page.locator('[data-shell="figure-scaled"]')).toHaveCount(0);
 
   // Nothing that only resolves inside the app.
@@ -225,11 +226,11 @@ test("exports ONE self-contained SVG: labelled panels, one bond length, unique i
   expect(new Set(ids).size).toBe(ids.length);
 
   // One bond length: every panel transform is a bare translate, and a
-  // skeletal bond is the screen style's 44 px in viewBox units.
+  // skeletal bond is the publication style's 24 px in viewBox units.
   const transforms = [...svg.matchAll(/transform="([^"]*)"/g)].map((m) => m[1]);
   expect(transforms).toHaveLength(3);
   for (const t of transforms) expect(t).toMatch(/^translate\(-?[\d.]+ -?[\d.]+\)$/);
-  expect(firstSkeletalBondLength(svg)).toBeCloseTo(44, 1);
+  expect(firstSkeletalBondLength(svg)).toBeCloseTo(24, 1);
 
   // The viewBox does not move with the editor's pan and zoom.
   await page.keyboard.press("Escape");
@@ -342,8 +343,8 @@ test("PNG at 300 dpi follows the printed size, not the column, rasterised with i
     let black = 0;
     let dark = 0;
     for (let i = 0; i < data.length; i += 4) {
-      // Within 16 of the screen style's ink (#1f2937 bonds, #111827 labels —
-      // the document's preset, decision 21), fully opaque.
+      // Within 48 of the publication style's black ink (the export's default
+      // style, decision 50), fully opaque.
       if (data[i]! < 48 && data[i + 3]! > 240) black += 1;
       if (data[i]! < 128) dark += 1;
     }
@@ -380,7 +381,7 @@ test("a figure wider than the column scales down to exactly the column, and the 
 
   const svg = (await downloadFrom(page, "figure.export-svg")).toString("utf8");
   expect(attr(svg, "width")).toBe("8.25cm");
-  expect(printedBondCm(svg, 44)).toBeLessThan(0.508);
+  expect(printedBondCm(svg, 24)).toBeLessThan(0.508);
   await expect(page.locator('[data-shell="export-status"]')).toContainText(
     "to fit a single column.",
   );
@@ -401,9 +402,9 @@ test("labels scaled under 8 pt: the read-out states the printed pt, the dialog w
   await expect(page.locator('[data-status="formula"]')).toHaveText("C₂H₈");
 
   await openExportDialog(page);
-  // Publication prints 10 pt labels at the house bond (decision 26), so only
-  // the fit scaling can take them under 8 pt here.
-  await page.locator(`${DIALOG} [data-command="view.style-publication"]`).click();
+  // Publication, the export's default style (decision 50), prints 10 pt labels
+  // at the house bond (decision 26), so only the fit scaling can take them
+  // under 8 pt here.
   await expect(page.locator('[data-shell="figure-style"]')).toHaveAttribute(
     "data-style-preset",
     "publication",
@@ -487,7 +488,7 @@ test("a molfile drawn at another tool's bond length prints at the house bond, an
   // The file agrees with the read-out: its drawn bond prints at 0.508 cm.
   const svg = (await downloadFrom(page, "figure.export-svg")).toString("utf8");
   const drawn = firstSkeletalBondLength(svg);
-  expect(drawn).toBeCloseTo(44, 1);
+  expect(drawn).toBeCloseTo(24, 1);
   expect(printedBondCm(svg, drawn)).toBeCloseTo(0.508, 3);
 });
 
@@ -530,7 +531,7 @@ test("double column at 600 dpi exports a PNG past Safari's canvas area where the
   expect(png.readUInt32BE(png.indexOf("pHYs") + 4)).toBe(23622);
 });
 
-test("the export uses the document's style preset: switched in the dialog, undone in one step, kept across a reload", async ({
+test("the export defaults to Publication whatever the canvas shows, and can follow the canvas instead", async ({
   page,
 }) => {
   await openEditor(page);
@@ -540,40 +541,41 @@ test("the export uses the document's style preset: switched in the dialog, undon
 
   await openExportDialog(page);
   const style = page.locator('[data-shell="figure-style"]');
-  await expect(style).toHaveAttribute("data-style-preset", "screen");
-  await expect(style).toContainText("Style: Screen");
-  await expect(style).toContainText("not the publication style");
-  const screenSvg = (await downloadFrom(page, "figure.export-svg")).toString("utf8");
-  expect(firstSkeletalBondLength(screenSvg)).toBeCloseTo(44, 1);
-  expect(screenSvg).toContain('stroke-width="2"');
-
-  // One click in the dialog.
-  await style.locator('[data-command="view.style-publication"]').click();
+  const notice = page.locator('[data-shell="figure-style-notice"]');
+  // Decision 50: the file is Publication by default; the canvas stays Screen.
   await expect(style).toHaveAttribute("data-style-preset", "publication");
-  await expect(style).toContainText("Style: Publication");
-  await expect(style.locator('[data-command="view.style-publication"]')).toHaveCount(0);
+  await expect(style).toHaveAttribute("data-document-preset", "screen");
+  await expect(style.locator('input[value="publication"]')).toBeChecked();
+  await expect(notice).toHaveText("The canvas shows the Screen style. The export uses the Publication style.");
+  await expect(page.locator('[data-shell="figure-label-size"]')).toHaveCount(0);
   const publicationSvg = (await downloadFrom(page, "figure.export-svg")).toString("utf8");
   expect(firstSkeletalBondLength(publicationSvg)).toBeCloseTo(24, 1);
   // The ACS 1996 setting at the house bond (decision 26): 0.6 pt lines, 10 pt labels.
   expect(publicationSvg).toContain('stroke-width="1"');
   await expect(page.locator('[data-shell="figure-size"]')).toContainText("bond 5.08 mm · labels 10.0 pt");
+
+  // The other choice follows the canvas, and the label warning (decision 51)
+  // says what Screen prints and points back to Publication.
+  await style.locator('input[value="canvas"]').check();
+  await expect(style).toHaveAttribute("data-style-preset", "screen");
+  await expect(notice).toHaveCount(0);
+  await expect(page.locator('[data-shell="figure-size"]')).toContainText("labels 5.2 pt");
+  const labelWarning = page.locator('[data-shell="figure-label-size"]');
+  await expect(labelWarning).toContainText("Labels print at 5.2 pt");
+  await expect(labelWarning).toContainText("such as Publication");
+  const screenSvg = (await downloadFrom(page, "figure.export-svg")).toString("utf8");
+  expect(firstSkeletalBondLength(screenSvg)).toBeCloseTo(44, 1);
+  expect(screenSvg).toContain('stroke-width="2"');
   // Same printed bond in both: the physical scale divides by the style used.
   expect(printedBondCm(screenSvg, 44)).toBeCloseTo(0.508, 3);
   expect(printedBondCm(publicationSvg, 24)).toBeCloseTo(0.508, 3);
-  // The canvas draws with it too.
+
+  // The choice is an export setting, not an edit: the document keeps Screen.
   await page.keyboard.press("Escape");
   await expect(page.locator(DIALOG)).toBeHidden();
-  await expect(topBar).toHaveAttribute("data-style-preset", "publication");
-
-  // ONE undo step takes it back, and the export follows.
-  await page.locator('[data-command="edit.undo"]').click();
   await expect(topBar).toHaveAttribute("data-style-preset", "screen");
-  await openExportDialog(page);
-  const undoneSvg = (await downloadFrom(page, "figure.export-svg")).toString("utf8");
-  expect(undoneSvg).toBe(screenSvg);
-  await page.keyboard.press("Escape");
 
-  // The top bar control, then a reload: the preset is saved with the document.
+  // A Publication document, saved and reloaded: both choices give one file.
   await topBar.locator('[data-command="view.style-publication"]').click();
   await expect(topBar).toHaveAttribute("data-style-preset", "publication");
   await expect(topBar.locator('[data-command="view.style-publication"]')).toHaveAttribute(
@@ -593,12 +595,15 @@ test("the export uses the document's style preset: switched in the dialog, undon
     "publication",
   );
   await openExportDialog(page);
-  await expect(page.locator('[data-shell="figure-style"]')).toHaveAttribute(
-    "data-style-preset",
-    "publication",
-  );
+  await expect(style).toHaveAttribute("data-document-preset", "publication");
+  // Session-only: the reload is back on the default.
+  await expect(style.locator('input[value="publication"]')).toBeChecked();
+  await expect(notice).toHaveCount(0);
   const reloadedSvg = (await downloadFrom(page, "figure.export-svg")).toString("utf8");
   expect(firstSkeletalBondLength(reloadedSvg)).toBeCloseTo(24, 1);
+  await style.locator('input[value="canvas"]').check();
+  await expect(notice).toHaveCount(0);
+  expect((await downloadFrom(page, "figure.export-svg")).toString("utf8")).toBe(reloadedSvg);
 });
 
 test("Copy figure writes svg, png and plain text in ONE ClipboardItem", async ({ page }) => {

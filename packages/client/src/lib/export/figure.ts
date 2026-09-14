@@ -11,17 +11,20 @@
  * the document with chem-render and serialised by its DOM-free serialiser,
  * which is also why the editor's pan and zoom cannot move the viewBox.
  *
- * ── THE FIGURE STYLE IS THE DOCUMENT'S PRESET (decision 21) ───────────────
+ * ── THE FIGURE STYLE DEFAULTS TO PUBLICATION (decision 50) ───────────────
  *
- * Export what the canvas shows. Every export path — the SVG file, the PNG,
- * Copy figure and the dialog's preview — composes with `renderStyleFor(doc)`,
- * the same function the canvas draws with, so the line weights and label
- * size a user sees are the ones that land in the manuscript. A document in
- * the screen preset therefore exports the screen style's line widths and
- * label size relative to the bond; the export dialog
- * says so and offers the one-click switch, rather than this module quietly
- * substituting a style nobody chose. (The first implementation hard-wired
- * `PUBLICATION_STYLE` here, whatever the canvas showed.)
+ * Every export path — the SVG file, the PNG, Copy figure and the dialog's
+ * preview — composes with `figureStyle(doc, choice)`, so the four can never
+ * disagree about what the file looks like. The choice defaults to
+ * `PUBLICATION_STYLE` whatever the canvas shows, and "canvas" resolves through
+ * `renderStyleFor(doc)`, the same function the canvas draws with.
+ *
+ * This partly reverses decision 21 ("export what the canvas shows"). At the
+ * fixed printed bond Screen sets 5.2 pt labels where the ACS 1996 setting
+ * asks 10 pt; a warning with a one-click switch still let faint figures reach
+ * a manuscript, because new documents open in Screen and most people never
+ * change it. The choice is session UI state, never the document's preset, so
+ * exporting cannot restyle the canvas or leave an undo entry behind.
  *
  * ── HOW BIG IT PRINTS (decision 20) ──────────────────────────────────────
  *
@@ -43,17 +46,18 @@ import {
   JOURNAL_WIDTHS_CM,
   MIN_PRINTED_LABEL_PT,
   PRINTED_BOND_LENGTH_CM,
+  PUBLICATION_STYLE,
   composeFigure,
   physicalFigureSize,
   serializeFigure,
   unavailableCells,
 } from "@starter/chem-render";
-import type { Figure, PhysicalFigureSize } from "@starter/chem-render";
+import type { Figure, PhysicalFigureSize, RenderStyle } from "@starter/chem-render";
 import type { SketchDocument } from "@starter/shared";
 
-import { renderStyleFor, toRenderRepresentation } from "@/canvas/scene-bridge";
+import { STYLE_PRESET_TITLES, renderStyleFor, toRenderRepresentation } from "@/canvas/scene-bridge";
 import { fileBaseName } from "@/lib/io/save";
-import type { FigureExportSettings } from "@/state/types";
+import type { FigureExportSettings, FigureStyleChoice } from "@/state/types";
 
 /** A custom width outside this range is refused rather than clamped. */
 export const CUSTOM_WIDTH_RANGE_CM = Object.freeze({ min: 2, max: 60 });
@@ -82,11 +86,33 @@ export const MAX_RASTER_SIDE_PX = 32_767;
  *  a transparent PNG onto black. The SVG stays transparent. */
 export const RASTER_BACKGROUND = "#ffffff";
 
-export function documentFigure(doc: SketchDocument): Figure {
+/**
+ * The style an export draws with. "canvas" goes through the canvas's own
+ * resolution rather than a copy of it, so it cannot pick a different preset.
+ */
+export function figureStyle(doc: SketchDocument, choice: FigureStyleChoice): RenderStyle {
+  return choice === "canvas" ? renderStyleFor(doc) : PUBLICATION_STYLE;
+}
+
+/**
+ * The sentence the dialog shows when the file will not look like the canvas,
+ * or null when it will. Said plainly, so nobody is surprised that the download
+ * is lighter than the editor. Screen chosen for print gets no sentence here:
+ * its labels print under 8 pt, so `labelSizeNotice` already warns and names
+ * Publication as the fix, and a second warning would only repeat it.
+ */
+export function figureStyleNotice(
+  doc: SketchDocument,
+  settings: FigureExportSettings,
+): string | null {
+  if (figureStyle(doc, settings.style) === renderStyleFor(doc)) return null;
+  return `The canvas shows the ${STYLE_PRESET_TITLES[doc.stylePreset]} style. The export uses the Publication style.`;
+}
+
+export function documentFigure(doc: SketchDocument, choice: FigureStyleChoice): Figure {
   return composeFigure(
     doc.molecule,
-    // The canvas's own style resolution, not a copy of it: decision 21.
-    renderStyleFor(doc),
+    figureStyle(doc, choice),
     doc.panels.map((panel) => ({
       id: panel.id,
       representation: toRenderRepresentation(panel.representation),
@@ -248,7 +274,7 @@ export function prepareFigure(
   const width = exportWidthCm(settings);
   if (!width.ok) return width;
 
-  const figure = documentFigure(doc);
+  const figure = documentFigure(doc, settings.style);
   const missing = unavailableCells(figure);
   if (missing.length > 0) {
     // Refused, not marked: a figure with a placeholder in it is not something
@@ -307,8 +333,8 @@ export function figureSvgForRaster(prepared: PreparedFigure): string {
 }
 
 /** For the export dialog: unavailable panels MARKED, so the reason shows. */
-export function figurePreviewSvg(doc: SketchDocument): string {
-  return serializeFigure(documentFigure(doc), {
+export function figurePreviewSvg(doc: SketchDocument, choice: FigureStyleChoice): string {
+  return serializeFigure(documentFigure(doc, choice), {
     standalone: false,
     indent: false,
     embedFont: true,

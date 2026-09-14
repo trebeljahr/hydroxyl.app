@@ -81,9 +81,10 @@ const DOCUMENT_KINDS_MATCH_VIEW_KINDS: DocumentKindsMatchViewKinds = true;
 void DOCUMENT_KINDS_MATCH_VIEW_KINDS;
 
 /**
- * The render style a document's preset selects — for the canvas AND for every
- * export (decision 21: export what the canvas shows). One function, so the two
- * cannot resolve a preset differently.
+ * The render style a document's preset selects — for the canvas, and for an
+ * export whose style choice is "As shown on the canvas" (decision 50; exports
+ * default to Publication). One function, so the two cannot resolve a preset
+ * differently.
  */
 export function renderStyleFor(doc: SketchDocument): RenderStyle {
   return RENDER_STYLES[doc.stylePreset];
