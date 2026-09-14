@@ -42,13 +42,23 @@ export const FIGURE_STYLE: RenderStyle = PUBLICATION_STYLE;
 export const CUSTOM_WIDTH_RANGE_CM = Object.freeze({ min: 2, max: 60 });
 
 /**
- * The largest canvas the PNG path will allocate. Safari caps a canvas at
- * 16,777,216 px of area and `toBlob` then returns null; Chromium's per-side
- * limit is 32,767 but a figure that large is not a figure. Refusing with a
- * sentence beats handing back a PNG that silently failed to encode.
+ * Canvas limits for the PNG path.
+ *
+ * ENGINES DISAGREE, SO NO ONE ENGINE'S LIMIT IS APPLIED TO ALL OF THEM.
+ * iOS Safari caps a canvas at 16,777,216 px of area; Chromium allows 32,767
+ * px a side and 268,435,456 px of area. A double-column figure at 600 dpi is
+ * 4205 px wide, so anything taller than about 0.95 of its width crosses the
+ * Safari cap — a 2 × 2 grid does. Refusing that everywhere would take a
+ * preset the dialog offers away from the browsers that can draw it.
+ *
+ * So: above the HARD limits no engine can hold the canvas and the export is
+ * refused outright. Between the SAFE area and the hard limits the answer
+ * depends on the browser, and `rasterTooLarge` asks it through a probe (see
+ * `canvasCanHold` in png.ts). Below the safe area every engine can.
  */
-export const MAX_RASTER_AREA_PX = 16_777_216;
-export const MAX_RASTER_SIDE_PX = 16_384;
+export const SAFE_RASTER_AREA_PX = 16_777_216;
+export const MAX_RASTER_AREA_PX = 268_435_456;
+export const MAX_RASTER_SIDE_PX = 32_767;
 
 /** Opaque white for the raster: many submission systems and viewers flatten
  *  a transparent PNG onto black. The SVG stays transparent. */
@@ -185,14 +195,24 @@ export function figurePreviewSvg(doc: SketchDocument): string {
   });
 }
 
-export function rasterTooLarge(prepared: PreparedFigure): string | null {
+/**
+ * A sentence when the PNG for `prepared` cannot be drawn in this browser, or
+ * null when it can. `canHold` asks the browser whether it can allocate a
+ * canvas of that size; it is consulted only above the area every engine
+ * supports, so the ordinary case never allocates a probe canvas. Without a
+ * probe (a plain-node caller) only the hard limits apply.
+ */
+export function rasterTooLarge(
+  prepared: PreparedFigure,
+  canHold?: (widthPx: number, heightPx: number) => boolean,
+): string | null {
   const { widthPx, heightPx } = prepared.size;
-  if (
-    widthPx > MAX_RASTER_SIDE_PX ||
-    heightPx > MAX_RASTER_SIDE_PX ||
-    widthPx * heightPx > MAX_RASTER_AREA_PX
-  ) {
-    return `A ${widthPx} × ${heightPx} px PNG is larger than a browser canvas can hold. Choose a narrower width or 300 dpi, or export the SVG.`;
+  const area = widthPx * heightPx;
+  if (widthPx > MAX_RASTER_SIDE_PX || heightPx > MAX_RASTER_SIDE_PX || area > MAX_RASTER_AREA_PX) {
+    return `A ${widthPx} × ${heightPx} px PNG is larger than any browser canvas can hold. Choose a narrower width or 300 dpi, or export the SVG.`;
+  }
+  if (area > SAFE_RASTER_AREA_PX && canHold !== undefined && !canHold(widthPx, heightPx)) {
+    return `A ${widthPx} × ${heightPx} px PNG is larger than this browser's canvas can hold. Choose a narrower width or 300 dpi, export the SVG, or use a browser with a larger canvas limit.`;
   }
   return null;
 }

@@ -111,6 +111,62 @@ export function withPhysChunk(png: Uint8Array, dpi: number): Uint8Array {
 }
 
 /**
+ * Whether `context`'s canvas really has a backing store of its declared size.
+ *
+ * An over-limit canvas does not throw in every engine: Safari hands back a
+ * context whose drawing silently goes nowhere, and `toBlob` later yields
+ * null or a blank image. Writing one opaque pixel into the far corner and
+ * reading it back catches all of those without drawing the figure first.
+ */
+function backingStoreWorks(
+  context: CanvasRenderingContext2D,
+  widthPx: number,
+  heightPx: number,
+): boolean {
+  try {
+    context.fillStyle = "#000000";
+    context.fillRect(widthPx - 1, heightPx - 1, 1, 1);
+    const alpha = context.getImageData(widthPx - 1, heightPx - 1, 1, 1).data[3];
+    context.clearRect(widthPx - 1, heightPx - 1, 1, 1);
+    return alpha === 255;
+  } catch {
+    return false;
+  }
+}
+
+let lastProbe: { readonly key: string; readonly fits: boolean } | null = null;
+
+/**
+ * Ask THIS browser whether it can allocate a `widthPx` × `heightPx` canvas.
+ * The probe canvas is shrunk to zero straight afterwards so its memory is
+ * released, and the last answer is remembered so a re-rendering dialog does
+ * not allocate it again for the same size.
+ */
+export function canvasCanHold(widthPx: number, heightPx: number): boolean {
+  const key = `${widthPx}x${heightPx}`;
+  if (lastProbe?.key === key) return lastProbe.fits;
+  let fits = false;
+  const canvas = document.createElement("canvas");
+  try {
+    canvas.width = widthPx;
+    canvas.height = heightPx;
+    const context = canvas.getContext("2d");
+    fits =
+      context !== null &&
+      canvas.width === widthPx &&
+      canvas.height === heightPx &&
+      backingStoreWorks(context, widthPx, heightPx);
+  } catch {
+    fits = false;
+  } finally {
+    canvas.width = 0;
+    canvas.height = 0;
+  }
+  lastProbe = { key, fits };
+  return fits;
+}
+
+/**
  * Rasterise a self-contained SVG to a PNG blob of exactly `widthPx` ×
  * `heightPx`, stamped with `dpi`.
  */
@@ -132,7 +188,11 @@ export async function rasterizeSvg(
     canvas.width = widthPx;
     canvas.height = heightPx;
     const context = canvas.getContext("2d");
-    if (context === null) throw new Error("This browser could not create a canvas to draw the PNG.");
+    if (context === null || !backingStoreWorks(context, widthPx, heightPx)) {
+      throw new Error(
+        `This browser could not allocate a ${widthPx} × ${heightPx} px canvas for the PNG. Choose a narrower width or 300 dpi, or export the SVG.`,
+      );
+    }
     context.drawImage(image, 0, 0, widthPx, heightPx);
 
     const encoded = await new Promise<Blob | null>((resolve) => {

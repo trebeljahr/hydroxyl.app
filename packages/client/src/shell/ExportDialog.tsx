@@ -33,6 +33,7 @@ import {
   rasterTooLarge,
   svgDataUri,
 } from "@/lib/export/figure";
+import { canvasCanHold } from "@/lib/export/png";
 import { cn } from "@/lib/utils";
 import { editorStore, useEditorStore } from "@/state";
 import type { FigureExportSettings } from "@/state/types";
@@ -84,7 +85,7 @@ export function ExportDialog(): ReactElement {
   }, [open, doc]);
 
   const prepared = useMemo(() => (open ? prepareFigure(doc, settings) : null), [open, doc, settings]);
-  const tooLarge = prepared?.ok === true ? rasterTooLarge(prepared.value) : null;
+  const tooLarge = prepared?.ok === true ? rasterTooLarge(prepared.value, canvasCanHold) : null;
   const canExport = prepared?.ok === true;
 
   return (

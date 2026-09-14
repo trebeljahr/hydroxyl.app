@@ -298,6 +298,39 @@ test("PNG at 300 dpi single column is 974 px wide, rasterised with its resolutio
   expect(stats.black).toBeGreaterThan(stats.dark * 0.3);
 });
 
+test("double column at 600 dpi exports a PNG past Safari's canvas area where the browser can draw it", async ({
+  page,
+}) => {
+  await openEditor(page);
+  await composeThreeViews(page);
+  // One column stacks the three panels, so the figure is far taller than it
+  // is wide: past the 16,777,216 px area iOS Safari caps a canvas at, well
+  // inside what Chromium allocates.
+  const columns = page.locator(`${PANELS} [data-figure-columns]`);
+  await columns.fill("1");
+  await columns.press("Enter");
+
+  await openExportDialog(page);
+  await page.locator(`${DIALOG} input[name="figure-width"][value="double"]`).check();
+  await page.locator(`${DIALOG} input[name="figure-dpi"][value="600"]`).check();
+  const readout = await page.locator('[data-shell="figure-size"]').textContent();
+  const size = /PNG (\d+) × (\d+) px/.exec(readout ?? "");
+  const widthPx = Number(size?.[1]);
+  const heightPx = Number(size?.[2]);
+  expect(widthPx).toBe(Math.round((17.8 / 2.54) * 600));
+  expect(widthPx * heightPx).toBeGreaterThan(16_777_216);
+  expect(heightPx).toBeLessThan(32_767);
+
+  await expect(page.locator(`${DIALOG} [role="alert"]`)).toHaveCount(0);
+  await expect(page.locator(`${DIALOG} [data-command="figure.export-png"]`)).toBeEnabled();
+  const png = await downloadFrom(page, "figure.export-png");
+  expect([...png.subarray(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  expect(png.readUInt32BE(16)).toBe(widthPx);
+  expect(png.readUInt32BE(20)).toBe(heightPx);
+  // 600 dpi is 23622 pixels per metre.
+  expect(png.readUInt32BE(png.indexOf("pHYs") + 4)).toBe(23622);
+});
+
 test("Copy figure writes svg, png and plain text in ONE ClipboardItem", async ({ page }) => {
   await page.addInitScript(() => {
     const record: { items: number; types: string[]; svg: string; pngSignature: number[] }[] = [];

@@ -6,8 +6,14 @@ import { createDocument, createPanel, defaultPanelsFor } from "@starter/shared";
 import { createEditorStore, type EditorStore } from "@/state";
 
 // jsdom has no SVG rasteriser; the raster path is exercised in Playwright.
+// jsdom has no canvas either, so the size probe is a stand-in each test sets.
+const canvas = vi.hoisted(() => ({ canHold: true, asked: [] as string[] }));
 vi.mock("@/lib/export/png", () => ({
   rasterizeSvg: vi.fn(async () => new Blob([new Uint8Array([0x89, 0x50])], { type: "image/png" })),
+  canvasCanHold: vi.fn((widthPx: number, heightPx: number) => {
+    canvas.asked.push(`${widthPx}x${heightPx}`);
+    return canvas.canHold;
+  }),
 }));
 
 import { copyFigure, copyMolblock } from "./figure";
@@ -43,6 +49,8 @@ function editor(molecule = ethanol()): EditorStore {
 }
 
 beforeEach(() => {
+  canvas.canHold = true;
+  canvas.asked = [];
   writes = [];
   vi.stubGlobal("ClipboardItem", FakeClipboardItem);
   Object.defineProperty(navigator, "clipboard", {
@@ -85,6 +93,40 @@ describe("Copy figure", () => {
       FakeClipboardItem.supports = (type) =>
         ["image/svg+xml", "image/png", "text/plain"].includes(type);
     }
+  });
+
+  it("keeps the PNG past Safari's canvas area when this browser can hold it, and says why when it cannot", async () => {
+    // Double column at 600 dpi: a 2-column grid 4205 px wide and taller than
+    // 16,777,216 px of area, the size the dialog must not refuse everywhere.
+    const grid = (): EditorStore => {
+      const s = createEditorStore({
+        document: createDocument({
+          molecule: ethanol(),
+          panels: (["skeletal", "lewis", "skeletal", "lewis", "sumFormula", "sumFormula"] as const).map(
+            (kind) => createPanel(kind),
+          ),
+          figure: { columns: 2 },
+          now: NOW,
+        }),
+        viewportSize: { width: 800, height: 600 },
+      });
+      s.getState().setFigureExport({ width: "double", dpi: 600 });
+      return s;
+    };
+
+    store = grid();
+    await copyFigure(store);
+    expect(canvas.asked).toHaveLength(1);
+    expect(canvas.asked[0]).toMatch(/^4205x\d+$/);
+    expect(writes[0]![0]!.types.sort()).toEqual(["image/png", "image/svg+xml", "text/plain"]);
+    expect(store.getState().ui.statusMessage).toMatch(/^Copied the figure \([^)]*png/);
+
+    canvas.canHold = false;
+    writes = [];
+    store = grid();
+    await copyFigure(store);
+    expect(writes[0]![0]!.types.sort()).toEqual(["image/svg+xml", "text/plain"]);
+    expect(store.getState().ui.statusMessage).toMatch(/without a PNG\. A 4205 × \d+ px PNG is larger than this browser's canvas/);
   });
 
   it("refuses, without touching the clipboard, when a panel cannot be drawn", async () => {

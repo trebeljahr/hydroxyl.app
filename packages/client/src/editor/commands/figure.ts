@@ -28,7 +28,7 @@ import {
 } from "@/lib/export/figure";
 import type { PreparedFigure } from "@/lib/export/figure";
 import { textBlob, writeClipboardParts } from "@/lib/export/clipboard";
-import { rasterizeSvg } from "@/lib/export/png";
+import { canvasCanHold, rasterizeSvg } from "@/lib/export/png";
 import { writeBlobFile } from "@/lib/io/file-system";
 import { moleculeToMolblock } from "@/lib/rdkit/translate";
 import type { EditorStore } from "@/state";
@@ -69,7 +69,7 @@ export async function exportFigureSvg(store: EditorStore): Promise<void> {
 export async function exportFigurePng(store: EditorStore): Promise<void> {
   const figure = prepared(store);
   if (figure === null) return;
-  const tooLarge = rasterTooLarge(figure);
+  const tooLarge = rasterTooLarge(figure, canvasCanHold);
   if (tooLarge !== null) {
     report(store, tooLarge);
     return;
@@ -95,7 +95,7 @@ export async function exportFigurePng(store: EditorStore): Promise<void> {
 export async function copyFigure(store: EditorStore): Promise<void> {
   const figure = prepared(store);
   if (figure === null) return;
-  const tooLarge = rasterTooLarge(figure);
+  const tooLarge = rasterTooLarge(figure, canvasCanHold);
   const svg = figureSvgForFile(figure);
   const parts: Record<string, Promise<Blob>> = {
     "image/svg+xml": Promise.resolve(textBlob(svg, "image/svg+xml")),
@@ -113,10 +113,9 @@ export async function copyFigure(store: EditorStore): Promise<void> {
   const { written, done } = writeClipboardParts(parts);
   try {
     await done;
-    report(
-      store,
-      `Copied the figure (${written.map((type) => type.replace(/^\w+\//, "").replace("+xml", "")).join(", ")})`,
-    );
+    const copied = `Copied the figure (${written.map((type) => type.replace(/^\w+\//, "").replace("+xml", "")).join(", ")})`;
+    // A PNG left out is said out loud, with why, not implied by its absence.
+    report(store, tooLarge === null ? copied : `${copied}, without a PNG. ${tooLarge}`);
   } catch (error) {
     report(store, `The figure could not be copied: ${describe(error)}`);
   }
