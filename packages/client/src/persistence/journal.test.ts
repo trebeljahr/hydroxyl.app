@@ -96,12 +96,13 @@ describe("the unsaved-work journal", () => {
     // `setItem` throws once the origin is full, and a 20 000-atom stress
     // fixture will manage it. Throwing here would take the IndexedDB flush
     // attempt down with it.
-    // On the PROTOTYPE, not the instance. jsdom's localStorage is a named-
-    // property Proxy, so spying on the instance stores an item called
-    // "setItem" and leaves the real method in place: the mock never runs, the
-    // write lands, and this test passes or fails depending on environment
-    // rather than on the code.
-    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    // On the prototype of the object the code actually holds, not on the
+    // instance and not on a named global. jsdom's localStorage is a named-
+    // property Proxy, so an instance spy just stores an item called
+    // "setItem". And Node 26 ships its own MemoryStorage whose prototype is
+    // not Storage.prototype, so a Storage.prototype spy misses it there. The
+    // live object's own prototype is right in both.
+    const setItem = vi.spyOn(Object.getPrototypeOf(localStorage) as Storage, "setItem").mockImplementation(() => {
       throw new DOMException("full", "QuotaExceededError");
     });
     expect(writeJournal(doc())).toBe(false);
