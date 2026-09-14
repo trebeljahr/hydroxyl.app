@@ -90,6 +90,16 @@
  * already uses. The two must agree or the label and the descriptor would
  * disagree about which atom a backwards wedge belongs to.
  *
+ * THE LIFT IS SHARED. The marks become a sign in parity.ts, the one module
+ * stereo-config's readers also call (decision 28). Two consequences are
+ * deliberate, not regressions (decision 29): a centre whose lifted volume is
+ * under the relative floor, or whose sign differs between raw bond vectors and
+ * unit directions, reads `ambiguous-geometry` where it used to get a letter
+ * that a small nudge would flip; and a CH centre drawn as a fan (all three
+ * bonds in one half-plane, as at a bridgehead) puts its hydrogen opposite the
+ * fan rather than straight behind the centre, which corrects letters that
+ * were the enantiomer's. Surrounded centres keep the letters they had.
+ *
  * COST. Perception is a figure-scale operation, memoised LAZILY and PER ATOM
  * on the MOLECULE INSTANCE in a WeakMap, the way `adjacency()` is keyed. Lazy
  * because `structuralIssues` runs on every editor frame and only asks about
@@ -111,6 +121,7 @@ import {
   requireBond,
 } from "./molecule.js";
 import { isAromaticBond } from "./aromatic.js";
+import { liftParity, type LiftLigand } from "./parity.js";
 import { ringSize, ringsAtBond } from "./rings.js";
 import type { AtomId, BondId, Bond, Molecule } from "./types.js";
 import { implicitHydrogenCount } from "./valence.js";
@@ -755,111 +766,49 @@ function compareSubstituents(
 }
 
 /**
- * Below this the signed volume of the four substituents carries no sign worth
- * reading: the drawing is flat, or its wedges cancel.
- *
- * In units of (bond length)^3, so it is scale-relative to the drawing rather
- * than to a pixel size — chem-core has no idea what a pixel is.
- */
-const CHIRAL_VOLUME_EPSILON = 1e-6;
-
-/**
- * The out-of-plane distance a wedge is read as, in bond lengths.
- *
- * Any positive number gives the same SIGN, which is the only thing read off
- * the volume, so the value is a readability choice rather than a calibration.
- */
-const OUT_OF_PLANE_UNIT = 0.8;
-
-interface Point3 {
-  readonly x: number;
-  readonly y: number;
-  readonly z: number;
-}
-
-/**
- * Where a substituent sits in the reader's three dimensions.
- *
- * The implicit hydrogen has no position in the graph, so it is placed at the
- * centre in x and y and given whatever z the drawn marks leave for it — the
- * standard reading of a CH stereocentre, where the wedge to one substituent
- * puts the unlabelled hydrogen behind the page.
- */
-function substituentPoint(
-  mol: Molecule,
-  centre: AtomId,
-  s: Substituent,
-  implicitZ: number,
-): Point3 | undefined {
-  const origin = requireAtom(mol, centre).pos;
-  if (s.atomId === undefined) {
-    return { x: origin.x, y: origin.y, z: implicitZ * OUT_OF_PLANE_UNIT };
-  }
-  const atom = getAtom(mol, s.atomId);
-  if (atom === undefined) return undefined;
-  return { x: atom.pos.x, y: atom.pos.y, z: s.outOfPlane * OUT_OF_PLANE_UNIT };
-}
-
-/**
  * R or S from the ranked substituents and the drawn marks.
  *
- * The volume `(p1 - p4) . [(p2 - p4) x (p3 - p4)]` is NEGATIVE for R in
- * chem-core's coordinate frame, which is right-handed: x to the right, y UP
+ * The lift and the signed volume live in parity.ts, which stereo-config calls
+ * too (decision 28), so the two readers cannot drift apart. The volume is
+ * NEGATIVE for R in chem-core's right-handed frame: x to the right, y UP
  * (chem-core is y-up; only the SVG renderer flips), and z out of the page
- * toward the reader, which is where a wedge points. With the lowest-priority
- * substituent pointing away, 1 -> 2 -> 3 clockwise on the page is R, and that
- * arrangement makes the triple product negative. Getting the sign backwards
- * here is the one error that renders perfectly, so it is pinned by a test on
- * a hand-drawn bromochlorofluoromethane.
+ * toward the reader, which is where a wedge points. Getting the sign backwards
+ * is the one error that renders perfectly, so it is pinned by a test on a
+ * hand-drawn bromochlorofluoromethane.
+ *
+ * DELIBERATE REFUSALS (decisions 28 and 29). A drawing whose volume is under
+ * parity.ts's relative floor, or whose reading flips between raw bond vectors
+ * and unit directions, comes back `ambiguous-geometry` rather than as a
+ * letter. The X drawing (wedge and hash opposite each other, two plain bonds
+ * near the other diagonal) is the named case: before, it flipped R and S under
+ * a half-degree nudge. And a CH centre drawn as a fan, all three bonds in one
+ * half-plane, now places its hydrogen opposite the fan instead of straight
+ * behind the centre, which is where the old reading gave the enantiomer.
  */
 function chiralityFrom(
   mol: Molecule,
   centre: AtomId,
   ranked: readonly Substituent[],
 ): StereoDescriptor {
-  let drawnSum = 0;
-  let marks = 0;
+  const origin = requireAtom(mol, centre).pos;
+  const ligands: LiftLigand[] = [];
   for (const s of ranked) {
-    if (s.atomId === undefined) continue;
-    drawnSum += s.outOfPlane;
-    if (s.outOfPlane !== 0) marks++;
+    if (s.atomId === undefined) {
+      ligands.push({ kind: "implicit" });
+      continue;
+    }
+    const atom = getAtom(mol, s.atomId);
+    if (atom === undefined) return { kind: "undetermined", reason: "ambiguous-geometry" };
+    ligands.push({
+      kind: "drawn",
+      offset: { x: atom.pos.x - origin.x, y: atom.pos.y - origin.y },
+      depth: s.outOfPlane,
+    });
   }
-  if (marks === 0) return { kind: "undetermined", reason: "no-stereo-bond" };
-
-  const hasImplicit = ranked.some((s) => s.atomId === undefined);
-  // The unlabelled hydrogen goes opposite whatever the drawn marks say. When
-  // they cancel — a wedge and a hash on the same centre — there is nothing
-  // left for it to be opposite to, and the picture is contradictory rather
-  // than merely silent.
-  const implicitZ = drawnSum > 0 ? -1 : drawnSum < 0 ? 1 : 0;
-  if (hasImplicit && implicitZ === 0) {
-    return { kind: "undetermined", reason: "ambiguous-geometry" };
-  }
-
-  const points: Point3[] = [];
-  for (const s of ranked) {
-    const p = substituentPoint(mol, centre, s, implicitZ);
-    if (p === undefined) return { kind: "undetermined", reason: "ambiguous-geometry" };
-    points.push(p);
-  }
-
-  const [p1, p2, p3, p4] = points as [Point3, Point3, Point3, Point3];
-  const ax = p1.x - p4.x;
-  const ay = p1.y - p4.y;
-  const az = p1.z - p4.z;
-  const bx = p2.x - p4.x;
-  const by = p2.y - p4.y;
-  const bz = p2.z - p4.z;
-  const cx = p3.x - p4.x;
-  const cy = p3.y - p4.y;
-  const cz = p3.z - p4.z;
-  const volume =
-    ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx);
-
-  if (Math.abs(volume) < CHIRAL_VOLUME_EPSILON) {
-    return { kind: "undetermined", reason: "ambiguous-geometry" };
-  }
-  return volume < 0 ? { kind: "R" } : { kind: "S" };
+  const lifted = liftParity(ligands);
+  if (lifted.kind === "flat") return { kind: "undetermined", reason: "no-stereo-bond" };
+  if (lifted.kind === "ambiguous") return { kind: "undetermined", reason: "ambiguous-geometry" };
+  return lifted.parity < 0 ? { kind: "R" } : { kind: "S" };
 }
 
 /**

@@ -30,7 +30,8 @@
  * ids are what the order is made of.
  *
  * ONE PARITY FUNCTION, SEVERAL READING CONVENTIONS. `readConfig` lifts the 2D
- * placement into pseudo-3D and takes the sign of one signed volume. The
+ * placement into pseudo-3D and takes the sign of one signed volume, in
+ * parity.ts, which stereo.ts's `chiralityFrom` calls too (decision 28). The
  * conventions differ ONLY in which ligands they lift toward the viewer and
  * which away (decision 16); the magnitude is always `PSEUDO_3D_DEPTH`.
  *
@@ -54,10 +55,13 @@
  * gave the toward-viewer depth to the vertical Fischer bonds would derive the
  * enantiomer at every centre; a wedge reader on a Fischer sees no marks at all.
  *
- * In-plane directions are UNIT vectors from the centre, so bond length has no
- * vote. stereo.ts lifts raw positions instead; the two agree whenever a centre's
- * bonds are drawn at equal length. A chemist reads a wedge drawing by
- * direction, not by how long each line happens to be.
+ * wedgeHash and pseudo3d lift RAW bond vectors and refuse, as
+ * `ambiguous-geometry`, a volume under the relative floor or a sign that
+ * differs from the unit-direction reading (decision 29). An undrawn hydrogen
+ * or a lone pair sits behind a surrounded centre, and opposite the in-plane
+ * resultant of a fan (decision 28). parity.ts states both rules. Two implicit
+ * ligands, P(H)(Me)(Et) with the H undrawn, cannot both be placed and read
+ * `ambiguous-geometry` (decision 33).
  *
  * MIRRORS. `flipAtoms` mirrors positions AND exchanges wedge with hash, which is
  * a half-turn about the page's y axis (a proper rotation), so it derives
@@ -66,23 +70,63 @@
  * positions plus swapped marks and derives the original parity is correct.
  *
  * PHANTOM LONE-PAIR CENTRES are three-coordinate atoms whose lone pair is a
- * configurationally stable fourth ligand. It ranks lowest, so they are not
- * dismissed for want of a fourth neighbour id. Exactly these, decided
- * STRUCTURALLY:
+ * configurationally stable fourth ligand. It ranks lowest, below hydrogen, so
+ * they are not dismissed for want of a fourth neighbour id. Exactly these,
+ * decided STRUCTURALLY:
  *
  *   sulfoxide S    neutral, three neighbours, one of them =O, no hydrogen
  *   sulfonium S+   charge +1, three single bonds, no hydrogen (this includes
  *                  the charge-separated S+–O− drawing of a sulfoxide)
  *   P(III)         neutral phosphorus with three single-bonded ligands
- *   bridgehead N   neutral, three explicit single bonds that are all ring
- *                  bonds, the atom in two or more rings
+ *   nitrogen       neutral, three single bonds, no hydrogen, NOT aromatic and
+ *                  NOT conjugated, and either in a three-membered ring
+ *                  (aziridine) or a BRIDGED bridgehead (decision 30)
  *
- * EXCLUDED: plain amines and aziridines, which invert at room temperature, and
+ * The nitrogen rule matches RDKit 2025.03's `get_stereo_tags`, the
+ * import/export oracle, so a nitrogen centre neither appears nor vanishes
+ * across a round trip. Its terms, precisely:
+ *
+ *   BRIDGED BRIDGEHEAD  all three bonds are ring bonds, and two perceived rings
+ *                       (rings.ts's symmetrised SSSR, the set RDKit uses) share
+ *                       TWO OR MORE bonds, at least one of them a bond of this
+ *                       nitrogen. RDKit's `queryIsAtomBridgehead` is the same
+ *                       test. 1-azabicyclo[3.2.1]octane's N qualifies: its five-
+ *                       and six-membered rings share the two bonds of the
+ *                       one-carbon bridge. A FUSED bridgehead does not: the two
+ *                       rings of 1-methylpyrrolizidine or indolizidine share
+ *                       one bond, and such a nitrogen inverts.
+ *   CONJUGATED          a neighbour is aromatic, or carries a double or triple
+ *                       bond, unless that neighbour is S or P. This excludes
+ *                       amides (a fused beta-lactam, penicillin's N4, a bridged
+ *                       2-quinuclidone), enamines, N-aryl, N-nitroso and
+ *                       N-cyano. A sulfonyl, sulfinyl or phosphoryl neighbour
+ *                       does not conjugate in RDKit's model, and an
+ *                       N-tosylaziridine keeps its centre there too.
+ *   AROMATIC            a member of a perceived aromatic ring (indolizine,
+ *                       imidazo[1,2-a]pyridine), which is planar.
+ *
+ * EXCLUDED: plain acyclic amines, fused bridgehead amines, NH aziridines, and
  * carbanions. A QUATERNARY AMMONIUM N+ is not a phantom centre at all. It has
  * four ligands and no lone pair, and it is read as an ordinary four-ligand
  * centre. `lonePairCount` is consulted as a sanity check only. A PINNED
  * lone-pair count is a display override (types.ts) and can neither create nor
  * remove a centre.
+ *
+ * FOUR-COORDINATE P AND S WITH A DOUBLE BOND are four-ligand centres
+ * (decision 31): phosphine oxides, phosphonates, phosphates and
+ * phosphoramidates (P with one double bond to O, S or N and three other
+ * sigma ligands), and sulfoximines (S with double bonds to O and N and two
+ * other ligands). The doubly bonded atom counts once. Their parity is read like
+ * any four-ligand centre, and the ranking decides stereogenicity, so a sulfone
+ * or a symmetric phosphate is not a centre. Their CIP letters are NOT issued
+ * here: `descriptorFromConfig` reports `ranking-unsupported` for them until
+ * the CIP task settles how a P=O or S=O is duplicated. A phosphorus ylide
+ * (P=C) is not in the list.
+ *
+ * DEFERRED to cip-ranking-refusals-and-enhanced-stereo (decision 32):
+ * pseudoasymmetric centres, ring cis/trans at constitutionally symmetric
+ * centres (1,4-disubstituted cyclohexanes), and C=N / N=N units. Their absence
+ * here is a known limit, not a statement about the chemistry.
  *
  * AN EXPLICIT PROTIUM ATOM IS AN IMPLICIT HYDROGEN for ranking. Two of them on
  * one carbon make it non-stereogenic however they are drawn. Deuterium and
@@ -106,9 +150,19 @@
  *   survive the drag that reversed it.
  */
 
+import { isAromaticAtom } from "./aromatic.js";
 import { lonePairCount } from "./lewis.js";
 import { bondsAt, getAtom, otherEnd, requireAtom, requireBond } from "./molecule.js";
-import { isRingBond, LruCache, ringsAtAtom } from "./rings.js";
+import {
+  liftParity,
+  pointsParity,
+  PSEUDO_3D_DEPTH,
+  type LiftedPoint,
+  type LiftLigand,
+  type LiftOutcome,
+  type TetrahedralParity,
+} from "./parity.js";
+import { isRingBond, LruCache, rings, ringsAtAtom, ringSize } from "./rings.js";
 import { compareIds } from "./selection.js";
 import {
   rankLigandPair,
@@ -123,21 +177,6 @@ import type { Vec2 } from "./vec.js";
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
-
-/**
- * The one depth magnitude every convention lifts by (decision 16). Any nonzero
- * value gives the same sign, because the volume is linear in every z. It is a
- * named constant so no convention is tempted to pick its own, and it is not
- * derived from anything on the page.
- */
-export const PSEUDO_3D_DEPTH = 1;
-
-/**
- * Sign of `(L0 − L3) · [(L1 − L3) × (L2 − L3)]` over the ligands in a stated
- * order, in chem-core's right-handed frame: x right, y UP, z toward the viewer.
- * With the ligands in CIP priority order, −1 is R.
- */
-export type TetrahedralParity = 1 | -1;
 
 /** One ligand of a centre: a real neighbour, the implicit H, or the lone pair. */
 export type LigandRef =
@@ -159,8 +198,10 @@ export interface CentreLigands {
 /**
  * Why a unit has no reading.
  *
- *   `coplanar`     the lift is flat, every ligand in one plane, so the volume
- *                  has no sign. Never a guessed one.
+ *   `coplanar`     pseudo3d only: no neighbour has a depth different from
+ *                  the centre's, so nothing was claimed. A lift that has depth
+ *                  but a volume under parity.ts's floor is
+ *                  `ambiguous-geometry`, never a guessed sign.
  *   `not-covered`  the convention cannot state this unit at all: a double bond
  *                  under fischer or haworth, a centre outside the Haworth ring.
  *
@@ -391,6 +432,79 @@ function compareLigands(
 }
 
 /**
+ * A neighbour that is aromatic, or that carries a multiple bond, conjugates
+ * with the nitrogen's lone pair and flattens it. S and P neighbours are the
+ * exception, as in RDKit: a sulfonyl or phosphoryl group does not conjugate.
+ */
+function isConjugatedNitrogen(mol: Molecule, atomId: AtomId, bonds: readonly Bond[]): boolean {
+  for (const bond of bonds) {
+    const neighbour = otherEnd(bond, atomId);
+    if (isAromaticAtom(mol, neighbour)) return true;
+    const element = requireAtom(mol, neighbour).element;
+    if (element === "S" || element === "P") continue;
+    if (bondsAt(mol, neighbour).some((other) => other.order > 1)) return true;
+  }
+  return false;
+}
+
+function inThreeMemberedRing(mol: Molecule, atomId: AtomId): boolean {
+  return ringsAtAtom(mol, atomId).some((index) => ringSize(mol, index) === 3);
+}
+
+/**
+ * RDKit's `queryIsAtomBridgehead`: every bond a ring bond, and two perceived
+ * rings sharing two or more bonds, one of which is a bond of this atom. Rings
+ * that share exactly one bond are FUSED, and their shared atoms are not
+ * bridgeheads in this sense.
+ */
+function isBridgedBridgehead(mol: Molecule, atomId: AtomId, bonds: readonly Bond[]): boolean {
+  if (!bonds.every((bond) => isRingBond(mol, bond.id))) return false;
+  const own = new Set(bonds.map((bond) => bond.id));
+  const all = rings(mol);
+  const mine = ringsAtAtom(mol, atomId);
+  for (let i = 0; i < mine.length; i++) {
+    const first = new Set(all[mine[i]!]!.bondIds);
+    for (let j = i + 1; j < mine.length; j++) {
+      const shared = all[mine[j]!]!.bondIds.filter((id) => first.has(id));
+      if (shared.length >= 2 && shared.some((id) => own.has(id))) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * A four-coordinate P or S whose sigma ligands include a doubly bonded
+ * heteroatom (decision 31): P with exactly one double bond, to O, S or N;
+ * S with exactly two, one to O and one to N or both to O (a sulfone, which the
+ * ranking then drops as two identical ligands). Neutral only.
+ */
+function isMultiplyBondedFourLigandCentre(
+  mol: Molecule,
+  atomId: AtomId,
+  bonds: readonly Bond[],
+  implicitHydrogens: number,
+): boolean {
+  const atom = requireAtom(mol, atomId);
+  if (atom.charge !== 0 || atom.radicalElectrons !== 0) return false;
+  if (bonds.length + implicitHydrogens !== 4) return false;
+  if (bonds.some((bond) => bond.order !== 1 && bond.order !== 2)) return false;
+  const doubles = bonds.filter((bond) => bond.order === 2);
+  const partners = doubles.map((bond) => requireAtom(mol, otherEnd(bond, atomId)).element);
+  if (atom.element === "P") {
+    return doubles.length === 1 && ["O", "S", "N"].includes(partners[0]!);
+  }
+  if (atom.element === "S") {
+    return (
+      doubles.length === 2 &&
+      implicitHydrogens === 0 &&
+      partners.includes("O") &&
+      partners.every((element) => element === "O" || element === "N")
+    );
+  }
+  return false;
+}
+
+/**
  * The three-coordinate atoms whose lone pair is a configurationally stable
  * fourth ligand. The module header lists them and what they exclude.
  */
@@ -424,10 +538,11 @@ function isPhantomLonePairCentre(
   } else if (atom.element === "N" && atom.charge === 0) {
     structural =
       allSingle &&
-      implicitHydrogens === 0 &&
+      !hasHydrogen &&
       bonds.length === 3 &&
-      bonds.every((bond) => isRingBond(mol, bond.id)) &&
-      ringsAtAtom(mol, atomId).length >= 2;
+      !isAromaticAtom(mol, atomId) &&
+      !isConjugatedNitrogen(mol, atomId, bonds) &&
+      (inThreeMemberedRing(mol, atomId) || isBridgedBridgehead(mol, atomId, bonds));
   }
   if (!structural) return false;
 
@@ -506,6 +621,8 @@ function computeTopology(mol: Molecule): TopologyRecord {
 
     let lonePair: boolean;
     if (bonds.length + implicitHydrogens === 4 && bonds.every((bond) => bond.order === 1)) {
+      lonePair = false;
+    } else if (isMultiplyBondedFourLigandCentre(mol, atomId, bonds, implicitHydrogens)) {
       lonePair = false;
     } else if (isPhantomLonePairCentre(mol, atomId, bonds, implicitHydrogens)) {
       lonePair = true;
@@ -630,16 +747,6 @@ export function resetStereoTopologyComputationCount(): void {
 // The lift and the one parity function
 // ---------------------------------------------------------------------------
 
-interface Point3 {
-  readonly x: number;
-  readonly y: number;
-  readonly z: number;
-}
-
-/** Below this the lifted volume carries no sign. Dimensionless: each point is
- *  a unit in-plane direction with z of 0 or ±PSEUDO_3D_DEPTH. */
-const VOLUME_EPSILON = 1e-6;
-
 /**
  * How far a unit bond direction may stray from a page axis and still count as
  * on it. `rotateAtoms` by a right angle leaves residues near 1e-16; a tilt of a
@@ -647,28 +754,9 @@ const VOLUME_EPSILON = 1e-6;
  */
 const AXIS_EPSILON = 1e-6;
 
-/** THE parity function. Every convention ends here. */
-function volumeSign(points: readonly Point3[]): TetrahedralParity | undefined {
-  if (points.length !== 4) return undefined;
-  const [p0, p1, p2, p3] = points as [Point3, Point3, Point3, Point3];
-  const ax = p0.x - p3.x;
-  const ay = p0.y - p3.y;
-  const az = p0.z - p3.z;
-  const bx = p1.x - p3.x;
-  const by = p1.y - p3.y;
-  const bz = p1.z - p3.z;
-  const cx = p2.x - p3.x;
-  const cy = p2.y - p3.y;
-  const cz = p2.z - p3.z;
-  const volume =
-    ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx);
-  if (!Number.isFinite(volume) || Math.abs(volume) < VOLUME_EPSILON) return undefined;
-  return volume > 0 ? 1 : -1;
-}
-
 type Unavailable = { readonly kind: "unavailable"; readonly reason: ConfigUnavailableReason };
 type Undetermined = { readonly kind: "undetermined"; readonly reason: ConfigUndeterminedReason };
-type Lift = { readonly kind: "points"; readonly points: readonly Point3[] } | Undetermined | Unavailable;
+type Lift = { readonly kind: "points"; readonly points: readonly LiftedPoint[] } | Undetermined | Unavailable;
 
 interface ReadContext {
   readonly mol: Molecule;
@@ -717,47 +805,47 @@ function implicitCount(centre: CentreLigands): number {
 }
 
 /**
- * wedgeHash and pseudo3d: explicit directions, a z per explicit ligand, and the
- * one implicit ligand at the centre's own xy on the far side of the drawn
- * depths. Two implicit ligands (an H and a lone pair) would land on the same
- * point, and depths that cancel leave the implicit ligand no side; both are
- * `ambiguous-geometry` rather than a volume of zero read as a sign.
+ * wedgeHash and pseudo3d: raw offsets and a depth sign per explicit ligand,
+ * handed to parity.ts with the implicit ligands, which places them and
+ * applies the ambiguity guard. Returns the reading directly.
  */
-function liftWithDepths(
+function readDrawn(
   ctx: ReadContext,
   centre: CentreLigands,
   depthOf: (neighbour: AtomId, bond: Bond) => number,
   silentReason: ConfigUndeterminedReason,
-): Lift {
+): CentreReading {
   const bonds = bondsByNeighbour(ctx.mol, centre.atomId);
-  const points: Point3[] = [];
-  let sum = 0;
-  let nonzero = 0;
+  const origin = positionOf(ctx, centre.atomId);
+  const ligands: LiftLigand[] = [];
   for (const neighbour of centre.order) {
     const bond = bonds.get(neighbour);
-    const dir = unitDirection(ctx, centre.atomId, neighbour);
-    if (bond === undefined || dir === undefined) {
-      return { kind: "undetermined", reason: "ambiguous-geometry" };
-    }
-    const z = Math.sign(depthOf(neighbour, bond)) * PSEUDO_3D_DEPTH;
-    sum += z;
-    if (z !== 0) nonzero++;
-    points.push({ x: dir.x, y: dir.y, z });
+    if (bond === undefined) return { kind: "undetermined", reason: "ambiguous-geometry" };
+    const at = positionOf(ctx, neighbour);
+    ligands.push({
+      kind: "drawn",
+      offset: { x: at.x - origin.x, y: at.y - origin.y },
+      depth: depthOf(neighbour, bond),
+    });
   }
-  if (nonzero === 0) return { kind: "undetermined", reason: silentReason };
-  const implicit = implicitCount(centre);
-  if (implicit > 0) {
-    if (implicit !== 1 || sum === 0) return { kind: "undetermined", reason: "ambiguous-geometry" };
-    points.push({ x: 0, y: 0, z: -Math.sign(sum) * PSEUDO_3D_DEPTH });
-  }
-  return { kind: "points", points };
+  for (let k = 0; k < implicitCount(centre); k++) ligands.push({ kind: "implicit" });
+  return fromLift(liftParity(ligands), silentReason);
+}
+
+function fromLift(
+  outcome: LiftOutcome,
+  silentReason: ConfigUndeterminedReason,
+): CentreReading {
+  if (outcome.kind === "flat") return { kind: "undetermined", reason: silentReason };
+  if (outcome.kind === "ambiguous") return { kind: "undetermined", reason: "ambiguous-geometry" };
+  return { kind: "specified", parity: outcome.parity };
 }
 
 type AxisSlot = "E" | "N" | "W" | "S";
 const AXIS_SLOTS: readonly AxisSlot[] = ["E", "N", "W", "S"];
 
 /** Horizontals toward the viewer, verticals away: the Fischer convention. */
-const FISCHER_POINT: Readonly<Record<AxisSlot, Point3>> = {
+const FISCHER_POINT: Readonly<Record<AxisSlot, LiftedPoint>> = {
   E: { x: 1, y: 0, z: PSEUDO_3D_DEPTH },
   W: { x: -1, y: 0, z: PSEUDO_3D_DEPTH },
   N: { x: 0, y: 1, z: -PSEUDO_3D_DEPTH },
@@ -772,7 +860,7 @@ function axisSlot(dir: Vec2): AxisSlot | undefined {
 
 function liftFischer(ctx: ReadContext, centre: CentreLigands): Lift {
   const used = new Set<AxisSlot>();
-  const points: Point3[] = [];
+  const points: LiftedPoint[] = [];
   let ambiguous = false;
   for (const neighbour of centre.order) {
     const dir = unitDirection(ctx, centre.atomId, neighbour);
@@ -803,7 +891,7 @@ function liftFischer(ctx: ReadContext, centre: CentreLigands): Lift {
 
 function liftHaworth(ctx: ReadContext, centre: CentreLigands, ring: ReadonlySet<AtomId>): Lift {
   if (!ring.has(centre.atomId)) return { kind: "undetermined", reason: "not-covered" };
-  const points: Point3[] = [];
+  const points: LiftedPoint[] = [];
   let verticalSum = 0;
   let ambiguous = false;
   for (const neighbour of centre.order) {
@@ -842,10 +930,10 @@ function readCentre(
   convention: DepthConvention,
   ring: ReadonlySet<AtomId>,
 ): CentreReading | Unavailable {
-  let lift: Lift;
+  let lift: Lift | CentreReading;
   switch (convention.kind) {
     case "wedgeHash":
-      lift = liftWithDepths(ctx, centre, (_, bond) => markAt(bond, centre.atomId), "no-stereo-bond");
+      lift = readDrawn(ctx, centre, (_, bond) => markAt(bond, centre.atomId), "no-stereo-bond");
       break;
     case "pseudo3d": {
       const depth = convention.depth;
@@ -854,7 +942,7 @@ function readCentre(
         return value !== undefined && Number.isFinite(value) ? value : 0;
       };
       const own = zOf(centre.atomId);
-      lift = liftWithDepths(ctx, centre, (id) => zOf(id) - own, "coplanar");
+      lift = readDrawn(ctx, centre, (id) => zOf(id) - own, "coplanar");
       break;
     }
     case "fischer":
@@ -869,9 +957,11 @@ function readCentre(
   // convention. It is checked after the placement test so a refusal still
   // names every off-axis centre.
   if (hasWavyAt(ctx.mol, centre.atomId)) return { kind: "undetermined", reason: "unspecified" };
-  if (lift.kind === "undetermined") return lift;
-  const parity = volumeSign(lift.points);
-  if (parity === undefined) return { kind: "undetermined", reason: "coplanar" };
+  if (lift.kind !== "points") return lift;
+  // Fischer and Haworth points are unit directions built from the convention,
+  // so the floor applies at the depth constant's own scale.
+  const parity = pointsParity(lift.points, PSEUDO_3D_DEPTH);
+  if (parity === undefined) return { kind: "undetermined", reason: "ambiguous-geometry" };
   return { kind: "specified", parity };
 }
 
@@ -1025,6 +1115,13 @@ export function descriptorFromConfig(
   if (centre.reading.kind === "undetermined") {
     return { kind: "undetermined", reason: centre.reading.reason };
   }
+  // A four-coordinate P=O, P=S, P=N or sulfoximine centre (decision 31). Its
+  // parity is real, but whether its double bond is duplicated or read as a
+  // charge-separated single bond decides the letter, and that is the CIP task's
+  // ruling to make, not a default to slip in here.
+  if (!centre.lonePair && bondsAt(mol, centre.atomId).some((bond) => bond.order !== 1)) {
+    return { kind: "undetermined", reason: "ranking-unsupported" };
+  }
   const ranking = record.rankings.get(centre.atomId);
   if (ranking === undefined) return undefined;
   if (ranking.kind === "undetermined") return { kind: "undetermined", reason: ranking.reason };
@@ -1113,10 +1210,25 @@ function segmentsTouch(a: Vec2, b: Vec2, c: Vec2, d: Vec2, eps: number): boolean
  * alone, while mirroring positions alone reverses it. `front` is the side the
  * normal points to.
  *
- * The substituent's depth comes from its own wedge or hash with the ring atom
- * at the narrow end, otherwise from the opposite of the ring atom's other
- * marked exocyclic bonds. A degenerate or self-intersecting polygon has no
- * winding and is reported, never divided by or read.
+ * AT A FOUR-LIGAND RING ATOM (four single-bonded sigma ligands, at most one
+ * of them an implicit hydrogen) the face comes from the same lift as the
+ * atom's parity, over (previous ring atom, next ring atom, substituent, fourth
+ * ligand) in walk order. Every mark at the atom votes, a wedge drawn on a RING
+ * bond included, so ringFace and `stereoConfig` never disagree about whether
+ * the drawing states the face, and the fan and ambiguity rules of parity.ts
+ * apply unchanged. For an ideal tetrahedron that volume has the sign of
+ * `((prev − A) × (next − A)) · (S − A)`, so the substituent is on the side of
+ * the local ring normal the volume's sign says, and the local normal is
+ * compared with the reference normal through the drawn turn at A. A straight
+ * turn at A has no local normal and reads `ambiguous-geometry`.
+ *
+ * At any other ring atom (a double bond, a lone pair, two implicit
+ * hydrogens) the substituent's depth comes from its own wedge or hash with the
+ * ring atom at the narrow end, otherwise from the opposite of the ring atom's
+ * other marked exocyclic bonds.
+ *
+ * A degenerate or self-intersecting polygon has no winding and is reported,
+ * never divided by or read.
  */
 export function ringFace(
   mol: Molecule,
@@ -1163,6 +1275,47 @@ export function ringFace(
   if (exocyclic.some((bond) => bond.order === 1 && bond.from === atomId && bond.stereo === "wavy")) {
     return { kind: "undetermined", reason: "unspecified" };
   }
+  const here = bondsAt(mol, atomId);
+  const implicitHydrogens = implicitHydrogenCount(mol, atomId);
+  if (
+    implicitHydrogens <= 1 &&
+    here.length + implicitHydrogens === 4 &&
+    here.every((bond) => bond.order === 1)
+  ) {
+    const index = walk.indexOf(atomId);
+    const previous = walk[(index + n - 1) % n]!;
+    const next = walk[(index + 1) % n]!;
+    const origin = points[index]!;
+    const offsetTo = (id: AtomId): Vec2 => {
+      const at = requireAtom(mol, id).pos;
+      return { x: at.x - origin.x, y: at.y - origin.y };
+    };
+    const byNeighbour = bondsByNeighbour(mol, atomId);
+    const drawn = (id: AtomId): LiftLigand => ({
+      kind: "drawn",
+      offset: offsetTo(id),
+      depth: markAt(byNeighbour.get(id)!, atomId),
+    });
+    const fourth = exocyclic.find((bond) => bond !== own);
+    const lifted = liftParity([
+      drawn(previous),
+      drawn(next),
+      drawn(substituentId),
+      fourth === undefined ? { kind: "implicit" } : drawn(otherEnd(fourth, atomId)),
+    ]);
+    if (lifted.kind === "flat") return { kind: "undetermined", reason: "no-stereo-bond" };
+    if (lifted.kind === "ambiguous") return { kind: "undetermined", reason: "ambiguous-geometry" };
+    const p = offsetTo(previous);
+    const q = offsetTo(next);
+    const turn = p.x * q.y - p.y * q.x;
+    if (!(Math.abs(turn) > 1e-6 * Math.hypot(p.x, p.y) * Math.hypot(q.x, q.y))) {
+      return { kind: "undetermined", reason: "ambiguous-geometry" };
+    }
+    return lifted.parity * Math.sign(turn) * Math.sign(twiceArea) > 0
+      ? { kind: "front" }
+      : { kind: "back" };
+  }
+
   let z = markAt(own, atomId);
   if (z === 0) {
     let others = 0;

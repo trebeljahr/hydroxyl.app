@@ -178,8 +178,9 @@ function bromofluoromethylpentane(terminal: "Br" | "C") {
  * 2-methylcyclohexan-1-ol, hydroxyl on a wedge and the methyl as given.
  *
  * A ring pair whose two centres tie for several spheres before they separate.
- * `"wedge"` draws the trans diastereomer, C[C@@H]1CCCC[C@@H]1O as RDKit reads
- * the same picture, and `"hash"` the cis one.
+ * `"wedge"` puts the OH and the methyl on wedges at adjacent ring atoms, so
+ * both groups are on one face: the CIS diastereomer, C[C@@H]1CCCC[C@@H]1O as
+ * RDKit reads the same picture. `"hash"` is the trans one.
  */
 function methylcyclohexanol(methyl: "wedge" | "hash") {
   return buildMolecule((b) => {
@@ -406,7 +407,7 @@ describe("cipDescriptor", () => {
     expect(cipDescriptor(mol, "a1")).toEqual({ kind: "S" });
   });
 
-  it("assigns both centres of trans-2-methylcyclohexan-1-ol", () => {
+  it("assigns both centres of cis-2-methylcyclohexan-1-ol", () => {
     // RDKit reads this drawing as C[C@@H]1CCCC[C@@H]1O — (1S,2R). Ring
     // stereocentres tie for several spheres before they separate, which is
     // exactly where a comparator that looks deep before it looks wide gets
@@ -416,8 +417,8 @@ describe("cipDescriptor", () => {
     expect(cipDescriptor(mol, "a2")).toEqual({ kind: "R" });
   });
 
-  it("assigns both centres of the cis diastereomer differently", () => {
-    // The same skeleton with the methyl turned to a hash is
+  it("assigns both centres of the trans diastereomer differently", () => {
+    // The same skeleton with the methyl turned to a hash, trans, is
     // C[C@H]1CCCC[C@@H]1O — (1S,2S). Two diastereomers that share a
     // constitution have to come out different or the perception is not
     // reading the drawing at all.
@@ -657,5 +658,41 @@ describe("memoisation", () => {
     expect(doubleBondDescriptor(trans, "b3")).toEqual({ kind: "E" });
     // And back, on the original instance.
     expect(doubleBondDescriptor(cis, "b3")).toEqual({ kind: "Z" });
+  });
+});
+
+describe("the shared lift (decisions 28 and 29)", () => {
+  /** C at the origin with Br, Cl, F (and I) at the given angles and marks. */
+  function halomethane(angles: readonly number[], marks: readonly ("wedge" | "hash" | "none")[]) {
+    return buildMolecule((b) => {
+      const c = b.atom("C", ORIGIN);
+      angles.forEach((degrees, i) => {
+        b.bond(c, b.atom(["Br", "Cl", "F", "I"][i]!, step(ORIGIN, degrees)), 1, marks[i] ?? "none");
+      });
+    });
+  }
+
+  it("places the hydrogen of a fan opposite the fan, which fixes an enantiomer", () => {
+    // Br 0° on a wedge, Cl +75°, F −75°. The hydrogen straight behind the
+    // centre read S; the geometry and RDKit get_stereo_tags give R.
+    expect(cipDescriptor(halomethane([0, 75, -75], ["wedge"]), "a1")).toEqual({ kind: "R" });
+    // A regular-hexagon bridgehead read a false undetermined; RDKit gives R.
+    expect(cipDescriptor(halomethane([0, 60, 120], ["none", "wedge"]), "a1")).toEqual({ kind: "R" });
+    // Bonds at −80°, 0° (hash), +80°: RDKit gives S.
+    expect(cipDescriptor(halomethane([-80, 0, 80], ["none", "hash"]), "a1")).toEqual({ kind: "S" });
+  });
+
+  it("keeps the letters of surrounded centres", () => {
+    expect(cipDescriptor(bromochlorofluoromethaneR(), "a1")).toEqual({ kind: "R" });
+    expect(cipDescriptor(halomethane([90, -30, 210], ["hash"]), "a1")).toEqual({ kind: "S" });
+  });
+
+  it("refuses, deliberately, an X drawing whose letter flips under a half-degree nudge", () => {
+    for (const nudge of [-0.5, 0, 0.5]) {
+      expect(cipDescriptor(halomethane([135, 315, 225, 45 + nudge], ["wedge", "hash"]), "a1")).toEqual({
+        kind: "undetermined",
+        reason: "ambiguous-geometry",
+      });
+    }
   });
 });

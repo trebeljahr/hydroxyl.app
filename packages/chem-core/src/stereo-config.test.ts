@@ -33,7 +33,6 @@ import {
   descriptorFromConfig,
   ligandRefs,
   parityAgainst,
-  PSEUDO_3D_DEPTH,
   readConfig,
   resetStereoTopologyComputationCount,
   ringFace,
@@ -45,6 +44,7 @@ import {
   type DepthConvention,
   type StereoConfig,
 } from "./stereo-config.js";
+import { PSEUDO_3D_DEPTH } from "./parity.js";
 import { flipAtoms, rotateAtoms, verticalMirror } from "./transform.js";
 import type { AtomId, Molecule } from "./types.js";
 import { DEG, fromPolar, ORIGIN, vec, type Vec2 } from "./vec.js";
@@ -124,6 +124,18 @@ function tolyl(b: MoleculeBuilder, anchor: AtomId, ipsoPos: Vec2, degrees: numbe
   for (let k = 0; k < 6; k++) b.bond(ringIds[k]!, ringIds[(k + 1) % 6]!, k % 2 === 0 ? 2 : 1);
   b.bond(anchor, ringIds[0]!);
   b.bond(ringIds[3]!, b.atom("C", step(centreOfRing, degrees, 2)));
+}
+
+/**
+ * A molecule from one letter per atom and a bond list `[i, j, order?]`, for
+ * topology-only assertions. Atom k gets id a(k+1); positions are scattered and
+ * mean nothing.
+ */
+function graph(elements: string, bonds: readonly (readonly number[])[]): Molecule {
+  return buildMolecule((b) => {
+    const ids = [...elements].map((element, k) => b.atom(element, vec(Math.cos(k) * (k + 1), Math.sin(k) * (k + 1))));
+    for (const [i, j, order] of bonds) b.bond(ids[i!]!, ids[j!]!, (order ?? 1) as 1 | 2 | 3);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -395,6 +407,68 @@ describe("mirrors", () => {
 });
 
 // ---------------------------------------------------------------------------
+// The shared lift: fans and the ambiguity guard (decisions 28 and 29)
+// ---------------------------------------------------------------------------
+
+describe("fan drawings and the ambiguity guard", () => {
+  /** C at the origin with Br, Cl, F (and I) at the given angles and marks. */
+  function halomethane(
+    angles: readonly number[],
+    marks: readonly ("wedge" | "hash" | "none")[],
+    length = 1,
+  ) {
+    return buildMolecule((b) => {
+      const c = b.atom("C", ORIGIN);
+      angles.forEach((degrees, i) => {
+        b.bond(c, b.atom(["Br", "Cl", "F", "I"][i]!, step(ORIGIN, degrees, length)), 1, marks[i] ?? "none");
+      });
+    });
+  }
+
+  // Letters from RDKit 2025.03 get_stereo_tags on each drawing's molblock,
+  // written with hydrogenAssertion "valence".
+  const fans: [string, readonly number[], readonly ("wedge" | "hash" | "none")[], "R" | "S"][] = [
+    ["Br 0° wedge, Cl +75°, F −75°", [0, 75, -75], ["wedge"], "R"],
+    ["Br 0°, Cl +75° wedge, F −75°", [0, 75, -75], ["none", "wedge"], "S"],
+    ["hexagon bridgehead, middle bond wedged", [0, 60, 120], ["none", "wedge"], "R"],
+    ["hexagon bridgehead, end bond wedged", [0, 60, 120], ["wedge"], "S"],
+    ["Br −80°, Cl 0° wedge, F +80°", [-80, 0, 80], ["none", "wedge"], "R"],
+    ["Br −80°, Cl 0° hash, F +80°", [-80, 0, 80], ["none", "hash"], "S"],
+    ["a tight fan, 0° 30° 60°", [0, 30, 60], ["none", "none", "wedge"], "S"],
+  ];
+
+  it.each(fans)("puts the H opposite the fan, and both readers agree with RDKit: %s", (_, angles, marks, expected) => {
+    for (const length of [1, 1.5]) {
+      const mol = halomethane(angles, marks, length);
+      expect(letter(mol, stereoConfig(mol), "a1")).toBe(expected);
+      expect(cipLetter(mol, "a1")).toBe(expected);
+    }
+  });
+
+  it("refuses the X drawing at 44.5°, 45° and 45.5° in both readers", () => {
+    for (const nudge of [-0.5, 0, 0.5]) {
+      const mol = halomethane([135, 315, 225, 45 + nudge], ["wedge", "hash"]);
+      expect(letter(mol, stereoConfig(mol), "a1")).toBe("ambiguous-geometry");
+      expect(cipLetter(mol, "a1")).toBe("ambiguous-geometry");
+    }
+  });
+
+  it("refuses a drawing whose letter depends on how long its bonds are", () => {
+    // Raw vectors and unit directions give opposite signs. Before decision 29
+    // stereo-config read R and stereo.ts read S on this very drawing.
+    const mol = buildMolecule((b) => {
+      const c = b.atom("C", ORIGIN);
+      b.bond(c, b.atom("Br", vec(0.024, -1.095)));
+      b.bond(c, b.atom("Cl", vec(-0.629, 0.267)));
+      b.bond(c, b.atom("F", vec(0.749, -1.62)), 1, "wedge");
+      b.bond(c, b.atom("I", vec(-0.803, -0.184)), 1, "hash");
+    });
+    expect(letter(mol, stereoConfig(mol), "a1")).toBe("ambiguous-geometry");
+    expect(cipLetter(mol, "a1")).toBe("ambiguous-geometry");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Edits that move slots
 // ---------------------------------------------------------------------------
 
@@ -413,7 +487,10 @@ describe("parity survives edits that reshuffle slots", () => {
     });
   }
 
-  it("survives an unrelated removeBond that compacts a neighbour's incident list", () => {
+  it("survives an unrelated removeBond elsewhere (the centre's own slots stay put)", () => {
+    // This compacts a8's incident list, not a1's, so it only proves that an
+    // edit elsewhere changes nothing. The slot-order trap itself is caught by
+    // the remove-and-re-add and mergeAtoms tests below, where a1's slots move.
     const mol = tetrahalide();
     const edited = removeBond(mol, "b11");
     expect(adjacency(edited).bondsAt.a8).toEqual(["b9"]);
@@ -589,12 +666,13 @@ describe("pseudo3d convention", () => {
     expect(parities(read)).toEqual(parities(stereoConfig(mol)));
   });
 
-  it("reports a coplanar lift as undetermined, never as a sign", () => {
+  it("reports a depthless lift as coplanar and a flat volume as ambiguous, never a sign", () => {
     const mol = bromochlorofluoromethaneR();
     const flat = readOk(readConfig({ mol }, { kind: "pseudo3d", depth: {} }));
     expect(centre(flat, "a1").reading).toEqual({ kind: "undetermined", reason: "coplanar" });
 
-    // Four explicit ligands all drawn on one line, with a wedge: zero volume.
+    // Four explicit ligands all drawn on one line, with a wedge: zero volume,
+    // under parity.ts's floor, so ambiguous-geometry (decision 29).
     const collinear = buildMolecule((b) => {
       const c = b.atom("C", ORIGIN);
       b.bond(c, b.atom("F", vec(1, 0)), 1, "wedge");
@@ -604,8 +682,25 @@ describe("pseudo3d convention", () => {
     });
     expect(centre(stereoConfig(collinear), "a1").reading).toEqual({
       kind: "undetermined",
-      reason: "coplanar",
+      reason: "ambiguous-geometry",
     });
+  });
+
+  it("reads each neighbour's depth relative to the centre's own depth", () => {
+    const mol = bromochlorofluoromethaneR();
+    const wedge = parities(stereoConfig(mol));
+    // Everything lifted by 5: only the Br differs from the centre, upward.
+    const offset = readOk(
+      readConfig({ mol }, { kind: "pseudo3d", depth: { a1: 5, a2: 6, a4: 5, a6: 5 } }),
+    );
+    expect(parities(offset)).toEqual(wedge);
+    // The Br one below the centre is behind it: the enantiomer. A reader that
+    // took depths as absolute would see every ligand in front and read the
+    // original parity.
+    const below = readOk(
+      readConfig({ mol }, { kind: "pseudo3d", depth: { a1: 5, a2: 4, a4: 5, a6: 5 } }),
+    );
+    expect(parities(below)).toEqual(invert(wedge));
   });
 
   it("reads through a positions override without touching the molecule", () => {
@@ -676,7 +771,7 @@ describe("phantom lone-pair centres", () => {
     expect(stereoTopology(phosphine(false)).centres).toEqual([]);
   });
 
-  it("admits sulfonium S+ and a bridgehead N; excludes amines, aziridines, carbanions", () => {
+  it("admits sulfonium S+ and a bridged bridgehead N; excludes amines and carbanions", () => {
     const sulfonium = buildMolecule((b) => {
       const s = b.atom("S", ORIGIN, { charge: 1 });
       b.bond(s, b.atom("C", step(ORIGIN, 90)), 1, "wedge");
@@ -730,25 +825,38 @@ describe("phantom lone-pair centres", () => {
     });
     expect(stereoTopology(amine).centres).toEqual([]);
 
-    // N-methyl-2-methylaziridine: N has two ring bonds and one exocyclic.
-    const aziridine = buildMolecule((b) => {
-      const n = b.atom("N", vec(0, 0));
-      const c2 = b.atom("C", vec(1, 0.5));
-      const c3 = b.atom("C", vec(1, -0.5));
-      b.bond(n, c2);
-      b.bond(c2, c3);
-      b.bond(c3, n);
-      b.bond(n, b.atom("C", vec(-1, 0)), 1, "wedge");
-      b.bond(c2, b.atom("C", vec(2, 1)));
-    });
-    expect(stereoTopology(aziridine).centres.map((c) => c.atomId)).not.toContain("a1");
-
     const carbanion = buildMolecule((b) => {
       const c = b.atom("C", ORIGIN, { charge: -1 });
       b.bond(c, b.atom("C", step(ORIGIN, 90)), 1, "wedge");
       b.bond(c, b.atom("O", step(ORIGIN, -30)));
     });
     expect(stereoTopology(carbanion).centres).toEqual([]);
+  });
+
+  it("ranks the lone pair below hydrogen: P(H)(Me)(Et) with the H drawn reads R", () => {
+    // H north (plain), Me lower left on a wedge, Et lower right. Priorities
+    // Et > Me > H > LP, clockwise with the lone pair behind: R. RDKit refuses
+    // the protium drawing but gives (R) for the same picture with D, which
+    // ranks where H does relative to everything else here. Ranking the lone
+    // pair above H would swap the last two ligands and read S.
+    function phosphine(isotope: number | undefined) {
+      return buildMolecule((b) => {
+        const p = b.atom("P", ORIGIN); // a1
+        b.bond(p, b.atom("H", step(ORIGIN, 90), { isotope })); // a2
+        b.bond(p, b.atom("C", step(ORIGIN, 210)), 1, "wedge"); // a4
+        const et = b.atom("C", step(ORIGIN, -30)); // a6
+        b.bond(p, et);
+        b.bond(et, b.atom("C", step(step(ORIGIN, -30), 30)));
+      });
+    }
+    for (const isotope of [undefined, 2]) {
+      const mol = phosphine(isotope);
+      const config = stereoConfig(mol);
+      const p = centre(config, "a1");
+      expect(p.order).toEqual(["a2", "a4", "a6"]);
+      expect([p.implicitHydrogen, p.lonePair]).toEqual([false, true]);
+      expect(letter(mol, config, "a1")).toBe("R");
+    }
   });
 
   it("reads a quaternary ammonium as a four-ligand centre with no phantom", () => {
@@ -779,6 +887,98 @@ describe("phantom lone-pair centres", () => {
     const expected = cipLetter(mol, "a1");
     expect(["R", "S"]).toContain(expected);
     expect(letter(mol, config, "a1")).toBe(expected);
+  });
+
+  it("admits nitrogen exactly where RDKit does (decision 30)", () => {
+    // Each case was cross-checked against RDKit 2025.03 get_stereo_tags on the
+    // same constitution. Positions are irrelevant to topology, so `graph`
+    // scatters the atoms. Index k is atom id a(k+1).
+    const nitrogenCentre = (mol: Molecule, index: number) =>
+      stereoTopology(mol).centres.find((c) => c.atomId === `a${index + 1}`);
+
+    // Bridged: 1-azabicyclo[3.2.1]octane, N0; its rings share C7's two bonds.
+    const bridged = graph("NCCCCCCC", [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 0], [0, 7], [7, 4]]);
+    expect(nitrogenCentre(bridged, 0)?.lonePair).toBe(true);
+
+    // Aziridine: CC1CN1C, N at index 3.
+    const aziridine = graph("CCCNC", [[0, 1], [1, 2], [2, 3], [3, 1], [3, 4]]);
+    expect(nitrogenCentre(aziridine, 3)?.lonePair).toBe(true);
+    // ... but not with an N–H, and not as an amide (CC1CN1C(C)=O).
+    expect(nitrogenCentre(graph("CCCN", [[0, 1], [1, 2], [2, 3], [3, 1]]), 3)).toBeUndefined();
+    const acylAziridine = graph("CCCNCOC", [[0, 1], [1, 2], [2, 3], [3, 1], [3, 4], [4, 5, 2], [4, 6]]);
+    expect(nitrogenCentre(acylAziridine, 3)).toBeUndefined();
+    // A sulfonyl neighbour does not conjugate, in RDKit's model or here.
+    const sulfonylAziridine = graph("CCCNSOOC", [[0, 1], [1, 2], [2, 3], [3, 1], [3, 4], [4, 5, 2], [4, 6, 2], [4, 7]]);
+    expect(nitrogenCentre(sulfonylAziridine, 3)?.lonePair).toBe(true);
+
+    // Fused: 1-methylpyrrolizidine CC1CCN2CCCC12, N4. Its rings share one bond.
+    const pyrrolizidine = graph("CCCCNCCCC", [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 7], [7, 8], [8, 1], [8, 4]]);
+    expect(nitrogenCentre(pyrrolizidine, 4)).toBeUndefined();
+    expect(stereoTopology(pyrrolizidine).centres.map((c) => c.atomId)).toEqual(["a2", "a9"]);
+
+    // Aromatic, Kekule form: indolizine N3 and imidazo[1,2-a]pyridine N2.
+    const indolizine = graph("CCCNCCCCC", [[0, 1], [1, 2, 2], [2, 3], [3, 4], [4, 5, 2], [5, 6], [6, 7, 2], [7, 3], [7, 8], [8, 0, 2]]);
+    expect(nitrogenCentre(indolizine, 3)).toBeUndefined();
+    const imidazopyridine = graph("CCNCCCCCN", [[0, 1, 2], [1, 2], [2, 3], [3, 4, 2], [4, 5], [5, 6, 2], [6, 7], [7, 2], [7, 8, 2], [8, 0]]);
+    expect(nitrogenCentre(imidazopyridine, 2)).toBeUndefined();
+
+    // Amide in a fused bicycle: O=C1CC2CCCCN12 (N8), and penicillanic acid,
+    // the penicillin nucleus O=C1CC2SC(C)(C)C(C(=O)O)N12 (N4 at index 12).
+    const lactam = graph("OCCCCCCCN", [[0, 1, 2], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 7], [7, 8], [8, 1], [8, 3]]);
+    expect(nitrogenCentre(lactam, 8)).toBeUndefined();
+    const penam = graph("OCCCSCCCCCOON", [
+      [0, 1, 2], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [5, 7], [5, 8],
+      [8, 9], [9, 10, 2], [9, 11], [8, 12], [12, 1], [12, 3],
+    ]);
+    expect(nitrogenCentre(penam, 12)).toBeUndefined();
+    expect(stereoTopology(penam).centres.map((c) => c.atomId)).toEqual(["a4", "a9"]);
+
+    // Plain acyclic amine: CCN(C)CCC.
+    const amine = graph("CCNCCCC", [[0, 1], [1, 2], [2, 3], [2, 4], [4, 5], [5, 6]]);
+    expect(nitrogenCentre(amine, 2)).toBeUndefined();
+  });
+
+  it("lists four-coordinate P=X and sulfoximine centres, without issuing a letter (decision 31)", () => {
+    // Ethylmethylpropylphosphine oxide CCP(=O)(C)CCC drawn as a cross: O
+    // north, Et east, Me west on a wedge, Pr south on a hash.
+    const oxide = buildMolecule((b) => {
+      const p = b.atom("P", ORIGIN); // a1
+      b.bond(p, b.atom("O", step(ORIGIN, 90)), 2); // a2
+      const et = b.atom("C", step(ORIGIN, 0)); // a4
+      b.bond(p, et);
+      b.bond(et, b.atom("C", step(step(ORIGIN, 0), 60)));
+      b.bond(p, b.atom("C", step(ORIGIN, 180)), 1, "wedge"); // a8
+      const pr = b.atom("C", step(ORIGIN, 270)); // a10
+      b.bond(p, pr, 1, "hash");
+      const pr2 = b.atom("C", step(step(ORIGIN, 270), 330));
+      b.bond(pr, pr2);
+      b.bond(pr2, b.atom("C", step(step(step(ORIGIN, 270), 330), 270)));
+    });
+    const config = stereoConfig(oxide);
+    const p = centre(config, "a1");
+    expect([p.order, p.implicitHydrogen, p.lonePair]).toEqual([["a2", "a4", "a8", "a10"], false, false]);
+    expect(p.reading.kind).toBe("specified");
+    const flipped = flipAtoms(oxide, oxide.atomIds, verticalMirror(ORIGIN));
+    expect(parities(stereoConfig(flipped))).toEqual(parities(config));
+    expect(parities(stereoConfig(mirrorPositionsOnly(oxide)))).toEqual(invert(parities(config)));
+    // Whether P=O is duplicated decides the letter; that is the CIP task's call.
+    expect(letter(oxide, config, "a1")).toBe("ranking-unsupported");
+
+    const hetero = (mol: Molecule) =>
+      stereoTopology(mol)
+        .centres.filter((c) => requireAtom(mol, c.atomId).element !== "C")
+        .map((c) => c.atomId);
+    // Phosphoramidate COP(=O)(NC)OCC, as at sofosbuvir's P (index 2).
+    expect(hetero(graph("COPONCOCC", [[0, 1], [1, 2], [2, 3, 2], [2, 4], [4, 5], [2, 6], [6, 7], [7, 8]]))).toEqual(["a3"]);
+    // Phosphate triester with three different esters, and a symmetric one.
+    expect(hetero(graph("COPOOCCOCCC", [[0, 1], [1, 2], [2, 3, 2], [2, 4], [4, 5], [5, 6], [2, 7], [7, 8], [8, 9], [9, 10]]))).toEqual(["a3"]);
+    expect(hetero(graph("COPOOCOC", [[0, 1], [1, 2], [2, 3, 2], [2, 4], [4, 5], [2, 6], [6, 7]]))).toEqual([]);
+    // Sulfoximine CS(=O)(=N)CC, and ethyl methyl sulfone.
+    expect(hetero(graph("CSONCC", [[0, 1], [1, 2, 2], [1, 3, 2], [1, 4], [4, 5]]))).toEqual(["a2"]);
+    expect(hetero(graph("CSOOCC", [[0, 1], [1, 2, 2], [1, 3, 2], [1, 4], [4, 5]]))).toEqual([]);
+    // Known limit, not a chemistry claim: a phosphorus ylide is outside
+    // decision 31's list, although RDKit flags one.
+    expect(hetero(graph("CCPCCCCC", [[0, 1], [1, 2], [2, 3, 2], [2, 4], [2, 5], [5, 6], [6, 7]]))).toEqual([]);
   });
 
   it("does not let a display lone-pair pin create or remove a centre", () => {
@@ -976,6 +1176,56 @@ describe("ringFace", () => {
     });
     const square = cyclobutane([vec(0, 0), vec(1, 0), vec(1, 1), vec(0, 1)]);
     expect(["front", "back"]).toContain(ringFace(square, ["a4", "a3", "a2", "a1"], "a1", "a9").kind);
+  });
+
+  it("pins the absolute orientation: canonical walk, normal and which side is front", () => {
+    // Atom indices placed round the page counter-clockwise in the order
+    // 0, 2, 4, 5, 3, 1. The canonical walk starts at a1 and steps to its
+    // lower-index neighbour a2, so it runs a1 a2 a4 a6 a5 a3: CLOCKWISE on the
+    // page. The reference normal therefore points away from the viewer, and a
+    // wedge (toward the viewer) is on the BACK face. Starting the walk at the
+    // highest index, reversing it, or swapping front and back all flip this.
+    function ring(mark: "wedge" | "hash") {
+      const slotOf = [0, 5, 1, 4, 2, 3];
+      return buildMolecule((b) => {
+        const ids = slotOf.map((slot) => b.atom("C", fromPolar(slot * 60 * DEG, 1)));
+        for (const [i, j] of [[0, 2], [2, 4], [4, 5], [5, 3], [3, 1], [1, 0]] as const) {
+          b.bond(ids[i]!, ids[j]!);
+        }
+        b.bond(ids[0]!, b.atom("O", fromPolar(0, 2)), 1, mark); // a13
+        b.bond(ids[2]!, b.atom("C", fromPolar(60 * DEG, 2))); // a15, so a1 is a centre
+      });
+    }
+    const wedged = ring("wedge");
+    expect(rings(wedged)[0]!.atomIds).toEqual(["a1", "a2", "a4", "a6", "a5", "a3"]);
+    expect(ringFace(wedged, RING, "a1", "a13")).toEqual({ kind: "back" });
+    expect(ringFace(ring("hash"), RING, "a1", "a13")).toEqual({ kind: "front" });
+  });
+
+  it("reads a wedge drawn on a ring bond, as the parity reader does", () => {
+    // 2-methylcyclohexan-1-ol with the OH plain and the C1–C2 ring bond wedged
+    // from C1. stereoConfig reads C1 as specified; ringFace must state a face
+    // too, and the same face as the OH-marked drawing with the same letter.
+    function drawing(ohMark: "wedge" | "hash" | "none", ringBondWedged: boolean) {
+      return buildMolecule((b) => {
+        const ring: string[] = [];
+        for (let i = 0; i < 6; i++) ring.push(b.atom("C", fromPolar(i * 60 * DEG, 1)));
+        for (let i = 0; i < 6; i++) {
+          b.bond(ring[i]!, ring[(i + 1) % 6]!, 1, i === 0 && ringBondWedged ? "wedge" : "none");
+        }
+        b.bond(ring[0]!, b.atom("O", fromPolar(0, 2)), 1, ohMark); // a13
+        b.bond(ring[1]!, b.atom("C", fromPolar(60 * DEG, 2))); // a15
+      });
+    }
+    const viaRing = drawing("none", true);
+    expect(centre(stereoConfig(viaRing), "a1").reading.kind).toBe("specified");
+    const target = cipLetter(viaRing, "a1");
+    expect(["R", "S"]).toContain(target);
+    const sameLetter = [drawing("wedge", false), drawing("hash", false)].find(
+      (mol) => cipLetter(mol, "a1") === target,
+    )!;
+    expect(ringFace(viaRing, RING, "a1", "a13")).toEqual(ringFace(sameLetter, RING, "a1", "a13"));
+    expect(["front", "back"]).toContain(ringFace(viaRing, RING, "a1", "a13").kind);
   });
 
   it("uses the same canonical walk as rings()", () => {

@@ -28,6 +28,8 @@ export * from "./molblock-read.js";
 export * from "./templates.js";
 export * from "./lewis.js";
 export * from "./condensed.js";
+// The one lift and signed volume both stereo readers call. Imports neither.
+export * from "./parity.js";
 // Perception LAST among the chemistry modules: it reads valence, rings and
 // aromaticity, and only stereo-config reads it.
 export * from "./stereo.js";
