@@ -392,6 +392,69 @@ test("a figure wider than the column scales down to exactly the column, and the 
   await expect(page.locator('[data-shell="figure-size"]')).toContainText("bond 5.08 mm");
 });
 
+test("labels scaled under 8 pt: the read-out states the printed pt, the dialog warns, and the export still works", async ({
+  page,
+}) => {
+  await openEditor(page);
+  // Two methanes 24 bonds apart: about 12 cm at the house bond length.
+  await dropMolfile(page, "wide.mol", methanesMolfile("Wide", [[0, 0], [24, 0]]));
+  await expect(page.locator('[data-status="formula"]')).toHaveText("C₂H₈");
+
+  await openExportDialog(page);
+  // Publication prints 10 pt labels at the house bond (decision 26), so only
+  // the fit scaling can take them under 8 pt here.
+  await page.locator(`${DIALOG} [data-command="view.style-publication"]`).click();
+  await expect(page.locator('[data-shell="figure-style"]')).toHaveAttribute(
+    "data-style-preset",
+    "publication",
+  );
+  await page.locator(`${DIALOG} input[name="figure-width"][value="single"]`).check();
+
+  const scaled = page.locator('[data-shell="figure-scaled"]');
+  await expect(scaled).toBeVisible();
+  const percent = Number(/(\d+)%/.exec((await scaled.textContent()) ?? "")![1]);
+  expect(percent).toBeLessThan(80);
+
+  // The read-out's label size is the one AFTER scaling: 10 pt times the scale.
+  const readout = (await page.locator('[data-shell="figure-size"]').textContent()) ?? "";
+  const labelPt = Number(/labels ([\d.]+) pt/.exec(readout)![1]);
+  expect(labelPt).toBeLessThan(8);
+  expect(Math.abs(labelPt - percent / 10)).toBeLessThanOrEqual(0.11);
+
+  const warning = page.locator('[data-shell="figure-label-size"]');
+  await expect(warning).toBeVisible();
+  await expect(warning).toHaveAttribute("data-label-pt", labelPt.toFixed(1));
+  await expect(warning).toContainText(
+    `Labels print at ${labelPt.toFixed(1)} pt, below the 8 pt minimum ACS asks for in figures.`,
+  );
+  // A 12 cm figure with the default two panels (skeletal, sum formula) side
+  // by side: a double column fits it at 8 pt, and so would a different layout.
+  const needed = Number(/maximum width of ([\d.]+) cm/.exec((await warning.textContent()) ?? "")![1]);
+  expect(needed).toBeGreaterThan(8.25);
+  expect(needed).toBeLessThan(17.8);
+  await expect(warning).toContainText("Try a double column, fewer panels per row, or fewer panels.");
+
+  // A warning, not a refusal (decision 51).
+  for (const command of ["figure.export-svg", "figure.export-png", "figure.copy"]) {
+    await expect(page.locator(`${DIALOG} [data-command="${command}"]`)).toBeEnabled();
+  }
+  const svg = (await downloadFrom(page, "figure.export-svg")).toString("utf8");
+  expect(attr(svg, "width")).toBe("8.25cm");
+  await expect(page.locator('[data-shell="export-status"]')).toContainText(
+    `Labels print at ${labelPt.toFixed(1)} pt`,
+  );
+
+  // A custom width at the named minimum brings the labels back to 8 pt.
+  await page.locator(`${DIALOG} [data-shell="custom-width"]`).fill(String(needed));
+  await expect(warning).toHaveCount(0);
+  await expect(page.locator('[data-shell="figure-size"]')).toContainText("labels 8.0 pt");
+
+  // In the double column it prints at its natural size, 10 pt, with no warning.
+  await page.locator(`${DIALOG} input[name="figure-width"][value="double"]`).check();
+  await expect(warning).toHaveCount(0);
+  await expect(page.locator('[data-shell="figure-size"]')).toContainText("labels 10.0 pt");
+});
+
 test("a molfile drawn at another tool's bond length prints at the house bond, and the dialog's read-out is true", async ({
   page,
 }) => {

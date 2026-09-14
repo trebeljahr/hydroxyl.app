@@ -28,6 +28,15 @@
  * pixel size. The bond length and font size this module reports are READ-OUTS
  * of that mapping; they are never fed back into a style.
  *
+ * ── LABELS SHRINK WITH THE FIGURE (decision 51) ──────────────────────────
+ *
+ * Scaling to fit shrinks the labels by the same factor: a Publication figure
+ * at 58 % prints 10 pt labels at 5.8 pt. That stays allowed — a TOC graphic
+ * or an SI figure may be small on purpose, and some journals accept smaller
+ * text — but the size reports when its printed labels fall below
+ * `MIN_PRINTED_LABEL_PT`, and the narrowest column that would bring them back
+ * up to it, so the export dialog can warn with something to act on.
+ *
  * The bond read-out measures the DRAWING (`figure.drawnBondLength`), not the
  * model unit: the house length is guaranteed for one model unit, and a
  * structure is only at the house length if its bonds are one unit long.
@@ -62,6 +71,16 @@ export const JOURNAL_WIDTHS_CM = Object.freeze({
   single: 8.25,
   double: 17.8,
 });
+
+/**
+ * The smallest printed atom-label size the export dialog accepts without a
+ * warning (decision 51). Source: the ACS author guidelines (checked on ACS
+ * Catalysis's, 2026-09-14) ask for text in artwork "no smaller than 8 pt".
+ * The same page's Appendix 2 allows 4.5 pt in the final published format and
+ * Elsevier asks 7 pt; the house style is ACS (decisions 20 and 26), so its
+ * stricter number is the one warned at. A warning, never a refusal.
+ */
+export const MIN_PRINTED_LABEL_PT = 8;
 
 export const RASTER_DPI_CHOICES = Object.freeze([300, 600] as const);
 
@@ -116,8 +135,19 @@ export interface PhysicalFigureSize {
    * so rather than repeating the house constant.
    */
   readonly bondLengthMm: number;
-  /** The label font, as it will print. */
+  /** The label font, as it will print: after any scaling to fit. */
   readonly fontSizePt: number;
+  /** The label font at the house bond length, before any scaling. */
+  readonly naturalFontSizePt: number;
+  /** `fontSizePt` is below `MIN_PRINTED_LABEL_PT` (decision 51). */
+  readonly labelsBelowMinimum: boolean;
+  /**
+   * The narrowest maximum width at which the labels still print at
+   * `MIN_PRINTED_LABEL_PT`: below it, scaling to fit takes them under. Null
+   * when the style's labels are under the minimum even unscaled, since no
+   * column width can fix that — only a style with larger labels can.
+   */
+  readonly minWidthCmForMinLabel: number | null;
 }
 
 /**
@@ -127,6 +157,10 @@ export interface PhysicalFigureSize {
  * "scaled to 99 %".
  */
 const FIT_TOLERANCE = 1e-9;
+
+function ptFromCm(cm: number): number {
+  return (cm / CM_PER_INCH) * POINTS_PER_INCH;
+}
 
 export function physicalFigureSize(
   figure: Figure,
@@ -151,6 +185,11 @@ export function physicalFigureSize(
   const widthCm = fits ? naturalWidthCm : maxWidthCm;
   const cmPerPx = naturalCmPerPx * scale;
   const heightCm = height * cmPerPx;
+  const naturalFontSizePt = ptFromCm(figure.style.fontSizePx * naturalCmPerPx);
+  const fontSizePt = ptFromCm(figure.style.fontSizePx * cmPerPx);
+  // Same slack as the fit test, the other way round: a figure scaled to
+  // exactly the minimum must not warn over the last bit of a product.
+  const naturalReachesMinimum = naturalFontSizePt >= MIN_PRINTED_LABEL_PT * (1 - FIT_TOLERANCE);
 
   const base = {
     widthCm,
@@ -161,7 +200,16 @@ export function physicalFigureSize(
     scale,
     scaled: !fits,
     bondLengthMm: pxPerModelUnit(figure.style) * figure.drawnBondLength * cmPerPx * 10,
-    fontSizePt: ((figure.style.fontSizePx * cmPerPx) / CM_PER_INCH) * POINTS_PER_INCH,
+    fontSizePt,
+    naturalFontSizePt,
+    labelsBelowMinimum: fontSizePt < MIN_PRINTED_LABEL_PT * (1 - FIT_TOLERANCE),
+    // Labels scale linearly with the width, so the width that prints them at
+    // the minimum is the natural width times minimum over natural size. The
+    // natural size is at or above the minimum here, so this never exceeds the
+    // natural width.
+    minWidthCmForMinLabel: naturalReachesMinimum
+      ? Math.min(naturalWidthCm, (naturalWidthCm * MIN_PRINTED_LABEL_PT) / naturalFontSizePt)
+      : null,
   };
   if (dpi === undefined) return base;
   const widthPx = Math.max(1, pixelsFor(widthCm, dpi));

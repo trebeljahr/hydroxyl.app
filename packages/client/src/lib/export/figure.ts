@@ -29,11 +29,19 @@
  * MAXIMUM: `physicalFigureSize` prints a small figure at its natural size and
  * scales a wide one down to the column, reporting the factor. `scaleNotice`
  * is the sentence the dialog shows for it.
+ *
+ * ── LABELS BELOW 8 PT WARN, AND STILL EXPORT (decision 51) ───────────────
+ *
+ * Scaling shrinks the labels with everything else. When they print under
+ * `MIN_PRINTED_LABEL_PT`, `labelSizeNotice` says so with the printed size and
+ * what would bring them back — never a refusal, since a small figure can be
+ * exactly what was wanted.
  */
 
 import { BOND_LENGTH_NORMALIZE_TOLERANCE, isEmpty } from "@starter/chem-core";
 import {
   JOURNAL_WIDTHS_CM,
+  MIN_PRINTED_LABEL_PT,
   PRINTED_BOND_LENGTH_CM,
   composeFigure,
   physicalFigureSize,
@@ -133,6 +141,64 @@ export function scaleNotice(
   if (!size.scaled) return null;
   const percent = Math.floor(size.scale * 100 + 1e-9);
   return `Scaled to ${percent}% to fit ${widthName(settings, size.maxWidthCm)}.`;
+}
+
+/**
+ * A printed size in points for display, rounded DOWN to a tenth, for the
+ * same reason `scaleNotice` rounds down: 7.96 pt shown as "8.0 pt" beside a
+ * warning that it is under 8 pt would contradict itself. The small epsilon
+ * keeps an exact 10 pt, computed as 9.999999999, from reading 9.9.
+ */
+export function formatPt(pt: number): string {
+  return (Math.floor(pt * 10 + 1e-6) / 10).toFixed(1);
+}
+
+export interface LabelSizeNotice {
+  /** The finding, short enough for the status bar. */
+  readonly summary: string;
+  /** What would bring the labels back up to the minimum. */
+  readonly advice: string;
+}
+
+/**
+ * The warning for labels that print below `MIN_PRINTED_LABEL_PT`, or null.
+ * Suggests only what would actually help this figure: a double column only
+ * when the figure's labels reach the minimum at that width, fewer panels per
+ * row only when there is more than one, fewer panels only when there are
+ * several.
+ */
+export function labelSizeNotice(
+  prepared: PreparedFigure,
+  settings: FigureExportSettings,
+): LabelSizeNotice | null {
+  const { size, figure } = prepared;
+  if (!size.labelsBelowMinimum) return null;
+  const summary = `Labels print at ${formatPt(size.fontSizePt)} pt, below the ${MIN_PRINTED_LABEL_PT} pt minimum ACS asks for in figures.`;
+  const needed = size.minWidthCmForMinLabel;
+  if (needed === null) {
+    return {
+      summary,
+      advice: `This style's labels are under ${MIN_PRINTED_LABEL_PT} pt even at full size, so no width fixes it. Choose a style with larger labels, such as Publication.`,
+    };
+  }
+  const remedies: string[] = [];
+  if (settings.width !== "double" && needed <= JOURNAL_WIDTHS_CM.double * (1 + 1e-9)) {
+    remedies.push("a double column");
+  }
+  if (figure.columns > 1) remedies.push("fewer panels per row");
+  if (figure.cells.length > 1) remedies.push("fewer panels");
+  // Up, so the width it names really does reach the minimum.
+  const neededCm = String(Math.ceil(needed * 100 - 1e-6) / 100);
+  const reach = `They reach ${MIN_PRINTED_LABEL_PT} pt at a maximum width of ${neededCm} cm.`;
+  return {
+    summary,
+    advice: remedies.length === 0 ? reach : `${reach} Try ${joinOr(remedies)}.`,
+  };
+}
+
+function joinOr(items: readonly string[]): string {
+  if (items.length <= 2) return items.join(" or ");
+  return `${items.slice(0, -1).join(", ")}, or ${items.at(-1)}`;
 }
 
 /**

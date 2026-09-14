@@ -22,6 +22,8 @@ import {
   figurePreviewSvg,
   figureSvgForFile,
   figureSvgForRaster,
+  formatPt,
+  labelSizeNotice,
   prepareFigure,
   MAX_RASTER_SIDE_PX,
   rasterTooLarge,
@@ -184,6 +186,55 @@ describe("the figure a document exports", () => {
     expect(bondLengthNotice(short)).toBe(
       "This drawing's bonds are 55% of the standard bond, so they do not print at 5.08 mm.",
     );
+  });
+
+  it("warns when scaling takes the labels under 8 pt, names the printed size, and still exports (decision 51)", () => {
+    const DOUBLE_300: FigureExportSettings = { width: "double", customWidthCm: 12, dpi: 300 };
+    // A C40 chain in Publication is about 17 cm: 10 pt labels at its natural
+    // size, under 8 pt in a single column.
+    const doc = onePanelDoc(linearChain(40), "publication");
+    const single = prepared(doc);
+    expect(single.size.scaled).toBe(true);
+    const pt = formatPt(single.size.fontSizePt);
+    expect(Number(pt)).toBeLessThan(8);
+    const neededCm = Math.ceil(single.size.minWidthCmForMinLabel! * 100 - 1e-6) / 100;
+    expect(labelSizeNotice(single, SINGLE_300)).toEqual({
+      summary: `Labels print at ${pt} pt, below the 8 pt minimum ACS asks for in figures.`,
+      advice: `They reach 8 pt at a maximum width of ${neededCm} cm. Try a double column.`,
+    });
+    // A warning, not a refusal: the figure is prepared and exports.
+    expect(figureSvgForFile(single)).toContain('width="8.25cm"');
+
+    // In the double column it fits at its natural size: 10 pt, no warning.
+    const double = prepared(doc, DOUBLE_300);
+    expect(formatPt(double.size.fontSizePt)).toBe("10.0");
+    expect(labelSizeNotice(double, DOUBLE_300)).toBeNull();
+
+    // Suggestions follow the figure: three panels three abreast are too wide
+    // for any column, so a double column is not offered but the layout is.
+    const three = { ...threePanelDoc(linearChain(40)), stylePreset: "publication" as const };
+    const wide = prepared(three, DOUBLE_300);
+    expect(wide.size.minWidthCmForMinLabel!).toBeGreaterThan(17.8);
+    expect(labelSizeNotice(wide, DOUBLE_300)?.advice).toMatch(
+      /^They reach 8 pt at a maximum width of [\d.]+ cm\. Try fewer panels per row or fewer panels\.$/,
+    );
+  });
+
+  it("warns that no width helps when the style's labels are under 8 pt at full size", () => {
+    // Screen: 16 px labels on a 44 px bond print at 5.2 pt unscaled.
+    const p = prepared(onePanelDoc(benzene()));
+    expect(p.size.scaled).toBe(false);
+    expect(labelSizeNotice(p, SINGLE_300)).toEqual({
+      summary: "Labels print at 5.2 pt, below the 8 pt minimum ACS asks for in figures.",
+      advice:
+        "This style's labels are under 8 pt even at full size, so no width fixes it. Choose a style with larger labels, such as Publication.",
+    });
+  });
+
+  it("rounds a printed point size down, so a size under the minimum never displays as 8.0", () => {
+    expect(formatPt(7.96)).toBe("7.9");
+    expect(formatPt(10 - 1e-9)).toBe("10.0");
+    expect(formatPt(5.8)).toBe("5.8");
   });
 
   it("accepts a custom width in range and refuses one outside it", () => {

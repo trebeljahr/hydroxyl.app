@@ -31,6 +31,7 @@ import {
 import type { Figure, FigurePanelSpec } from "../src/figure/compose.js";
 import {
   JOURNAL_WIDTHS_CM,
+  MIN_PRINTED_LABEL_PT,
   PRINTED_BOND_LENGTH_CM,
   physicalFigureSize,
   pixelsFor,
@@ -490,6 +491,72 @@ describe("physical size", () => {
         THREE_VIEWS[0]!,
       ]).drawnBondLength,
     ).toBe(1);
+  });
+
+  it("reports labels shrunk below 8 pt by scaling to fit, and the width that avoids it (decision 51)", () => {
+    expect(MIN_PRINTED_LABEL_PT).toBe(8);
+    const figure = composeFigure(linearChain(40), PUBLICATION_STYLE, THREE_VIEWS.slice(0, 1));
+
+    // At its natural size (a double column holds it) the labels are 10 pt,
+    // and they stay at or above 8 pt down to 80 % of the natural width.
+    const natural = physicalFigureSize(figure, JOURNAL_WIDTHS_CM.double);
+    expect(natural.scaled).toBe(false);
+    expect(natural.fontSizePt).toBeCloseTo(10, 9);
+    expect(natural.naturalFontSizePt).toBeCloseTo(10, 9);
+    expect(natural.labelsBelowMinimum).toBe(false);
+    expect(natural.minWidthCmForMinLabel).toBeCloseTo(natural.naturalWidthCm * 0.8, 9);
+
+    // The issue's example: scaled to 58 %, labels print at 5.8 pt and bonds at 2.9 mm.
+    const shrunk = physicalFigureSize(figure, natural.naturalWidthCm * 0.58);
+    expect(shrunk.scale).toBeCloseTo(0.58, 12);
+    expect(shrunk.fontSizePt).toBeCloseTo(5.8, 9);
+    expect(shrunk.bondLengthMm).toBeCloseTo(2.9464, 3);
+    expect(shrunk.naturalFontSizePt).toBeCloseTo(10, 9);
+    expect(shrunk.labelsBelowMinimum).toBe(true);
+    // The remedy does not depend on the column that was chosen.
+    expect(shrunk.minWidthCmForMinLabel).toBe(natural.minWidthCmForMinLabel);
+
+    // A single column is far too narrow for this chain.
+    const single = physicalFigureSize(figure, JOURNAL_WIDTHS_CM.single);
+    expect(single.labelsBelowMinimum).toBe(true);
+    expect(single.fontSizePt).toBeCloseTo(10 * single.scale, 9);
+
+    // Exactly at the reported width the labels are 8 pt and do not warn over
+    // floating-point dust; a hair narrower, they do.
+    const edge = natural.minWidthCmForMinLabel!;
+    const atEdge = physicalFigureSize(figure, edge);
+    expect(atEdge.scaled).toBe(true);
+    expect(atEdge.fontSizePt).toBeCloseTo(MIN_PRINTED_LABEL_PT, 9);
+    expect(atEdge.labelsBelowMinimum).toBe(false);
+    expect(physicalFigureSize(figure, edge * 0.999).labelsBelowMinimum).toBe(true);
+  });
+
+  it("reports labels below 8 pt even unscaled for the screen style, where no width helps", () => {
+    const figure = composeFigure(ethanol(), SCREEN_STYLE, [THREE_VIEWS[0]!]);
+    const size = physicalFigureSize(figure, JOURNAL_WIDTHS_CM.double);
+    expect(size.scaled).toBe(false);
+    // 16 px labels on a 44 px bond at a 14.4 pt bond: 5.24 pt.
+    expect(size.fontSizePt).toBeCloseTo((16 / 44) * 14.4, 9);
+    expect(size.naturalFontSizePt).toBe(size.fontSizePt);
+    expect(size.labelsBelowMinimum).toBe(true);
+    expect(size.minWidthCmForMinLabel).toBeNull();
+  });
+
+  it("never multiplies geometry for the label read-out: the file's viewBox is the same at every width", () => {
+    const figure = composeFigure(linearChain(40), PUBLICATION_STYLE, THREE_VIEWS.slice(0, 1));
+    const viewBox = (svg: string) => /<svg[^>]*\sviewBox="([^"]*)"/.exec(svg)![1];
+    const at = (widthCm: number) => {
+      const size = physicalFigureSize(figure, widthCm);
+      return serializeFigure(figure, {
+        dimensions: { width: size.widthCm, height: size.heightCm, unit: "cm" },
+      });
+    };
+    const double = at(JOURNAL_WIDTHS_CM.double);
+    const single = at(JOURNAL_WIDTHS_CM.single);
+    expect(viewBox(single)).toBe(viewBox(double));
+    // Only the root's physical attributes differ.
+    const strip = (svg: string) => svg.replace(/\s(width|height)="[\d.]+cm"/g, "");
+    expect(strip(single)).toBe(strip(double));
   });
 
   it("never enlarges: a figure exactly as wide as the column is not 'scaled'", () => {

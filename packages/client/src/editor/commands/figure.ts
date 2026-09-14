@@ -25,6 +25,7 @@ import {
   figureSvgForRaster,
   prepareFigure,
   rasterTooLarge,
+  labelSizeNotice,
   scaleNotice,
 } from "@/lib/export/figure";
 import type { PreparedFigure } from "@/lib/export/figure";
@@ -51,8 +52,12 @@ function prepared(store: EditorStore): PreparedFigure | null {
 function sizeNote(store: EditorStore, p: PreparedFigure): string {
   const size = `${p.size.widthCm.toFixed(2)} × ${p.size.heightCm.toFixed(2)} cm`;
   // A shrunk figure is said out loud here too: the dialog may already be closed.
-  const notice = scaleNotice(p.size, store.getState().ui.figureExport);
-  return notice === null ? size : `${size}. ${notice}`;
+  const settings = store.getState().ui.figureExport;
+  const notice = scaleNotice(p.size, settings);
+  const labels = labelSizeNotice(p, settings);
+  return [notice === null ? `${size}.` : `${size}. ${notice}`, labels?.summary]
+    .filter((part) => part !== undefined)
+    .join(" ");
 }
 
 export async function exportFigureSvg(store: EditorStore): Promise<void> {

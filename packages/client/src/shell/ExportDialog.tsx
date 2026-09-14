@@ -15,7 +15,11 @@
  * column 17.8 cm, or custom) is a MAXIMUM: a wider figure is scaled down to
  * fit it, and the dialog says so in a sentence rather than leaving a reader
  * to notice the bond length in the read-out. Printed width, pixels, bond
- * length and label size are read-outs.
+ * length and label size are read-outs, all after scaling.
+ *
+ * SMALL LABELS (decision 51). When scaling takes the printed labels under
+ * 8 pt, the dialog warns with the printed size and what would help. Every
+ * button stays enabled: the warning informs, it does not refuse.
  *
  * STYLE (decision 21). The export draws with the document's preset, the one
  * the canvas shows. The dialog names it, and when it is the screen preset it
@@ -38,6 +42,8 @@ import {
   CUSTOM_WIDTH_RANGE_CM,
   bondLengthNotice,
   figurePreviewSvg,
+  formatPt,
+  labelSizeNotice,
   prepareFigure,
   rasterTooLarge,
   scaleNotice,
@@ -98,6 +104,7 @@ export function ExportDialog(): ReactElement {
   const tooLarge = prepared?.ok === true ? rasterTooLarge(prepared.value, canvasCanHold) : null;
   const notice = prepared?.ok === true ? scaleNotice(prepared.value.size, settings) : null;
   const bondNotice = prepared?.ok === true ? bondLengthNotice(prepared.value) : null;
+  const labelNotice = prepared?.ok === true ? labelSizeNotice(prepared.value, settings) : null;
   const canExport = prepared?.ok === true;
 
   return (
@@ -218,7 +225,7 @@ export function ExportDialog(): ReactElement {
               {prepared.value.size.heightCm.toFixed(2)} cm
               {" · "}PNG {prepared.value.size.widthPx} × {prepared.value.size.heightPx} px
               {" · "}bond {prepared.value.size.bondLengthMm.toFixed(2)} mm
-              {" · "}labels {prepared.value.size.fontSizePt.toFixed(1)} pt
+              {" · "}labels {formatPt(prepared.value.size.fontSizePt)} pt
             </p>
             {notice === null ? (
               <p data-shell="figure-fit" className="text-muted-foreground mb-3 text-xs">
@@ -231,6 +238,16 @@ export function ExportDialog(): ReactElement {
                 className="mb-3 text-xs font-medium text-amber-700 dark:text-amber-400"
               >
                 {notice}
+              </p>
+            )}
+            {labelNotice === null ? null : (
+              <p
+                data-shell="figure-label-size"
+                data-label-pt={formatPt(prepared.value.size.fontSizePt)}
+                role="status"
+                className="-mt-2 mb-3 text-xs font-medium text-amber-700 dark:text-amber-400"
+              >
+                {labelNotice.summary} {labelNotice.advice}
               </p>
             )}
             {bondNotice === null ? null : (
