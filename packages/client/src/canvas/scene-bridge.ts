@@ -80,10 +80,23 @@ type DocumentKindsMatchViewKinds = RepresentationKind extends ViewKind
 const DOCUMENT_KINDS_MATCH_VIEW_KINDS: DocumentKindsMatchViewKinds = true;
 void DOCUMENT_KINDS_MATCH_VIEW_KINDS;
 
-/** The render style a document's preset selects. */
+/**
+ * The render style a document's preset selects — for the canvas AND for every
+ * export (decision 21: export what the canvas shows). One function, so the two
+ * cannot resolve a preset differently.
+ */
 export function renderStyleFor(doc: SketchDocument): RenderStyle {
   return RENDER_STYLES[doc.stylePreset];
 }
+
+/** Every preset, in the order the UI offers them. */
+export const STYLE_PRESETS: readonly StylePresetId[] = Object.freeze(["screen", "publication"]);
+
+/** How the top bar, the palette and the export dialog name a preset. */
+export const STYLE_PRESET_TITLES: Readonly<Record<StylePresetId, string>> = Object.freeze({
+  screen: "Screen",
+  publication: "Publication",
+});
 
 /**
  * A panel's stored representation as the renderer wants it.

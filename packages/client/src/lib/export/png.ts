@@ -190,7 +190,7 @@ export async function rasterizeSvg(
     const context = canvas.getContext("2d");
     if (context === null || !backingStoreWorks(context, widthPx, heightPx)) {
       throw new Error(
-        `This browser could not allocate a ${widthPx} × ${heightPx} px canvas for the PNG. Choose a narrower width or 300 dpi, or export the SVG.`,
+        `This browser could not allocate a ${widthPx} × ${heightPx} px canvas for the PNG. Choose 300 dpi or a narrower maximum width, or export the SVG.`,
       );
     }
     context.drawImage(image, 0, 0, widthPx, heightPx);

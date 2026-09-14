@@ -2,7 +2,7 @@
 
 /**
  * The top bar: the document's name, the handful of commands worth a permanent
- * button, and the theme switch.
+ * button, the style preset, and the theme switch.
  *
  * EVERY BUTTON HERE IS A REGISTRY ENTRY. Undo, redo, Clean up structure and
  * the theme switch are `commandById(...)`, so their disabled state is the same
@@ -31,6 +31,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { STYLE_PRESETS, STYLE_PRESET_TITLES } from "@/canvas/scene-bridge";
 import { commandById, formatShortcut } from "@/editor/commands/registry";
 import { cn } from "@/lib/utils";
 import { editorStore, useEditorStore } from "@/state";
@@ -90,6 +91,57 @@ function CommandButton({
   );
 }
 
+/**
+ * Screen / Publication: the document's style preset, which the canvas draws
+ * with and every export writes (decision 21). Two registry commands, so the
+ * palette offers the same switch and a click is the same undoable
+ * `setStylePreset` the command runs. The active preset is `aria-pressed`
+ * rather than disabled, so it stays focusable and announced.
+ */
+function StylePresetSwitch(): ReactElement {
+  const preset = useEditorStore((state) => state.document.stylePreset);
+  return (
+    <div
+      role="group"
+      aria-label="Style preset"
+      data-shell="style-preset"
+      data-style-preset={preset}
+      className="flex items-center rounded-md border p-0.5"
+    >
+      {STYLE_PRESETS.map((id) => {
+        const command = commandById(`view.style-${id}`);
+        const active = preset === id;
+        return (
+          <Tooltip key={id}>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                data-command={command.id}
+                aria-pressed={active}
+                onClick={() => {
+                  if (!active) void command.run(editorStore);
+                }}
+                className={cn(
+                  "flex h-7 items-center rounded px-2 text-xs",
+                  "focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-2",
+                  active ? "bg-accent text-accent-foreground font-medium" : "hover:bg-accent",
+                )}
+              >
+                {STYLE_PRESET_TITLES[id]}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {active
+                ? `The canvas and exports use the ${STYLE_PRESET_TITLES[id].toLowerCase()} style`
+                : command.title}
+            </TooltipContent>
+          </Tooltip>
+        );
+      })}
+    </div>
+  );
+}
+
 export function TopBar(): ReactElement {
   const title = useEditorStore((state) => state.document.metadata.title);
   // Rendered as an attribute rather than as text: the e2e specs need to know
@@ -124,6 +176,7 @@ export function TopBar(): ReactElement {
       </div>
 
       <div className="ml-auto flex items-center gap-1">
+        <StylePresetSwitch />
         <CommandButton id="structure.clean-up">
           <>
             <SparklesIcon className="size-4" />

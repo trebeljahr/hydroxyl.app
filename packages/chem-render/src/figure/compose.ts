@@ -26,9 +26,10 @@
  * Nothing here rewrites a primitive. Each cell carries an `offset`, and the
  * serialiser emits the panel's primitives unchanged inside
  * `<g transform="translate(dx dy)">`. `modelToPx` stays the only function that
- * scales. The one figure-level scale there is — centimetres per px once a
- * journal width is chosen — lives in the SVG's own viewBox-to-viewport
- * mapping, and is uniform by construction.
+ * scales. The one figure-level scale there is — centimetres per px, fixed by
+ * the printed bond length and shrunk only to fit a column (physical.ts) —
+ * lives in the SVG's own viewBox-to-viewport mapping, and is uniform by
+ * construction.
  *
  * ── AVAILABILITY FIRST, SCENE SECOND ─────────────────────────────────────
  *

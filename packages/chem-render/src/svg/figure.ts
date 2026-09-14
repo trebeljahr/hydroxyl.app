@@ -33,11 +33,14 @@
 import type { Figure, FigureCell, UnavailableViewAvailability } from "../figure/compose.js";
 import { ARIMO_WOFF_BASE64 } from "../text/generated/arimo-woff.js";
 import { FONT_VERSION } from "../text/generated/arimo-metrics.js";
-import { attr, emitPrimitive, escapeText, num, push } from "./emit.js";
+import { attr, emitPrimitive, escapeText, formatNumber, num, push } from "./emit.js";
 import type { Emitter } from "./emit.js";
 
 const XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8"?>\n';
 const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+
+/** Decimal places for a `width`/`height` in cm, mm or in: 4 places of a cm is 1 µm. */
+export const PHYSICAL_LENGTH_PRECISION = 4;
 
 export type FigureLengthUnit = "cm" | "mm" | "in" | "px";
 
@@ -54,8 +57,9 @@ export interface FigureSerializeOptions {
   readonly indent?: boolean;
   /**
    * The `width`/`height` attributes. Defaults to the viewBox size in px. Pass
-   * centimetres for a journal figure, or whole pixels equal to a raster's
-   * backing store so the PNG is rasterised at that size rather than scaled.
+   * the centimetres `physicalFigureSize` reports for a journal figure, or
+   * whole pixels equal to a raster's backing store so the PNG is rasterised
+   * at that size rather than scaled.
    */
   readonly dimensions?: FigureDimensions;
   /** Embed the Arimo WOFF as an `@font-face` data URI. Defaults to false. */
@@ -155,14 +159,23 @@ export function serializeFigure(
     unit: "px" as const,
   };
 
+  // A physical length gets its own precision. The style's coordinate
+  // precision is px-sized (two places on the screen preset), and at two
+  // places a 1.2 cm figure's width is off by up to 0.4 % — which is the
+  // printed bond length off by the same, the one number decision 20 fixes.
+  const dimensionPrecision =
+    dimensions.unit === "px" ? style.coordinatePrecision : PHYSICAL_LENGTH_PRECISION;
+  const length = (value: number, context: string): string =>
+    formatNumber(value, dimensionPrecision, context);
+
   push(
     e,
     0,
     `<svg` +
       attr("xmlns", SVG_NAMESPACE) +
       attr("viewBox", viewBox) +
-      attr("width", `${num(e, dimensions.width, "figure width")}${dimensions.unit}`) +
-      attr("height", `${num(e, dimensions.height, "figure height")}${dimensions.unit}`) +
+      attr("width", `${length(dimensions.width, "figure width")}${dimensions.unit}`) +
+      attr("height", `${length(dimensions.height, "figure height")}${dimensions.unit}`) +
       `>`,
   );
 

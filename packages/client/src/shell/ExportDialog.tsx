@@ -10,10 +10,17 @@
  * difference is deliberate: an unavailable panel is drawn MARKED here, with
  * its reason, where the export refuses.
  *
- * SIZE IS CHOSEN THE WAY A JOURNAL STATES IT: a printed width (single column
- * 8.25 cm, double column 17.8 cm, or custom) and a resolution for the PNG.
- * Pixels, printed bond length and label size are read-outs, so choosing a
- * width shows what it does to the chemistry before anything is written.
+ * SIZE (decision 20). One bond prints at 0.508 cm, so the figure is only as
+ * wide as its content. The width chosen here (single column 8.25 cm, double
+ * column 17.8 cm, or custom) is a MAXIMUM: a wider figure is scaled down to
+ * fit it, and the dialog says so in a sentence rather than leaving a reader
+ * to notice the bond length in the read-out. Printed width, pixels, bond
+ * length and label size are read-outs.
+ *
+ * STYLE (decision 21). The export draws with the document's preset, the one
+ * the canvas shows. The dialog names it, and when it is the screen preset it
+ * says so plainly and offers the switch to publication — through the same
+ * undoable registry command the top bar uses.
  *
  * Every button runs a registry command synchronously inside its click, which
  * is what keeps the clipboard and the save picker inside the user gesture.
@@ -25,12 +32,14 @@ import type { ReactElement } from "react";
 import { JOURNAL_WIDTHS_CM } from "@starter/chem-render";
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { STYLE_PRESET_TITLES } from "@/canvas/scene-bridge";
 import { commandById } from "@/editor/commands/registry";
 import {
   CUSTOM_WIDTH_RANGE_CM,
   figurePreviewSvg,
   prepareFigure,
   rasterTooLarge,
+  scaleNotice,
   svgDataUri,
 } from "@/lib/export/figure";
 import { canvasCanHold } from "@/lib/export/png";
@@ -86,6 +95,7 @@ export function ExportDialog(): ReactElement {
 
   const prepared = useMemo(() => (open ? prepareFigure(doc, settings) : null), [open, doc, settings]);
   const tooLarge = prepared?.ok === true ? rasterTooLarge(prepared.value, canvasCanHold) : null;
+  const notice = prepared?.ok === true ? scaleNotice(prepared.value.size, settings) : null;
   const canExport = prepared?.ok === true;
 
   return (
@@ -96,6 +106,29 @@ export function ExportDialog(): ReactElement {
           Every panel shows the same molecule at the same bond length. Edit the panels in the
           properties panel.
         </DialogDescription>
+
+        <div
+          data-shell="figure-style"
+          data-style-preset={doc.stylePreset}
+          className="mb-3 flex flex-wrap items-center gap-2 text-xs"
+        >
+          <span>
+            Style: <span className="font-medium">{STYLE_PRESET_TITLES[doc.stylePreset]}</span>
+            {doc.stylePreset === "screen"
+              ? " — the editing style the canvas shows, not the publication style. The export uses it as shown."
+              : " — the style the canvas shows."}
+          </span>
+          {doc.stylePreset === "screen" ? (
+            <button
+              type="button"
+              className={button}
+              data-command="view.style-publication"
+              onClick={() => run("view.style-publication")}
+            >
+              Switch to publication style
+            </button>
+          ) : null}
+        </div>
 
         <div className="mb-3 flex max-h-72 min-h-24 items-center justify-center overflow-auto rounded-md border bg-white p-2">
           {preview instanceof Error ? (
@@ -113,19 +146,21 @@ export function ExportDialog(): ReactElement {
 
         <div className="mb-3 grid grid-cols-2 gap-3">
           <fieldset className="flex flex-col gap-1">
-            <legend className="text-muted-foreground mb-1 text-xs font-medium">Width</legend>
+            <legend className="text-muted-foreground mb-1 text-xs font-medium">
+              Maximum width
+            </legend>
             <Choice
               name="figure-width"
               value="single"
               checked={settings.width === "single"}
-              label={`Single column (${JOURNAL_WIDTHS_CM.single} cm)`}
+              label={`Single column (up to ${JOURNAL_WIDTHS_CM.single} cm)`}
               onSelect={() => set({ width: "single" })}
             />
             <Choice
               name="figure-width"
               value="double"
               checked={settings.width === "double"}
-              label={`Double column (${JOURNAL_WIDTHS_CM.double} cm)`}
+              label={`Double column (up to ${JOURNAL_WIDTHS_CM.double} cm)`}
               onSelect={() => set({ width: "double" })}
             />
             <div className="flex items-center gap-1.5">
@@ -138,7 +173,7 @@ export function ExportDialog(): ReactElement {
               />
               <input
                 type="number"
-                aria-label="Custom width in centimetres"
+                aria-label="Custom maximum width in centimetres"
                 data-shell="custom-width"
                 min={CUSTOM_WIDTH_RANGE_CM.min}
                 max={CUSTOM_WIDTH_RANGE_CM.max}
@@ -175,12 +210,28 @@ export function ExportDialog(): ReactElement {
         </div>
 
         {prepared === null ? null : prepared.ok ? (
-          <p data-shell="figure-size" className="mb-3 text-xs">
-            {prepared.value.size.widthCm.toFixed(2)} × {prepared.value.size.heightCm.toFixed(2)} cm
-            {" · "}PNG {prepared.value.size.widthPx} × {prepared.value.size.heightPx} px
-            {" · "}bond {prepared.value.size.bondLengthMm.toFixed(1)} mm
-            {" · "}labels {prepared.value.size.fontSizePt.toFixed(1)} pt
-          </p>
+          <>
+            <p data-shell="figure-size" className="mb-1 text-xs">
+              Prints {prepared.value.size.widthCm.toFixed(2)} ×{" "}
+              {prepared.value.size.heightCm.toFixed(2)} cm
+              {" · "}PNG {prepared.value.size.widthPx} × {prepared.value.size.heightPx} px
+              {" · "}bond {prepared.value.size.bondLengthMm.toFixed(2)} mm
+              {" · "}labels {prepared.value.size.fontSizePt.toFixed(1)} pt
+            </p>
+            {notice === null ? (
+              <p data-shell="figure-fit" className="text-muted-foreground mb-3 text-xs">
+                Printed at its natural size.
+              </p>
+            ) : (
+              <p
+                data-shell="figure-scaled"
+                role="status"
+                className="mb-3 text-xs font-medium text-amber-700 dark:text-amber-400"
+              >
+                {notice}
+              </p>
+            )}
+          </>
         ) : (
           <p role="alert" data-shell="figure-refusal" className="text-destructive mb-3 text-xs">
             {prepared.message}

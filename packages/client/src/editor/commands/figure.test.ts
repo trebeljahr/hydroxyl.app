@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { buildMolecule } from "@starter/chem-core";
 import { benzylAlcoholAbbreviated, ethanol } from "@starter/chem-render";
 import { createDocument, createPanel, defaultPanelsFor } from "@starter/shared";
 
@@ -79,7 +80,9 @@ describe("Copy figure", () => {
     const item = items![0]!;
     expect(item.types.sort()).toEqual(["image/png", "image/svg+xml", "text/plain"]);
     const svg = await (await item.parts["image/svg+xml"]!).text();
-    expect(svg).toContain('width="8.25cm"');
+    // At its natural size: the column is a maximum, and this figure is small.
+    expect(svg).toMatch(/<svg[^>]*\swidth="[\d.]+cm"/);
+    expect(svg).not.toContain('width="8.25cm"');
     expect(await (await item.parts["text/plain"]!).text()).toBe(svg);
     expect(store.getState().ui.statusMessage).toMatch(/^Copied the figure/);
   });
@@ -96,16 +99,18 @@ describe("Copy figure", () => {
   });
 
   it("keeps the PNG past Safari's canvas area when this browser can hold it, and says why when it cannot", async () => {
-    // Double column at 600 dpi: a 2-column grid 4205 px wide and taller than
-    // 16,777,216 px of area, the size the dialog must not refuse everywhere.
+    // Double column at 600 dpi: a figure filling it is 4205 px wide, and a
+    // 40-bond square is taller than 16,777,216 px of area at that width — the
+    // size the dialog must not refuse everywhere.
     const grid = (): EditorStore => {
       const s = createEditorStore({
         document: createDocument({
-          molecule: ethanol(),
-          panels: (["skeletal", "lewis", "skeletal", "lewis", "sumFormula", "sumFormula"] as const).map(
-            (kind) => createPanel(kind),
-          ),
-          figure: { columns: 2 },
+          molecule: buildMolecule((b) => {
+            for (const [x, y] of [[0, 0], [40, 0], [0, 40], [40, 40]] as const) {
+              b.atom("C", { x, y });
+            }
+          }),
+          panels: [createPanel("skeletal")],
           now: NOW,
         }),
         viewportSize: { width: 800, height: 600 },

@@ -14,7 +14,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { benzene } from "@starter/chem-core";
+import { benzene, linearChain } from "@starter/chem-core";
 
 import {
   benzylAlcoholAbbreviated,
@@ -31,9 +31,11 @@ import {
 import type { Figure, FigurePanelSpec } from "../src/figure/compose.js";
 import {
   JOURNAL_WIDTHS_CM,
+  PRINTED_BOND_LENGTH_CM,
   physicalFigureSize,
   pixelsFor,
   pixelsPerMetre,
+  printedCmPerPx,
 } from "../src/figure/physical.js";
 import { representation } from "../src/representation.js";
 import type { Representation } from "../src/representation.js";
@@ -240,15 +242,36 @@ describe("serializeFigure — the exported file", () => {
     expect(a).toBe(b);
   });
 
-  it("writes physical dimensions for a journal width", () => {
+  it("writes physical dimensions that print one bond at the house length", () => {
     const figure = composeFigure(ethanol(), PUBLICATION_STYLE, THREE_VIEWS);
     const size = physicalFigureSize(figure, JOURNAL_WIDTHS_CM.single);
     const svg = serializeFigure(figure, {
       dimensions: { width: size.widthCm, height: size.heightCm, unit: "cm" },
     });
-    expect(svg).toContain('width="8.25cm"');
+    // Narrower than the column: the column is a maximum, not a target.
+    const widthCm = Number.parseFloat(/<svg[^>]*\swidth="([\d.]+)cm"/.exec(svg)![1]!);
+    expect(widthCm).toBeLessThan(JOURNAL_WIDTHS_CM.single);
     expect(svg).toMatch(/height="\d+(\.\d+)?cm"/);
+    // Read back from the attributes the way a renderer would: cm per viewBox
+    // unit times px per bond is the printed bond.
+    const viewBoxWidth = Number(/viewBox="[^"]*"/.exec(svg)![0].split(" ")[2]);
+    expect((widthCm / viewBoxWidth) * PUBLICATION_STYLE.bondLengthPx).toBeCloseTo(
+      PRINTED_BOND_LENGTH_CM,
+      4,
+    );
     expect(size.heightCm / size.widthCm).toBeCloseTo(figure.bounds.height / figure.bounds.width, 9);
+  });
+
+  it("writes a physical width at a precision a small screen-preset figure's bond survives", () => {
+    // SCREEN_STYLE prints coordinates to 2 places; a width to 2 places of a cm
+    // would move a 2 cm figure's bond by a quarter of a percent.
+    const figure = composeFigure(ethanol(), SCREEN_STYLE, [THREE_VIEWS[0]!]);
+    const size = physicalFigureSize(figure, JOURNAL_WIDTHS_CM.single);
+    const svg = serializeFigure(figure, {
+      dimensions: { width: size.widthCm, height: size.heightCm, unit: "cm" },
+    });
+    const written = Number.parseFloat(/<svg[^>]*\swidth="([\d.]+)cm"/.exec(svg)![1]!);
+    expect(Math.abs(written - size.widthCm)).toBeLessThanOrEqual(0.00005);
   });
 
   it("embeds the font only when asked, with its licence notice", () => {
@@ -380,14 +403,69 @@ describe("physical size", () => {
     expect(pixelsPerMetre(600)).toBe(23622);
   });
 
-  it("reports the printed bond length and font size as read-outs", () => {
-    const figure = composeFigure(ethanol(), PUBLICATION_STYLE, THREE_VIEWS);
-    const size = physicalFigureSize(figure, 8.25, 300);
+  it("prints a one-panel figure narrower than a single column, with a 0.508 cm bond", () => {
+    for (const style of [PUBLICATION_STYLE, SCREEN_STYLE]) {
+      const figure = composeFigure(benzene(), style, [THREE_VIEWS[0]!]);
+      const size = physicalFigureSize(figure, JOURNAL_WIDTHS_CM.single, 300);
+      expect(size.scaled, style.name).toBe(false);
+      expect(size.scale).toBe(1);
+      expect(size.widthCm).toBeLessThan(JOURNAL_WIDTHS_CM.single / 2);
+      expect(size.widthCm).toBeCloseTo(figure.bounds.width * printedCmPerPx(style), 12);
+      expect(size.naturalWidthCm).toBe(size.widthCm);
+      expect(size.bondLengthMm).toBeCloseTo(5.08, 9);
+      // The raster follows the final size, not the column.
+      expect(size.widthPx).toBe(pixelsFor(size.widthCm, 300));
+      expect(size.widthPx).toBeLessThan(pixelsFor(JOURNAL_WIDTHS_CM.single, 300));
+    }
+  });
+
+  it("prints the same bond whatever the panel count (decision 20)", () => {
+    const one = physicalFigureSize(
+      composeFigure(ethanol(), PUBLICATION_STYLE, [THREE_VIEWS[0]!]),
+      JOURNAL_WIDTHS_CM.single,
+    );
+    const three = physicalFigureSize(
+      composeFigure(ethanol(), PUBLICATION_STYLE, THREE_VIEWS),
+      JOURNAL_WIDTHS_CM.single,
+    );
+    expect(one.bondLengthMm).toBeCloseTo(three.bondLengthMm, 12);
+    expect(one.fontSizePt).toBeCloseTo(three.fontSizePt, 12);
+    expect(one.widthCm).toBeLessThan(three.widthCm);
+  });
+
+  it("scales a figure wider than the column down to exactly the column, and reports by how much", () => {
+    // A C40 zig-zag chain is about 34 bonds long: 17 cm at the house length.
+    const figure = composeFigure(linearChain(40), PUBLICATION_STYLE, THREE_VIEWS.slice(0, 1));
+    const size = physicalFigureSize(figure, JOURNAL_WIDTHS_CM.single, 300);
+    expect(size.naturalWidthCm).toBeGreaterThan(JOURNAL_WIDTHS_CM.single);
+    expect(size.scaled).toBe(true);
+    expect(size.widthCm).toBe(JOURNAL_WIDTHS_CM.single);
+    expect(size.scale).toBeCloseTo(JOURNAL_WIDTHS_CM.single / size.naturalWidthCm, 12);
+    expect(size.heightCm).toBeCloseTo(size.naturalHeightCm * size.scale, 12);
+    expect(size.bondLengthMm).toBeCloseTo(5.08 * size.scale, 9);
     expect(size.widthPx).toBe(974);
     expect(size.heightPx).toBe(Math.round((974 * figure.bounds.height) / figure.bounds.width));
-    const cmPerPx = 8.25 / figure.bounds.width;
+
+    // The same figure fits a double column and prints at its natural size.
+    const double = physicalFigureSize(figure, JOURNAL_WIDTHS_CM.double);
+    expect(double.scaled).toBe(false);
+    expect(double.widthCm).toBeCloseTo(size.naturalWidthCm, 12);
+  });
+
+  it("reports the printed bond length and font size as read-outs of the style used", () => {
+    const figure = composeFigure(ethanol(), PUBLICATION_STYLE, THREE_VIEWS);
+    const size = physicalFigureSize(figure, 8.25, 300);
+    const cmPerPx = PRINTED_BOND_LENGTH_CM / 24;
     expect(size.bondLengthMm).toBeCloseTo(24 * cmPerPx * 10, 9);
     expect(size.fontSizePt).toBeCloseTo(((10 * cmPerPx) / 2.54) * 72, 9);
     expect(() => physicalFigureSize(figure, 0)).toThrow(RangeError);
+  });
+
+  it("never enlarges: a figure exactly as wide as the column is not 'scaled'", () => {
+    const figure = composeFigure(ethanol(), PUBLICATION_STYLE, THREE_VIEWS);
+    const natural = figure.bounds.width * printedCmPerPx(PUBLICATION_STYLE);
+    const size = physicalFigureSize(figure, natural);
+    expect(size.scaled).toBe(false);
+    expect(size.scale).toBe(1);
   });
 });

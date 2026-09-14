@@ -11,32 +11,40 @@
  * the document with chem-render and serialised by its DOM-free serialiser,
  * which is also why the editor's pan and zoom cannot move the viewBox.
  *
- * ── THE FIGURE STYLE IS THE PUBLICATION PRESET ────────────────────────────
+ * ── THE FIGURE STYLE IS THE DOCUMENT'S PRESET (decision 21) ───────────────
  *
- * Whatever preset the canvas draws with, a figure is exported in
- * `PUBLICATION_STYLE`: ACS-like line weights and label size relative to the
- * bond, and no background (a transparent SVG takes the colour of the page it
- * lands on). This is a call made for this task, not an owner ruling; it is
- * named in the report so it can be overruled.
+ * Export what the canvas shows. Every export path — the SVG file, the PNG,
+ * Copy figure and the dialog's preview — composes with `renderStyleFor(doc)`,
+ * the same function the canvas draws with, so the line weights and label
+ * size a user sees are the ones that land in the manuscript. A document in
+ * the screen preset therefore exports the screen style's line widths and
+ * label size relative to the bond; the export dialog
+ * says so and offers the one-click switch, rather than this module quietly
+ * substituting a style nobody chose. (The first implementation hard-wired
+ * `PUBLICATION_STYLE` here, whatever the canvas showed.)
+ *
+ * ── HOW BIG IT PRINTS (decision 20) ──────────────────────────────────────
+ *
+ * One bond prints at `PRINTED_BOND_LENGTH_CM`, and the chosen width is a
+ * MAXIMUM: `physicalFigureSize` prints a small figure at its natural size and
+ * scales a wide one down to the column, reporting the factor. `scaleNotice`
+ * is the sentence the dialog shows for it.
  */
 
 import { isEmpty } from "@starter/chem-core";
 import {
   JOURNAL_WIDTHS_CM,
-  PUBLICATION_STYLE,
   composeFigure,
   physicalFigureSize,
   serializeFigure,
   unavailableCells,
 } from "@starter/chem-render";
-import type { Figure, PhysicalFigureSize, RenderStyle } from "@starter/chem-render";
+import type { Figure, PhysicalFigureSize } from "@starter/chem-render";
 import type { SketchDocument } from "@starter/shared";
 
-import { toRenderRepresentation } from "@/canvas/scene-bridge";
+import { renderStyleFor, toRenderRepresentation } from "@/canvas/scene-bridge";
 import { fileBaseName } from "@/lib/io/save";
 import type { FigureExportSettings } from "@/state/types";
-
-export const FIGURE_STYLE: RenderStyle = PUBLICATION_STYLE;
 
 /** A custom width outside this range is refused rather than clamped. */
 export const CUSTOM_WIDTH_RANGE_CM = Object.freeze({ min: 2, max: 60 });
@@ -46,10 +54,11 @@ export const CUSTOM_WIDTH_RANGE_CM = Object.freeze({ min: 2, max: 60 });
  *
  * ENGINES DISAGREE, SO NO ONE ENGINE'S LIMIT IS APPLIED TO ALL OF THEM.
  * iOS Safari caps a canvas at 16,777,216 px of area; Chromium allows 32,767
- * px a side and 268,435,456 px of area. A double-column figure at 600 dpi is
- * 4205 px wide, so anything taller than about 0.95 of its width crosses the
- * Safari cap — a 2 × 2 grid does. Refusing that everywhere would take a
- * preset the dialog offers away from the browsers that can draw it.
+ * px a side and 268,435,456 px of area. A figure filling a double column at
+ * 600 dpi is 4205 px wide, so once it is taller than about 0.95 of that width
+ * it crosses the Safari cap. With a fixed printed bond length only a large
+ * structure gets there, but refusing it everywhere would take a size the
+ * dialog offers away from the browsers that can draw it.
  *
  * So: above the HARD limits no engine can hold the canvas and the export is
  * refused outright. Between the SAFE area and the hard limits the answer
@@ -67,7 +76,8 @@ export const RASTER_BACKGROUND = "#ffffff";
 export function documentFigure(doc: SketchDocument): Figure {
   return composeFigure(
     doc.molecule,
-    FIGURE_STYLE,
+    // The canvas's own style resolution, not a copy of it: decision 21.
+    renderStyleFor(doc),
     doc.panels.map((panel) => ({
       id: panel.id,
       representation: toRenderRepresentation(panel.representation),
@@ -96,6 +106,32 @@ export function exportWidthCm(settings: FigureExportSettings): WidthResult {
     };
   }
   return { ok: true, widthCm: customWidthCm };
+}
+
+/** "a single column", "a double column", "the 12 cm custom width". */
+export function widthName(settings: FigureExportSettings, maxWidthCm: number): string {
+  if (settings.width === "single") return "a single column";
+  if (settings.width === "double") return "a double column";
+  return `the ${formatCm(maxWidthCm)} cm custom width`;
+}
+
+function formatCm(cm: number): string {
+  return String(Number(cm.toFixed(2)));
+}
+
+/**
+ * The plain sentence for a figure that had to be shrunk, or null when it
+ * prints at the house bond length. Rounded DOWN, so a figure at 99.6 % never
+ * claims "100 %" — which would read as "not scaled" while the bond is not
+ * the house length.
+ */
+export function scaleNotice(
+  size: PhysicalFigureSize,
+  settings: FigureExportSettings,
+): string | null {
+  if (!size.scaled) return null;
+  const percent = Math.floor(size.scale * 100 + 1e-9);
+  return `Scaled to ${percent}% to fit ${widthName(settings, size.maxWidthCm)}.`;
 }
 
 export interface PreparedFigure {
@@ -209,10 +245,10 @@ export function rasterTooLarge(
   const { widthPx, heightPx } = prepared.size;
   const area = widthPx * heightPx;
   if (widthPx > MAX_RASTER_SIDE_PX || heightPx > MAX_RASTER_SIDE_PX || area > MAX_RASTER_AREA_PX) {
-    return `A ${widthPx} × ${heightPx} px PNG is larger than any browser canvas can hold. Choose a narrower width or 300 dpi, or export the SVG.`;
+    return `A ${widthPx} × ${heightPx} px PNG is larger than any browser canvas can hold. Choose 300 dpi or a narrower maximum width, or export the SVG.`;
   }
   if (area > SAFE_RASTER_AREA_PX && canHold !== undefined && !canHold(widthPx, heightPx)) {
-    return `A ${widthPx} × ${heightPx} px PNG is larger than this browser's canvas can hold. Choose a narrower width or 300 dpi, export the SVG, or use a browser with a larger canvas limit.`;
+    return `A ${widthPx} × ${heightPx} px PNG is larger than this browser's canvas can hold. Choose 300 dpi or a narrower maximum width, export the SVG, or use a browser with a larger canvas limit.`;
   }
   return null;
 }

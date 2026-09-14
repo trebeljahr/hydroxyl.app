@@ -46,7 +46,12 @@ import { VIEW_KIND_TITLES, panelLetter, representationAvailability } from "@star
 import type { DisplayFlagKey } from "@starter/shared";
 
 import { fitBounds } from "@/canvas/metrics";
-import { buildCanvasScene, canvasPanelFor } from "@/canvas/scene-bridge";
+import {
+  STYLE_PRESETS,
+  STYLE_PRESET_TITLES,
+  buildCanvasScene,
+  canvasPanelFor,
+} from "@/canvas/scene-bridge";
 // From `machine`, not from the `@/editor/interaction` barrel: the barrel
 // re-exports the React adapter, and this registry has to stay importable by a
 // plain-node test.
@@ -843,6 +848,25 @@ const VIEW_COMMANDS: readonly Command[] = [
     },
   },
   ...DISPLAY_FLAG_COMMANDS,
+  // The document's style preset, which the canvas AND every export draw with
+  // (decision 21). Through `setStylePreset`, so a switch is one undo step and
+  // is saved with the document. Disabled for the preset already in use, so
+  // the palette shows which one that is.
+  ...STYLE_PRESETS.map(
+    (preset): Command => ({
+      id: `view.style-${preset}`,
+      title: `Use ${STYLE_PRESET_TITLES[preset].toLowerCase()} style`,
+      keywords: ["style", "preset", preset, "line", "weight", "figure"],
+      group: "view",
+      enabled: (state) => state.document.stylePreset !== preset,
+      run: (store) => {
+        const state = store.getState();
+        if (state.document.stylePreset === preset) return;
+        state.setStylePreset(preset);
+        state.setStatusMessage(`Switched to the ${STYLE_PRESET_TITLES[preset].toLowerCase()} style`);
+      },
+    }),
+  ),
   {
     id: "view.command-palette",
     title: "Command palette",

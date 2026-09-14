@@ -10,8 +10,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { benzene, buildMolecule, elementCounts } from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
+import { PUBLICATION_STYLE, serializeFigure } from "@starter/chem-render";
 import { createDocument } from "@starter/shared";
 
+import { documentFigure } from "@/lib/export/figure";
 import { createEditorStore } from "@/state";
 import type { EditorStore } from "@/state";
 
@@ -305,6 +307,38 @@ describe("view commands", () => {
       .getState()
       .document.panels.find((panel) => panel.id === panelId)!;
     expect(after.representation.display.aromaticCircles).toBe(!before);
+  });
+});
+
+describe("style preset commands (decision 21)", () => {
+  it("switch the preset the export draws with, as ONE undo step", () => {
+    const store = storeWith(benzene());
+    const state = () => store.getState();
+    // New documents still open in the screen style.
+    expect(state().document.stylePreset).toBe("screen");
+    expect(commandById("view.style-screen").enabled(state())).toBe(false);
+    expect(commandById("view.style-publication").enabled(state())).toBe(true);
+
+    const screenSvg = serializeFigure(documentFigure(state().document));
+    const before = state().history.past.length;
+    commandById("view.style-publication").run(store);
+
+    expect(state().document.stylePreset).toBe("publication");
+    expect(state().history.past.length).toBe(before + 1);
+    expect(documentFigure(state().document).style).toBe(PUBLICATION_STYLE);
+    expect(serializeFigure(documentFigure(state().document))).not.toBe(screenSvg);
+    expect(commandById("view.style-publication").enabled(state())).toBe(false);
+
+    state().undo();
+    expect(state().document.stylePreset).toBe("screen");
+    expect(serializeFigure(documentFigure(state().document))).toBe(screenSvg);
+  });
+
+  it("records nothing when the preset is already in use", () => {
+    const store = storeWith(benzene());
+    const before = store.getState().history.past.length;
+    commandById("view.style-screen").run(store);
+    expect(store.getState().history.past.length).toBe(before);
   });
 });
 

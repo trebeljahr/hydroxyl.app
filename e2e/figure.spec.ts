@@ -70,6 +70,50 @@ async function downloadFrom(page: Page, command: string): Promise<Buffer> {
   return readFileSync(path);
 }
 
+/** Fire a real `drop` carrying a molfile: opens it as a new document (decision 7). */
+async function dropMolfile(page: Page, name: string, text: string): Promise<void> {
+  const transfer = await page.evaluateHandle(
+    ({ name: fileName, text: contents }) => {
+      const dt = new DataTransfer();
+      dt.items.add(new File([contents], fileName, { type: "text/plain" }));
+      return dt;
+    },
+    { name, text },
+  );
+  await page.dispatchEvent("body", "drop", { dataTransfer: transfer });
+}
+
+/**
+ * A V2000 molfile of isolated methanes at the given positions, in BOND
+ * LENGTHS (the reader divides by 1.5 Å). The cheapest drawing that is as wide
+ * or as tall as a test needs at the fixed printed bond length.
+ */
+function methanesMolfile(title: string, positions: readonly (readonly [number, number])[]): string {
+  const f = (v: number) => (v * 1.5).toFixed(4).padStart(10);
+  const atoms = positions
+    .map(([x, y]) => `${f(x)}${f(y)}${f(0)} C   0  0  0  0  0  0  0  0  0  0  0  0`)
+    .join("\n");
+  const count = String(positions.length).padStart(3);
+  return `${title}\n  e2e               2D\n\n${count}  0  0  0  0  0  0  0  0  0999 V2000\n${atoms}\nM  END\n`;
+}
+
+/** The skeletal panel's first bond, measured in viewBox units. */
+function firstSkeletalBondLength(svg: string): number {
+  const bond = /<line id="p-panel-skeletal\.bond:[^"]+:line"[^>]*x1="([-\d.]+)" y1="([-\d.]+)" x2="([-\d.]+)" y2="([-\d.]+)"/.exec(
+    svg,
+  );
+  expect(bond).not.toBeNull();
+  const [x1, y1, x2, y2] = bond!.slice(1).map(Number);
+  return Math.sqrt((x2! - x1!) ** 2 + (y2! - y1!) ** 2);
+}
+
+/** cm per viewBox unit times px per bond: the bond as a renderer of the file prints it. */
+function printedBondCm(svg: string, bondLengthPx: number): number {
+  const widthCm = Number.parseFloat(attr(svg, "width"));
+  const [, , vbW] = attr(svg, "viewBox").split(" ").map(Number);
+  return (widthCm / vbW!) * bondLengthPx;
+}
+
 function attr(svg: string, name: string): string {
   const match = new RegExp(`<svg[^>]*\\s${name}="([^"]*)"`).exec(svg);
   if (match === null) throw new Error(`no ${name} on the svg root`);
@@ -131,7 +175,7 @@ test("panels compose, reorder by keyboard, carry captions and columns, and survi
   await expect(page.locator(`${PANELS} [data-figure-columns]`)).toHaveValue("2");
 });
 
-test("exports ONE self-contained SVG: labelled panels, one bond length, unique ids, physical size", async ({
+test("exports ONE self-contained SVG: labelled panels, one bond length, unique ids, printed bond size", async ({
   page,
   browser,
 }, testInfo) => {
@@ -157,10 +201,17 @@ test("exports ONE self-contained SVG: labelled panels, one bond length, unique i
   ]);
   for (const letter of ["a", "b", "c"]) expect(svg).toContain(`<tspan>(${letter})</tspan>`);
 
-  // Physical units for the single-column preset.
-  expect(attr(svg, "width")).toBe("8.25cm");
+  // Physical units at the fixed printed bond length (decision 20): a
+  // three-panel benzene is narrower than the single column it may fill, so
+  // it prints at its natural size and the column is not stretched to.
+  expect(attr(svg, "width")).toMatch(/^[\d.]+cm$/);
+  const widthCm = Number.parseFloat(attr(svg, "width"));
+  expect(widthCm).toBeLessThan(8.25);
   const [, , vbW, vbH] = attr(svg, "viewBox").split(" ").map(Number);
-  expect(Number.parseFloat(attr(svg, "height"))).toBeCloseTo((8.25 * vbH!) / vbW!, 2);
+  expect(Number.parseFloat(attr(svg, "height"))).toBeCloseTo((widthCm * vbH!) / vbW!, 3);
+  // New documents are in the screen preset, and the export draws with it (decision 21).
+  expect(printedBondCm(svg, 44)).toBeCloseTo(0.508, 3);
+  await expect(page.locator('[data-shell="figure-scaled"]')).toHaveCount(0);
 
   // Nothing that only resolves inside the app.
   expect(svg).not.toContain("var(--");
@@ -174,16 +225,11 @@ test("exports ONE self-contained SVG: labelled panels, one bond length, unique i
   expect(new Set(ids).size).toBe(ids.length);
 
   // One bond length: every panel transform is a bare translate, and a
-  // skeletal bond is the style's 24 px in viewBox units.
+  // skeletal bond is the screen style's 44 px in viewBox units.
   const transforms = [...svg.matchAll(/transform="([^"]*)"/g)].map((m) => m[1]);
   expect(transforms).toHaveLength(3);
   for (const t of transforms) expect(t).toMatch(/^translate\(-?[\d.]+ -?[\d.]+\)$/);
-  const bond = /<line id="p-panel-skeletal\.bond:[^"]+:line"[^>]*x1="([-\d.]+)" y1="([-\d.]+)" x2="([-\d.]+)" y2="([-\d.]+)"/.exec(
-    svg,
-  );
-  expect(bond).not.toBeNull();
-  const [x1, y1, x2, y2] = bond!.slice(1).map(Number);
-  expect(Math.sqrt((x2! - x1!) ** 2 + (y2! - y1!) ** 2)).toBeCloseTo(24, 1);
+  expect(firstSkeletalBondLength(svg)).toBeCloseTo(44, 1);
 
   // The viewBox does not move with the editor's pan and zoom.
   await page.keyboard.press("Escape");
@@ -244,7 +290,7 @@ test("exports ONE self-contained SVG: labelled panels, one bond length, unique i
   }
 });
 
-test("PNG at 300 dpi single column is 974 px wide, rasterised with its resolution stamped", async ({
+test("PNG at 300 dpi follows the printed size, not the column, rasterised with its resolution stamped", async ({
   page,
 }, testInfo) => {
   await openEditor(page);
@@ -253,8 +299,17 @@ test("PNG at 300 dpi single column is 974 px wide, rasterised with its resolutio
   await page.locator(`${DIALOG} input[name="figure-dpi"][value="300"]`).check();
   await page.locator(`${DIALOG} input[name="figure-width"][value="single"]`).check();
   const readout = await page.locator('[data-shell="figure-size"]').textContent();
-  const expected = /PNG (\d+) × (\d+) px/.exec(readout ?? "");
-  expect(expected?.[1]).toBe("974");
+  const expected = /Prints ([\d.]+) × ([\d.]+) cm · PNG (\d+) × (\d+) px · bond ([\d.]+) mm/.exec(
+    readout ?? "",
+  );
+  expect(expected).not.toBeNull();
+  // One bond at 0.508 cm, so this figure is narrower than the 8.25 cm column.
+  expect(expected?.[5]).toBe("5.08");
+  const printedCm = Number(expected?.[1]);
+  expect(printedCm).toBeLessThan(8.25);
+  const expectedWidthPx = Number(expected?.[3]);
+  expect(expectedWidthPx).toBeLessThan(974);
+  expect(Math.abs(expectedWidthPx - (printedCm / 2.54) * 300)).toBeLessThan(1);
 
   const png = await downloadFrom(page, "figure.export-png");
   const { writeFileSync } = await import("node:fs");
@@ -263,18 +318,17 @@ test("PNG at 300 dpi single column is 974 px wide, rasterised with its resolutio
   expect([...png.subarray(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
   const width = png.readUInt32BE(16);
   const height = png.readUInt32BE(20);
-  expect(width).toBe(Math.round((8.25 / 2.54) * 300));
-  expect(width).toBe(974);
-  expect(String(height)).toBe(expected?.[2]);
+  expect(width).toBe(expectedWidthPx);
+  expect(String(height)).toBe(expected?.[4]);
 
-  // pHYs: 300 dpi is 11811 pixels per metre, so the file claims 8.25 cm.
+  // pHYs: 300 dpi is 11811 pixels per metre, so the file claims the printed width.
   const phys = png.indexOf("pHYs");
   expect(phys).toBeGreaterThan(0);
   expect(png.readUInt32BE(phys + 4)).toBe(11811);
 
   // Rasterised from the vectors at this size, not a small image scaled up:
   // the PNG decodes in the page at exactly its own pixel size and carries
-  // hard black stroke pixels, which an interpolated upscale smears to grey.
+  // hard ink-coloured stroke pixels, which an interpolated upscale smears to grey.
   const stats = await page.evaluate(async (base64) => {
     const img = new Image();
     img.src = `data:image/png;base64,${base64}`;
@@ -288,24 +342,69 @@ test("PNG at 300 dpi single column is 974 px wide, rasterised with its resolutio
     let black = 0;
     let dark = 0;
     for (let i = 0; i < data.length; i += 4) {
-      if (data[i]! < 16 && data[i + 3]! > 240) black += 1;
+      // Within 16 of the screen style's ink (#1f2937 bonds, #111827 labels —
+      // the document's preset, decision 21), fully opaque.
+      if (data[i]! < 48 && data[i + 3]! > 240) black += 1;
       if (data[i]! < 128) dark += 1;
     }
     return { w: img.naturalWidth, h: img.naturalHeight, black, dark, total: data.length / 4 };
   }, png.toString("base64"));
-  expect(stats.w).toBe(974);
+  expect(stats.w).toBe(expectedWidthPx);
   expect(stats.dark).toBeGreaterThan(stats.total * 0.005);
   expect(stats.black).toBeGreaterThan(stats.dark * 0.3);
+});
+
+test("a figure wider than the column scales down to exactly the column, and the dialog says so", async ({
+  page,
+}) => {
+  await openEditor(page);
+  // Two methanes 24 bonds apart: about 12 cm at the house bond length.
+  await dropMolfile(page, "wide.mol", methanesMolfile("Wide", [[0, 0], [24, 0]]));
+  await expect(page.locator('[data-status="formula"]')).toHaveText("C₂H₈");
+
+  await openExportDialog(page);
+  await page.locator(`${DIALOG} input[name="figure-width"][value="single"]`).check();
+  await page.locator(`${DIALOG} input[name="figure-dpi"][value="300"]`).check();
+  const notice = page.locator('[data-shell="figure-scaled"]');
+  await expect(notice).toBeVisible();
+  await expect(notice).toHaveText(/^Scaled to \d+% to fit a single column\.$/);
+  const percent = Number(/(\d+)%/.exec((await notice.textContent()) ?? "")![1]);
+  expect(percent).toBeLessThan(100);
+  const readout = (await page.locator('[data-shell="figure-size"]').textContent()) ?? "";
+  expect(readout).toMatch(/^Prints 8\.25 × [\d.]+ cm · PNG 974 × \d+ px/);
+  // The read-out's bond is the house bond times the reported scale.
+  const bondMm = Number(/bond ([\d.]+) mm/.exec(readout)![1]);
+  expect(bondMm).toBeLessThan(5.08);
+  // (Both are rounded for display, so they agree to within a percent.)
+  expect(Math.abs(bondMm / 0.0508 - percent)).toBeLessThan(1.2);
+
+  const svg = (await downloadFrom(page, "figure.export-svg")).toString("utf8");
+  expect(attr(svg, "width")).toBe("8.25cm");
+  expect(printedBondCm(svg, 44)).toBeLessThan(0.508);
+  await expect(page.locator('[data-shell="export-status"]')).toContainText(
+    "to fit a single column.",
+  );
+
+  // The same figure fits a double column and prints at its natural size there.
+  await page.locator(`${DIALOG} input[name="figure-width"][value="double"]`).check();
+  await expect(notice).toHaveCount(0);
+  await expect(page.locator('[data-shell="figure-fit"]')).toBeVisible();
+  await expect(page.locator('[data-shell="figure-size"]')).toContainText("bond 5.08 mm");
 });
 
 test("double column at 600 dpi exports a PNG past Safari's canvas area where the browser can draw it", async ({
   page,
 }) => {
   await openEditor(page);
-  await composeThreeViews(page);
-  // One column stacks the three panels, so the figure is far taller than it
-  // is wide: past the 16,777,216 px area iOS Safari caps a canvas at, well
-  // inside what Chromium allocates.
+  // At a fixed printed bond only a big drawing fills a double column at 600
+  // dpi and is taller than 0.95 of its width: four methanes on a 40-bond
+  // square, 20 cm a side, with the panels stacked in one column.
+  await dropMolfile(
+    page,
+    "square.mol",
+    methanesMolfile("Square", [[0, 0], [40, 0], [0, 40], [40, 40]]),
+  );
+  await expect(page.locator('[data-status="formula"]')).toHaveText("C₄H₁₆");
   const columns = page.locator(`${PANELS} [data-figure-columns]`);
   await columns.fill("1");
   await columns.press("Enter");
@@ -313,6 +412,7 @@ test("double column at 600 dpi exports a PNG past Safari's canvas area where the
   await openExportDialog(page);
   await page.locator(`${DIALOG} input[name="figure-width"][value="double"]`).check();
   await page.locator(`${DIALOG} input[name="figure-dpi"][value="600"]`).check();
+  await expect(page.locator('[data-shell="figure-scaled"]')).toContainText("to fit a double column.");
   const readout = await page.locator('[data-shell="figure-size"]').textContent();
   const size = /PNG (\d+) × (\d+) px/.exec(readout ?? "");
   const widthPx = Number(size?.[1]);
@@ -329,6 +429,75 @@ test("double column at 600 dpi exports a PNG past Safari's canvas area where the
   expect(png.readUInt32BE(20)).toBe(heightPx);
   // 600 dpi is 23622 pixels per metre.
   expect(png.readUInt32BE(png.indexOf("pHYs") + 4)).toBe(23622);
+});
+
+test("the export uses the document's style preset: switched in the dialog, undone in one step, kept across a reload", async ({
+  page,
+}) => {
+  await openEditor(page);
+  const topBar = page.locator('[data-shell="style-preset"]');
+  // New documents still open in the screen style.
+  await expect(topBar).toHaveAttribute("data-style-preset", "screen");
+
+  await openExportDialog(page);
+  const style = page.locator('[data-shell="figure-style"]');
+  await expect(style).toHaveAttribute("data-style-preset", "screen");
+  await expect(style).toContainText("Style: Screen");
+  await expect(style).toContainText("not the publication style");
+  const screenSvg = (await downloadFrom(page, "figure.export-svg")).toString("utf8");
+  expect(firstSkeletalBondLength(screenSvg)).toBeCloseTo(44, 1);
+  expect(screenSvg).toContain('stroke-width="2"');
+
+  // One click in the dialog.
+  await style.locator('[data-command="view.style-publication"]').click();
+  await expect(style).toHaveAttribute("data-style-preset", "publication");
+  await expect(style).toContainText("Style: Publication");
+  await expect(style.locator('[data-command="view.style-publication"]')).toHaveCount(0);
+  const publicationSvg = (await downloadFrom(page, "figure.export-svg")).toString("utf8");
+  expect(firstSkeletalBondLength(publicationSvg)).toBeCloseTo(24, 1);
+  expect(publicationSvg).toContain('stroke-width="1.4"');
+  // Same printed bond in both: the physical scale divides by the style used.
+  expect(printedBondCm(screenSvg, 44)).toBeCloseTo(0.508, 3);
+  expect(printedBondCm(publicationSvg, 24)).toBeCloseTo(0.508, 3);
+  // The canvas draws with it too.
+  await page.keyboard.press("Escape");
+  await expect(page.locator(DIALOG)).toBeHidden();
+  await expect(topBar).toHaveAttribute("data-style-preset", "publication");
+
+  // ONE undo step takes it back, and the export follows.
+  await page.locator('[data-command="edit.undo"]').click();
+  await expect(topBar).toHaveAttribute("data-style-preset", "screen");
+  await openExportDialog(page);
+  const undoneSvg = (await downloadFrom(page, "figure.export-svg")).toString("utf8");
+  expect(undoneSvg).toBe(screenSvg);
+  await page.keyboard.press("Escape");
+
+  // The top bar control, then a reload: the preset is saved with the document.
+  await topBar.locator('[data-command="view.style-publication"]').click();
+  await expect(topBar).toHaveAttribute("data-style-preset", "publication");
+  await expect(topBar.locator('[data-command="view.style-publication"]')).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.locator(`${SAVE_STATE}[data-save-status="saved"]`)).toBeVisible({
+    timeout: 10_000,
+  });
+  const id = await page.locator('[data-shell="top-bar"]').getAttribute("data-doc-id");
+  expect(id).toBeTruthy();
+  await page.goto(`/editor?doc=${id}`);
+  await expect(page.locator('[data-shell="top-bar"]')).toHaveAttribute("data-doc-id", id!);
+  await page.locator(`${CANVAS} [data-layer="scene"]`).waitFor();
+  await expect(page.locator('[data-shell="style-preset"]')).toHaveAttribute(
+    "data-style-preset",
+    "publication",
+  );
+  await openExportDialog(page);
+  await expect(page.locator('[data-shell="figure-style"]')).toHaveAttribute(
+    "data-style-preset",
+    "publication",
+  );
+  const reloadedSvg = (await downloadFrom(page, "figure.export-svg")).toString("utf8");
+  expect(firstSkeletalBondLength(reloadedSvg)).toBeCloseTo(24, 1);
 });
 
 test("Copy figure writes svg, png and plain text in ONE ClipboardItem", async ({ page }) => {
@@ -367,7 +536,7 @@ test("Copy figure writes svg, png and plain text in ONE ClipboardItem", async ({
   expect(writes).toHaveLength(1);
   expect(writes[0]!.items).toBe(1);
   expect([...writes[0]!.types].sort()).toEqual(["image/png", "image/svg+xml", "text/plain"]);
-  expect(writes[0]!.svg).toContain('width="8.25cm"');
+  expect(writes[0]!.svg).toMatch(/<svg[^>]*\swidth="[\d.]+cm"/);
   expect(writes[0]!.pngSignature).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 });
 

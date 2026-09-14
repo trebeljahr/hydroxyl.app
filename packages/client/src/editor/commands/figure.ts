@@ -25,6 +25,7 @@ import {
   figureSvgForRaster,
   prepareFigure,
   rasterTooLarge,
+  scaleNotice,
 } from "@/lib/export/figure";
 import type { PreparedFigure } from "@/lib/export/figure";
 import { textBlob, writeClipboardParts } from "@/lib/export/clipboard";
@@ -47,8 +48,11 @@ function prepared(store: EditorStore): PreparedFigure | null {
   return result.value;
 }
 
-function sizeNote(p: PreparedFigure): string {
-  return `${p.size.widthCm.toFixed(2)} × ${p.size.heightCm.toFixed(2)} cm`;
+function sizeNote(store: EditorStore, p: PreparedFigure): string {
+  const size = `${p.size.widthCm.toFixed(2)} × ${p.size.heightCm.toFixed(2)} cm`;
+  // A shrunk figure is said out loud here too: the dialog may already be closed.
+  const notice = scaleNotice(p.size, store.getState().ui.figureExport);
+  return notice === null ? size : `${size}. ${notice}`;
 }
 
 export async function exportFigureSvg(store: EditorStore): Promise<void> {
@@ -62,7 +66,7 @@ export async function exportFigureSvg(store: EditorStore): Promise<void> {
     "SVG figure",
     ".svg",
   );
-  if (outcome.ok) report(store, `Exported the figure as SVG, ${sizeNote(figure)}`);
+  if (outcome.ok) report(store, `Exported the figure as SVG, ${sizeNote(store, figure)}`);
   else if (!outcome.cancelled) report(store, outcome.message);
 }
 
