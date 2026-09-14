@@ -129,6 +129,41 @@ describe("lonePairCount", () => {
     expect(drawnLonePairs(molecule, sulfur)).toBe(0);
   });
 
+  it("gives ammonium none, a carbanion one and a sulfoxide sulfur one", () => {
+    // The three cases stereo-config's phantom lone-pair ligand turns on. A
+    // quaternary N+ has spent its pair on the fourth bond, so it is an
+    // ordinary four-ligand centre, never a lone-pair one.
+    const ammonium = buildMolecule((b) => {
+      b.atom("N", vec(0, 0), { charge: 1 });
+    });
+    // 5 − 1 − 4 implicit H = 0.
+    expect(lonePairCount(ammonium, ammonium.atomIds[0]!)).toEqual({
+      kind: "counted",
+      pairs: 0,
+      unpaired: 0,
+    });
+
+    const methanide = buildMolecule((b) => {
+      b.atom("C", vec(0, 0), { charge: -1 });
+    });
+    // 4 − (−1) − 3 implicit H = 2 → 1 pair.
+    expect(lonePairCount(methanide, methanide.atomIds[0]!)).toEqual({
+      kind: "counted",
+      pairs: 1,
+      unpaired: 0,
+    });
+
+    // Dimethyl sulfoxide: one S=O and two S–C, 6 − 0 − 4 = 2 → 1 pair.
+    let sulfur = "";
+    const dmso = buildMolecule((b) => {
+      sulfur = b.atom("S", vec(0, 0));
+      b.bond(sulfur, b.atom("O", vec(0, 1)), 2);
+      b.bond(sulfur, b.atom("C", vec(-1, 0)));
+      b.bond(sulfur, b.atom("C", vec(1, 0)));
+    });
+    expect(lonePairCount(dmso, sulfur)).toEqual({ kind: "counted", pairs: 1, unpaired: 0 });
+  });
+
   it("counts an anion's extra pair and a cation's missing one", () => {
     const hydroxide = buildMolecule((b) => {
       b.atom("O", vec(0, 0), { charge: -1 });
