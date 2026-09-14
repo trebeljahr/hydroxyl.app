@@ -42,11 +42,18 @@
  * standing and its message is surfaced verbatim instead of being flattened to
  * "could not read file".
  *
+ * ── IMPORTS ARE SCALED TO THE STANDARD BOND ────────────────────────────────
+ *
+ * See `documentFromStructure`: a structure drawn at another tool's bond length
+ * arrives with a median bond of one model unit, so it prints at the house
+ * bond length like anything drawn here.
+ *
  * ── AND WHY InChI ONLY GETS AS FAR AS A NAMED REFUSAL ──────────────────────
  *
  * See `INCHI_UNSUPPORTED` below. Measured against the shipped wasm.
  */
 
+import { normalizeBondLength } from "@starter/chem-core";
 import { createDocument, safeDecodeDocument } from "@starter/shared";
 import type { SketchDocument } from "@starter/shared";
 
@@ -133,7 +140,17 @@ function documentFromStructure(
   // The record's own title wins over the filename: an SDF's records are named
   // individually and a file called `results.sdf` names none of them.
   const title = structure.title.trim() !== "" ? structure.title.trim() : fallbackTitle;
-  return createDocument({ molecule: structure.molecule, title, now });
+  // ONE MODEL UNIT IS ONE STANDARD BOND, and a file from another tool need
+  // not agree. The reader divides by a fixed 1.5 (RDKit's and most toolkits'
+  // bond length), but molfiles in the wild are drawn at 0.825, 1.54 and more.
+  // Left alone, such a structure draws off-scale on the canvas, sprouts new
+  // bonds at a different length from its own, and prints bonds that are not
+  // the house length while the export dialog reports that they are (decision
+  // 20 fixes the printed length of ONE MODEL UNIT). So every imported
+  // structure is scaled to a unit median bond here, the one funnel every
+  // format passes through. A file already at the standard bond is returned
+  // untouched.
+  return createDocument({ molecule: normalizeBondLength(structure.molecule), title, now });
 }
 
 function openJson(text: string, now: string | undefined): OpenResult {

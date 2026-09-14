@@ -143,7 +143,17 @@ export interface RenderStyle {
 export type RenderStyleName = "publication" | "screen";
 
 /**
- * ACS-like figure style: small, tight, hairline-black, no background.
+ * ACS 1996 figure style: black, no background, with the document setting's
+ * proportions (decision 26).
+ *
+ * THE PROPORTIONS ARE THE ACS 1996 DOCUMENT SETTING, NOT A TASTE. Export
+ * prints one bond at 0.508 cm = 14.4 pt (decision 20), and at that bond the
+ * setting draws 10 pt labels and 0.6 pt lines. In this preset's 24 px bond
+ * that is a 24 × 10 / 14.4 = 50/3 px font (font-to-bond ratio 0.694) and a
+ * 24 × 0.6 / 14.4 = 1 px line. Written as the exact fraction so the export
+ * dialog reads 10.0 pt, not 9.99. Before this retune the preset printed 6 pt
+ * labels and 0.84 pt lines at the house bond, which no journal asks for.
+ * Only those two numbers are ruled; the other spacings keep their values.
  *
  * The background is omitted rather than set to white on purpose — a figure
  * dropped into a manuscript or a dark-themed slide should take the page's
@@ -153,14 +163,14 @@ export type RenderStyleName = "publication" | "screen";
 export const PUBLICATION_STYLE: RenderStyle = Object.freeze({
   name: "publication",
   bondLengthPx: 24,
-  bondLineWidthPx: 1.4,
+  bondLineWidthPx: 1,
   doubleBondGapPx: 4.2,
   // Arimo first: it is the face this package vendors metrics for, so the
   // measured advances and the drawn glyphs are the same glyphs. The fallbacks
   // are metric-compatible with it by design, which is what makes the boxes
   // still correct on a machine that has no Arimo installed.
   fontFamily: "Arimo, Arial, Helvetica, sans-serif",
-  fontSizePx: 10,
+  fontSizePx: 50 / 3,
   subscriptScale: 0.72,
   labelPaddingPx: 1.6,
   marginPx: 8,

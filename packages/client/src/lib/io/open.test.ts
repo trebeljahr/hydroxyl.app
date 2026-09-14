@@ -1,12 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { elementCounts } from "@starter/chem-core";
+import { elementCounts, medianBondLength } from "@starter/chem-core";
 import { createDocument, encodeDocument } from "@starter/shared";
 
 import { INCHI_UNSUPPORTED, openText, THREE_D_NOTE, type RdkitImportBridge } from "./open";
 import {
   BENZENE_INCHI,
   BENZENE_MOLBLOCK,
+  SHORT_BOND_ETHANE_MOLBLOCK,
   SURPLUS_BLOCK_MOLBLOCK,
   THREE_RECORD_SDF,
 } from "./fixtures";
@@ -64,6 +65,27 @@ describe("importing a molfile", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.message).toMatch(/without dropping part of it/i);
+  });
+});
+
+describe("an import drawn at another tool's bond length", () => {
+  it("is scaled so its median bond is one standard bond", async () => {
+    const result = await openText(SHORT_BOND_ETHANE_MOLBLOCK, { name: "ethane.mol" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const molecule = result.value.documents[0]!.molecule;
+    expect(medianBondLength(molecule)).toBeCloseTo(1, 12);
+    expect(elementCounts(molecule)).toEqual({ C: 2, H: 6 });
+  });
+
+  it("leaves a file already at the standard bond exactly as written", async () => {
+    const result = await openText(BENZENE_MOLBLOCK);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const molecule = result.value.documents[0]!.molecule;
+    const first = molecule.atoms[molecule.atomIds[0]!]!;
+    // 0 / -1.5 in the file, divided by the shared 1.5 — no rescale on top.
+    expect(first.pos).toEqual({ x: 0, y: -1 });
   });
 });
 

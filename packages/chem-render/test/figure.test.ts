@@ -14,7 +14,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { benzene, linearChain } from "@starter/chem-core";
+import { benzene, buildMolecule, linearChain } from "@starter/chem-core";
 
 import {
   benzylAlcoholAbbreviated,
@@ -453,12 +453,43 @@ describe("physical size", () => {
   });
 
   it("reports the printed bond length and font size as read-outs of the style used", () => {
-    const figure = composeFigure(ethanol(), PUBLICATION_STYLE, THREE_VIEWS);
-    const size = physicalFigureSize(figure, 8.25, 300);
-    const cmPerPx = PRINTED_BOND_LENGTH_CM / 24;
-    expect(size.bondLengthMm).toBeCloseTo(24 * cmPerPx * 10, 9);
-    expect(size.fontSizePt).toBeCloseTo(((10 * cmPerPx) / 2.54) * 72, 9);
+    const figure = composeFigure(ethanol(), SCREEN_STYLE, THREE_VIEWS);
+    const size = physicalFigureSize(figure, JOURNAL_WIDTHS_CM.double, 300);
+    expect(size.scaled).toBe(false);
+    const cmPerPx = PRINTED_BOND_LENGTH_CM / 44;
+    expect(size.bondLengthMm).toBeCloseTo(44 * cmPerPx * 10, 9);
+    expect(size.fontSizePt).toBeCloseTo(((16 * cmPerPx) / 2.54) * 72, 9);
     expect(() => physicalFigureSize(figure, 0)).toThrow(RangeError);
+  });
+
+  it("prints the publication preset at the ACS 1996 setting: 10 pt labels, 0.6 pt lines (decision 26)", () => {
+    const figure = composeFigure(ethanol(), PUBLICATION_STYLE, [THREE_VIEWS[0]!]);
+    const size = physicalFigureSize(figure, JOURNAL_WIDTHS_CM.single, 300);
+    expect(size.scaled).toBe(false);
+    expect(size.bondLengthMm).toBeCloseTo(5.08, 9);
+    expect(size.fontSizePt).toBeCloseTo(10, 9);
+    const ptPerPx = (printedCmPerPx(PUBLICATION_STYLE) / 2.54) * 72;
+    expect(PUBLICATION_STYLE.bondLineWidthPx * ptPerPx).toBeCloseTo(0.6, 9);
+    // 14.4 pt bond, so the font-to-bond ratio the ruling names.
+    expect(PUBLICATION_STYLE.fontSizePx / PUBLICATION_STYLE.bondLengthPx).toBeCloseTo(0.694, 3);
+  });
+
+  it("reports the bond as drawn, not the model unit, for a structure at another tool's bond length", () => {
+    // A 0.825-unit molfile read at the shared 1.5 scale: 0.55-unit bonds.
+    const short = composeFigure(benzene(0.55), PUBLICATION_STYLE, [THREE_VIEWS[0]!]);
+    expect(short.drawnBondLength).toBeCloseTo(0.55, 12);
+    const size = physicalFigureSize(short, JOURNAL_WIDTHS_CM.single);
+    expect(size.scaled).toBe(false);
+    expect(size.bondLengthMm).toBeCloseTo(5.08 * 0.55, 9);
+
+    const standard = composeFigure(benzene(), PUBLICATION_STYLE, [THREE_VIEWS[0]!]);
+    expect(standard.drawnBondLength).toBeCloseTo(1, 12);
+    // A lone atom has no bond to measure and reads as the standard bond.
+    expect(
+      composeFigure(buildMolecule((b) => void b.atom("O", { x: 0, y: 0 })), PUBLICATION_STYLE, [
+        THREE_VIEWS[0]!,
+      ]).drawnBondLength,
+    ).toBe(1);
   });
 
   it("never enlarges: a figure exactly as wide as the column is not 'scaled'", () => {

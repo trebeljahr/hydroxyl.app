@@ -286,3 +286,80 @@ export function verticalMirror(point: Vec2): MirrorLine {
 export function horizontalMirror(point: Vec2): MirrorLine {
   return { point, direction: { x: 1, y: 0 } };
 }
+
+// ---------------------------------------------------------------------------
+// Bond-length normalisation
+// ---------------------------------------------------------------------------
+
+/**
+ * The median length of the molecule's drawn bonds, in model units, or
+ * undefined when it has no bond of non-zero length.
+ *
+ * 1.0 is one standard bond, and everything downstream assumes the drawing
+ * honours it: `modelToPx` gives one model unit its px size, and the export
+ * prints one model unit at the house bond length. A file from another tool
+ * need not honour it — molfiles in the wild use 1.5, 1.54, 0.825 and more —
+ * so this is how an importer finds out what scale a structure was drawn at.
+ *
+ * THE MEDIAN, NOT THE MEAN. A drawing has a few deliberately long or short
+ * bonds (a macrocycle closure, a bond stretched to clear a label, two atoms
+ * dropped on top of each other); the median reads the length the author
+ * actually drew with and ignores those. Zero-length bonds are excluded, since
+ * they say nothing about scale.
+ *
+ * Squared lengths are ranked and the square root is taken only of the chosen
+ * one(s), so the answer is exactly `Math.sqrt` of a sum of two products —
+ * correctly rounded, and the same on every engine (unlike `Math.hypot`).
+ */
+export function medianBondLength(mol: Molecule): number | undefined {
+  const squared: number[] = [];
+  for (const bondId of mol.bondIds) {
+    const bond = mol.bonds[bondId];
+    if (!bond) continue;
+    const a = mol.atoms[bond.from];
+    const b = mol.atoms[bond.to];
+    if (!a || !b) continue;
+    const dx = b.pos.x - a.pos.x;
+    const dy = b.pos.y - a.pos.y;
+    const sq = dx * dx + dy * dy;
+    if (sq > 0) squared.push(sq);
+  }
+  if (squared.length === 0) return undefined;
+  squared.sort((p, q) => p - q);
+  const mid = squared.length >> 1;
+  const upper = Math.sqrt(squared[mid] as number);
+  if (squared.length % 2 === 1) return upper;
+  return (Math.sqrt(squared[mid - 1] as number) + upper) / 2;
+}
+
+/**
+ * Relative slack below which `normalizeBondLength` leaves a molecule alone.
+ *
+ * A molfile stores coordinates to four decimals, so a structure drawn at
+ * exactly the standard bond reads back a few parts in 10^4 off it. Rescaling
+ * that would rewrite every coordinate of a file that was already right, for
+ * no visible change.
+ */
+export const BOND_LENGTH_NORMALIZE_TOLERANCE = 1e-3;
+
+/**
+ * The molecule uniformly scaled about the origin so its median bond is
+ * `target` model units long (default 1, the standard bond).
+ *
+ * Returned BY REFERENCE when there is nothing to do: no bonds to measure, or
+ * a median already within `BOND_LENGTH_NORMALIZE_TOLERANCE` of the target.
+ *
+ * A uniform scale by a positive factor is a similarity, so the shape, every
+ * angle and every stereo mark keep their meaning; ids and topology are
+ * untouched. It is a LAYOUT change, on the same footing as `translateAtoms`.
+ */
+export function normalizeBondLength(mol: Molecule, target = 1): Molecule {
+  if (!(target > 0) || !Number.isFinite(target)) {
+    throw new RangeError(`normalizeBondLength: target must be a positive length, got ${target}`);
+  }
+  const median = medianBondLength(mol);
+  if (median === undefined) return mol;
+  if (Math.abs(median - target) <= target * BOND_LENGTH_NORMALIZE_TOLERANCE) return mol;
+  const k = target / median;
+  return repositionAtoms(mol, new Set(mol.atomIds), (pos) => ({ x: pos.x * k, y: pos.y * k }));
+}

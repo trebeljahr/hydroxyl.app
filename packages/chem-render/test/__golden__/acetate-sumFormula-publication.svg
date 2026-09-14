@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-27.22 -15.022 54.439 30.044" width="54.439px" height="30.044px">
-  <text id="text:sumFormula:formula" data-decoration="true" x="0" y="0" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="10" fill="#000000" text-anchor="middle" dominant-baseline="middle"><tspan>C</tspan><tspan font-size="7.2" dy="2.5">2</tspan><tspan dy="-2.5">H</tspan><tspan font-size="7.2" dy="2.5">3</tspan><tspan dy="-2.5">O</tspan><tspan font-size="7.2" dy="2.5">2</tspan><tspan font-size="7.2" dy="-6">−</tspan></text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-40.033 -19.703 80.065 39.406" width="80.065px" height="39.406px">
+  <text id="text:sumFormula:formula" data-decoration="true" x="0" y="0" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="middle" dominant-baseline="middle"><tspan>C</tspan><tspan font-size="12" dy="4.167">2</tspan><tspan dy="-4.167">H</tspan><tspan font-size="12" dy="4.167">3</tspan><tspan dy="-4.167">O</tspan><tspan font-size="12" dy="4.167">2</tspan><tspan font-size="12" dy="-10">−</tspan></text>
 </svg>

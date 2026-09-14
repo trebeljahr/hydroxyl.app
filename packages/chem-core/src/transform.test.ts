@@ -6,6 +6,8 @@ import {
   atomsCentroid,
   flipAtoms,
   horizontalMirror,
+  medianBondLength,
+  normalizeBondLength,
   rotateAtoms,
   translateAtoms,
   verticalMirror,
@@ -436,5 +438,70 @@ describe("stale and empty selections", () => {
     rotateAtoms(ethanol, ethanol.atomIds, ORIGIN, 90 * DEG);
     flipAtoms(ethanol, ethanol.atomIds, horizontalMirror(ORIGIN));
     expect(M.positions(ethanol)).toEqual(snapshot);
+  });
+});
+
+describe("bond-length normalisation", () => {
+  it("measures benzene drawn at the standard bond as 1", () => {
+    expect(medianBondLength(benzene())).toBeCloseTo(1, 12);
+  });
+
+  it("reads the scale an importer's file was drawn at", () => {
+    // Propane as a file drawn with 0.825-unit bonds reads back.
+    expect(medianBondLength(linearChain(3, "C", 0.825))).toBeCloseTo(0.825, 12);
+  });
+
+  it("takes the median, so one stretched ring-closure bond does not move it", () => {
+    const stretched = buildMolecule((b) => {
+      const c1 = b.atom("C", ORIGIN);
+      const c2 = b.atom("C", vec(1, 0));
+      const c3 = b.atom("C", vec(2, 0));
+      const o = b.atom("O", vec(7, 0));
+      b.bond(c1, c2, 1);
+      b.bond(c2, c3, 1);
+      b.bond(c3, o, 1);
+    });
+    expect(medianBondLength(stretched)).toBe(1);
+  });
+
+  it("is undefined for a lone atom", () => {
+    expect(medianBondLength(buildMolecule((b) => void b.atom("O", ORIGIN)))).toBeUndefined();
+  });
+
+  it("rescales a short-bond import to unit bonds and keeps its shape", () => {
+    const small = benzene(0.825);
+    const normal = normalizeBondLength(small);
+    for (const length of bondLengths(normal)) expect(length).toBeCloseTo(1, 12);
+    expect(normal.atomIds).toEqual(small.atomIds);
+    expect(normal.bonds).toBe(small.bonds);
+    expectSamePointSet(M.positions(normal), M.positions(benzene(1)));
+  });
+
+  it("rescales an RDKit-scale 1.54 drawing down", () => {
+    const long = normalizeBondLength(linearChain(4, "C", 1.54));
+    expect(medianBondLength(long)).toBeCloseTo(1, 12);
+  });
+
+  it("returns the molecule by reference when it is already at the standard bond", () => {
+    const mol = benzene();
+    expect(normalizeBondLength(mol)).toBe(mol);
+    // A molfile's four decimals leave a standard drawing a few 1e-4 off.
+    const rounded = linearChain(3, "C", 1.0004);
+    expect(normalizeBondLength(rounded)).toBe(rounded);
+    const lone = buildMolecule((b) => void b.atom("N", vec(3, 4)));
+    expect(normalizeBondLength(lone)).toBe(lone);
+  });
+
+  it("keeps wedge and hash marks, since a positive uniform scale is not a mirror", () => {
+    const { mol, c, cl, br } = bromochlorofluoromethane();
+    const shrunk = normalizeBondLength(mol, 0.5);
+    expectTopologyPreserved(mol, shrunk);
+    expect(stereoOf(shrunk, c, cl)).toBe("hash");
+    expect(stereoOf(shrunk, c, br)).toBe("wedge");
+    expect(medianBondLength(shrunk)).toBeCloseTo(0.5, 12);
+  });
+
+  it("refuses a target that is not a positive length", () => {
+    expect(() => normalizeBondLength(benzene(), 0)).toThrow(RangeError);
   });
 });

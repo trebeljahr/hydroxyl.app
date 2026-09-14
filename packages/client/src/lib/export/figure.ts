@@ -31,9 +31,10 @@
  * is the sentence the dialog shows for it.
  */
 
-import { isEmpty } from "@starter/chem-core";
+import { BOND_LENGTH_NORMALIZE_TOLERANCE, isEmpty } from "@starter/chem-core";
 import {
   JOURNAL_WIDTHS_CM,
+  PRINTED_BOND_LENGTH_CM,
   composeFigure,
   physicalFigureSize,
   serializeFigure,
@@ -132,6 +133,25 @@ export function scaleNotice(
   if (!size.scaled) return null;
   const percent = Math.floor(size.scale * 100 + 1e-9);
   return `Scaled to ${percent}% to fit ${widthName(settings, size.maxWidthCm)}.`;
+}
+
+/**
+ * The plain sentence for a drawing whose bonds are not the standard length,
+ * or null when they are.
+ *
+ * The house bond length is guaranteed for one MODEL UNIT, and imports are
+ * normalised to it, but a document saved before that normalisation (or a
+ * structure stretched by hand) can still carry other bonds. The read-out then
+ * already shows the true printed bond; this says why it is not 5.08 mm, so
+ * the difference is not mistaken for fit scaling. Measured against the
+ * drawing alone, before any scaling to fit, which `scaleNotice` reports.
+ */
+export function bondLengthNotice(prepared: PreparedFigure): string | null {
+  const ratio = prepared.figure.drawnBondLength;
+  if (Math.abs(ratio - 1) <= BOND_LENGTH_NORMALIZE_TOLERANCE) return null;
+  const percent = Math.round(ratio * 100);
+  const standardMm = (PRINTED_BOND_LENGTH_CM * 10).toFixed(2);
+  return `This drawing's bonds are ${percent}% of the standard bond, so they do not print at ${standardMm} mm.`;
 }
 
 export interface PreparedFigure {

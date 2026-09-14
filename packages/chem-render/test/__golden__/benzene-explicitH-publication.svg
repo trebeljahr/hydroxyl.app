@@ -1,30 +1,30 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-46.113 -53.453 92.227 106.852" width="92.227px" height="106.852px">
-  <line id="bond:b7:line" data-bond="b7" x1="5.211" y1="20.992" x2="15.574" y2="15.008" stroke="#000000" stroke-width="1.4"/>
-  <line id="bond:b8:line" data-bond="b8" x1="20.785" y1="6.96" x2="20.785" y2="-6.96" stroke="#000000" stroke-width="1.4"/>
-  <line id="bond:b8:line2" data-bond="b8" x1="16.585" y1="4.535" x2="16.585" y2="-4.535" stroke="#000000" stroke-width="1.4"/>
-  <line id="bond:b9:line" data-bond="b9" x1="15.574" y1="-15.008" x2="5.211" y2="-20.992" stroke="#000000" stroke-width="1.4"/>
-  <line id="bond:b10:line" data-bond="b10" x1="-5.211" y1="-20.992" x2="-15.574" y2="-15.008" stroke="#000000" stroke-width="1.4"/>
-  <line id="bond:b10:line2" data-bond="b10" x1="-2.429" y1="-17.748" x2="-13.474" y2="-11.371" stroke="#000000" stroke-width="1.4"/>
-  <line id="bond:b11:line" data-bond="b11" x1="-20.785" y1="-6.96" x2="-20.785" y2="6.96" stroke="#000000" stroke-width="1.4"/>
-  <line id="bond:b12:line" data-bond="b12" x1="-15.574" y1="15.008" x2="-5.211" y2="20.992" stroke="#000000" stroke-width="1.4"/>
-  <line id="bond:b12:line2" data-bond="b12" x1="-13.474" y1="11.371" x2="-2.429" y2="17.748" stroke="#000000" stroke-width="1.4"/>
-  <text id="atom:a1:label" data-atom="a1" x="-3.611" y="27.44" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="10" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>C</tspan></text>
-  <text id="atom:a2:label" data-atom="a2" x="17.174" y="15.44" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="10" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>C</tspan></text>
-  <text id="atom:a3:label" data-atom="a3" x="17.174" y="-8.56" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="10" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>C</tspan></text>
-  <text id="atom:a4:label" data-atom="a4" x="-3.611" y="-20.56" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="10" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>C</tspan></text>
-  <text id="atom:a5:label" data-atom="a5" x="-24.395" y="-8.56" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="10" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>C</tspan></text>
-  <text id="atom:a6:label" data-atom="a6" x="-24.395" y="15.44" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="10" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>C</tspan></text>
-  <line id="atom:a1:h:0:line" data-hydrogen-host="a1" data-hydrogen-index="0" x1="0" y1="29.04" x2="0" y2="34.8" stroke="#000000" stroke-width="1.4"/>
-  <text id="atom:a1:h:0:label" data-hydrogen-host="a1" data-hydrogen-index="0" x="-3.611" y="43.28" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="10" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>H</tspan></text>
-  <line id="atom:a2:h:0:line" data-hydrogen-host="a2" data-hydrogen-index="0" x1="25.995" y1="15.008" x2="29.292" y2="16.912" stroke="#000000" stroke-width="1.4"/>
-  <text id="atom:a2:h:0:label" data-hydrogen-host="a2" data-hydrogen-index="0" x="30.892" y="23.36" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="10" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>H</tspan></text>
-  <line id="atom:a3:h:0:line" data-hydrogen-host="a3" data-hydrogen-index="0" x1="25.995" y1="-15.008" x2="29.292" y2="-16.912" stroke="#000000" stroke-width="1.4"/>
-  <text id="atom:a3:h:0:label" data-hydrogen-host="a3" data-hydrogen-index="0" x="30.892" y="-16.48" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="10" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>H</tspan></text>
-  <line id="atom:a4:h:0:line" data-hydrogen-host="a4" data-hydrogen-index="0" x1="0" y1="-29.04" x2="0" y2="-34.8" stroke="#000000" stroke-width="1.4"/>
-  <text id="atom:a4:h:0:label" data-hydrogen-host="a4" data-hydrogen-index="0" x="-3.611" y="-36.4" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="10" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>H</tspan></text>
-  <line id="atom:a5:h:0:line" data-hydrogen-host="a5" data-hydrogen-index="0" x1="-25.995" y1="-15.008" x2="-29.292" y2="-16.912" stroke="#000000" stroke-width="1.4"/>
-  <text id="atom:a5:h:0:label" data-hydrogen-host="a5" data-hydrogen-index="0" x="-38.113" y="-16.48" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="10" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>H</tspan></text>
-  <line id="atom:a6:h:0:line" data-hydrogen-host="a6" data-hydrogen-index="0" x1="-25.995" y1="15.008" x2="-29.292" y2="16.912" stroke="#000000" stroke-width="1.4"/>
-  <text id="atom:a6:h:0:label" data-hydrogen-host="a6" data-hydrogen-index="0" x="-38.113" y="23.36" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="10" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>H</tspan></text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-51.771 -58.021 103.542 115.953" width="103.542px" height="115.953px">
+  <line id="bond:b7:line" data-bond="b7" x1="7.618" y1="19.602" x2="13.167" y2="16.398" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b8:line" data-bond="b8" x1="20.785" y1="4.667" x2="20.785" y2="-4.667" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b8:line2" data-bond="b8" x1="16.585" y1="2.242" x2="16.585" y2="-2.242" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b9:line" data-bond="b9" x1="13.167" y1="-16.398" x2="7.618" y2="-19.602" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b10:line" data-bond="b10" x1="-7.618" y1="-19.602" x2="-13.167" y2="-16.398" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b10:line2" data-bond="b10" x1="-6.402" y1="-15.454" x2="-11.067" y2="-12.761" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b11:line" data-bond="b11" x1="-20.785" y1="-4.667" x2="-20.785" y2="4.667" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b12:line" data-bond="b12" x1="-13.167" y1="16.398" x2="-7.618" y2="19.602" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b12:line2" data-bond="b12" x1="-11.067" y1="12.761" x2="-6.402" y2="15.454" stroke="#000000" stroke-width="1"/>
+  <text id="atom:a1:label" data-atom="a1" x="-6.018" y="29.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>C</tspan></text>
+  <text id="atom:a2:label" data-atom="a2" x="14.767" y="17.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>C</tspan></text>
+  <text id="atom:a3:label" data-atom="a3" x="14.767" y="-6.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>C</tspan></text>
+  <text id="atom:a4:label" data-atom="a4" x="-6.018" y="-18.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>C</tspan></text>
+  <text id="atom:a5:label" data-atom="a5" x="-26.803" y="-6.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>C</tspan></text>
+  <text id="atom:a6:label" data-atom="a6" x="-26.803" y="17.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>C</tspan></text>
+  <line id="atom:a1:h:0:line" data-hydrogen-host="a1" data-hydrogen-index="0" x1="0" y1="31.333" x2="0" y2="33.333" stroke="#000000" stroke-width="1"/>
+  <text id="atom:a1:h:0:label" data-hydrogen-host="a1" data-hydrogen-index="0" x="-6.018" y="46.4" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>H</tspan></text>
+  <line id="atom:a2:h:0:line" data-hydrogen-host="a2" data-hydrogen-index="0" x1="28.403" y1="16.398" x2="30.135" y2="17.398" stroke="#000000" stroke-width="1"/>
+  <text id="atom:a2:h:0:label" data-hydrogen-host="a2" data-hydrogen-index="0" x="31.735" y="27.53" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>H</tspan></text>
+  <line id="atom:a3:h:0:line" data-hydrogen-host="a3" data-hydrogen-index="0" x1="28.403" y1="-16.398" x2="30.135" y2="-17.398" stroke="#000000" stroke-width="1"/>
+  <text id="atom:a3:h:0:label" data-hydrogen-host="a3" data-hydrogen-index="0" x="31.735" y="-16.063" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>H</tspan></text>
+  <line id="atom:a4:h:0:line" data-hydrogen-host="a4" data-hydrogen-index="0" x1="0" y1="-31.333" x2="0" y2="-33.333" stroke="#000000" stroke-width="1"/>
+  <text id="atom:a4:h:0:label" data-hydrogen-host="a4" data-hydrogen-index="0" x="-6.018" y="-34.933" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>H</tspan></text>
+  <line id="atom:a5:h:0:line" data-hydrogen-host="a5" data-hydrogen-index="0" x1="-28.403" y1="-16.398" x2="-30.135" y2="-17.398" stroke="#000000" stroke-width="1"/>
+  <text id="atom:a5:h:0:label" data-hydrogen-host="a5" data-hydrogen-index="0" x="-43.771" y="-16.063" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>H</tspan></text>
+  <line id="atom:a6:h:0:line" data-hydrogen-host="a6" data-hydrogen-index="0" x1="-28.403" y1="16.398" x2="-30.135" y2="17.398" stroke="#000000" stroke-width="1"/>
+  <text id="atom:a6:h:0:label" data-hydrogen-host="a6" data-hydrogen-index="0" x="-43.771" y="27.53" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>H</tspan></text>
 </svg>

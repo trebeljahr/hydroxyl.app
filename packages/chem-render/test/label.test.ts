@@ -34,7 +34,7 @@ import type { AtomId, Molecule, Vec2 } from "@starter/chem-core";
 import { acetate, ethanol } from "../src/fixtures.js";
 import { representation, STRUCTURAL_VIEW_KINDS } from "../src/representation.js";
 import type { StructuralRepresentation } from "../src/representation.js";
-import { modelToPx, PUBLICATION_STYLE, SCREEN_STYLE } from "../src/style.js";
+import { modelToPx, PUBLICATION_STYLE, SCREEN_STYLE, withStyle } from "../src/style.js";
 import type { RenderStyle } from "../src/style.js";
 import type { ScenePoint } from "../src/scene/types.js";
 import {
@@ -81,6 +81,15 @@ const KEKULE = representation("kekule");
 // spelled out", and it is exactly the per-flag override the representation
 // factory exists to allow.
 const SPELLED_OUT = representation("kekule", { showCarbonLabels: true });
+
+/**
+ * The publication bond at a round 10 px font, for the two placements below
+ * whose expected coordinates were worked out BY HAND from the vendored
+ * advances. They test placement arithmetic, not the preset's proportions, so
+ * they pin their own font rather than follow the preset when it is retuned
+ * (decision 26 moved it to 50/3 px).
+ */
+const HAND_WORKED_STYLE = withStyle(PUBLICATION_STYLE, { fontSizePx: 10 });
 
 /** One unit-length step from `from`, at `degrees` counter-clockwise from +x. */
 function step(from: Vec2, degrees: number): Vec2 {
@@ -751,7 +760,7 @@ describe("placeAtomLabel", () => {
     // Recomputed by hand from the vendored advances: O = 1593/2048 em and
     // H = 1479/2048 em, so "OH" is exactly 15.0 px at a 10 px font, and the
     // cap band is 1409/2048 * 10 = 6.8798828125 px.
-    const placement = place(ethanol(), "a3");
+    const placement = place(ethanol(), "a3", SKELETAL, HAND_WORKED_STYLE);
     const oxygenAdvance = (1593 / 2048) * 10;
     const capHeight = (1409 / 2048) * 10;
     expect(placement.centre.x).toBeCloseTo(41.56921938165306, 9);
@@ -808,10 +817,10 @@ describe("placeAtomLabel", () => {
 
   it("trims a bond to the label's near edge, not to its bounding box", () => {
     const mol = ethanol();
-    const placement = place(mol, "a3");
+    const placement = place(mol, "a3", SKELETAL, HAND_WORKED_STYLE);
     const towardsNeighbour = unit(
       placement.centre,
-      modelToPx(PUBLICATION_STYLE, getAtom(mol, "a2")!.pos),
+      modelToPx(HAND_WORKED_STYLE, getAtom(mol, "a2")!.pos),
     );
     // The O sits at the run's west end, so a bond arriving from the west stops
     // at the O's own padded rect and never sees the H beyond it.
@@ -946,8 +955,8 @@ describe("radical dots", () => {
   it("scales the dot with the font but never finer than the figure's hairline", () => {
     const publication = place(methylRadical(), "a1", SKELETAL, PUBLICATION_STYLE);
     const screen = place(methylRadical(), "a1", SKELETAL, SCREEN_STYLE);
-    // max(0.10 * 10, 0.5 * 1.4) = 1.0 and max(0.10 * 16, 0.5 * 2) = 1.6.
-    expect(publication.dots[0]!.radius).toBeCloseTo(1.0, 9);
+    // max(0.10 * 50/3, 0.5 * 1) = 5/3 and max(0.10 * 16, 0.5 * 2) = 1.6.
+    expect(publication.dots[0]!.radius).toBeCloseTo(5 / 3, 9);
     expect(screen.dots[0]!.radius).toBeCloseTo(1.6, 9);
   });
 

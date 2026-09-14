@@ -16,6 +16,7 @@ import type { SketchDocument } from "@starter/shared";
 import type { FigureExportSettings } from "@/state/types";
 
 import {
+  bondLengthNotice,
   documentFigure,
   exportWidthCm,
   figurePreviewSvg,
@@ -163,6 +164,26 @@ describe("the figure a document exports", () => {
     expect(publicationSvg).toContain(`stroke-width="${PUBLICATION_STYLE.bondLineWidthPx}"`);
     // And the preview follows it too.
     expect(figurePreviewSvg(screen)).not.toBe(figurePreviewSvg(publication));
+  });
+
+  it("reports the bond as drawn, and says why, for a drawing not at the standard bond", () => {
+    // A document holding a 0.825-unit molfile's benzene as it read before
+    // imports were normalised: 0.55-unit bonds.
+    const standard = prepared(onePanelDoc(benzene()));
+    expect(standard.size.bondLengthMm).toBeCloseTo(5.08, 9);
+    expect(bondLengthNotice(standard)).toBeNull();
+
+    const short = prepared(onePanelDoc(benzene(0.55)));
+    expect(short.size.scaled).toBe(false);
+    expect(short.size.bondLengthMm).toBeCloseTo(5.08 * 0.55, 9);
+    // The file agrees with the read-out: its drawn bond is what prints.
+    expect(printedBondCm(figureSvgForFile(short), SCREEN_STYLE.bondLengthPx * 0.55)).toBeCloseTo(
+      short.size.bondLengthMm / 10,
+      4,
+    );
+    expect(bondLengthNotice(short)).toBe(
+      "This drawing's bonds are 55% of the standard bond, so they do not print at 5.08 mm.",
+    );
   });
 
   it("accepts a custom width in range and refuses one outside it", () => {

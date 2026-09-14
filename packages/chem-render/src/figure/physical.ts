@@ -27,6 +27,12 @@
  * an SVG's `width`/`height` attributes against its viewBox, and a raster's
  * pixel size. The bond length and font size this module reports are READ-OUTS
  * of that mapping; they are never fed back into a style.
+ *
+ * The bond read-out measures the DRAWING (`figure.drawnBondLength`), not the
+ * model unit: the house length is guaranteed for one model unit, and a
+ * structure is only at the house length if its bonds are one unit long.
+ * Importers normalise to that, but a report that assumed it would state
+ * 5.08 mm for any drawing at all.
  */
 
 import { pxPerModelUnit } from "../style.js";
@@ -103,7 +109,12 @@ export interface PhysicalFigureSize {
   /** Present only when a dpi was given. */
   readonly widthPx?: number;
   readonly heightPx?: number;
-  /** One model bond, as it will print. */
+  /**
+   * The figure's median drawn bond, as it will print. 5.08 mm for a structure
+   * at the standard bond that was not scaled to fit. A drawing whose bonds are
+   * not one model unit long prints them at their own length, and this says
+   * so rather than repeating the house constant.
+   */
   readonly bondLengthMm: number;
   /** The label font, as it will print. */
   readonly fontSizePt: number;
@@ -149,7 +160,7 @@ export function physicalFigureSize(
     maxWidthCm,
     scale,
     scaled: !fits,
-    bondLengthMm: pxPerModelUnit(figure.style) * cmPerPx * 10,
+    bondLengthMm: pxPerModelUnit(figure.style) * figure.drawnBondLength * cmPerPx * 10,
     fontSizePt: ((figure.style.fontSizePx * cmPerPx) / CM_PER_INCH) * POINTS_PER_INCH,
   };
   if (dpi === undefined) return base;

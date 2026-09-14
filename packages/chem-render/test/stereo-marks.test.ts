@@ -34,7 +34,7 @@ import type {
   TextRunPrimitive,
 } from "../src/scene/types.js";
 import { atomLabelPlacement } from "../src/scene/build.js";
-import { PUBLICATION_STYLE, SCREEN_STYLE } from "../src/style.js";
+import { modelToPx, PUBLICATION_STYLE, SCREEN_STYLE } from "../src/style.js";
 import type { RenderStyle } from "../src/style.js";
 import { BUNDLED_MEASURER, measureTextRun, textRunRect } from "../src/text/measurer.js";
 
@@ -111,9 +111,17 @@ describe("the solid wedge", () => {
     const a = apexOf(before);
     const b = apexOf(after);
     expect(a).not.toEqual(b);
-    // The two apexes are at opposite ends of the same bond, so they are a
-    // bond's length apart rather than merely different.
-    expect(distance(a, b)).toBeGreaterThan(PUBLICATION_STYLE.bondLengthPx / 2);
+    // The two apexes are at opposite ends of the same bond rather than merely
+    // different: each lies nearer its own end's atom than the other end's.
+    // Stated against the atom centres, not as a fraction of the bond, because
+    // both ends are trimmed against labels (the stereocentre draws its H) and
+    // how much of the bond survives depends on the preset's font size.
+    const mol = butan2olWedged();
+    const wedge = mol.bonds[WEDGE_BOND]!;
+    const stereocentre = modelToPx(PUBLICATION_STYLE, mol.atoms[wedge.from]!.pos);
+    const oxygen = modelToPx(PUBLICATION_STYLE, mol.atoms[wedge.to]!.pos);
+    expect(distance(a, stereocentre)).toBeLessThan(distance(a, oxygen));
+    expect(distance(b, oxygen)).toBeLessThan(distance(b, stereocentre));
   });
 
   it("replaces the bond's line rather than drawing over it", () => {

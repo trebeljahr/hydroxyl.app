@@ -39,6 +39,22 @@ export const ETHANOL_MOLBLOCK = `Ethanol
 M  END
 `;
 
+/**
+ * Ethane as a tool drawing at a 0.825-unit bond writes it — ChemDraw's
+ * molfiles look like this. Read with the 1.5 scale every toolkit shares, its
+ * bond is 0.55 model units: the case where "one model unit prints at the
+ * house bond length" would silently print a bond barely half that long.
+ */
+export const SHORT_BOND_ETHANE_MOLBLOCK = `Ethane
+  ChemDraw          2D
+
+  2  1  0  0  0  0  0  0  0  0999 V2000
+   -0.4125    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+    0.4125    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  0  0  0  0
+M  END
+`;
+
 /** Three records, the way an SDF from a vendor catalogue arrives: each with
  *  its own title, a data block, and a `$$$$` after every one INCLUDING the
  *  last. Decision 7 makes this three documents. */

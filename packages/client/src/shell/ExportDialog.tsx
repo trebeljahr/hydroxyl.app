@@ -36,6 +36,7 @@ import { STYLE_PRESET_TITLES } from "@/canvas/scene-bridge";
 import { commandById } from "@/editor/commands/registry";
 import {
   CUSTOM_WIDTH_RANGE_CM,
+  bondLengthNotice,
   figurePreviewSvg,
   prepareFigure,
   rasterTooLarge,
@@ -96,6 +97,7 @@ export function ExportDialog(): ReactElement {
   const prepared = useMemo(() => (open ? prepareFigure(doc, settings) : null), [open, doc, settings]);
   const tooLarge = prepared?.ok === true ? rasterTooLarge(prepared.value, canvasCanHold) : null;
   const notice = prepared?.ok === true ? scaleNotice(prepared.value.size, settings) : null;
+  const bondNotice = prepared?.ok === true ? bondLengthNotice(prepared.value) : null;
   const canExport = prepared?.ok === true;
 
   return (
@@ -229,6 +231,15 @@ export function ExportDialog(): ReactElement {
                 className="mb-3 text-xs font-medium text-amber-700 dark:text-amber-400"
               >
                 {notice}
+              </p>
+            )}
+            {bondNotice === null ? null : (
+              <p
+                data-shell="figure-bond-length"
+                role="status"
+                className="-mt-2 mb-3 text-xs font-medium text-amber-700 dark:text-amber-400"
+              >
+                {bondNotice}
               </p>
             )}
           </>

@@ -44,6 +44,7 @@
  * captions are measured against the vendored font table, never a browser.
  */
 
+import { medianBondLength } from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
 
 import { representationAvailability } from "../availability.js";
@@ -168,6 +169,16 @@ export interface Figure {
   readonly cells: readonly FigureCell[];
   /** Union of every panel's ink, label and caption, grown by `style.marginPx`. */
   readonly bounds: SceneBounds;
+  /**
+   * The molecule's median drawn bond, in MODEL UNITS — 1 for anything drawn
+   * in this editor, and 1 when there is no bond to measure.
+   *
+   * A READ-OUT, never a scale: nothing multiplies geometry by it. It exists
+   * so the printed bond length the export reports is the length of the bonds
+   * actually on the page, not of an abstract model unit a structure from
+   * another tool (or an old document) may not have been drawn at.
+   */
+  readonly drawnBondLength: number;
 }
 
 /** The cells whose view could not be produced, in panel order. */
@@ -321,6 +332,7 @@ export function composeFigure(
       inkStyle,
       style.marginPx,
     ),
+    drawnBondLength: medianBondLength(mol) ?? 1,
   };
 }
 

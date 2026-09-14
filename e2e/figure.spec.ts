@@ -392,6 +392,42 @@ test("a figure wider than the column scales down to exactly the column, and the 
   await expect(page.locator('[data-shell="figure-size"]')).toContainText("bond 5.08 mm");
 });
 
+test("a molfile drawn at another tool's bond length prints at the house bond, and the dialog's read-out is true", async ({
+  page,
+}) => {
+  await openEditor(page);
+  // Ethane at a 0.825-unit bond, as ChemDraw writes it. Read at the shared
+  // 1.5 scale that is a 0.55-unit bond; the import normalises it to one.
+  await dropMolfile(
+    page,
+    "ethane.mol",
+    [
+      "Ethane",
+      "  ChemDraw          2D",
+      "",
+      "  2  1  0  0  0  0  0  0  0  0999 V2000",
+      "   -0.4125    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0",
+      "    0.4125    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0",
+      "  1  2  1  0  0  0  0",
+      "M  END",
+      "",
+    ].join("\n"),
+  );
+  await expect(page.locator('[data-status="formula"]')).toHaveText("C₂H₆");
+
+  await openExportDialog(page);
+  await page.locator(`${DIALOG} input[name="figure-width"][value="single"]`).check();
+  await expect(page.locator('[data-shell="figure-fit"]')).toBeVisible();
+  await expect(page.locator('[data-shell="figure-size"]')).toContainText("bond 5.08 mm");
+  await expect(page.locator('[data-shell="figure-bond-length"]')).toHaveCount(0);
+
+  // The file agrees with the read-out: its drawn bond prints at 0.508 cm.
+  const svg = (await downloadFrom(page, "figure.export-svg")).toString("utf8");
+  const drawn = firstSkeletalBondLength(svg);
+  expect(drawn).toBeCloseTo(44, 1);
+  expect(printedBondCm(svg, drawn)).toBeCloseTo(0.508, 3);
+});
+
 test("double column at 600 dpi exports a PNG past Safari's canvas area where the browser can draw it", async ({
   page,
 }) => {
@@ -455,7 +491,9 @@ test("the export uses the document's style preset: switched in the dialog, undon
   await expect(style.locator('[data-command="view.style-publication"]')).toHaveCount(0);
   const publicationSvg = (await downloadFrom(page, "figure.export-svg")).toString("utf8");
   expect(firstSkeletalBondLength(publicationSvg)).toBeCloseTo(24, 1);
-  expect(publicationSvg).toContain('stroke-width="1.4"');
+  // The ACS 1996 setting at the house bond (decision 26): 0.6 pt lines, 10 pt labels.
+  expect(publicationSvg).toContain('stroke-width="1"');
+  await expect(page.locator('[data-shell="figure-size"]')).toContainText("bond 5.08 mm · labels 10.0 pt");
   // Same printed bond in both: the physical scale divides by the style used.
   expect(printedBondCm(screenSvg, 44)).toBeCloseTo(0.508, 3);
   expect(printedBondCm(publicationSvg, 24)).toBeCloseTo(0.508, 3);

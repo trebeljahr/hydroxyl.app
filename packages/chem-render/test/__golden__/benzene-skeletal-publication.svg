@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-29.685 -32.9 59.369 65.8" width="59.369px" height="65.8px">
-  <line id="bond:b7:line" data-bond="b7" x1="0" y1="24" x2="20.785" y2="12" stroke="#000000" stroke-width="1.4"/>
-  <line id="bond:b8:line" data-bond="b8" x1="20.785" y1="12" x2="20.785" y2="-12" stroke="#000000" stroke-width="1.4"/>
-  <line id="bond:b9:line" data-bond="b9" x1="20.785" y1="-12" x2="0" y2="-24" stroke="#000000" stroke-width="1.4"/>
-  <line id="bond:b10:line" data-bond="b10" x1="0" y1="-24" x2="-20.785" y2="-12" stroke="#000000" stroke-width="1.4"/>
-  <line id="bond:b11:line" data-bond="b11" x1="-20.785" y1="-12" x2="-20.785" y2="12" stroke="#000000" stroke-width="1.4"/>
-  <line id="bond:b12:line" data-bond="b12" x1="-20.785" y1="12" x2="0" y2="24" stroke="#000000" stroke-width="1.4"/>
-  <circle id="ring:a1+a2+a3+a4+a5+a6:aromaticCircle" data-ring="a1 a2 a3 a4 a5 a6" cx="0" cy="0" r="15.588" fill="none" stroke="#000000" stroke-width="1.4"/>
+  <line id="bond:b7:line" data-bond="b7" x1="0" y1="24" x2="20.785" y2="12" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b8:line" data-bond="b8" x1="20.785" y1="12" x2="20.785" y2="-12" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b9:line" data-bond="b9" x1="20.785" y1="-12" x2="0" y2="-24" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b10:line" data-bond="b10" x1="0" y1="-24" x2="-20.785" y2="-12" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b11:line" data-bond="b11" x1="-20.785" y1="-12" x2="-20.785" y2="12" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b12:line" data-bond="b12" x1="-20.785" y1="12" x2="0" y2="24" stroke="#000000" stroke-width="1"/>
+  <circle id="ring:a1+a2+a3+a4+a5+a6:aromaticCircle" data-ring="a1 a2 a3 a4 a5 a6" cx="0" cy="0" r="15.588" fill="none" stroke="#000000" stroke-width="1"/>
   <circle id="atom:a1:dot" data-atom="a1" cx="0" cy="24" r="0.9" fill="#000000"/>
   <circle id="atom:a2:dot" data-atom="a2" cx="20.785" cy="12" r="0.9" fill="#000000"/>
   <circle id="atom:a3:dot" data-atom="a3" cx="20.785" cy="-12" r="0.9" fill="#000000"/>
