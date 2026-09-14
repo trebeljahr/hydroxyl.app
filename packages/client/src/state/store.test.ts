@@ -580,6 +580,99 @@ describe("documents and panels", () => {
     expect(store.getState().history.past).toHaveLength(0);
   });
 
+  describe("a title renamed in another tab", () => {
+    function retypeFirstAtom(store: EditorStore, element: "N" | "O"): void {
+      store
+        .getState()
+        .applyMoleculeEdit("Retype", (m) => guardedOps.setElement(m, firstAtomId(store), element));
+    }
+
+    function firstElement(store: EditorStore): string {
+      return requireAtom(store.getState().document.molecule, firstAtomId(store)).element;
+    }
+
+    it("is adopted without an undo step, and no undo or redo brings the old title back", () => {
+      // Pyridine from benzene: the retype is the edit, the rename is news.
+      const store = makeStore();
+      retypeFirstAtom(store, "N");
+      const selection = store.getState().selection;
+      const modifiedAt = store.getState().document.metadata.modifiedAt;
+
+      store.getState().adoptDocumentTitle("Pyridine");
+      expect(store.getState().document.metadata.title).toBe("Pyridine");
+      expect(store.getState().document.metadata.modifiedAt).toBe(modifiedAt);
+      expect(store.getState().history.past).toHaveLength(1);
+      expect(store.getState().undoLabel()).toBe("Retype");
+      expect(store.getState().selection).toBe(selection);
+
+      // Undoing the RETYPE restores the carbon, not the title it was made under.
+      expect(store.getState().undo()).toBe(true);
+      expect(firstElement(store)).toBe("C");
+      expect(store.getState().document.metadata.title).toBe("Pyridine");
+      expect(store.getState().redo()).toBe(true);
+      expect(firstElement(store)).toBe("N");
+      expect(store.getState().document.metadata.title).toBe("Pyridine");
+    });
+
+    it("is a no-op that keeps every reference when the title already matches", () => {
+      const store = makeStore();
+      const before = store.getState();
+      store.getState().adoptDocumentTitle(before.document.metadata.title);
+      expect(store.getState().document).toBe(before.document);
+      expect(store.getState().history).toBe(before.history);
+    });
+
+    it("drops the title-only steps it leaves doing nothing, in the past and the future", () => {
+      const store = makeStore();
+      store.getState().setDocumentTitle("P");
+      store.getState().setDocumentTitle("Py");
+      retypeFirstAtom(store, "N");
+      store.getState().setDocumentTitle("Pyr");
+      retypeFirstAtom(store, "O");
+      // Undo the oxygen AND the "Pyr" keystroke, so the redo stack has a
+      // title-only step too.
+      store.getState().undo();
+      store.getState().undo();
+      expect(store.getState().history.past).toHaveLength(3);
+      expect(store.getState().history.future).toHaveLength(2);
+
+      store.getState().adoptDocumentTitle("Pyridine");
+      // Two keystrokes before the retype and one after it would each be an
+      // undo that visibly does nothing.
+      expect(store.getState().history.past.map((e) => e.label)).toEqual(["Retype"]);
+      expect(store.getState().history.future.map((e) => e.label)).toEqual(["Retype"]);
+
+      expect(store.getState().redo()).toBe(true);
+      expect(firstElement(store)).toBe("O");
+      expect(store.getState().document.metadata.title).toBe("Pyridine");
+      store.getState().undo();
+      expect(store.getState().undo()).toBe(true);
+      expect(firstElement(store)).toBe("C");
+      expect(store.getState().document.metadata.title).toBe("Pyridine");
+      expect(store.getState().canUndo()).toBe(false);
+    });
+
+    it("lands mid-gesture without turning the gesture into a step or reverting on abort", () => {
+      const store = makeStore();
+      const id = firstAtomId(store);
+
+      // A click that never moves commits as nothing, rename or not: the
+      // transaction base and the current state still share one document.
+      store.getState().beginTransaction("Move atom");
+      store.getState().adoptDocumentTitle("Cyclohexatriene");
+      store.getState().commitTransaction();
+      expect(store.getState().history.past).toHaveLength(0);
+
+      store.getState().beginTransaction("Move atom");
+      moveTo(store, id, 5, 5);
+      store.getState().adoptDocumentTitle("Benzene, moved");
+      moveTo(store, id, 6, 6);
+      store.getState().abortTransaction();
+      expect(posOf(store, id)).not.toEqual({ x: 6, y: 6 });
+      expect(store.getState().document.metadata.title).toBe("Benzene, moved");
+    });
+  });
+
   it("adds, captions, reorders and removes panels as undoable steps", () => {
     const store = makeStore();
     const initial = store.getState().document.panels;

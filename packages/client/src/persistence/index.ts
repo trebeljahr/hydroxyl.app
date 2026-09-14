@@ -14,6 +14,7 @@ export * from "./journal";
 export * from "./migrate";
 export * from "./record";
 export * from "./memory-store";
+export * from "./title-merge";
 export * from "./idb-store";
 export * from "./autosave";
 export * from "./save-state";

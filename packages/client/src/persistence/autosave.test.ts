@@ -290,6 +290,68 @@ describe("autosave", () => {
     });
   });
 
+  describe("adopt", () => {
+    it("takes on a title renamed elsewhere without calling it unsaved or writing it", async () => {
+      const store = makeStore();
+      const sink = recorder();
+      const dirty = vi.fn();
+      const handle = startAutosave(store, sink.sink, { debounceMs: 10, onDirty: dirty });
+      handle.baseline(store.getState().document);
+
+      handle.adopt(() => store.getState().adoptDocumentTitle("Cyclohexatriene"));
+      await tick();
+
+      expect(store.getState().document.metadata.title).toBe("Cyclohexatriene");
+      expect(dirty).not.toHaveBeenCalled();
+      expect(sink.saved).toHaveLength(0);
+      expect(handle.pending()).toBeNull();
+      expect(await handle.flush()).toBeNull();
+      handle.stop();
+    });
+
+    it("still writes work that was unsaved before the adoption, under the adopted title", async () => {
+      const store = makeStore();
+      const sink = recorder();
+      const handle = startAutosave(store, sink.sink, { debounceMs: 50 });
+      handle.baseline(store.getState().document);
+
+      store.getState().applyMoleculeEdit("Retype", (m) => guardedOps.setElement(m, m.atomIds[0]!, "N"));
+      handle.adopt(() => store.getState().adoptDocumentTitle("Pyridine"));
+      await tick();
+
+      expect(sink.saved).toHaveLength(1);
+      expect(sink.saved[0]?.metadata.title).toBe("Pyridine");
+      expect(handle.pending()).toBeNull();
+      handle.stop();
+    });
+
+    it("lets a write in flight for the outgoing document confirm the adopted one", async () => {
+      // The put in flight merges the stored title, so what lands IS the adopted
+      // document. Confirming only the outgoing reference would leave the
+      // teardown journal rescuing a sketch that is already in storage.
+      const store = makeStore();
+      let settle: (result: StoreResult<void>) => void = () => undefined;
+      const handle = startAutosave(
+        store,
+        () =>
+          new Promise<StoreResult<void>>((resolve) => {
+            settle = resolve;
+          }),
+        { debounceMs: 10 },
+      );
+      handle.baseline(store.getState().document);
+      store.getState().applyMoleculeEdit("Retype", (m) => guardedOps.setElement(m, m.atomIds[0]!, "N"));
+      await tick(20);
+
+      handle.adopt(() => store.getState().adoptDocumentTitle("Pyridine"));
+      expect(handle.pending()?.metadata.title).toBe("Pyridine");
+      settle(storeOk(undefined));
+      await tick();
+      expect(handle.pending()).toBeNull();
+      handle.stop();
+    });
+  });
+
   it("stops listening once stopped", async () => {
     const store = makeStore();
     const sink = recorder();

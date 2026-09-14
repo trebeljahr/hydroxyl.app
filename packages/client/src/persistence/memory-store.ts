@@ -19,14 +19,17 @@
 import type { SketchDocument } from "@starter/shared";
 
 import { decodeStored } from "./migrate";
+import { mergeTitle, renameEncoded, renamedMeta, storedTitleOf } from "./title-merge";
 import {
   storeFail,
   storeOk,
   type DocumentMeta,
   type DocumentStore,
+  type PutReceipt,
   type StoreErrorKind,
   type StoredRecord,
   type StoreResult,
+  type TitleReceipt,
 } from "./types";
 
 export interface MemoryDocumentStore extends DocumentStore {
@@ -57,12 +60,18 @@ export function createMemoryDocumentStore(
       failure = kind === null ? null : { kind, message };
     },
 
-    put(record: StoredRecord): Promise<StoreResult<void>> {
+    put(record, options = {}): Promise<StoreResult<PutReceipt>> {
       counts.put++;
-      const refused = refuse<void>();
+      const refused = refuse<PutReceipt>();
       if (refused) return Promise.resolve(refused);
-      records.set(record.meta.id, record);
-      return Promise.resolve(storeOk(undefined));
+      const stored = records.get(record.meta.id);
+      const merged = mergeTitle(
+        record,
+        stored === undefined ? null : storedTitleOf(stored.meta),
+        options.titleBase,
+      );
+      records.set(record.meta.id, merged.record);
+      return Promise.resolve(storeOk(merged.receipt));
     },
 
     get(id: string): Promise<StoreResult<SketchDocument>> {
@@ -86,23 +95,20 @@ export function createMemoryDocumentStore(
       return Promise.resolve(storeOk(records.get(id)?.thumbnail ?? null));
     },
 
-    rename(id: string, title: string): Promise<StoreResult<void>> {
-      const refused = refuse<void>();
+    rename(id: string, title: string): Promise<StoreResult<TitleReceipt>> {
+      const refused = refuse<TitleReceipt>();
       if (refused) return Promise.resolve(refused);
       const record = records.get(id);
       if (record === undefined) {
-        return Promise.resolve(storeFail<void>("not-found", `No document "${id}".`));
+        return Promise.resolve(storeFail<TitleReceipt>("not-found", `No document "${id}".`));
       }
       // Both halves, for the reason `DocumentStore.rename` gives: a grid and
       // an editor disagreeing about a document's name is worse than either
       // being wrong.
       const encoded = renameEncoded(record.encoded, title);
-      records.set(id, {
-        meta: { ...record.meta, title },
-        encoded,
-        thumbnail: record.thumbnail,
-      });
-      return Promise.resolve(storeOk(undefined));
+      const meta = renamedMeta(record.meta, title);
+      records.set(id, { meta, encoded, thumbnail: record.thumbnail });
+      return Promise.resolve(storeOk({ title, titleRevision: meta.titleRevision ?? 0 }));
     },
 
     remove(id: string): Promise<StoreResult<void>> {
@@ -110,20 +116,4 @@ export function createMemoryDocumentStore(
       return Promise.resolve(storeOk(undefined));
     },
   };
-}
-
-/**
- * Retitle an encoded document without decoding it.
- *
- * Shared with the IndexedDB store, and written defensively because the value
- * comes back out of storage rather than out of `encodeDocument`: a row that no
- * longer has a metadata object is left exactly as it was, so a rename cannot
- * turn an unreadable document into a differently unreadable one.
- */
-export function renameEncoded(encoded: unknown, title: string): unknown {
-  if (typeof encoded !== "object" || encoded === null) return encoded;
-  if (!Object.hasOwn(encoded, "metadata")) return encoded;
-  const metadata = (encoded as Record<string, unknown>)["metadata"];
-  if (typeof metadata !== "object" || metadata === null) return encoded;
-  return { ...(encoded as Record<string, unknown>), metadata: { ...metadata, title } };
 }

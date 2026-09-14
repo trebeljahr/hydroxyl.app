@@ -29,6 +29,14 @@ export type DocumentChangeKind = "put" | "remove" | "rename";
 export interface DocumentChange {
   readonly kind: DocumentChangeKind;
   readonly id: string;
+  /**
+   * On a rename only: the new title and the revision the rename wrote. Both
+   * optional on the wire, because a tab running an older build sends neither;
+   * a listener that gets no title still has the write-time merge to keep the
+   * rename from being overwritten, it just learns the name a save later.
+   */
+  readonly title?: string | undefined;
+  readonly titleRevision?: number | undefined;
 }
 
 const CHANNEL_NAME = "chemistry-sketcher/documents";
@@ -99,6 +107,18 @@ export function onDocumentChange(listener: (change: DocumentChange) => void): ()
     const id = (data as Record<string, unknown>)["id"];
     if (kind !== "put" && kind !== "remove" && kind !== "rename") return;
     if (typeof id !== "string" || id === "") return;
+    const title = (data as Record<string, unknown>)["title"];
+    const titleRevision = (data as Record<string, unknown>)["titleRevision"];
+    if (
+      kind === "rename" &&
+      typeof title === "string" &&
+      typeof titleRevision === "number" &&
+      Number.isSafeInteger(titleRevision) &&
+      titleRevision >= 0
+    ) {
+      listener({ kind, id, title, titleRevision });
+      return;
+    }
     listener({ kind, id });
   };
   live.addEventListener("message", handler);

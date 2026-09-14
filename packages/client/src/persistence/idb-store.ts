@@ -44,16 +44,19 @@
 import type { SketchDocument } from "@starter/shared";
 
 import { decodeStored } from "./migrate";
-import { renameEncoded } from "./memory-store";
+import { mergeTitle, renameEncoded, renamedMeta, storedTitleOf } from "./title-merge";
 import {
   storeFail,
   storeOk,
   type DocumentMeta,
   type DocumentStore,
+  type PutOptions,
+  type PutReceipt,
   type StoreError,
   type StoreErrorKind,
   type StoredRecord,
   type StoreResult,
+  type TitleReceipt,
 } from "./types";
 
 export const DB_NAME = "chemistry-sketcher";
@@ -320,26 +323,38 @@ export function createIndexedDbStore(options: IndexedDbStoreOptions = {}): Docum
   }
 
   return {
-    put(record: StoredRecord): Promise<StoreResult<void>> {
+    put(record: StoredRecord, options: PutOptions = {}): Promise<StoreResult<PutReceipt>> {
       return withStores(
         [DOCUMENTS_STORE, META_STORE, THUMBNAILS_STORE],
         "readwrite",
         `"${record.meta.title}"`,
         async (tx) => {
+          // Read INSIDE the write transaction, never before it. A rename is a
+          // readwrite transaction over the same stores, so IndexedDB runs the
+          // two one after the other; the stored title this sees is therefore
+          // the one this write lands on top of, whichever tab got there first.
+          //
+          // Read even without a base, because the revision must carry on from
+          // the stored row rather than restart at 0. That costs the put its
+          // "queued synchronously from the caller" property, which `ready`
+          // above records never made a teardown write survive anyway —
+          // `journal.ts` is the rescue on that path.
+          const stored = storedTitleOf(
+            await request<unknown>(tx.objectStore(META_STORE).get(record.meta.id)),
+          );
+          const merged = mergeTitle(record, stored, options.titleBase);
+          const { meta, encoded, thumbnail } = merged.record;
           // Fire all three, then await. IndexedDB queues them on the same
           // transaction, so this is one round trip rather than three.
           const writes = [
-            request(tx.objectStore(DOCUMENTS_STORE).put(record.encoded)),
-            request(tx.objectStore(META_STORE).put(record.meta)),
-            record.thumbnail === null
-              ? request(tx.objectStore(THUMBNAILS_STORE).delete(record.meta.id))
-              : request(
-                  tx
-                    .objectStore(THUMBNAILS_STORE)
-                    .put({ id: record.meta.id, svg: record.thumbnail }),
-                ),
+            request(tx.objectStore(DOCUMENTS_STORE).put(encoded)),
+            request(tx.objectStore(META_STORE).put(meta)),
+            thumbnail === null
+              ? request(tx.objectStore(THUMBNAILS_STORE).delete(meta.id))
+              : request(tx.objectStore(THUMBNAILS_STORE).put({ id: meta.id, svg: thumbnail })),
           ];
           await Promise.all(writes);
+          return merged.receipt;
         },
       );
     },
@@ -377,7 +392,7 @@ export function createIndexedDbStore(options: IndexedDbStoreOptions = {}): Docum
       return storeOk(typeof svg === "string" ? svg : null);
     },
 
-    rename(id: string, title: string): Promise<StoreResult<void>> {
+    rename(id: string, title: string): Promise<StoreResult<TitleReceipt>> {
       return withStores(
         [DOCUMENTS_STORE, META_STORE],
         "readwrite",
@@ -392,10 +407,12 @@ export function createIndexedDbStore(options: IndexedDbStoreOptions = {}): Docum
           if (encoded === undefined || row === undefined) {
             throw new DOMException(`No saved document with the id "${id}".`, "NotFoundError");
           }
+          const renamed = renamedMeta(row as DocumentMeta, title);
           await Promise.all([
             request(documents.put(renameEncoded(encoded, title))),
-            request(meta.put({ ...(row as DocumentMeta), title })),
+            request(meta.put(renamed)),
           ]);
+          return { title, titleRevision: renamed.titleRevision ?? 0 };
         },
       );
     },

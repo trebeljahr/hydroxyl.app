@@ -47,6 +47,18 @@ export interface DocumentMeta {
   readonly bondCount: number;
   readonly formulaUnicode: string;
   readonly schemaVersion: number;
+  /**
+   * Bumped by every write that changes the stored title — a rename, or a put
+   * carrying a different one. Absent on rows written before it existed, which
+   * read as 0.
+   *
+   * It exists to ORDER title news, not to decide the merge. An editor hears
+   * about a title twice over — the rename broadcast and its own put's receipt
+   * — and the two can arrive in either order; comparing revisions is what
+   * stops the older one being adopted last. The merge itself compares titles
+   * by value, where a rename away and back again is harmless.
+   */
+  readonly titleRevision?: number;
 }
 
 /** One document, split the way the three object stores split it. */
@@ -91,9 +103,41 @@ export function storeFail<T>(kind: StoreErrorKind, message: string): StoreResult
   return { ok: false, error: { kind, message } };
 }
 
+/** The title a write left in storage. */
+export interface TitleReceipt {
+  readonly title: string;
+  readonly titleRevision: number;
+}
+
+export interface PutReceipt extends TitleReceipt {
+  /**
+   * A title renamed elsewhere that this write REPLACED, because the writer had
+   * changed the title too (decision 52: the editor's own title wins). Null
+   * when nothing was overridden.
+   */
+  readonly replacedTitle: string | null;
+}
+
+export interface PutOptions {
+  /**
+   * The title the writer last knew to be in storage for this id.
+   *
+   * THE TITLE IS MERGED PER FIELD, inside the put's own transaction, against
+   * this. A document open in an editor carries whatever title it was loaded
+   * with, and writing that back wholesale undid any rename made from the
+   * recents grid in the meantime. With a base, a stored title that moved away
+   * from it while the record's own title did not is kept rather than
+   * overwritten. Comparing at write time is what makes the rename-vs-save race
+   * irrelevant: IndexedDB serialises the two transactions, and whichever runs
+   * second sees the other's title. Omitted, the record's title is written as
+   * it stands — an import, a duplicate, a journal recovery.
+   */
+  readonly titleBase?: string | undefined;
+}
+
 export interface DocumentStore {
   /** Writes all three rows — document, meta and thumbnail — as one unit. */
-  put(record: StoredRecord): Promise<StoreResult<void>>;
+  put(record: StoredRecord, options?: PutOptions): Promise<StoreResult<PutReceipt>>;
   /** Decodes. The expensive call, and the one the recents grid must not make. */
   get(id: string): Promise<StoreResult<SketchDocument>>;
   /** Newest first. Reads the meta store ONLY. */
@@ -101,6 +145,6 @@ export interface DocumentStore {
   getThumbnail(id: string): Promise<StoreResult<string | null>>;
   /** Renames in the meta store AND in the stored document, so the two cannot
    *  drift into a grid that says one thing and an editor that says another. */
-  rename(id: string, title: string): Promise<StoreResult<void>>;
+  rename(id: string, title: string): Promise<StoreResult<TitleReceipt>>;
   remove(id: string): Promise<StoreResult<void>>;
 }

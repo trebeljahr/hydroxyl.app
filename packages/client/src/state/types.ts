@@ -236,6 +236,16 @@ export interface DocumentSlice {
   applyMoleculeEdit(label: string, edit: MoleculeEdit): void;
   setStylePreset(preset: StylePresetId): void;
   setDocumentTitle(title: string): void;
+  /**
+   * Take on a title that was set OUTSIDE this editor — renamed in another tab
+   * — as a fact about the document rather than as an edit.
+   *
+   * Not undoable, and not merely unrecorded: the title is rewritten into every
+   * snapshot in the history too, so no undo, redo or aborted gesture can bring
+   * the old title back. Title-only steps that this leaves doing nothing are
+   * dropped. `modifiedAt` is left alone, as a rename in storage leaves it.
+   */
+  adoptDocumentTitle(title: string): void;
 
   /** Returns the id of the panel it added, so a caller can scroll to it. */
   addPanel(kind: RepresentationKind, caption?: string): PanelId;

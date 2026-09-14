@@ -21,9 +21,26 @@ import { startAutosave, type AutosaveHandle, type AutosaveOptions } from "./auto
 import { saveDocument } from "./documents";
 import { readJournals, writeJournal } from "./journal";
 import { clearUnsaved, markSaveFailed, markUnsaved, resetSaveState } from "./save-state";
-import { storeFail, type StoreResult } from "./types";
+import { storeFail, storeOk, type StoreResult } from "./types";
 
 let session: AutosaveHandle | null = null;
+
+/** The store the running session saves, for the title news that has to reach
+ *  it from a put's receipt or another tab's rename. */
+let editor: EditorStore | null = null;
+
+/**
+ * The title this tab last knew to be in storage for the open document, and
+ * the revision that said so (-1 when it came from a load, which reads the
+ * document and not its meta row).
+ *
+ * It is the base of the per-field title merge — see `PutOptions.titleBase` —
+ * and the comparison that tells "renamed elsewhere" from "renamed here": the
+ * open document's title differing from it is a title edit this tab has not
+ * saved yet.
+ */
+let titleBase: { readonly id: string; readonly title: string; readonly revision: number } | null =
+  null;
 
 /**
  * The document another tab DELETED while this one had it open, if any.
@@ -37,13 +54,73 @@ let session: AutosaveHandle | null = null;
  */
 let held: { readonly id: string; readonly message: string } | null = null;
 
-/** The autosave sink: `saveDocument`, unless the document is held. */
-function sink(doc: SketchDocument): Promise<StoreResult<void>> {
+/**
+ * The autosave sink: `saveDocument` with the title merged against what this
+ * tab knows is stored, unless the document is held.
+ */
+async function sink(doc: SketchDocument): Promise<StoreResult<void>> {
   if (held !== null && held.id === doc.id) {
     markSaveFailed(held.message);
-    return Promise.resolve(storeFail<void>("rejected", held.message));
+    return storeFail<void>("rejected", held.message);
   }
-  return saveDocument(doc);
+  const base = titleBase !== null && titleBase.id === doc.id ? titleBase.title : undefined;
+  const result = await saveDocument(doc, { titleBase: base });
+  if (!result.ok) return result;
+  const { title, titleRevision, replacedTitle } = result.value;
+  learnStoredTitle(doc.id, title, titleRevision);
+  if (replacedTitle !== null && editor?.getState().document.id === doc.id) {
+    editor
+      .getState()
+      .setStatusMessage(
+        `Another tab renamed this sketch “${replacedTitle}”. ` +
+          `The title changed here, “${title}”, has replaced it.`,
+      );
+  }
+  return storeOk(undefined);
+}
+
+/**
+ * Storage holds `title` for `id` at `revision` — from this tab's own put, or
+ * from another tab's rename. Bring the open document in line.
+ *
+ * Revisions decide the ORDER, never timing: a receipt and a broadcast about
+ * the same document can arrive either way round, and the older one must not
+ * be adopted last. Whether to adopt is decided by the title base. When the
+ * open title still equals it, nothing here touched the title and the stored
+ * one is taken on — outside the undo history and without dirtying the
+ * document. When it does not, this tab has its own unsaved title, which wins
+ * (decision 52): it is kept, and the next save writes it over the rename.
+ */
+export function learnStoredTitle(id: string, title: string, revision: number): void {
+  const store = editor;
+  if (store === null) return;
+  const open = store.getState().document;
+  if (open.id !== id) return;
+  const base = titleBase !== null && titleBase.id === id ? titleBase : null;
+  if (base !== null && revision < base.revision) return;
+  titleBase = { id, title, revision };
+
+  const local = open.metadata.title;
+  if (local === title) return;
+  if (base === null || local === base.title) {
+    const adopt = (): void => {
+      store.getState().adoptDocumentTitle(title);
+    };
+    if (session === null) adopt();
+    else session.adopt(adopt);
+    store.getState().setStatusMessage(`Renamed “${title}” in another tab.`);
+    return;
+  }
+  // Only when the title really moved elsewhere. A receipt for this tab's own
+  // earlier write carries the base itself, and is not a rename.
+  if (base.title !== title) {
+    store
+      .getState()
+      .setStatusMessage(
+        `Another tab renamed this sketch “${title}”. ` +
+          `The title changed here, “${local}”, will replace it on the next save.`,
+      );
+  }
 }
 
 /** Stop saving `id` in this tab — it was deleted elsewhere — and say so. */
@@ -72,6 +149,8 @@ export function startEditorPersistence(
 ): AutosaveHandle {
   stopEditorPersistence();
   held = null;
+  titleBase = null;
+  editor = store;
   session = startAutosave(store, sink, {
     debounceMs: options.debounceMs,
     onResult: options.onResult,
@@ -85,6 +164,7 @@ export function startEditorPersistence(
 export function stopEditorPersistence(): void {
   session?.stop();
   session = null;
+  editor = null;
 }
 
 /**
@@ -99,6 +179,10 @@ export function stopEditorPersistence(): void {
  */
 export function baselineEditorDocument(doc: SketchDocument): void {
   session?.baseline(doc);
+  // Whatever was loaded is what storage is taken to hold. A fixture that was
+  // never stored has no row for the base to be compared against, so its first
+  // save writes its title as it stands.
+  titleBase = { id: doc.id, title: doc.metadata.title, revision: -1 };
   clearUnsaved();
 }
 
@@ -126,7 +210,9 @@ export function flushEditorDocument(): Promise<StoreResult<void> | null> {
  */
 export async function saveEditorDocumentNow(doc: SketchDocument): Promise<StoreResult<void>> {
   releaseEditorDocument(doc.id);
-  return (await flushEditorDocument()) ?? (await saveDocument(doc));
+  // Through the sink rather than `saveDocument`, so a deliberate Save merges
+  // the title exactly as an autosave would.
+  return (await flushEditorDocument()) ?? (await sink(doc));
 }
 
 /**
@@ -180,5 +266,6 @@ export async function recoverJournaledDocuments(): Promise<readonly SketchDocume
 export function resetEditorPersistence(): void {
   stopEditorPersistence();
   held = null;
+  titleBase = null;
   resetSaveState();
 }

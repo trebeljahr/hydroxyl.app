@@ -74,6 +74,7 @@ import {
   flushEditorDocument,
   holdEditorDocument,
   journalEditorDocument,
+  learnStoredTitle,
   loadDocument as readStoredDocument,
   onDocumentChange,
   recoverJournaledDocuments,
@@ -288,13 +289,22 @@ export default function EditorPage(): ReactElement {
         );
         return;
       }
+      if (change.kind === "rename") {
+        // Only the title moved, and it merges: see `learnStoredTitle`. A tab on
+        // an older build sends no title, and then the next save's receipt
+        // brings it instead.
+        if (change.title !== undefined && change.titleRevision !== undefined) {
+          learnStoredTitle(change.id, change.title, change.titleRevision);
+        }
+        return;
+      }
       // Written back by the other tab, so it exists again and there is nothing
       // left to hold. A NOTICE, not a save failure: this tab's own writes are
       // still landing. There is no compare-and-swap on `modifiedAt` and
       // reconciling two divergent edits of one molecule is a different
       // feature, so the honest thing is to say that the last writer wins and
       // let the chemist decide.
-      if (change.kind === "put") releaseEditorDocument(open.id);
+      releaseEditorDocument(open.id);
       editorStore
         .getState()
         .setStatusMessage(

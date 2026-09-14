@@ -54,6 +54,7 @@ import {
   createHistory,
   record as historyRecord,
   redo as historyRedo,
+  rewriteHistory as historyRewrite,
   redoLabel as historyRedoLabel,
   undo as historyUndo,
   undoLabel as historyUndoLabel,
@@ -96,6 +97,28 @@ const undoableEqual: EqualFn<UndoableState> = (a, b) =>
  * selected when the gesture began.
  */
 const documentEqual: EqualFn<UndoableState> = (a, b) => a.document === b.document;
+
+/**
+ * The same drawing, give or take `modifiedAt` — and the selection, which is
+ * never its own undo step (see `documentEqual`).
+ *
+ * Driven by the keys rather than written out, so a document-level field added
+ * later is compared automatically instead of being ignored.
+ */
+function sameApartFromModifiedAt(a: SketchDocument, b: SketchDocument): boolean {
+  if (a === b) return true;
+  const shallowEqual = (x: object, y: object, skip: string): boolean => {
+    const keys = Object.keys(x);
+    if (keys.length !== Object.keys(y).length) return false;
+    return keys.every(
+      (key) =>
+        key === skip ||
+        (Object.hasOwn(y, key) &&
+          (x as Record<string, unknown>)[key] === (y as Record<string, unknown>)[key]),
+    );
+  };
+  return shallowEqual(a, b, "metadata") && shallowEqual(a.metadata, b.metadata, "modifiedAt");
+}
 
 // ---------------------------------------------------------------------------
 // Panel helpers
@@ -354,6 +377,37 @@ export function createDocumentSlice(
         commitDocument("Rename document", {
           ...before,
           metadata: { ...before.metadata, title },
+        });
+      },
+
+      adoptDocumentTitle(title) {
+        const before = snapshot();
+        if (before.document.metadata.title === title) return;
+        // One retitled document per original, so snapshots that shared a
+        // document still share one: a transaction whose gesture has not moved
+        // anything must still commit as a no-op.
+        const retitled = new Map<SketchDocument, SketchDocument>();
+        const rewrite = (state: UndoableState): UndoableState => {
+          const document = state.document;
+          if (document.metadata.title === title) return state;
+          let next = retitled.get(document);
+          if (next === undefined) {
+            next = { ...document, metadata: { ...document.metadata, title } };
+            retitled.set(document, next);
+          }
+          return { document: next, selection: state.selection };
+        };
+        const { history, current } = historyRewrite(
+          get().history,
+          before,
+          rewrite,
+          (a, b) => sameApartFromModifiedAt(a.document, b.document),
+        );
+        set((draft) => {
+          draft.document = castDraft(current.document);
+          // The selection is NOT assigned: it did not change, and it stays the
+          // same reference for the history's reference equality.
+          draft.history = castDraft(history);
         });
       },
 

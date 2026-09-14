@@ -23,7 +23,7 @@ import {
   startEditorPersistence,
 } from "./session";
 import { resetSaveState, saveState } from "./save-state";
-import { storeOk, type StoreResult } from "./types";
+import { storeOk, type PutReceipt, type StoreResult } from "./types";
 
 function doc(title = "Benzene") {
   return createDocument({ molecule: benzene(), title });
@@ -177,7 +177,7 @@ describe("the journal and the store agree about what exists", () => {
     setDocumentStore({
       ...real,
       put: (record) =>
-        new Promise<StoreResult<void>>((resolve) => {
+        new Promise<StoreResult<PutReceipt>>((resolve) => {
           release = () => void real.put(record).then(resolve);
         }),
     });

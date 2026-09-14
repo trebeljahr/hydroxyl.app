@@ -238,6 +238,48 @@ test("a document deleted in another tab does not go on looking saved", async ({ 
   await other.close();
 });
 
+test("a rename from the grid survives the open editor's next autosave", async ({ page }) => {
+  // The editor used to write the whole document back, stale title included,
+  // so renaming a card while its sketch was open in another tab lasted only
+  // until that tab's next edit.
+  await page.goto("/editor");
+  await chargeUpEverything(page);
+  await expect(page.locator(CHARGE)).toContainText("+6");
+  const id = await currentDocId(page);
+  await waitForSaved(page);
+
+  const other = await page.context().newPage();
+  await other.goto("/");
+  const card = other.locator(`[data-recents="card"][data-doc-id="${id}"]`);
+  await expect(card).toBeVisible();
+  other.once("dialog", (dialog) => void dialog.accept("Cyclohexatriene"));
+  await card.locator('[data-recents="rename"]').click();
+  await expect(card.locator('[data-recents="title"]')).toHaveText("Cyclohexatriene");
+
+  // The open editor takes the name on as soon as the rename is announced.
+  const title = page.locator('[data-shell="document-title"]');
+  await expect(title).toHaveValue("Cyclohexatriene");
+
+  // An edit that has nothing to do with the title, then its autosave.
+  await page.keyboard.press("+");
+  await expect(page.locator(CHARGE)).toContainText("+12");
+  await waitForSaved(page);
+
+  // Undoing that edit must not undo the rename with it: the rename was never
+  // an undo step, and the older snapshot no longer carries the old title.
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(page.locator(CHARGE)).toContainText("+6");
+  await expect(title).toHaveValue("Cyclohexatriene");
+  await waitForSaved(page);
+
+  await page.goto(`/editor?doc=${id}`);
+  await expect(page.locator(CHARGE)).toContainText("+6");
+  await expect(title).toHaveValue("Cyclohexatriene");
+  await other.reload();
+  await expect(card.locator('[data-recents="title"]')).toHaveText("Cyclohexatriene");
+  await other.close();
+});
+
 test("an untouched visit to /editor does not litter the recents grid", async ({ page }) => {
   // The fixture is BASELINED rather than saved, so opening the editor and
   // leaving again leaves nothing behind. The first real edit is the first

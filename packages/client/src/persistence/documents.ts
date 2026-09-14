@@ -22,7 +22,14 @@ import { clearJournal, clearJournalSupersededBy, journalSequence } from "./journ
 import { recordFor } from "./record";
 import { markSaveFailed, markSaved, markSaving } from "./save-state";
 import { documentThumbnail } from "./thumbnail";
-import { storeOk, type DocumentStore, type StoreResult } from "./types";
+import {
+  storeOk,
+  type DocumentStore,
+  type PutOptions,
+  type PutReceipt,
+  type StoreResult,
+  type TitleReceipt,
+} from "./types";
 
 let store: DocumentStore | null = null;
 
@@ -44,12 +51,15 @@ export function setDocumentStore(next: DocumentStore | null): void {
  * property of the document and not of the medium: a memory store used in a
  * test should hold the same record the browser would.
  */
-export async function saveDocument(doc: SketchDocument): Promise<StoreResult<void>> {
+export async function saveDocument(
+  doc: SketchDocument,
+  options: PutOptions = {},
+): Promise<StoreResult<PutReceipt>> {
   markSaving();
   // Captured BEFORE the await: a journal written while this write is in flight
   // may hold a newer document than this one, and must survive it.
   const startedAt = journalSequence();
-  const result = await documentStore().put(recordFor(doc, documentThumbnail(doc)));
+  const result = await documentStore().put(recordFor(doc, documentThumbnail(doc)), options);
   if (result.ok) {
     markSaved();
     // The journal was a stand-in for THIS write. Now that the write has
@@ -90,10 +100,21 @@ export function copyOf(
   });
 }
 
-/** Rename, and tell the other tabs. */
-export async function renameDocument(id: string, title: string): Promise<StoreResult<void>> {
+/** Rename, and tell the other tabs — with the title and its revision, so an
+ *  editor holding this id can adopt the name without reading storage. */
+export async function renameDocument(
+  id: string,
+  title: string,
+): Promise<StoreResult<TitleReceipt>> {
   const result = await documentStore().rename(id, title);
-  if (result.ok) announceDocumentChange({ kind: "rename", id });
+  if (result.ok) {
+    announceDocumentChange({
+      kind: "rename",
+      id,
+      title: result.value.title,
+      titleRevision: result.value.titleRevision,
+    });
+  }
   return result;
 }
 

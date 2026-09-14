@@ -97,6 +97,19 @@ export interface AutosaveHandle {
    * asynchronous API which document that is.
    */
   pending(): SketchDocument | null;
+  /**
+   * Run a store update that brings the document IN LINE WITH storage rather
+   * than away from it — a title renamed in another tab — without that update
+   * counting as unsaved work.
+   *
+   * Every change mints a new document, and this loop tells "unsaved" by
+   * reference, so adopting the stored title would otherwise look exactly like
+   * an edit: the indicator would flip to "Unsaved changes" and a write would
+   * go out to store what is already stored. Instead the references this loop
+   * holds for the outgoing document move to the incoming one. Anything that
+   * was genuinely unsaved stays unsaved and is written as usual.
+   */
+  adopt(update: () => void): void;
   stop(): void;
 }
 
@@ -129,6 +142,24 @@ export function startAutosave(
    *  writes of the same document cannot race each other into storage. */
   let inFlight: Promise<StoreResult<void>> | null = null;
 
+  /** Set only for the duration of `adopt`'s update. */
+  let adopting = false;
+
+  /**
+   * Outgoing document -> the one `adopt` replaced it with, so a write still in
+   * flight for the outgoing one confirms its successor. That write lands on
+   * storage that already carries the adopted title — the put merges it — so
+   * the successor is what is actually stored.
+   */
+  const successors = new WeakMap<SketchDocument, SketchDocument>();
+  function latest(doc: SketchDocument): SketchDocument {
+    let current = doc;
+    for (let next = successors.get(current); next !== undefined; next = successors.get(current)) {
+      current = next;
+    }
+    return current;
+  }
+
   function clear(): void {
     if (timer !== undefined) {
       clearTimeout(timer);
@@ -143,11 +174,11 @@ export function startAutosave(
     lastSaved = doc;
     options.onSaving?.(doc);
     const result = await sink(doc);
-    if (result.ok) lastConfirmed = doc;
+    if (result.ok) lastConfirmed = latest(doc);
     if (!result.ok) {
       // Un-claim it: a failed write leaves the document unsaved, so the next
       // change — or a retry — has to try again rather than see it as done.
-      if (lastSaved === doc) lastSaved = null;
+      if (lastSaved === latest(doc)) lastSaved = null;
     }
     options.onResult?.(result, doc);
     return result;
@@ -168,8 +199,7 @@ export function startAutosave(
     }
   }
 
-  const unsubscribe = store.subscribe((state) => {
-    if (stopped) return;
+  function react(state: ReturnType<EditorStore["getState"]>): void {
     // BEFORE the transaction guard, deliberately. A drag in progress is
     // unsaved work and the indicator has to say so; only the WRITE waits for
     // the boundary.
@@ -191,6 +221,11 @@ export function startAutosave(
       if (doc === lastSaved) return;
       void run(doc);
     }, debounceMs);
+  }
+
+  const unsubscribe = store.subscribe((state) => {
+    if (stopped || adopting) return;
+    react(state);
   });
 
   return {
@@ -220,6 +255,21 @@ export function startAutosave(
       // flight loses it. See the field's own comment.
       const doc = store.getState().document;
       return doc === lastConfirmed ? null : doc;
+    },
+    adopt(update) {
+      const before = store.getState().document;
+      adopting = true;
+      try {
+        update();
+      } finally {
+        adopting = false;
+      }
+      const after = store.getState().document;
+      if (after === before) return;
+      successors.set(before, after);
+      if (lastSaved === before) lastSaved = after;
+      if (lastConfirmed === before) lastConfirmed = after;
+      if (!stopped) react(store.getState());
     },
     stop() {
       stopped = true;

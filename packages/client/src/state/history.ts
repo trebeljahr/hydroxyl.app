@@ -217,6 +217,59 @@ export function redo<S>(
   };
 }
 
+/**
+ * Apply `rewrite` to EVERY snapshot — each entry, the transaction base and the
+ * current state — and drop the entries it made redundant.
+ *
+ * For a change that has to hold across the whole timeline rather than become
+ * a step in it. The case that needs it is a title renamed in another tab: made
+ * an ordinary step, one undo would revert the rename; left out of the older
+ * snapshots, undoing an unrelated edit would restore the old title alongside
+ * the old molecule, and autosave would write it back.
+ *
+ * `rewrite` must return its input when it has nothing to change, and should
+ * return the same output for the same input, so that snapshots that shared a
+ * value still share one afterwards — the transaction commit compares by
+ * reference.
+ *
+ * An entry is dropped when its rewritten state is `redundant` with the state
+ * the entry's edit led to, because undoing it would now visibly do nothing.
+ * Every keystroke of a local title edit is such an entry once the title has
+ * been overwritten everywhere. Dropping one leaves its neighbours' labels
+ * true: the state it sat between is indistinguishable from the one kept.
+ */
+export function rewriteHistory<S>(
+  h: History<S>,
+  current: S,
+  rewrite: (state: S) => S,
+  redundant: EqualFn<S>,
+): { history: History<S>; current: S } {
+  const next = rewrite(current);
+
+  const past: HistoryEntry<S>[] = [];
+  const rewrittenPast = h.past.map((entry) => ({ label: entry.label, state: rewrite(entry.state) }));
+  rewrittenPast.forEach((entry, i) => {
+    const after = rewrittenPast[i + 1]?.state ?? next;
+    if (!redundant(entry.state, after)) past.push(entry);
+  });
+
+  // `future` is a stack too: its LAST entry is the next redo, reached from the
+  // current state, and each earlier one is reached from the entry after it.
+  const future: HistoryEntry<S>[] = [];
+  const rewrittenFuture = h.future.map((entry) => ({
+    label: entry.label,
+    state: rewrite(entry.state),
+  }));
+  rewrittenFuture.forEach((entry, i) => {
+    const before = rewrittenFuture[i + 1]?.state ?? next;
+    if (!redundant(before, entry.state)) future.push(entry);
+  });
+
+  const transaction =
+    h.transaction === null ? null : { ...h.transaction, base: rewrite(h.transaction.base) };
+  return { history: { ...h, past, future, transaction }, current: next };
+}
+
 export function canUndo<S>(h: History<S>): boolean {
   return h.transaction === null && h.past.length > 0;
 }
