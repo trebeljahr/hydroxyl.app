@@ -751,6 +751,44 @@ describe("phantom lone-pair centres", () => {
     expect(stereoTopology(dmso).centres).toEqual([]);
   });
 
+  it("issues no sulfinyl letter that depends on drawing S=O rather than S+–O−", () => {
+    // Methyl methanesulfinate CS(=O)OC: Me north on a wedge, O lower left,
+    // OMe lower right. Drawn S=O, the duplicate S on =O ranks it above OMe;
+    // drawn S+–O−, OMe ranks above O−. Same geometry, same parity, opposite
+    // letters, so the double-bonded drawing refuses until the CIP task rules
+    // on duplication. The charge-separated drawing has no duplicate to
+    // disagree about and reads R, as RDKit get_stereo_tags gives for both.
+    function sulfinate(ester: boolean, chargeSeparated: boolean) {
+      return buildMolecule((b) => {
+        const s = b.atom("S", ORIGIN, chargeSeparated ? { charge: 1 } : {}); // a1
+        b.bond(s, b.atom("C", step(ORIGIN, 90)), 1, "wedge");
+        const oxo = b.atom("O", step(ORIGIN, 210), chargeSeparated ? { charge: -1 } : {});
+        b.bond(s, oxo, chargeSeparated ? 1 : 2);
+        const o = b.atom("O", step(ORIGIN, -30), ester ? {} : { charge: -1 });
+        b.bond(s, o);
+        if (ester) b.bond(o, b.atom("C", step(step(ORIGIN, -30), 30)));
+      });
+    }
+    const doubled = sulfinate(true, false);
+    const doubledConfig = stereoConfig(doubled);
+    expect(centre(doubledConfig, "a1").lonePair).toBe(true);
+    expect(centre(doubledConfig, "a1").reading).toEqual({ kind: "specified", parity: 1 });
+    expect(letter(doubled, doubledConfig, "a1")).toBe("ranking-unsupported");
+
+    const separated = sulfinate(true, true);
+    const separatedConfig = stereoConfig(separated);
+    expect(centre(separatedConfig, "a1").reading).toEqual({ kind: "specified", parity: 1 });
+    expect(letter(separated, separatedConfig, "a1")).toBe("R");
+
+    // The sulfinate anion's two oxygens are one ligand once S=O is written
+    // charge-separated. RDKit lists the atom and gives it no letter either.
+    const anion = sulfinate(false, false);
+    expect(letter(anion, stereoConfig(anion), "a1")).toBe("ranking-unsupported");
+
+    // Where rule 1 settles the order before any duplicate is compared, the
+    // letter stands: methyl p-tolyl sulfoxide is R above.
+  });
+
   it("derives a P(III) parity through the lone pair, and not with two methyls", () => {
     function phosphine(ethyl: boolean) {
       return buildMolecule((b) => {

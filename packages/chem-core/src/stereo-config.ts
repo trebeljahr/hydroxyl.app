@@ -58,10 +58,10 @@
  * wedgeHash and pseudo3d lift RAW bond vectors and refuse, as
  * `ambiguous-geometry`, a volume under the relative floor or a sign that
  * differs from the unit-direction reading (decision 29). An undrawn hydrogen
- * or a lone pair sits behind a surrounded centre, and opposite the in-plane
- * resultant of a fan (decision 28). parity.ts states both rules. Two implicit
- * ligands, P(H)(Me)(Et) with the H undrawn, cannot both be placed and read
- * `ambiguous-geometry` (decision 33).
+ * or a lone pair sits opposite the in-plane resultant of the drawn bonds
+ * (decision 28), so an exact T reads `ambiguous-geometry`. parity.ts states
+ * both rules. Two implicit ligands, P(H)(Me)(Et) with the H undrawn, cannot
+ * both be placed and read `ambiguous-geometry` (decision 33).
  *
  * MIRRORS. `flipAtoms` mirrors positions AND exchanges wedge with hash, which is
  * a half-turn about the page's y axis (a proper rotation), so it derives
@@ -123,6 +123,18 @@
  * the CIP task settles how a P=O or S=O is duplicated. A phosphorus ylide
  * (P=C) is not in the list.
  *
+ * THE SAME QUESTION REACHES A SULFINYL CENTRE, but not always. A lone-pair
+ * centre drawn with S=O is ranked twice: as drawn, where the duplicate S on
+ * the oxygen counts, and with every double bond at the centre written
+ * charge-separated (S+–O−), where it does not. The letter is issued only when
+ * both orders agree. Methyl p-tolyl sulfoxide agrees (rule 1 settles O, aryl
+ * C, methyl C before a duplicate is compared) and keeps its letter. Methyl
+ * methanesulfinate does not: drawn S=O the oxo outranks OMe, drawn S+–O− OMe
+ * outranks O−, so one molecule would get two letters, and the S=O drawing
+ * reports `ranking-unsupported`. The sulfinate anion's oxygens are one ligand
+ * charge-separated and it refuses too. A centre already drawn charge-separated
+ * has no duplicate to disagree about and is ranked as drawn.
+ *
  * DEFERRED to cip-ranking-refusals-and-enhanced-stereo (decision 32):
  * pseudoasymmetric centres, ring cis/trans at constitutionally symmetric
  * centres (1,4-disubstituted cyclohexanes), and C=N / N=N units. Their absence
@@ -153,6 +165,7 @@
 import { isAromaticAtom } from "./aromatic.js";
 import { lonePairCount } from "./lewis.js";
 import { bondsAt, getAtom, otherEnd, requireAtom, requireBond } from "./molecule.js";
+import { updateAtom, updateBond } from "./ops.js";
 import {
   liftParity,
   pointsParity,
@@ -554,6 +567,31 @@ function isPhantomLonePairCentre(
 }
 
 /**
+ * `mol` with every multiple bond at `centre` written as a charge-separated
+ * single bond: order 1, the centre's charge raised and the partner's lowered
+ * by the orders removed. Ids are untouched, so ligand records still apply.
+ * Only ever used for ranking, never returned.
+ */
+function chargeSeparatedAt(mol: Molecule, centre: AtomId): Molecule {
+  let out = mol;
+  for (const bond of bondsAt(mol, centre)) {
+    const shift = bond.order - 1;
+    if (shift === 0) continue;
+    const partner = otherEnd(bond, centre);
+    out = updateBond(out, bond.id, { order: 1 });
+    out = updateAtom(out, centre, { charge: requireAtom(out, centre).charge + shift });
+    out = updateAtom(out, partner, { charge: requireAtom(out, partner).charge - shift });
+  }
+  return out;
+}
+
+function sameRanking(a: Ranking | "not-stereogenic", b: Ranking | "not-stereogenic"): boolean {
+  if (a === "not-stereogenic" || b === "not-stereogenic") return a === b;
+  if (a.kind !== "ranked" || b.kind !== "ranked") return false;
+  return a.order.length === b.order.length && a.order.every((ref, i) => sameRef(ref, b.order[i]!));
+}
+
+/**
  * Pairwise ranking of a centre's ligands. Every pair is compared, so an
  * `identical` pair anywhere proves the atom non-stereogenic even when some
  * other pair could not be ordered.
@@ -639,8 +677,17 @@ function computeTopology(mol: Molecule): TopologyRecord {
     if (implicitHydrogens === 1) ligands.push({ kind: "implicitHydrogen" });
     if (lonePair) ligands.push({ kind: "lonePair" });
 
-    const ranking = rankCentre(mol, atomId, ligands);
+    let ranking = rankCentre(mol, atomId, ligands);
     if (ranking === "not-stereogenic") continue;
+    // A sulfinyl letter must not depend on S=O versus S+–O− (module header).
+    if (
+      lonePair &&
+      ranking.kind === "ranked" &&
+      bonds.some((bond) => bond.order !== 1) &&
+      !sameRanking(ranking, rankCentre(chargeSeparatedAt(mol, atomId), atomId, ligands))
+    ) {
+      ranking = { kind: "undetermined", reason: "ranking-unsupported" };
+    }
 
     centres.push(
       Object.freeze({
@@ -1215,8 +1262,8 @@ function segmentsTouch(a: Vec2, b: Vec2, c: Vec2, d: Vec2, eps: number): boolean
  * atom's parity, over (previous ring atom, next ring atom, substituent, fourth
  * ligand) in walk order. Every mark at the atom votes, a wedge drawn on a RING
  * bond included, so ringFace and `stereoConfig` never disagree about whether
- * the drawing states the face, and the fan and ambiguity rules of parity.ts
- * apply unchanged. For an ideal tetrahedron that volume has the sign of
+ * the drawing states the face, and the placement and ambiguity rules of
+ * parity.ts apply unchanged. For an ideal tetrahedron that volume has the sign of
  * `((prev − A) × (next − A)) · (S − A)`, so the substituent is on the side of
  * the local ring normal the volume's sign says, and the local normal is
  * compared with the reference normal through the drawn turn at A. A straight

@@ -101,14 +101,20 @@ function propan2olWedged() {
  * The smallest molecule whose ranking NEEDS the duplicated-atom convention: an
  * aldehyde carbon has one real oxygen and one duplicate of it, and only that
  * duplicate lifts it above a hydroxymethyl's single oxygen plus two hydrogens.
+ *
+ * C3 sits at −40°, not −30°. With C1 at 150° and C3 at −30° the chain runs
+ * straight through C2, an exact T: which end leans toward the reader is not
+ * drawn, so that drawing fits both enantiomers and reads `ambiguous-geometry`
+ * (pinned in "the shared lift" below). Ten degrees off the line it is S, and
+ * RDKit get_stereo_tags agrees.
  */
-function glyceraldehydeWedged() {
+function glyceraldehydeWedged(c3Degrees = -40) {
   return buildMolecule((b) => {
     const c2 = b.atom("C", ORIGIN);
     const c1 = b.atom("C", step(ORIGIN, 150));
     b.bond(c1, b.atom("O", step(step(ORIGIN, 150), 90)), 2);
-    const c3 = b.atom("C", step(ORIGIN, -30));
-    b.bond(c3, b.atom("O", step(step(ORIGIN, -30), -90)), 1);
+    const c3 = b.atom("C", step(ORIGIN, c3Degrees));
+    b.bond(c3, b.atom("O", step(step(ORIGIN, c3Degrees), -90)), 1);
     b.bond(c2, c1, 1);
     b.bond(c2, c3, 1);
     b.bond(c2, b.atom("O", step(ORIGIN, 90)), 1, "wedge");
@@ -685,6 +691,23 @@ describe("the shared lift (decisions 28 and 29)", () => {
   it("keeps the letters of surrounded centres", () => {
     expect(cipDescriptor(bromochlorofluoromethaneR(), "a1")).toEqual({ kind: "R" });
     expect(cipDescriptor(halomethane([90, -30, 210], ["hash"]), "a1")).toEqual({ kind: "S" });
+  });
+
+  it("refuses, deliberately, an exact T, and passes through a refusal on either side of it", () => {
+    // The chain drawn straight through the centre, OH wedged across it. The
+    // letter used to be S at the T and R two degrees past it. Well clear of
+    // the line both readers agree with RDKit get_stereo_tags: S at −40°, R at
+    // −20°. Within about 5° of the line RDKit applies a tie-break of its own.
+    const ambiguous = { kind: "undetermined", reason: "ambiguous-geometry" };
+    expect(cipDescriptor(glyceraldehydeWedged(-30), "a1")).toEqual(ambiguous);
+    expect(cipDescriptor(glyceraldehydeWedged(-29), "a1")).toEqual(ambiguous);
+    expect(cipDescriptor(glyceraldehydeWedged(-31), "a1")).toEqual(ambiguous);
+    expect(cipDescriptor(glyceraldehydeWedged(-40), "a1")).toEqual({ kind: "S" });
+    expect(cipDescriptor(glyceraldehydeWedged(-20), "a1")).toEqual({ kind: "R" });
+    // The symmetric stem-wedge T is its own mirror image.
+    expect(cipDescriptor(halomethane([0, 90, -90], ["wedge"]), "a1")).toEqual(ambiguous);
+    expect(cipDescriptor(halomethane([0, 80, -80], ["wedge"]), "a1")).toEqual({ kind: "R" });
+    expect(cipDescriptor(halomethane([0, 100, -100], ["wedge"]), "a1")).toEqual({ kind: "S" });
   });
 
   it("refuses, deliberately, an X drawing whose letter flips under a half-degree nudge", () => {

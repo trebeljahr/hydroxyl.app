@@ -95,10 +95,14 @@
  * deliberate, not regressions (decision 29): a centre whose lifted volume is
  * under the relative floor, or whose sign differs between raw bond vectors and
  * unit directions, reads `ambiguous-geometry` where it used to get a letter
- * that a small nudge would flip; and a CH centre drawn as a fan (all three
- * bonds in one half-plane, as at a bridgehead) puts its hydrogen opposite the
- * fan rather than straight behind the centre, which corrects letters that
- * were the enantiomer's. Surrounded centres keep the letters they had.
+ * that a small nudge would flip; and the hydrogen of a CH centre sits opposite
+ * the in-plane resultant of its drawn bonds rather than straight behind the
+ * centre. At a fan (all three bonds in one half-plane, as at a bridgehead) that
+ * corrects letters that were the enantiomer's. Surrounded centres keep their
+ * letters, except that an exact T (two plain bonds collinear through the
+ * centre, which fits both enantiomers) and a band of about 1.5° either side of
+ * it now read `ambiguous-geometry`. The old reading gave the T a letter and
+ * flipped to the other one two degrees past it.
  *
  * COST. Perception is a figure-scale operation, memoised LAZILY and PER ATOM
  * on the MOLECULE INSTANCE in a WeakMap, the way `adjacency()` is keyed. Lazy
@@ -781,9 +785,11 @@ function compareSubstituents(
  * and unit directions, comes back `ambiguous-geometry` rather than as a
  * letter. The X drawing (wedge and hash opposite each other, two plain bonds
  * near the other diagonal) is the named case: before, it flipped R and S under
- * a half-degree nudge. And a CH centre drawn as a fan, all three bonds in one
- * half-plane, now places its hydrogen opposite the fan instead of straight
- * behind the centre, which is where the old reading gave the enantiomer.
+ * a half-degree nudge. The exact T (two plain bonds collinear through the
+ * centre) is the other: it fits both enantiomers. And a CH centre's hydrogen
+ * now sits opposite the resultant of the drawn bonds instead of straight
+ * behind the centre, which at a fan is where the old reading gave the
+ * enantiomer.
  */
 function chiralityFrom(
   mol: Molecule,

@@ -20,25 +20,39 @@
  *
  * THE IMPLICIT LIGAND (an undrawn hydrogen, or a phantom lone pair) has no
  * position, so the lift supplies one. Its z is opposite the drawn marks: a
- * wedge to one neighbour puts it behind the page. Its in-plane position
- * depends on how the drawn bonds are spread (decision 28):
+ * wedge to one neighbour puts it behind the page. In the plane it sits
+ * OPPOSITE THE RESULTANT, at minus the sum of the drawn offsets, which is
+ * where the fourth bond of a real tetrahedron projects (decision 28). The
+ * same rule applies however the drawn bonds are spread:
  *
- *   SURROUNDED  no angular gap between neighbouring drawn bonds exceeds a
- *               half-turn, as in the textbook CHBrClF. The implicit ligand
- *               sits at the centre in x and y. This is what stereo.ts always
- *               did, so no letter on a surrounded centre changes. An exact T
- *               (two drawn bonds opposite each other, a gap of exactly 180°)
- *               counts as surrounded: the fan placement would put the
- *               implicit ligand in one plane with a wedge drawn across the T.
- *   FAN         one gap exceeds a half-turn, so the drawn bonds sit strictly
- *               inside a half-plane, as at a bridgehead of a fused or bridged
- *               drawing (tropane, 1-azabicyclo[3.2.1]octane). The implicit
- *               ligand sits opposite the in-plane resultant, at minus the sum
- *               of the drawn offsets,
- *               which is where the fourth bond of a real tetrahedron projects.
- *               Putting it at the centre instead read Br 0° wedge / Cl +75° /
+ *   FAN         the drawn bonds sit strictly inside a half-plane, as at a
+ *               bridgehead of a fused or bridged drawing (tropane,
+ *               1-azabicyclo[3.2.1]octane). Putting the implicit ligand at the
+ *               centre, as stereo.ts once did, read Br 0° wedge / Cl +75° /
  *               F −75° as S where the geometry and RDKit give R, and read a
  *               regular-hexagon bridgehead as having no volume at all.
+ *   SURROUNDED  every angular gap is under a half-turn, as in the textbook
+ *               CHBrClF. With unit directions, the centre placement and the
+ *               resultant placement always give the same sign here, and a sign
+ *               is only issued when the raw reading agrees with the unit one,
+ *               so no surrounded centre changes letter. A near-T drawing can
+ *               change from a letter to a refusal, never to the other letter.
+ *   EXACT T     two drawn bonds collinear through the centre. The plane that
+ *               holds them also holds the viewing axis, and which of the two
+ *               leans toward the reader is not drawn, so the drawing fits both
+ *               enantiomers (a stem-wedge T is mirror-symmetric outright). The
+ *               resultant placement gives it zero volume: with one mark on bond
+ *               a and plain bonds b and c, the volume is exactly 4·(b × c).
+ *               A nudge either way therefore passes through the floor before
+ *               it reaches the other letter. Switching placement at a 180°
+ *               gap instead jumps from S at the T to R two degrees later with
+ *               no refusal between.
+ *
+ *   RDKit reads a near-T drawing with a tie-break of its own: it gives the
+ *   exact T a letter, and refuses about 5° either side of it. Within those few
+ *   degrees chem-core's letter can be the other one. That band is a known
+ *   disagreement over a drawing that fits both enantiomers, not a verified
+ *   letter.
  *
  * THE AMBIGUITY GUARD (decision 29). A sign is reported only when both hold:
  *
@@ -118,21 +132,6 @@ const AMBIGUOUS: LiftOutcome = Object.freeze({ kind: "ambiguous" });
 const PLUS: LiftOutcome = Object.freeze({ kind: "specified", parity: 1 });
 const MINUS: LiftOutcome = Object.freeze({ kind: "specified", parity: -1 });
 
-/**
- * True when the directions sit strictly inside a half-plane: the widest
- * angular gap between neighbouring directions exceeds a half-turn. The
- * tolerance keeps float noise at an exact T on the surrounded side.
- */
-function insideHalfPlane(directions: readonly Vec2[]): boolean {
-  const angles = directions.map((d) => Math.atan2(d.y, d.x)).sort((a, b) => a - b);
-  let widest = 0;
-  for (let i = 0; i < angles.length; i++) {
-    const next = i + 1 < angles.length ? angles[i + 1]! : angles[0]! + 2 * Math.PI;
-    widest = Math.max(widest, next - angles[i]!);
-  }
-  return widest > Math.PI + 1e-9;
-}
-
 function signedVolume(points: readonly LiftedPoint[]): number {
   const [p0, p1, p2, p3] = points as [LiftedPoint, LiftedPoint, LiftedPoint, LiftedPoint];
   const ax = p0.x - p3.x;
@@ -193,23 +192,19 @@ export function liftParity(ligands: readonly LiftLigand[]): LiftOutcome {
 
   const lengths = drawn.map((d) => d.length).sort((a, b) => b - a);
   const rawScale = PSEUDO_3D_DEPTH * lengths[0]! * (lengths[1] ?? lengths[0]!);
-  const fan = implicit === 1 && insideHalfPlane(drawn.map((d) => d.offset));
 
   let agreed: TetrahedralParity | undefined;
   for (const unit of [false, true]) {
     const offsets = drawn.map((d) =>
       unit ? { x: d.offset.x / d.length, y: d.offset.y / d.length } : d.offset,
     );
-    let implicitAt: Vec2 = { x: 0, y: 0 };
-    if (fan) {
-      const sx = offsets.reduce((s, o) => s + o.x, 0);
-      const sy = offsets.reduce((s, o) => s + o.y, 0);
-      // Directions strictly inside a half-plane cannot cancel; the check only
-      // guards against float overflow turning the resultant into noise.
-      const longest = unit ? 1 : lengths[0]!;
-      if (!(Math.hypot(sx, sy) > 1e-9 * longest)) return AMBIGUOUS;
-      implicitAt = { x: -sx, y: -sy };
-    }
+    // Opposite the resultant. A resultant that cancels (a regular surrounded
+    // drawing) leaves the implicit ligand at the centre, which is the same
+    // point, so no case needs a branch.
+    const implicitAt: Vec2 = {
+      x: -offsets.reduce((s, o) => s + o.x, 0),
+      y: -offsets.reduce((s, o) => s + o.y, 0),
+    };
     const points: LiftedPoint[] = [];
     let k = 0;
     for (const ligand of ligands) {
