@@ -453,6 +453,25 @@ describe("fan drawings and the ambiguity guard", () => {
     }
   });
 
+  it("refuses a wedge and a hash on opposite bonds at any angle, but not under pseudo3d (decision 42)", () => {
+    // RDKit 2025.03 refuses these drawings ('?') at 30° and 60° too.
+    for (const fourth of [20, 30, 60, 80]) {
+      const mol = halomethane([135, 315, 225, fourth], ["wedge", "hash"]);
+      expect(letter(mol, stereoConfig(mol), "a1")).toBe("ambiguous-geometry");
+      expect(cipLetter(mol, "a1")).toBe("ambiguous-geometry");
+      // The same geometry as a genuine projection: a toward ligand opposite
+      // an away ligand is what a tetrahedron seen along a general axis looks
+      // like, so the pseudo-3D reader still states a configuration.
+      const bare = halomethane([135, 315, 225, fourth], []);
+      const read = readOk(readConfig({ mol: bare }, { kind: "pseudo3d", depth: { a2: 1, a3: -1 } }));
+      expect(centre(read, "a1").reading.kind).toBe("specified");
+    }
+    // Wedge and hash on ADJACENT bonds is the ordinary drawing and keeps its letter.
+    const adjacent = halomethane([135, 225, 315, 45], ["wedge", "hash"]);
+    expect(letter(adjacent, stereoConfig(adjacent), "a1")).toMatch(/^[RS]$/);
+    expect(cipLetter(adjacent, "a1")).toBe(letter(adjacent, stereoConfig(adjacent), "a1"));
+  });
+
   it("refuses a drawing whose letter depends on how long its bonds are", () => {
     // Raw vectors and unit directions give opposite signs. Before decision 29
     // stereo-config read R and stereo.ts read S on this very drawing.

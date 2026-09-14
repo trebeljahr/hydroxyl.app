@@ -811,7 +811,7 @@ function chiralityFrom(
       depth: s.outOfPlane,
     });
   }
-  const lifted = liftParity(ligands);
+  const lifted = liftParity(ligands, { refuseOpposedMarks: true });
   if (lifted.kind === "flat") return { kind: "undetermined", reason: "no-stereo-bond" };
   if (lifted.kind === "ambiguous") return { kind: "undetermined", reason: "ambiguous-geometry" };
   return lifted.parity < 0 ? { kind: "R" } : { kind: "S" };

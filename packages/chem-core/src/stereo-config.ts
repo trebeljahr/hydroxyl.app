@@ -168,6 +168,7 @@ import { bondsAt, getAtom, otherEnd, requireAtom, requireBond } from "./molecule
 import { updateAtom, updateBond } from "./ops.js";
 import {
   liftParity,
+  type LiftOptions,
   pointsParity,
   PSEUDO_3D_DEPTH,
   type LiftedPoint,
@@ -861,6 +862,7 @@ function readDrawn(
   centre: CentreLigands,
   depthOf: (neighbour: AtomId, bond: Bond) => number,
   silentReason: ConfigUndeterminedReason,
+  options: LiftOptions = {},
 ): CentreReading {
   const bonds = bondsByNeighbour(ctx.mol, centre.atomId);
   const origin = positionOf(ctx, centre.atomId);
@@ -876,7 +878,7 @@ function readDrawn(
     });
   }
   for (let k = 0; k < implicitCount(centre); k++) ligands.push({ kind: "implicit" });
-  return fromLift(liftParity(ligands), silentReason);
+  return fromLift(liftParity(ligands, options), silentReason);
 }
 
 function fromLift(
@@ -980,7 +982,9 @@ function readCentre(
   let lift: Lift | CentreReading;
   switch (convention.kind) {
     case "wedgeHash":
-      lift = readDrawn(ctx, centre, (_, bond) => markAt(bond, centre.atomId), "no-stereo-bond");
+      lift = readDrawn(ctx, centre, (_, bond) => markAt(bond, centre.atomId), "no-stereo-bond", {
+        refuseOpposedMarks: true,
+      });
       break;
     case "pseudo3d": {
       const depth = convention.depth;
@@ -1349,7 +1353,7 @@ export function ringFace(
       drawn(next),
       drawn(substituentId),
       fourth === undefined ? { kind: "implicit" } : drawn(otherEnd(fourth, atomId)),
-    ]);
+    ], { refuseOpposedMarks: true });
     if (lifted.kind === "flat") return { kind: "undetermined", reason: "no-stereo-bond" };
     if (lifted.kind === "ambiguous") return { kind: "undetermined", reason: "ambiguous-geometry" };
     const p = offsetTo(previous);

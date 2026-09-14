@@ -68,6 +68,10 @@
  * 135°, hash 315°, plain 225° and 45°) within about three degrees either side
  * of the exact X, where the sign flips. Ordinary hand drawings sit far above
  * it: the textbook CHBrClF scores 3.46.
+ *
+ * A WEDGE/HASH reader also passes `refuseOpposedMarks` (decision 42): a wedge
+ * and a hash on non-adjacent bonds of a four-coordinate centre reads
+ * `ambiguous` at every angle, not only inside the floor band, as RDKit reads it.
  */
 
 import type { Vec2 } from "./vec.js";
@@ -166,7 +170,43 @@ export function pointsParity(
  * Lifts four ligands, in the order given, and reads their parity under the
  * rules in the module header.
  */
-export function liftParity(ligands: readonly LiftLigand[]): LiftOutcome {
+/**
+ * Options for `liftParity`.
+ *
+ *   `refuseOpposedMarks`  the ligands come from a WEDGE/HASH drawing. A wedge
+ *     and a hash on NON-ADJACENT bonds of a four-coordinate centre (the "X"
+ *     pattern) read `ambiguous` whatever the angles. IUPAC discourages the
+ *     pattern, and RDKit refuses it: the letter it would get depends on which
+ *     plain bond leans which way, which the marks do not say (decision 42).
+ *     Not for pseudo-3D placements: a real tetrahedron projected along a
+ *     general axis legitimately puts a toward and an away ligand opposite
+ *     each other.
+ */
+export interface LiftOptions {
+  readonly refuseOpposedMarks?: boolean;
+}
+
+/**
+ * Whether a wedge and a hash sit on non-adjacent bonds in the angular order
+ * around a centre with exactly four drawn ligands.
+ */
+function hasOpposedMarks(
+  drawn: readonly { readonly offset: Vec2; readonly z: number }[],
+): boolean {
+  if (drawn.length !== 4) return false;
+  const around = drawn
+    .map((d) => ({ angle: Math.atan2(d.offset.y, d.offset.x), z: d.z }))
+    .sort((a, b) => a.angle - b.angle);
+  for (let i = 0; i < 2; i++) {
+    if (around[i]!.z * around[i + 2]!.z < 0) return true;
+  }
+  return false;
+}
+
+export function liftParity(
+  ligands: readonly LiftLigand[],
+  options: LiftOptions = {},
+): LiftOutcome {
   if (ligands.length !== 4) return AMBIGUOUS;
   const drawn: { readonly offset: Vec2; readonly z: number; readonly length: number }[] = [];
   let implicit = 0;
@@ -186,6 +226,9 @@ export function liftParity(ligands: readonly LiftLigand[]): LiftOutcome {
   }
   if (marked === 0) return FLAT;
   if (implicit > 1) return AMBIGUOUS;
+  if (options.refuseOpposedMarks === true && implicit === 0 && hasOpposedMarks(drawn)) {
+    return AMBIGUOUS;
+  }
   // The implicit ligand goes opposite the marks. Marks that cancel leave it no
   // side, and a picture that contradicts itself is not merely silent.
   if (implicit === 1 && depthSum === 0) return AMBIGUOUS;

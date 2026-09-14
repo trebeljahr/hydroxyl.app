@@ -143,6 +143,17 @@ describe("liftParity", () => {
     );
   });
 
+  it("refuses opposed wedge and hash only when asked to read marks (decision 42)", () => {
+    const x = [drawn(135, 1), drawn(315, -1), drawn(225), drawn(60)];
+    expect(liftParity(x, { refuseOpposedMarks: true })).toEqual({ kind: "ambiguous" });
+    expect(liftParity(x).kind).toBe("specified");
+    // Adjacent wedge and hash, and a three-bond centre, are untouched.
+    expect(liftParity([drawn(135, 1), drawn(225, -1), drawn(315), drawn(45)], { refuseOpposedMarks: true }).kind)
+      .toBe("specified");
+    expect(liftParity([drawn(90, 1), drawn(-30), drawn(210), H], { refuseOpposedMarks: true }).kind)
+      .toBe("specified");
+  });
+
   it("refuses when the raw and unit-direction readings disagree, even above the floor", () => {
     // Raw volume −0.33, unit volume +1.38 (both relative): the sign depends on
     // how long the lines were drawn.
