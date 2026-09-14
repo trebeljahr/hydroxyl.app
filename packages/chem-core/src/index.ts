@@ -29,5 +29,8 @@ export * from "./templates.js";
 export * from "./lewis.js";
 export * from "./condensed.js";
 // Perception LAST among the chemistry modules: it reads valence, rings and
-// aromaticity, and nothing reads it.
+// aromaticity, and only stereo-config reads it.
 export * from "./stereo.js";
+// Coordinate-free configuration and reading conventions, built on stereo.ts's
+// CIP ranking.
+export * from "./stereo-config.js";

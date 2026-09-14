@@ -594,6 +594,27 @@ function rankBranches(
   return { kind: "identical" };
 }
 
+/**
+ * The outcome of ranking two substituent branches seen from one centre.
+ * Exported for stereo-config.ts, which ranks a phantom lone pair and treats an
+ * explicit protium atom as an implicit hydrogen before it gets here.
+ */
+export type LigandPairOrder = BranchOrder;
+
+/**
+ * `rankBranches`, exported unchanged: rule 1, then the extended key whose only
+ * job is to turn a false "identical" into `ranking-unsupported`. Both branch
+ * roots must be real atoms bonded to `centre`.
+ */
+export function rankLigandPair(
+  mol: Molecule,
+  centre: AtomId,
+  a: { readonly atomId: AtomId; readonly bondId: BondId },
+  b: { readonly atomId: AtomId; readonly bondId: BondId },
+): LigandPairOrder {
+  return rankBranches(mol, centre, a, b);
+}
+
 // ---------------------------------------------------------------------------
 // Tetrahedral centres
 // ---------------------------------------------------------------------------

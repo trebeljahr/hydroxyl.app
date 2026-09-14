@@ -74,7 +74,7 @@ const NUMERIC_TAIL = /^(\D*)(\d+)$/;
  * integer numerically, then the whole string to break remaining ties (`a01`
  * and `a1` share a prefix and a number but are different ids).
  */
-function compareIds(a: string, b: string): number {
+export function compareIds(a: string, b: string): number {
   const ma = NUMERIC_TAIL.exec(a);
   const mb = NUMERIC_TAIL.exec(b);
   const prefixA = ma ? ma[1]! : a;
