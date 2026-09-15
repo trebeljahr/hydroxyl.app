@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-46.076 -18.963 96.594 39.406" width="96.594px" height="39.406px">
   <line id="bond:b3:line" data-bond="b3" x1="7.618" y1="0" x2="15.918" y2="0" stroke="#000000" stroke-width="1"/>
-  <text id="atom:a1:label" data-atom="a1" x="-38.076" y="5.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>H</tspan><tspan font-size="12" dy="4.167">3</tspan><tspan font-size="12" dy="-10">13</tspan><tspan dy="5.833">C</tspan></text>
-  <text id="atom:a2:label" data-atom="a2" x="17.518" y="5.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>O</tspan><tspan>H</tspan></text>
+  <text id="atom:a1:label" data-atom="a1" x="-38.076" y="5.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan><tspan font-size="12" dy="4.167">3</tspan><tspan font-size="12" dy="-10">13</tspan><tspan dy="5.833">C</tspan></text>
+  <text id="atom:a2:label" data-atom="a2" x="17.518" y="5.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>O</tspan><tspan>H</tspan></text>
 </svg>

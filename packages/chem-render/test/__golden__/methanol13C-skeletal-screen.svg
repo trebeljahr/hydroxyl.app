@@ -2,6 +2,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-52.55 -26.52 130.33 54.47" width="130.33px" height="54.47px">
   <rect data-decoration="background" x="-52.55" y="-26.52" width="130.33" height="54.47" fill="#ffffff"/>
   <line id="bond:b3:line" data-bond="b3" x1="8.78" y1="0" x2="34.78" y2="0" stroke="#1f2937" stroke-width="2"/>
-  <text id="atom:a1:label" data-atom="a1" x="-36.55" y="5.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start" dominant-baseline="alphabetic"><tspan>H</tspan><tspan font-size="11.52" dy="4">3</tspan><tspan font-size="11.52" dy="-9.6">13</tspan><tspan dy="5.6">C</tspan></text>
-  <text id="atom:a2:label" data-atom="a2" x="37.78" y="5.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start" dominant-baseline="alphabetic"><tspan>O</tspan><tspan>H</tspan></text>
+  <text id="atom:a1:label" data-atom="a1" x="-36.55" y="5.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start"><tspan>H</tspan><tspan font-size="11.52" dy="4">3</tspan><tspan font-size="11.52" dy="-9.6">13</tspan><tspan dy="5.6">C</tspan></text>
+  <text id="atom:a2:label" data-atom="a2" x="37.78" y="5.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start"><tspan>O</tspan><tspan>H</tspan></text>
 </svg>

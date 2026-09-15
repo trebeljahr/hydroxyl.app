@@ -4,5 +4,5 @@
   <line id="bond:b5:line" data-bond="b5" x1="-20.785" y1="-12" x2="-33.487" y2="-4.666" stroke="#000000" stroke-width="1"/>
   <circle id="atom:a1:dot" data-atom="a1" cx="0" cy="0" r="0.9" fill="#000000"/>
   <circle id="atom:a2:dot" data-atom="a2" cx="-20.785" cy="-12" r="0.9" fill="#000000"/>
-  <text id="atom:a3:label" data-atom="a3" x="-60.087" y="5.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>H</tspan><tspan>O</tspan></text>
+  <text id="atom:a3:label" data-atom="a3" x="-60.087" y="5.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan><tspan>O</tspan></text>
 </svg>

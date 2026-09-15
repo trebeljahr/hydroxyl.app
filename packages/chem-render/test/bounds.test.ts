@@ -135,12 +135,8 @@ function measure(
           : p.anchor === "middle"
             ? p.origin.x - width / 2
             : p.origin.x - width;
-      const baselineY =
-        p.baseline === "alphabetic"
-          ? p.origin.y
-          : p.baseline === "middle"
-            ? p.origin.y + (ascent - descent) / 2
-            : p.origin.y + ascent;
+      // A run's origin is always its alphabetic baseline; there is no mode.
+      const baselineY = p.origin.y;
       growBox(left, baselineY - ascent, left + width, baselineY + descent);
     } else {
       throw new Error(`measure() does not know how to size a ${p.type}`);

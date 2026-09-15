@@ -126,6 +126,15 @@ export interface MeasureRunOptions {
   readonly fontSizePx: number;
   readonly subscriptScale: number;
   readonly anchor: "start" | "middle" | "end";
+  /**
+   * Which line of the MEASURED box `origin.y` names: the baseline, the centre
+   * of the ink band, or its top. A measuring convenience only — it is not
+   * SVG's `dominant-baseline` and must never be emitted as one. CSS `middle`
+   * is half the x-height, which Chromium and Inkscape draw about 0.08 em
+   * higher than this `middle`, and Illustrator ignores the property. A caller
+   * that centres a run this way converts to a baseline origin with
+   * `baselineYPx` before building a primitive.
+   */
   readonly baseline: "alphabetic" | "middle" | "hanging";
 }
 

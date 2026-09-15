@@ -401,7 +401,7 @@ describe("descriptor labels", () => {
                 fontSizePx: run.fontSizePx,
                 subscriptScale: style.subscriptScale,
                 anchor: run.anchor,
-                baseline: run.baseline,
+                baseline: "alphabetic",
               },
               BUNDLED_MEASURER,
             ),

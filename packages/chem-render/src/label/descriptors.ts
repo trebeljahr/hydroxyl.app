@@ -32,6 +32,7 @@
 import type { ScenePoint, TextSpan } from "../scene/types.js";
 import type { RenderStyle } from "../style.js";
 import { measurerFor, measureTextRun, textRunRect } from "../text/measurer.js";
+import type { TextRunBox } from "../text/measurer.js";
 import type { LabelBox, LabelObstacle } from "./placement.js";
 
 export const DESCRIPTOR_PLACEMENT = Object.freeze({
@@ -59,7 +60,13 @@ export interface DescriptorSegment {
 }
 
 export interface DescriptorPlacement {
-  /** Origin for a middle-anchored, middle-baselined text run. */
+  /**
+   * Origin for a middle-anchored run, ON THE ALPHABETIC BASELINE.
+   *
+   * The search centres the run on its candidate point, but the origin handed
+   * back is already dropped to the baseline, because a `TextRunPrimitive` has
+   * no baseline mode: see its `origin` for why.
+   */
   readonly origin: ScenePoint;
   readonly fontSizePx: number;
   /** The measured box, for the caller to feed back in as an obstacle. */
@@ -152,7 +159,7 @@ export function placeDescriptor(request: DescriptorRequest): DescriptorPlacement
       const rect = textRunRect(box, origin);
       const padded = pad(rect, DESCRIPTOR_PLACEMENT.clearancePx);
       const candidate: DescriptorPlacement = {
-        origin,
+        origin: onBaseline(origin, box),
         fontSizePx,
         box: padded,
         clear: true,
@@ -166,12 +173,23 @@ export function placeDescriptor(request: DescriptorRequest): DescriptorPlacement
   // out rather than asserted so the type stays honest.
   return (
     fallback ?? {
-      origin: request.anchor,
+      origin: onBaseline(request.anchor, box),
       fontSizePx,
       box: pad(textRunRect(box, request.anchor), DESCRIPTOR_PLACEMENT.clearancePx),
       clear: false,
     }
   );
+}
+
+/**
+ * The alphabetic-baseline origin of a run measured as centred on `centre`.
+ *
+ * The run keeps exactly the box it was measured into: `textRunRect` of the
+ * alphabetic origin adds the same offset in the same order, so a descriptor's
+ * obstacle box and the viewBox cut around it are unchanged to the bit.
+ */
+function onBaseline(centre: ScenePoint, box: TextRunBox): ScenePoint {
+  return { x: centre.x, y: centre.y + box.baselineYPx };
 }
 
 /**

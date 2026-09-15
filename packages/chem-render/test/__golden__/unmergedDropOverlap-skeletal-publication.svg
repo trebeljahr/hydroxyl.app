@@ -5,7 +5,7 @@
   <line id="bond:b8:line" data-bond="b8" x1="41.569" y1="-0.72" x2="41.569" y2="-17.387" stroke="#000000" stroke-width="1"/>
   <circle id="atom:a1:dot" data-atom="a1" cx="0" cy="0" r="0.9" fill="#000000"/>
   <circle id="atom:a2:dot" data-atom="a2" cx="20.785" cy="-12" r="0.9" fill="#000000"/>
-  <text id="atom:a3:label" data-atom="a3" x="35.087" y="5.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>O</tspan><tspan>H</tspan></text>
+  <text id="atom:a3:label" data-atom="a3" x="35.087" y="5.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>O</tspan><tspan>H</tspan></text>
   <circle id="atom:a6:dot" data-atom="a6" cx="41.569" cy="-0.72" r="0.9" fill="#000000"/>
-  <text id="atom:a7:label" data-atom="a7" x="35.087" y="-18.987" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>O</tspan><tspan>H</tspan></text>
+  <text id="atom:a7:label" data-atom="a7" x="35.087" y="-18.987" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>O</tspan><tspan>H</tspan></text>
 </svg>

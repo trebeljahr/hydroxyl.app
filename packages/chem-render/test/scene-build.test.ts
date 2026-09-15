@@ -98,7 +98,7 @@ function symbolCentreOf(
       fontSizePx: run.fontSizePx,
       subscriptScale: SCREEN_STYLE.subscriptScale,
       anchor: run.anchor,
-      baseline: run.baseline,
+      baseline: "alphabetic",
     },
     BUNDLED_MEASURER,
   );

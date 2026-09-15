@@ -421,10 +421,6 @@ function textRun(
     fontSizePx: style.fontSizePx,
     fill: { color: style.colors.label },
     anchor,
-    // Alphabetic, not middle: Illustrator ignores `dominant-baseline`, and a
-    // figure's labels and captions are exactly the text somebody opens the
-    // file to edit.
-    baseline: "alphabetic",
   };
 }
 

@@ -218,7 +218,7 @@ function pathPoints(d: string): ScenePoint[] {
  * Width is the summed advance of the spans at their real sizes (scripts at
  * `style.subscriptScale`), placed relative to the origin by `anchor`. Height
  * runs from the highest ascender to the deepest descender WITH the script
- * shifts applied, placed by `baseline`.
+ * shifts applied, hung from the baseline `origin.y` always names.
  *
  * A run whose spans are all empty measures zero wide and contributes nothing —
  * the guard is what keeps an empty canvas collapsing to the origin so
@@ -241,7 +241,7 @@ function addTextRun(
       fontSizePx: run.fontSizePx,
       subscriptScale: style.subscriptScale,
       anchor: run.anchor,
-      baseline: run.baseline,
+      baseline: "alphabetic",
     },
     measurerFor(style),
   );

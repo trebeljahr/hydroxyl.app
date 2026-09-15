@@ -30,6 +30,13 @@ import type {
 import { scriptDyPx, scriptFontSizePx } from "../text/metrics.js";
 
 /*
+ * No `dominant-baseline` is emitted, not even `alphabetic`: every run's `y` is
+ * already its alphabetic baseline (see `TextRunPrimitive`), which is what the
+ * property's initial value means for horizontal text, so spelling it out would
+ * only invite a reader to think another value is ever meant.
+ */
+
+/*
  * The sub/superscript baseline offsets used to live here. They now live in
  * `text/metrics.ts`, beside the font's own em fractions, because the measurer
  * and this file have to agree on them to the last bit: the box a superscript
@@ -154,7 +161,6 @@ function textRunMarkup(e: Emitter, p: TextRunPrimitive): string {
     attr("font-size", num(e, p.fontSizePx, p.id)) +
     attr("fill", p.fill.color) +
     attr("text-anchor", p.anchor) +
-    attr("dominant-baseline", p.baseline) +
     `>`;
 
   // `dy` is a *relative* shift that persists for the rest of the run, so each

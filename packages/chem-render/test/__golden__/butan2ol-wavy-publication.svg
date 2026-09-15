@@ -8,5 +8,5 @@
   <circle id="atom:a2:dot" data-atom="a2" cx="20.785" cy="-12" r="0.9" fill="#000000"/>
   <circle id="atom:a3:dot" data-atom="a3" cx="41.569" cy="0" r="0.9" fill="#000000"/>
   <circle id="atom:a4:dot" data-atom="a4" cx="62.354" cy="-12" r="0.9" fill="#000000"/>
-  <text id="atom:a5:label" data-atom="a5" x="14.303" y="-30.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start" dominant-baseline="alphabetic"><tspan>O</tspan><tspan>H</tspan></text>
+  <text id="atom:a5:label" data-atom="a5" x="14.303" y="-30.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>O</tspan><tspan>H</tspan></text>
 </svg>

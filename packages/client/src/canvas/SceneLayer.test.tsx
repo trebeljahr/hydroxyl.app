@@ -25,6 +25,7 @@ import {
   formatNumber,
   modelToPx,
   representation,
+  serializeScene,
   withStyle,
 } from "@starter/chem-render";
 import type { RenderScene } from "@starter/chem-render";
@@ -187,6 +188,19 @@ describe("SceneLayer", () => {
     expect(container.querySelector("text")?.textContent).toBe("C6H6");
     // Subscripts as real spans, not digits parsed back out of a flat string.
     expect(container.querySelectorAll("tspan").length).toBeGreaterThan(1);
+  });
+
+  it("sets a text run on its baseline y, the same attributes the export writes", () => {
+    // The canvas is the export through another backend: a `dominant-baseline`
+    // here would put the formula where Chromium's x-height rule says, not
+    // where chem-render measured it and where the exported file draws it.
+    const scene = buildScene(MOL, SCREEN_STYLE, representation("sumFormula"));
+    const text = renderScene(scene).querySelector("text");
+    const exported = /<text[^>]*>/.exec(serializeScene(scene))?.[0] ?? "";
+    expect(text?.hasAttribute("dominant-baseline")).toBe(false);
+    expect(exported).not.toContain("dominant-baseline");
+    expect(exported).toContain(` y="${text?.getAttribute("y")}"`);
+    expect(Number(text?.getAttribute("y"))).toBeGreaterThan(0);
   });
 
   it("draws nothing at all for a style that suppresses the placeholder dot", () => {

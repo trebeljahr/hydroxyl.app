@@ -66,16 +66,15 @@ export type LabelObstacle =
 /**
  * The glyph run, ready to become a `TextRunPrimitive`.
  *
- * `anchor` and `baseline` are literal types, not free fields: every box below
- * is computed for start-anchored, alphabetic-baselined text and is simply
- * wrong for anything else. See `placeAtomLabel` for why those two.
+ * `anchor` is a literal type, not a free field: every box below is computed
+ * for start-anchored text on an alphabetic-baseline origin and is simply wrong
+ * for anything else. See `placeAtomLabel` for why.
  */
 export interface PlacedTextRun {
   readonly origin: ScenePoint;
   readonly spans: readonly TextSpan[];
   readonly fontSizePx: number;
   readonly anchor: "start";
-  readonly baseline: "alphabetic";
 }
 
 export interface PlacedDot {
@@ -694,10 +693,10 @@ export function placeAtomLabel(input: AtomLabelInput): AtomLabelPlacement {
       // the run using whatever advance the VIEWER's resolved font reports,
       // while we know the exact advances — anchoring at the start makes our
       // computed left edge and the drawn left edge the same edge.
-      // `dominant-baseline: middle` is inconsistently implemented across
-      // browsers and print pipelines (the same reason the serialiser refuses
-      // `baseline-shift`) and centres on the em box or the x-height rather
-      // than on the cap band a label is read on.
+      // `dominant-baseline: middle` is ignored by Illustrator, and Chromium
+      // and Inkscape centre it on half the x-height rather than on the cap
+      // band a label is read on (the same reason the serialiser refuses
+      // `baseline-shift`).
       anchor: "start",
       baseline: "alphabetic",
     },
@@ -802,7 +801,6 @@ export function placeAtomLabel(input: AtomLabelInput): AtomLabelPlacement {
       spans,
       fontSizePx: style.fontSizePx,
       anchor: "start",
-      baseline: "alphabetic",
     },
     dots,
     lonePairs,
@@ -1002,7 +1000,6 @@ function placeDetachedCharge(
       spans,
       fontSizePx: style.fontSizePx,
       anchor: "start",
-      baseline: "alphabetic",
     },
     box: {
       minX: origin.x - style.labelPaddingPx,

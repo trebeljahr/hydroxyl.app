@@ -64,6 +64,7 @@ import type {
 } from "../representation.js";
 import { modelToPx } from "../style.js";
 import type { RenderStyle } from "../style.js";
+import { measurerFor, measureTextRun } from "../text/measurer.js";
 import { sceneBounds } from "./bounds.js";
 import type {
   CirclePrimitive,
@@ -298,7 +299,6 @@ function buildStructural(
       fontSizePx: placement.run.fontSizePx,
       fill: { color: style.colors.label },
       anchor: placement.run.anchor,
-      baseline: placement.run.baseline,
     };
     primitives.push(run);
 
@@ -347,7 +347,6 @@ function buildStructural(
         fontSizePx: charge.fontSizePx,
         fill: { color: style.colors.label },
         anchor: charge.anchor,
-        baseline: charge.baseline,
       };
       primitives.push(chargeRun);
     }
@@ -430,7 +429,6 @@ function pushHydrogenPrimitives(
       fontSizePx: hydrogen.placement.run.fontSizePx,
       fill: { color: style.colors.label },
       anchor: hydrogen.placement.run.anchor,
-      baseline: hydrogen.placement.run.baseline,
     };
     primitives.push(run);
   }
@@ -494,7 +492,6 @@ function pushDescriptorPrimitives(
       fontSizePx: placed.fontSizePx,
       fill: { color: style.colors.label },
       anchor: "middle",
-      baseline: "middle",
     };
     primitives.push(run);
   };
@@ -899,18 +896,32 @@ function buildFormulaRun(
     return { text: part.text };
   });
 
+  // Centred both ways on the scene origin: a text view has no molecular
+  // geometry to anchor to, and the margin in `sceneBounds` gives it its box.
+  // Vertical centring is done here, as a baseline y measured from the run's
+  // own ink band (scripts included), because the primitive has no baseline
+  // mode to ask a renderer for it — see `TextRunPrimitive`.
+  const centred = measureTextRun(
+    spans,
+    {
+      fontFamily: style.fontFamily,
+      fontSizePx: style.fontSizePx,
+      subscriptScale: style.subscriptScale,
+      anchor: "middle",
+      baseline: "middle",
+    },
+    measurerFor(style),
+  );
+
   return {
     id: `text:${kind}:formula`,
     source: { kind: "decoration" },
     type: "textRun",
-    // The origin, centred both ways: a text view has no molecular geometry to
-    // anchor to, and the margin in `sceneBounds` gives it its box.
-    origin: { x: 0, y: 0 },
+    origin: { x: 0, y: centred.baselineYPx },
     spans,
     fontFamily: style.fontFamily,
     fontSizePx: style.fontSizePx,
     fill: { color: style.colors.label },
     anchor: "middle",
-    baseline: "middle",
   };
 }

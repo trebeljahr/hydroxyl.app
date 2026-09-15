@@ -27,7 +27,10 @@
  * export, cannot fetch a font, and the OFL permits embedding. The
  * `font-family` stack still names Arial and Helvetica after Arimo, which are
  * metric-compatible, for the editors that ignore `@font-face` and resolve
- * fonts by installed name.
+ * fonts by installed name. Inkscape is one: it loads a face only from a
+ * ttf/otf file beside the document, never a data URI (sp-style-elem.cpp).
+ * Nothing placed on the page depends on the face loading, since every
+ * run's `y` is an explicit baseline (see `TextRunPrimitive`).
  */
 
 import type { Figure, FigureCell, UnavailableViewAvailability } from "../figure/compose.js";

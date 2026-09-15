@@ -148,7 +148,17 @@ export interface TextRunPrimitive extends PrimitiveBase {
   readonly fontSizePx: number;
   readonly fill: SceneFill;
   readonly anchor: "start" | "middle" | "end";
-  readonly baseline: "alphabetic" | "middle" | "hanging";
+  /*
+   * No baseline mode: `origin.y` is ALWAYS the alphabetic baseline, and a run
+   * that is laid out centred converts with the measurer's `baselineYPx` before
+   * it becomes a primitive. `dominant-baseline` cannot carry it. Illustrator
+   * ignores the property on import and draws `middle` text on the baseline;
+   * Chromium and Inkscape honour `middle` but define it as half the x-height,
+   * not the centre of the box the measurer placed; and Chromium re-aligns a
+   * smaller sub/superscript span on its own middle line where Inkscape uses
+   * the run's. An explicit baseline y lands the same in all three, and on the
+   * box that placement and the viewBox were computed from (decision 53).
+   */
 }
 
 /** Primitives that belong together — the several strokes of one atom label. */

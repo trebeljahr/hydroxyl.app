@@ -770,7 +770,6 @@ describe("placeAtomLabel", () => {
     );
     expect(placement.run.origin.y).toBeCloseTo(placement.centre.y + capHeight / 2, 9);
     expect(placement.run.anchor).toBe("start");
-    expect(placement.run.baseline).toBe("alphabetic");
     // Padding enters exactly once, here. A trimmer that pads again would make
     // every bond in the figure visibly short.
     expect(placement.symbolBox.maxX - placement.symbolBox.minX).toBeCloseTo(

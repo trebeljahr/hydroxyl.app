@@ -17,9 +17,11 @@ import { describe, expect, it } from "vitest";
 import { benzene, buildMolecule, linearChain } from "@starter/chem-core";
 
 import {
+  acetate,
   benzylAlcoholAbbreviated,
   dimethylSulfone,
   ethanol,
+  FIXTURES,
 } from "../src/fixtures.js";
 import {
   composeFigure,
@@ -38,7 +40,7 @@ import {
   pixelsPerMetre,
   printedCmPerPx,
 } from "../src/figure/physical.js";
-import { representation } from "../src/representation.js";
+import { representation, VIEW_KINDS } from "../src/representation.js";
 import type { Representation } from "../src/representation.js";
 import { sceneBounds } from "../src/scene/bounds.js";
 import { buildScene } from "../src/scene/build.js";
@@ -49,7 +51,7 @@ import {
   panelIdPrefix,
   serializeFigure,
 } from "../src/svg/figure.js";
-import { BUNDLED_MEASURER } from "../src/text/measurer.js";
+import { BUNDLED_MEASURER, measureTextRun, textRunRect } from "../src/text/measurer.js";
 
 const OUTPUT = new URL("./output/", import.meta.url);
 
@@ -209,6 +211,55 @@ describe("serializeFigure — the exported file", () => {
     expect(svg).not.toContain("<script");
     expect(svg).not.toMatch(/(href|src)=/);
     expect(svg).not.toMatch(/url\((?!data:font\/woff;base64,)/);
+  });
+
+  it("places text by explicit coordinates, never by a baseline property", () => {
+    // Illustrator ignores `dominant-baseline` on import, and Chromium and
+    // Inkscape read `middle` as half the x-height. Every view of every
+    // fixture, descriptors on, both presets: not one run may lean on it.
+    const views: Representation[] = [
+      ...VIEW_KINDS.map((kind) => representation(kind)),
+      representation("skeletal", { showStereoDescriptors: true }),
+    ];
+    for (const style of [PUBLICATION_STYLE, SCREEN_STYLE]) {
+      for (const fixture of FIXTURES) {
+        const figure = composeFigure(
+          fixture.molecule,
+          style,
+          views.map((rep, index) => panel(`v${index}`, rep, "caption")),
+        );
+        const svg = serializeFigure(figure, { embedFont: true, unavailable: "mark" });
+        expect(svg, fixture.name).toContain("<text");
+        expect(svg, fixture.name).not.toMatch(/dominant-baseline|alignment-baseline|baseline-shift/);
+      }
+    }
+  });
+
+  it("centres a formula's ink on the scene origin, scripts included", () => {
+    // The run's y is a baseline the builder computed; this is the check that
+    // it put the measured ink band, not the baseline, on the origin.
+    for (const kind of ["sumFormula", "condensed"] as const) {
+      const scene = buildScene(acetate(), PUBLICATION_STYLE, representation(kind));
+      const run = scene.primitives.find((p) => p.type === "textRun");
+      if (run?.type !== "textRun") throw new Error(`${kind} drew no run`);
+      expect(run.spans.some((s) => s.script === "super"), kind).toBe(true);
+      const rect = textRunRect(
+        measureTextRun(
+          run.spans,
+          {
+            fontFamily: run.fontFamily,
+            fontSizePx: run.fontSizePx,
+            subscriptScale: PUBLICATION_STYLE.subscriptScale,
+            anchor: run.anchor,
+            baseline: "alphabetic",
+          },
+          BUNDLED_MEASURER,
+        ),
+        run.origin,
+      );
+      expect(run.origin.y, kind).toBeGreaterThan(0);
+      expect((rect.minY + rect.maxY) / 2, kind).toBeCloseTo(0, 9);
+    }
   });
 
   it("cuts the viewBox from the content bounds plus the margin", () => {

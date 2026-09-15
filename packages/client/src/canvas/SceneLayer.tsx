@@ -231,7 +231,6 @@ function textRunElement(
       fontSize={num(f, p.fontSizePx, p.id)}
       fill={p.fill.color}
       textAnchor={p.anchor}
-      dominantBaseline={p.baseline}
     >
       {p.spans.map((span, index) => {
         // Through chem-render's own `scriptDyPx`, never a local copy of the
