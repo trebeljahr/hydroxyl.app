@@ -2,7 +2,8 @@
  * The switcher's view options are a second door onto the display flags, so
  * they must say what the palette says: every flag listed, the locants toggle
  * named as locants (decision 18) and disabled with the registry's reason
- * (decision 37).
+ * (decision 37) — except while locants are on, when it is live so it can
+ * switch them off (decision 56).
  */
 
 import { act, fireEvent, render, screen } from "@testing-library/react";
@@ -15,6 +16,7 @@ import { commandById } from "@/editor/commands/registry";
 import { editorStore } from "@/state";
 
 import { RepresentationSwitcher } from "./RepresentationSwitcher";
+import { canvasPanelFor } from "./scene-bridge";
 
 beforeEach(() => {
   act(() => {
@@ -66,6 +68,41 @@ describe("RepresentationSwitcher view options", () => {
     for (const panel of editorStore.getState().document.panels) {
       expect(panel.representation.display.showLocants, panel.id).toBe(false);
     }
+  });
+
+  it("enables the locants box while locants are on, and disables it once off (decision 56)", () => {
+    act(() => {
+      const state = editorStore.getState();
+      for (const panel of state.document.panels) {
+        state.updatePanel(panel.id, { display: { showLocants: true } });
+      }
+    });
+    openOptions();
+    const locants = checkbox("showLocants");
+    expect(locants.checked).toBe(true);
+    expect(locants.disabled).toBe(false);
+    const label = (): HTMLLabelElement => checkbox("showLocants").closest("label")!;
+    expect(label().getAttribute("title")).toBeNull();
+    expect(label().querySelector("[data-disabled-reason]")).toBeNull();
+
+    act(() => {
+      fireEvent.click(locants);
+    });
+    // The panel the switcher shows is the one it writes to.
+    const shown = (): boolean => {
+      const state = editorStore.getState();
+      return canvasPanelFor(state.document, state.ui.activePanelId)!.representation.display.showLocants;
+    };
+    expect(shown()).toBe(false);
+    const off = checkbox("showLocants");
+    expect(off.checked).toBe(false);
+    expect(off.disabled).toBe(true);
+    expect(label().querySelector("[data-disabled-reason]")?.textContent).toMatch(/numbering/i);
+    // And it stays off: a click on the disabled box switches nothing on.
+    act(() => {
+      fireEvent.click(off);
+    });
+    expect(shown()).toBe(false);
   });
 
   it("leaves every other flag live, with no reason attached", () => {

@@ -483,7 +483,10 @@ const DISPLAY_FLAG_LABELS = {
   // draws nothing, and it never shows an atom's id or position. Nothing in
   // the document numbers atoms yet, so the toggle would be a switch that does
   // nothing: listed, disabled, and saying why (decision 37) until a
-  // numbering source exists.
+  // numbering source exists — EXCEPT while the flag is on (decision 56). A
+  // document from a newer build can carry showLocants: true, and it must not
+  // be stuck with a flag no control can clear. On, the command is enabled so
+  // it can be switched off; off, it disables again with the reason.
   showLocants: {
     title: "Toggle locants",
     keywords: ["locant", "numbering", "number", "display"],
@@ -499,7 +502,11 @@ const DISPLAY_FLAG_LABELS = {
     readonly title: string;
     readonly keywords: readonly string[];
     readonly shortcut?: string;
-    /** Set: the command is always disabled, with this as its reason. */
+    /**
+     * Set: the command cannot switch the flag ON, and is disabled with this
+     * as its reason whenever the flag is off. While the flag is on it stays
+     * enabled, so it can be switched off (decision 56).
+     */
     readonly unavailable?: string;
   }
 >;
@@ -541,8 +548,16 @@ const DISPLAY_FLAG_COMMANDS: readonly Command[] = DISPLAY_FLAG_KEYS.map((key) =>
   if ("shortcut" in label) command.shortcut = label.shortcut;
   if ("unavailable" in label) {
     const reason = label.unavailable;
-    command.enabled = () => false;
-    command.disabledReason = () => reason;
+    const isOn = (state: EditorState): boolean =>
+      canvasPanelFor(state.document, state.ui.activePanelId)?.representation.display[key] === true;
+    command.enabled = isOn;
+    command.disabledReason = (state) => (isOn(state) ? undefined : reason);
+    const toggle = command.run;
+    // Off only: `enabled` already says so, but a shortcut or a caller that
+    // skips the check must not be able to switch on what nothing can draw.
+    command.run = (store) => {
+      if (isOn(store.getState())) toggle(store);
+    };
   }
   return command;
 });

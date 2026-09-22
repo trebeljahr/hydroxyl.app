@@ -90,6 +90,34 @@ describe("CommandPalette", () => {
     expect(circles?.querySelector("[data-disabled-reason]")).toBeNull();
   });
 
+  it("enables the locants toggle while locants are on, so it can switch them off (decision 56)", () => {
+    act(() => {
+      const state = editorStore.getState();
+      for (const panel of state.document.panels) {
+        state.updatePanel(panel.id, { display: { showLocants: true } });
+      }
+    });
+    open();
+    const locants = document.querySelector<HTMLElement>('[data-palette-command="view.show-locants"]');
+    expect(locants).not.toBeNull();
+    expect(locants!.getAttribute("data-disabled")).not.toBe("true");
+    expect(locants!.getAttribute("title")).toBeNull();
+    expect(locants!.querySelector("[data-disabled-reason]")).toBeNull();
+    act(() => {
+      fireEvent.click(locants!);
+    });
+    expect(
+      editorStore.getState().document.panels.some((p) => !p.representation.display.showLocants),
+    ).toBe(true);
+    // Off again: back to disabled, with the reason.
+    act(() => {
+      editorStore.getState().setCommandPaletteOpen(true);
+    });
+    const again = document.querySelector<HTMLElement>('[data-palette-command="view.show-locants"]');
+    expect(again!.getAttribute("data-disabled")).toBe("true");
+    expect(again!.querySelector("[data-disabled-reason]")?.textContent).toMatch(/numbering/i);
+  });
+
   it("runs a command and closes itself", () => {
     open();
     const ring = document.querySelector('[data-palette-command="tool.ring"]');

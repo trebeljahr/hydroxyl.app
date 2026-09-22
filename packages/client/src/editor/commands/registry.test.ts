@@ -325,6 +325,30 @@ describe("view commands", () => {
     expect(COMMANDS.some((c) => c.id === "view.show-atom-indices")).toBe(false);
   });
 
+  it("lets a document that already has locants on switch them off, and only off (decision 56)", () => {
+    // A document from a newer build that numbers atoms can carry
+    // showLocants: true. No control may leave it stuck on.
+    const store = storeWith(benzene());
+    for (const panel of store.getState().document.panels) {
+      store.getState().updatePanel(panel.id, { display: { showLocants: true } });
+    }
+    const command = commandById("view.show-locants");
+    expect(command.enabled(store.getState())).toBe(true);
+    expect(command.disabledReason?.(store.getState())).toBeUndefined();
+
+    command.run(store);
+    const canvas = (): boolean =>
+      store.getState().document.panels.some((panel) => panel.representation.display.showLocants === false);
+    expect(canvas()).toBe(true);
+    // Off, it disables again with the reason — and cannot switch back on,
+    // even when run directly.
+    expect(command.enabled(store.getState())).toBe(false);
+    expect(command.disabledReason?.(store.getState())).toMatch(/numbering/i);
+    const before = JSON.stringify(store.getState().document.panels);
+    command.run(store);
+    expect(JSON.stringify(store.getState().document.panels)).toBe(before);
+  });
+
   it("gives no other display toggle a disabled reason", () => {
     const store = storeWith(benzene());
     for (const command of COMMANDS.filter((c) => c.id.startsWith("view.") && c.id !== "view.show-locants")) {

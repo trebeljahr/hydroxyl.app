@@ -55,9 +55,11 @@ const FLAG_LABELS: Readonly<Record<DisplayFlagKey, string>> = {
  * Whether a checkbox is live, and if not why — read from the flag's COMMAND.
  *
  * The palette greys `view.show-locants` out with a reason until something
- * numbers the atoms (decision 37). A checkbox that bypassed the registry would
- * be a second door onto the same switch, open while the palette's is shut, so
- * the popover asks the very command the palette asks.
+ * numbers the atoms (decision 37) — while the flag is off; while it is on the
+ * command is live so it can be switched off (decision 56). A checkbox that
+ * bypassed the registry would be a second door onto the same switch, open
+ * while the palette's is shut, so the popover asks the very command the
+ * palette asks.
  */
 function flagAvailability(
   key: DisplayFlagKey,
