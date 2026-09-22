@@ -68,7 +68,12 @@ import {
 } from "../modes/explicitH.js";
 import type { PhantomHydrogen } from "../modes/explicitH.js";
 import { placeAtomLabel } from "../label/placement.js";
-import type { AtomLabelPlacement, LabelObstacle, PlacedTextRun } from "../label/placement.js";
+import type {
+  AtomLabelPlacement,
+  LabelBox,
+  LabelObstacle,
+  PlacedTextRun,
+} from "../label/placement.js";
 import { isStructural } from "../representation.js";
 import type {
   Representation,
@@ -77,7 +82,7 @@ import type {
 } from "../representation.js";
 import { modelToPx } from "../style.js";
 import type { RenderStyle } from "../style.js";
-import { measurerFor, measureTextRun, textRunRect } from "../text/measurer.js";
+import { glyphInkRects, measurerFor, measureTextRun, textRunRect } from "../text/measurer.js";
 import { sceneBounds } from "./bounds.js";
 import type {
   CirclePrimitive,
@@ -426,6 +431,10 @@ function buildStructural(
   }
 
   const obstacles: LabelObstacle[] = [];
+  // Decision 55: the unpadded INK of every glyph and dot, one box each — what
+  // an unclear annotation's overprint is measured against. `obstacles` are
+  // clearance boxes and name one glyph several times.
+  const glyphInk: LabelBox[] = [];
   const atomCentres: AnnotationAtomCentre[] = [];
   for (const atomId of mol.atomIds) {
     const centre = centres.get(atomId);
@@ -434,16 +443,22 @@ function buildStructural(
     if (placement !== undefined) {
       obstacles.push(...placement.obstacles);
       obstacles.push(...glyphBandObstacles(placement.run, style));
+      glyphInk.push(...runGlyphInk(placement.run, style));
+      for (const dot of placement.dots) glyphInk.push(discInk(dot.centre, dot.radius));
+      for (const dot of placement.lonePairs) glyphInk.push(discInk(dot.centre, dot.radius));
       if (placement.detachedCharge !== undefined) {
         obstacles.push(...glyphBandObstacles(placement.detachedCharge, style));
+        glyphInk.push(...runGlyphInk(placement.detachedCharge, style));
       }
     } else if (style.atomDotRadiusPx > 0 && centre !== undefined) {
       obstacles.push({ kind: "disc", centre, radius: style.atomDotRadiusPx });
+      glyphInk.push(discInk(centre, style.atomDotRadiusPx));
     }
   }
   for (const hydrogen of hydrogens) {
     obstacles.push(...hydrogen.placement.obstacles);
     obstacles.push(...glyphBandObstacles(hydrogen.placement.run, style));
+    glyphInk.push(...runGlyphInk(hydrogen.placement.run, style));
   }
 
   const circleOutlines: AnnotationCircle[] = circles.primitives.map((circle) => ({
@@ -460,6 +475,7 @@ function buildStructural(
     segments: [...corridors.values(), ...drawn],
     circles: circleOutlines,
     atomCentres,
+    glyphInk,
   });
 
   // Emitted in PLACEMENT order — priority, then source id — so the scene's
@@ -474,8 +490,9 @@ function buildStructural(
       fontFamily: style.fontFamily,
       fontSizePx: placed.fontSizePx,
       fill: { color: style.colors.label },
+      // `origin` is already the alphabetic baseline (decision 53): no
+      // baseline mode travels with the run.
       anchor: "middle",
-      baseline: "middle",
     };
     primitives.push(run);
   }
@@ -503,7 +520,8 @@ function glyphBandObstacles(run: PlacedTextRun, style: RenderStyle): LabelObstac
   };
   const whole = measureTextRun(
     run.spans,
-    { ...options, anchor: run.anchor, baseline: run.baseline },
+    // A placed run's origin is always its alphabetic baseline (decision 53).
+    { ...options, anchor: run.anchor, baseline: "alphabetic" },
     measurer,
   );
   const baseline = { x: run.origin.x + whole.startXPx, y: run.origin.y + whole.baselineYPx };
@@ -521,6 +539,33 @@ function glyphBandObstacles(run: PlacedTextRun, style: RenderStyle): LabelObstac
       },
     ];
   });
+}
+
+/** One unpadded ink box per drawn glyph of a placed run (decision 55). */
+function runGlyphInk(run: PlacedTextRun, style: RenderStyle): LabelBox[] {
+  const measurer = measurerFor(style);
+  const measured = measureTextRun(
+    run.spans,
+    {
+      fontFamily: style.fontFamily,
+      fontSizePx: run.fontSizePx,
+      subscriptScale: style.subscriptScale,
+      anchor: run.anchor,
+      baseline: "alphabetic",
+    },
+    measurer,
+  );
+  return glyphInkRects(measured, run.origin, measurer, style.fontFamily);
+}
+
+/** A dot's ink box: the square its disc fills. */
+function discInk(centre: ScenePoint, radius: number): LabelBox {
+  return {
+    minX: centre.x - radius,
+    minY: centre.y - radius,
+    maxX: centre.x + radius,
+    maxY: centre.y + radius,
+  };
 }
 
 /**

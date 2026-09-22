@@ -42,8 +42,9 @@
  *     along it collides on essentially every atom of a steroid; a SET of
  *     candidates checked against the obstacles does not.
  *
- * A CANDIDATE IS CLEAR ONLY IF IT READS AS ITS OWN ATOM'S (decision 35): its
- * box centre must lie strictly nearer its own anchor — the atom centre, or
+ * A CANDIDATE IS CLEAR ONLY IF IT READS AS ITS OWN ATOM'S (decision 35): the
+ * centre of its measured INK box (decision 57) must lie strictly nearer its
+ * own anchor — the atom centre, or
  * for a bond annotation the bond segment — than any other atom centre. Room
  * alone is not enough. The outer rungs of the ladder reach far enough to sit
  * beside a NEIGHBOUR, and a clear "(S)" or "17" there is read as the
@@ -56,13 +57,21 @@
  * visible; the report is how a caller says so. Which candidate it takes is
  * still a choice among candidates: the LEAST WRONG one, by `compareFallbacks`
  * (decision 45) — off every annotation already placed wherever any candidate
- * is, then reading as its own atom's, then the fewest glyph hits, then the
- * fewest line hits, then ladder order. An unclear annotation reads as another
+ * is, then reading as its own atom's, then the least glyph ink overprinted
+ * (decision 55), then the fewest line hits, then ladder order. An unclear annotation reads as another
  * atom's only when not one candidate reads as its own (two atoms on one spot).
  *
  * "Another atom" means a REAL atom of the molecule (decision 46): the hydrogens
  * the explicitH and Lewis views derive and draw are obstacles to avoid, never
  * atoms an annotation could be misread as belonging to.
+ *
+ * THE ORIGIN HANDED BACK IS ON THE ALPHABETIC BASELINE (decision 53). The
+ * ladder works in run CENTRES — a candidate is the point the measured box is
+ * centred on — and each placement's origin is that centre dropped by the
+ * measurer's own `baselineYPx`, because a `TextRunPrimitive` has no baseline
+ * mode. The box used for clearance, and fed back as an obstacle, is exactly
+ * the measured box either way: `textRunRect` of the baseline origin adds the
+ * same offset in the same order.
  *
  * INPUTS ARE SCENE PX WITH Y ALREADY FLIPPED (y-down), as everywhere in this
  * layer. A direction taken from model space (y-up) and not flipped mirrors
@@ -79,7 +88,12 @@ import type { AtomId, BondId } from "@starter/chem-core";
 
 import type { ScenePoint, TextSpan } from "../scene/types.js";
 import type { RenderStyle } from "../style.js";
-import { measurerFor, measureTextRun, textRunRect } from "../text/measurer.js";
+import {
+  measurerFor,
+  measureTextRun,
+  textRunInkRect,
+  textRunRect,
+} from "../text/measurer.js";
 import type { TextRunBox } from "../text/measurer.js";
 import { freeDirection } from "./placement.js";
 import type { LabelBox, LabelObstacle } from "./placement.js";
@@ -206,6 +220,16 @@ export interface AnnotationObstacleSet {
   /** Everything a bond or a hydrogen stem drew, as segments. */
   readonly segments: readonly AnnotationSegment[];
   readonly circles?: readonly AnnotationCircle[];
+  /**
+   * The INK box of every glyph and dot the drawing set, UNPADDED, one entry
+   * per glyph: what a fallback's glyph hit is measured against (decision 55).
+   *
+   * Kept apart from `obstacles`, which are clearance boxes — padded cap-band
+   * boxes plus each run's full line band, so one glyph is several records
+   * there. Those decide whether a candidate is CLEAR; this decides how badly
+   * an unclear one prints over text. Omitted, no fallback counts a glyph hit.
+   */
+  readonly glyphInk?: readonly LabelBox[];
 }
 
 export interface AnnotationContext extends AnnotationObstacleSet {
@@ -232,11 +256,22 @@ export interface AnnotationPlacement {
   readonly kind: AnnotationKind;
   readonly source: AnnotationSource;
   readonly text: string;
-  /** Origin for a middle-anchored, middle-baselined text run. */
+  /**
+   * Origin for a middle-anchored run, ON ITS ALPHABETIC BASELINE (decision
+   * 53): the run centre the ladder chose, dropped by the measurer's
+   * `baselineYPx`. Emit it as the run's `y` with no `dominant-baseline`.
+   */
   readonly origin: ScenePoint;
   readonly fontSizePx: number;
   /** The measured box plus clearance: what later annotations must avoid. */
   readonly box: LabelBox;
+  /**
+   * The run's measured INK box, unpadded: the union of its glyphs' outlines.
+   * Its centre is where the reader sees the annotation, and proximity is
+   * judged there (decision 57); its overlap with glyph ink ranks fallbacks
+   * (decision 55).
+   */
+  readonly inkBox: LabelBox;
   /**
    * False when no candidate was both free of every obstacle and nearer its own
    * anchor than any other atom, and one was taken anyway. Every such placement
@@ -456,6 +491,9 @@ export function placeAnnotation(
   const id = annotationId(request.kind, request.source);
   const fontSizePx = annotationFontSizePx(request.kind, style);
   const spans: readonly TextSpan[] = [{ text: request.text }];
+  const measurer = measurerFor(style);
+  // Measured CENTRED: every candidate below is the point the box is centred
+  // on. `baselineYPx` converts it to the baseline origin a run is drawn at.
   const measured = measureTextRun(
     spans,
     {
@@ -465,8 +503,12 @@ export function placeAnnotation(
       anchor: "middle",
       baseline: "middle",
     },
-    measurerFor(style),
+    measurer,
   );
+  // The ink box relative to the run centre, measured once. A run with no ink
+  // at all (whitespace) falls back to its measured box, which contains it.
+  const inkOffset: LabelBox =
+    textRunInkRect(measured, ZERO, measurer, style.fontFamily) ?? textRunRect(measured, ZERO);
 
   const step = measured.capHeightPx * ANNOTATION_PLACEMENT.radiusStepCapHeights;
   const first = measured.capHeightPx * ANNOTATION_PLACEMENT.firstRadiusCapHeights;
@@ -477,23 +519,30 @@ export function placeAnnotation(
   const placed = context.placed ?? NO_BOXES;
   const atomCentres = context.atomCentres ?? NO_ATOMS;
   const circles = context.circles ?? NO_CIRCLES;
-  const at = (origin: ScenePoint): AnnotationPlacement => ({
+  const glyphInk = context.glyphInk ?? NO_BOXES;
+  const at = (centre: ScenePoint): AnnotationPlacement => ({
     id,
     kind: request.kind,
     source: request.source,
     text: request.text,
-    origin,
+    origin: onBaseline(centre, measured),
     fontSizePx,
-    box: pad(textRunRect(measured, origin), ANNOTATION_PLACEMENT.clearancePx),
+    box: pad(textRunRect(measured, centre), ANNOTATION_PLACEMENT.clearancePx),
+    inkBox: {
+      minX: centre.x + inkOffset.minX,
+      minY: centre.y + inkOffset.minY,
+      maxX: centre.x + inkOffset.maxX,
+      maxY: centre.y + inkOffset.maxY,
+    },
     clear: true,
   });
-  const origins = candidateOrigins(request, measured, reach, step);
+  const centres = candidateOrigins(request, measured, reach, step);
 
   // Cheapest test first: proximity touches a few dozen points, the obstacle
   // test every glyph and line in the drawing.
-  for (const origin of origins) {
-    const candidate = at(origin);
-    if (!readsAsOwn(candidate.box, request, atomCentres)) continue;
+  for (const centre of centres) {
+    const candidate = at(centre);
+    if (!readsAsOwn(boxCentre(candidate.inkBox), request, atomCentres)) continue;
     if (placed.some((box) => boxesOverlap(candidate.box, box))) continue;
     if (isClear(candidate.box, context.obstacles, context.segments, circles)) return candidate;
   }
@@ -501,15 +550,15 @@ export function placeAnnotation(
   // Nothing is clear. Still placed (never dropped), at the LEAST WRONG
   // candidate — see `compareFallbacks` for what that means and why.
   let best: { readonly placement: AnnotationPlacement; readonly score: FallbackScore } | undefined;
-  for (const origin of origins) {
-    const placement = at(origin);
+  for (const centre of centres) {
+    const placement = at(centre);
     // Counting hits walks every obstacle; a candidate already in a worse
     // class than the best so far cannot win on hits, so it is not counted.
     if (best !== undefined) {
-      const rough = fallbackScore(placement.box, request, context, placed, atomCentres, circles);
+      const rough = fallbackScore(placement, request, context, placed, atomCentres, circles, glyphInk);
       if (fallbackClass(rough) > fallbackClass(best.score)) continue;
     }
-    const score = fallbackScore(placement.box, request, context, placed, atomCentres, circles, {
+    const score = fallbackScore(placement, request, context, placed, atomCentres, circles, glyphInk, {
       countHits: true,
     });
     if (best === undefined || compareFallbacks(score, best.score) < 0) {
@@ -521,8 +570,23 @@ export function placeAnnotation(
   return { ...(best?.placement ?? at(request.anchor)), clear: false };
 }
 
+const ZERO: ScenePoint = Object.freeze({ x: 0, y: 0 });
+
 /**
- * Every candidate origin for one request, in the order they are tried.
+ * The alphabetic-baseline origin of a run measured as centred on `centre`
+ * (decision 53).
+ *
+ * The run keeps exactly the box it was measured into: `textRunRect` of the
+ * baseline origin, measured with `baseline: "alphabetic"`, adds the same
+ * offset in the same order, so an annotation's obstacle box and the viewBox
+ * cut around it are the measured box to the bit.
+ */
+function onBaseline(centre: ScenePoint, box: TextRunBox): ScenePoint {
+  return { x: centre.x, y: centre.y + box.baselineYPx };
+}
+
+/**
+ * Every candidate CENTRE for one request, in the order they are tried.
  *
  * TWO LADDERS, THE COARSE ONE FIRST.
  *
@@ -601,22 +665,30 @@ interface FallbackScore {
   readonly own: number;
   /** Squared distance to the nearest OTHER atom centre; +Infinity if none. */
   readonly nearestOther: number;
-  /** Glyph boxes and dots the box meets: text printed over text. */
+  /**
+   * Glyph ink overprinted, px²: the overlap AREA of the annotation's ink box
+   * with every glyph's and dot's ink box, unpadded, each glyph once
+   * (decision 55). Area rather than a count, so a real overprint always
+   * ranks worse than a near-miss that only reaches a label's clearance.
+   */
   readonly glyphHits: number;
   /** Segments and circle outlines the box meets: text across a line. */
   readonly lineHits: number;
 }
 
 function fallbackScore(
-  box: LabelBox,
+  placement: AnnotationPlacement,
   request: AnnotationRequest,
   context: AnnotationContext,
   placed: readonly LabelBox[],
   atomCentres: readonly AnnotationAtomCentre[],
   circles: readonly AnnotationCircle[],
+  glyphInk: readonly LabelBox[],
   { countHits }: { readonly countHits: boolean } = { countHits: false },
 ): FallbackScore {
-  const centre = boxCentre(box);
+  const { box, inkBox } = placement;
+  // Proximity from the INK centre (decision 57), as in the clear search.
+  const centre = boxCentre(inkBox);
   const ownAtomId = request.source.kind === "atom" ? request.source.atomId : undefined;
   let nearestOther = Number.POSITIVE_INFINITY;
   for (const atom of atomCentres) {
@@ -627,7 +699,7 @@ function fallbackScore(
   let glyphHits = 0;
   let lineHits = 0;
   if (countHits) {
-    for (const obstacle of context.obstacles) if (boxMeetsObstacle(box, obstacle)) glyphHits++;
+    for (const glyph of glyphInk) glyphHits += overlapArea(inkBox, glyph);
     for (const segment of context.segments) if (boxMeetsInkedSegment(box, segment)) lineHits++;
     for (const circle of circles) if (boxMeetsCircleOutline(box, circle)) lineHits++;
   }
@@ -655,7 +727,9 @@ function fallbackClass(score: FallbackScore): number {
  * 2. READS AS ITS OWN ATOM'S (decision 35, heavy atoms only per decision 46).
  *    A number beside the wrong atom is a false statement; a number across a
  *    bond line is visibly crowded.
- * 3. FEWEST GLYPH HITS: "(S)" over "OH" is unreadable.
+ * 3. LEAST GLYPH INK OVERPRINTED (decision 55): "(S)" over "OH" is
+ *    unreadable. Measured as ink-on-ink area, so a candidate that only reaches
+ *    a label's clearance padding beats one that prints on the glyph.
  * 4. FEWEST LINE HITS: "(S)" across a bond line is crowded but legible.
  * 5. Ladder order, which the caller keeps by replacing only on "less wrong".
  *
@@ -676,8 +750,8 @@ const NO_ATOMS: readonly AnnotationAtomCentre[] = Object.freeze([]);
 const NO_BOXES: readonly LabelBox[] = Object.freeze([]);
 
 /**
- * Decision 35: is the box's centre STRICTLY nearer the request's own anchor
- * than every other atom centre?
+ * Decision 35: is `centre` — the annotation's INK-box centre (decision 57) —
+ * STRICTLY nearer the request's own anchor than every other atom centre?
  *
  * Strict, so a tie — a slot exactly between two atoms, or past the end of a
  * bond where its atom is as near as the bond is — reads as ambiguous and is
@@ -685,12 +759,11 @@ const NO_BOXES: readonly LabelBox[] = Object.freeze([]);
  * between two comparisons of the same pair.
  */
 function readsAsOwn(
-  box: LabelBox,
+  centre: ScenePoint,
   request: AnnotationRequest,
   atomCentres: readonly AnnotationAtomCentre[],
 ): boolean {
   if (atomCentres.length === 0) return true;
-  const centre = boxCentre(box);
   const own = ownDistance(centre, request);
   const ownAtomId = request.source.kind === "atom" ? request.source.atomId : undefined;
   for (const atom of atomCentres) {
@@ -799,6 +872,15 @@ function boxMeetsObstacle(box: LabelBox, obstacle: LabelObstacle): boolean {
   const dx = obstacle.centre.x - x;
   const dy = obstacle.centre.y - y;
   return dx * dx + dy * dy < obstacle.radius * obstacle.radius;
+}
+
+/** The area two boxes share, px²; 0 when they only touch or are apart. */
+function overlapArea(a: LabelBox, b: LabelBox): number {
+  const w = (a.maxX < b.maxX ? a.maxX : b.maxX) - (a.minX > b.minX ? a.minX : b.minX);
+  if (!(w > 0)) return 0;
+  const h = (a.maxY < b.maxY ? a.maxY : b.maxY) - (a.minY > b.minY ? a.minY : b.minY);
+  if (!(h > 0)) return 0;
+  return w * h;
 }
 
 function boxesOverlap(a: LabelBox, b: LabelBox): boolean {

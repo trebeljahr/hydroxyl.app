@@ -393,7 +393,7 @@ export function naphthalene(): Molecule {
  * ring would need a fusion across a single bond — see `chrysene`).
  *
  * NOT IN `FIXTURES`: it would add goldens that say nothing chrysene does not.
- * It is here for the annotation measurements (decision 44), where the bay
+ * It is here for the annotation measurements (decisions 44 and 54), where the bay
  * region's crowded inner vertices are the case that matters.
  */
 export function phenanthrene(): Molecule {

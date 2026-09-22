@@ -58,14 +58,19 @@ import type {
 import { modelToPx, PUBLICATION_STYLE, SCREEN_STYLE, withStyle } from "../src/style.js";
 import type { RenderStyle } from "../src/style.js";
 import { serializeScene } from "../src/svg/serialize.js";
-import { BUNDLED_MEASURER, measureTextRun, textRunRect } from "../src/text/measurer.js";
+import {
+  BUNDLED_MEASURER,
+  measureTextRun,
+  textRunInkRect,
+  textRunRect,
+} from "../src/text/measurer.js";
 
 /**
- * The Publication preset as it was before decision 44: the ACS 1996 label
- * font (decision 26) with annotations still at 0.85 of it, a 14.2 px "(S)"
- * on a 24 px bond. Not shipped; kept as the CROWDED setting, because it is
- * where the reporting path is exercised on real molecules — the steroid's C17
- * (S) has no clear slot that reads as C17's there.
+ * The Publication preset as it was before decisions 44 and 54: the ACS 1996
+ * label font (decision 26) with annotations still at 0.85 of it, a 14.2 px
+ * "(S)" on a 24 px bond. Not shipped; kept as the CROWDED setting, one step
+ * more crowded than Publication's 0.80, so every guarantee is also held where
+ * the reporting path is exercised hardest.
  */
 const CROWDED_PUBLICATION_STYLE: RenderStyle = withStyle(PUBLICATION_STYLE, {
   name: "publication-crowded",
@@ -75,6 +80,31 @@ const CROWDED_PUBLICATION_STYLE: RenderStyle = withStyle(PUBLICATION_STYLE, {
 /** A style's name with its annotation size: shown in every failure message. */
 function styleLabel(style: RenderStyle): string {
   return `${style.name}@${Math.round(style.fontSizePx * style.stereoDescriptorScale * 10) / 10}px`;
+}
+
+/**
+ * Where the reader sees a placed annotation: the centre of its glyph INK
+ * (decision 57), measured here from the drawn run — its alphabetic-baseline
+ * origin (decision 53) and the vendored glyph outlines — rather than read back
+ * from the placement's own `inkBox`.
+ */
+function inkCentre(
+  placed: { readonly origin: ScenePoint; readonly text: string; readonly fontSizePx: number },
+  style: RenderStyle,
+): ScenePoint {
+  const run = measureTextRun(
+    [{ text: placed.text }],
+    {
+      fontFamily: style.fontFamily,
+      fontSizePx: placed.fontSizePx,
+      subscriptScale: style.subscriptScale,
+      anchor: "middle",
+      baseline: "alphabetic",
+    },
+    BUNDLED_MEASURER,
+  );
+  const ink = textRunInkRect(run, placed.origin, BUNDLED_MEASURER, style.fontFamily)!;
+  return { x: (ink.minX + ink.maxX) / 2, y: (ink.minY + ink.maxY) / 2 };
 }
 
 /** Both shipped presets, and the crowded setting every guarantee must survive. */
@@ -332,16 +362,15 @@ describe("decision 35: an annotation reads as its own atom's", () => {
         const layout = annotationLayout(molecule, style, rep, { locants });
         const placed = layout.placements.find((p) => p.id === `atom:${c17}:descriptor`)!;
         expect(placed.text).toBe("(S)");
-        // Both shipped presets have the room (at Publication that is what
-        // decision 44's scale was chosen for). At the crowded setting the room
-        // that reads as C17's is taken by the wedge to O17 and the bonds to C13
-        // and C16; a 14 px "(S)" touches one of them wherever it goes. Reported
-        // there, never passed off as clear.
-        const crowded = style === CROWDED_PUBLICATION_STYLE;
+        // Screen has the room. At Publication's 8 pt (decision 54) and the
+        // crowded setting the room that reads as C17's is taken by the wedge
+        // to O17 and the bonds to C13 and C16; an "(S)" that size touches one
+        // of them wherever it goes. Reported there, never passed off as clear.
+        const crowded = style !== SCREEN_STYLE;
         expect(placed.clear, styleLabel(style)).toBe(!crowded);
         expect(layout.unplaced.some((u) => u.id === placed.id), styleLabel(style)).toBe(crowded);
         // Clear or reported, it reads as C17's.
-        const centre = centreOf(placed.box);
+        const centre = inkCentre(placed, style);
         const own = d2(centre, modelToPx(style, molecule.atoms[c17]!.pos));
         for (const atomId of molecule.atomIds) {
           if (atomId === c17) continue;
@@ -363,10 +392,12 @@ describe("decision 35: an annotation reads as its own atom's", () => {
     const placed = placeAnnotation(request("locant", "a1"), {
       ...EMPTY_CONTEXT,
       obstacles: [blanket, wall],
+      // The wall is glyph ink (decision 55); the blanket only makes nothing clear.
+      glyphInk: [wall.box],
     });
     expect(placed.clear).toBe(false);
-    expect(overlaps(first.box, wall.box)).toBe(true);
-    expect(overlaps(placed.box, wall.box)).toBe(false);
+    expect(overlaps(first.inkBox, wall.box)).toBe(true);
+    expect(overlaps(placed.inkBox, wall.box)).toBe(false);
   });
 
   it("keeps an unplaceable annotation off another even when nothing reads as its own", () => {
@@ -394,8 +425,12 @@ describe("decision 35: an annotation reads as its own atom's", () => {
   it("holds for every placement, reported ones included, measured independently", () => {
     // Reported placements too: an annotation that found no clear slot must
     // still not be set beside a neighbour while a slot beside its own atom
-    // exists, and in these fixtures one always does.
+    // exists. The one exception decision 45 makes is an annotation whose
+    // every own-reading slot would print over an annotation already placed:
+    // not overprinting ranks first. Those are listed by id, so a new one is a
+    // failure rather than a silent change.
     let checked = 0;
+    const notOwn = new Set<string>();
     const molecules: [string, Molecule, Readonly<Record<AtomId, string>>][] = [
       ["steroidSkeleton", ...Object.values(steroidSkeletonWithLocants()) as [Molecule, Record<AtomId, string>]],
       ["butan2olWedged", butan2olWedged(), {}],
@@ -422,7 +457,7 @@ describe("decision 35: an annotation reads as its own atom's", () => {
           }));
           for (const placed of layout.placements) {
             checked++;
-            const c = centreOf(placed.box);
+            const c = inkCentre(placed, style);
             let own: number;
             if (placed.source.kind === "atom") {
               own = d2(c, modelToPx(style, molecule.atoms[placed.source.atomId]!.pos));
@@ -432,17 +467,25 @@ describe("decision 35: an annotation reads as its own atom's", () => {
               const b = modelToPx(style, molecule.atoms[bond.to]!.pos);
               own = squaredDistanceToSegment(c, a, b);
             }
+            const where = `${name}/${styleLabel(style)}/${view}${showImplicitHydrogens ? "+H" : ""}/${placed.id}`;
             for (const other of centres) {
               if (placed.source.kind === "atom" && other.id === placed.source.atomId) continue;
-              expect(own, `${name}/${styleLabel(style)}/${view}${showImplicitHydrogens ? "+H" : ""}/${placed.id} nearer ${other.id}`).toBeLessThan(
-                d2(c, other.at),
-              );
+              if (own < d2(c, other.at)) continue;
+              // A clear placement never reads as another atom's.
+              expect(placed.clear, `${where} nearer ${other.id}`).toBe(false);
+              // A reported one only when every own-reading slot overprints.
+              expect(
+                layout.placements.some((p) => p !== placed && overlaps(p.box, placed.box)),
+                `${where} overprints and reads as ${other.id}'s`,
+              ).toBe(false);
+              notOwn.add(where);
             }
           }
         }
       }
     }
     expect(checked).toBeGreaterThan(500);
+    expect([...notOwn].sort()).toEqual(NOT_OWN_REPORTED);
   });
 });
 
@@ -477,7 +520,7 @@ describe("decision 45: the fallback order when nothing is clear", () => {
     });
     expect(result.clear).toBe(false);
     expect(overlaps(result.box, placed)).toBe(false);
-    expect(readsAsOwn(result.box)).toBe(false);
+    expect(readsAsOwn(result.inkBox)).toBe(false);
   });
 
   it("(2) reads as its own atom's before it hits fewer glyphs", () => {
@@ -487,11 +530,12 @@ describe("decision 45: the fallback order when nothing is clear", () => {
     const result = placeAnnotation(request("locant", "a1"), {
       ...EMPTY_CONTEXT,
       obstacles: [blanket, north],
+      glyphInk: [north.box],
       atomCentres: twoAtoms,
     });
     expect(result.clear).toBe(false);
-    expect(readsAsOwn(result.box)).toBe(true);
-    expect(overlaps(result.box, north.box)).toBe(true);
+    expect(readsAsOwn(result.inkBox)).toBe(true);
+    expect(overlaps(result.inkBox, north.box)).toBe(true);
   });
 
   it("(3) hits fewer glyphs before it hits fewer lines", () => {
@@ -506,10 +550,11 @@ describe("decision 45: the fallback order when nothing is clear", () => {
     const result = placeAnnotation(request("locant", "a1"), {
       ...EMPTY_CONTEXT,
       obstacles: [blanket, north],
+      glyphInk: [north.box],
       segments: lines,
     });
     expect(result.clear).toBe(false);
-    expect(overlaps(result.box, north.box)).toBe(false);
+    expect(overlaps(result.inkBox, north.box)).toBe(false);
     const lineHits = lines.filter((l) => l.a.y > result.box.minY && l.a.y < result.box.maxY).length;
     expect(lineHits).toBeGreaterThan(1);
   });
@@ -554,6 +599,142 @@ describe("decision 45: the fallback order when nothing is clear", () => {
   });
 });
 
+describe("decision 55: a glyph hit is ink overprinted, by area", () => {
+  const far = 1e4;
+  const blanket = { kind: "rect" as const, box: { minX: -far, minY: -far, maxX: far, maxY: far } };
+
+  it("always ranks a real overprint below a near-miss that only reaches clearance padding", () => {
+    // Nothing is clear (the blanket). The first candidate's ink touches one
+    // glyph's ink by a sliver: a real overprint. Every other candidate meets
+    // only CLEARANCE records — four walls fencing the first candidate's box,
+    // standing in for the padded cap-band and line-band boxes a label adds —
+    // and no ink at all. Counting records, the first candidate ties the rest
+    // (two each) and wins on ladder order, printing on the glyph. By ink
+    // area it has the only nonzero score and loses to every near-miss.
+    const first = placeAnnotation(request("locant", "a1"), { ...EMPTY_CONTEXT, obstacles: [blanket] });
+    const ink = first.inkBox;
+    const glyph: LabelBox = { minX: ink.maxX - 0.25, minY: ink.minY, maxX: ink.maxX + 6, maxY: ink.maxY };
+    const box = first.box;
+    const fence: { kind: "rect"; box: LabelBox }[] = [
+      { kind: "rect", box: { minX: -far, minY: -far, maxX: box.minX, maxY: far } },
+      { kind: "rect", box: { minX: box.maxX, minY: -far, maxX: far, maxY: far } },
+      { kind: "rect", box: { minX: box.minX, minY: -far, maxX: box.maxX, maxY: box.minY } },
+      { kind: "rect", box: { minX: box.minX, minY: box.maxY, maxX: box.maxX, maxY: far } },
+    ];
+    const placed = placeAnnotation(request("locant", "a1"), {
+      ...EMPTY_CONTEXT,
+      obstacles: [blanket, { kind: "rect", box: glyph }, ...fence],
+      glyphInk: [glyph],
+    });
+    expect(placed.clear).toBe(false);
+    expect(overlaps(first.inkBox, glyph)).toBe(true);
+    expect(placed.origin).not.toEqual(first.origin);
+    expect(overlaps(placed.inkBox, glyph)).toBe(false);
+  });
+
+  it("does not count obstacle records: naming one glyph several times changes nothing", () => {
+    // A label names each glyph more than once among its CLEARANCE records (a
+    // cap-band box and a line-band box, padded). Those decide whether a
+    // candidate is clear; they must not weigh in the fallback. The glyph
+    // below covers the north half of the page; listed once or five times as
+    // an obstacle, the fallback is the same placement, off its ink.
+    const north: LabelBox = { minX: -far, minY: -far, maxX: far, maxY: 0 };
+    const record = { kind: "rect" as const, box: north };
+    const withRecords = (count: number) =>
+      placeAnnotation(request("locant", "a1"), {
+        ...EMPTY_CONTEXT,
+        obstacles: [blanket, ...Array.from({ length: count }, () => record)],
+        glyphInk: [north],
+      });
+    const once = withRecords(1);
+    expect(once.clear).toBe(false);
+    expect(overlapArea(once.inkBox, north)).toBe(0);
+    for (const count of [0, 2, 5]) expect(withRecords(count)).toEqual(once);
+  });
+});
+
+describe("decision 57: proximity is judged at the ink centre", () => {
+  it("refuses a slot whose em-box centre reads as its own but whose ink does not", () => {
+    // The em box a run is measured in is centred on its advance and on the
+    // ascender-to-descender band; the ink is not. A "1" sits right of its
+    // advance's centre, so "17"'s ink centre is ~0.17 px right of its em
+    // centre at 8 pt; "(S)"'s parentheses reach below the baseline, putting
+    // its ink centre ~1.2 px lower. The reader sees the ink.
+    //
+    // For each, a neighbour is placed so that the perpendicular bisector of
+    // a1 and the neighbour runs exactly between the two centres of the first
+    // slot: by its em centre the slot reads as a1's, by its ink it reads as
+    // the neighbour's. It must be refused.
+    const d = (p: ScenePoint, q: ScenePoint): number => Math.sqrt((p.x - q.x) ** 2 + (p.y - q.y) ** 2);
+    //
+    // Each is tried on the side its ink leans to (east for "17", south for
+    // "(S)"), which puts a1 on the em centre's side of that bisector.
+    for (const [kind, text, minimumLift, preferred] of [
+      ["locant", "17", 0.1, { x: 1, y: 0 }],
+      ["descriptor", "(S)", 1, { x: 0, y: 1 }],
+    ] as const) {
+      const req = { ...request(kind, "a1", text), preferred };
+      const first = placeAnnotation(req, EMPTY_CONTEXT);
+      const em = { x: (first.box.minX + first.box.maxX) / 2, y: (first.box.minY + first.box.maxY) / 2 };
+      const ink = inkCentre(first, PUBLICATION_STYLE);
+      // The premise: the two centres differ, measurably.
+      const lift = d(em, ink);
+      expect(lift, text).toBeGreaterThan(minimumLift);
+      // Reflect a1 across the bisector of em and ink.
+      const u = { x: (ink.x - em.x) / lift, y: (ink.y - em.y) / lift };
+      const mid = { x: (em.x + ink.x) / 2, y: (em.y + ink.y) / 2 };
+      const along = mid.x * u.x + mid.y * u.y;
+      expect(along, text).toBeGreaterThan(0);
+      const neighbour = { x: 2 * along * u.x, y: 2 * along * u.y };
+      expect(d(em, ORIGIN_PX), text).toBeLessThan(d(em, neighbour));
+      expect(d(ink, neighbour), text).toBeLessThan(d(ink, ORIGIN_PX));
+
+      const placed = placeAnnotation(req, {
+        ...EMPTY_CONTEXT,
+        atomCentres: [
+          { atomId: "a1", centre: ORIGIN_PX },
+          { atomId: "a2", centre: neighbour },
+        ],
+      });
+      expect(placed.origin, text).not.toEqual(first.origin);
+      const seen = inkCentre(placed, PUBLICATION_STYLE);
+      expect(d(seen, ORIGIN_PX), text).toBeLessThan(d(seen, neighbour));
+    }
+  });
+
+  it("emits the ink where the placement measured it: origin on the baseline", () => {
+    // Decision 53 carried through the pass: the run's y is its alphabetic
+    // baseline, and the measured box and ink box are exactly where the run's
+    // own measurement from that baseline puts them.
+    const { molecule, locants } = steroidSkeletonWithLocants();
+    for (const style of SHIPPED_STYLES) {
+      const layout = annotationLayout(molecule, style, ANNOTATED, { locants });
+      for (const placed of layout.placements) {
+        const run = measureTextRun(
+          [{ text: placed.text }],
+          {
+            fontFamily: style.fontFamily,
+            fontSizePx: placed.fontSizePx,
+            subscriptScale: style.subscriptScale,
+            anchor: "middle",
+            baseline: "alphabetic",
+          },
+          BUNDLED_MEASURER,
+        );
+        const rect = textRunRect(run, placed.origin);
+        expect(rect.minY - 1, placed.id).toBeCloseTo(placed.box.minY, 9);
+        expect(rect.maxY + 1, placed.id).toBeCloseTo(placed.box.maxY, 9);
+        const ink = textRunInkRect(run, placed.origin, BUNDLED_MEASURER, style.fontFamily)!;
+        expect(ink.minY, placed.id).toBeCloseTo(placed.inkBox.minY, 9);
+        expect(ink.maxY, placed.id).toBeCloseTo(placed.inkBox.maxY, 9);
+        // The ink stays inside the measured band.
+        expect(ink.minY).toBeGreaterThanOrEqual(rect.minY - 1e-9);
+        expect(ink.maxY).toBeLessThanOrEqual(rect.maxY + 1e-9);
+      }
+    }
+  });
+});
+
 describe("decision 46: only real atoms compete in the proximity rule", () => {
   it("places annotations clear beside a drawn hydrogen that is nearer than their own atom", () => {
     // The explicitH and Lewis views draw derived hydrogens. They are obstacles
@@ -579,10 +760,7 @@ describe("decision 46: only real atoms compete in the proximity rule", () => {
         const layout = annotationLayout(molecule, PUBLICATION_STYLE, rep, { locants });
         for (const placed of layout.placements) {
           if (!placed.clear || placed.source.kind !== "atom") continue;
-          const c = {
-            x: (placed.box.minX + placed.box.maxX) / 2,
-            y: (placed.box.minY + placed.box.maxY) / 2,
-          };
+          const c = inkCentre(placed, PUBLICATION_STYLE);
           const own = modelToPx(PUBLICATION_STYLE, molecule.atoms[placed.source.atomId]!.pos);
           const ownD = (c.x - own.x) ** 2 + (c.y - own.y) ** 2;
           if (hydrogens.some((h) => (c.x - h.x) ** 2 + (c.y - h.y) ** 2 <= ownD)) besideHydrogen++;
@@ -593,7 +771,8 @@ describe("decision 46: only real atoms compete in the proximity rule", () => {
   });
 });
 
-describe("decision 44: Publication's own annotation scale", () => {
+describe("decision 54: Publication annotations at the 8 pt floor", () => {
+  /** The measurement set style.ts records its counts on. */
   const cases = (): [string, Molecule, Readonly<Record<AtomId, string>>][] => {
     const steroid = steroidSkeletonWithLocants();
     const numbered = (molecule: Molecule): Record<AtomId, string> =>
@@ -608,41 +787,58 @@ describe("decision 44: Publication's own annotation scale", () => {
       ["phenanthrene", phenanthrene(), numbered(phenanthrene())],
     ];
   };
+  const VIEWS = ["skeletal", "kekule", "explicitH", "lewis"] as const;
 
-  /** The measurement recorded in style.ts, recomputed. */
-  function reported(style: RenderStyle): { total: number; unplaced: number; descriptors: number } {
+  /** Every report over the measurement set; steroid atoms named by their real locant. */
+  function reportedIds(style: RenderStyle): string[] {
+    const { locants: steroidLocants } = steroidSkeletonWithLocants();
+    const ids: string[] = [];
+    for (const [name, molecule, locants] of cases()) {
+      for (const view of VIEWS) {
+        const rep = representation(view, { showStereoDescriptors: true, showLocants: true });
+        for (const u of annotationLayout(molecule, style, rep, { locants }).unplaced) {
+          const [, id, kind] = u.id.split(":");
+          const label =
+            name === "steroidSkeleton" && u.source.kind === "atom" ? `C${steroidLocants[id as AtomId]}` : id;
+          ids.push(`${name}/${view}/${label}:${kind}`);
+        }
+      }
+    }
+    return ids.sort();
+  }
+
+  function counts(style: RenderStyle): {
+    total: number;
+    descriptors: number;
+    unplaced: number;
+    unplacedDescriptors: number;
+  } {
     let total = 0;
-    let unplaced = 0;
     let descriptors = 0;
+    let unplaced = 0;
+    let unplacedDescriptors = 0;
     for (const [, molecule, locants] of cases()) {
-      for (const view of ["skeletal", "kekule", "explicitH", "lewis"] as const) {
+      for (const view of VIEWS) {
         const rep = representation(view, { showStereoDescriptors: true, showLocants: true });
         const layout = annotationLayout(molecule, style, rep, { locants });
         total += layout.placements.length;
+        descriptors += layout.placements.filter((p) => p.kind === "descriptor").length;
         unplaced += layout.unplaced.length;
-        descriptors += layout.unplaced.filter((u) => u.kind === "descriptor").length;
+        unplacedDescriptors += layout.unplaced.filter((u) => u.kind === "descriptor").length;
       }
     }
-    return { total, unplaced, descriptors };
+    return { total, descriptors, unplaced, unplacedDescriptors };
   }
 
-  it("is smaller than Screen's, above the 60% legibility floor, with atom labels unchanged", () => {
-    expect(PUBLICATION_STYLE.fontSizePx).toBe(50 / 3);
+  it("sets descriptors and locants at 8 pt beside the 10 pt label, and leaves Screen alone", () => {
+    expect(PUBLICATION_STYLE.stereoDescriptorScale).toBe(0.8);
     expect(SCREEN_STYLE.stereoDescriptorScale).toBe(0.85);
-    expect(PUBLICATION_STYLE.stereoDescriptorScale).toBeLessThan(SCREEN_STYLE.stereoDescriptorScale);
-    // The annotation is set in the label's own face, so the cap-height ratio
-    // is the scale; measured anyway rather than assumed.
-    const cap = (fontSizePx: number): number =>
-      measureTextRun(
-        [{ text: "(S)" }],
-        { fontFamily: PUBLICATION_STYLE.fontFamily, fontSizePx, subscriptScale: 0.72, anchor: "middle", baseline: "middle" },
-        BUNDLED_MEASURER,
-      ).capHeightPx;
-    const ratio =
-      cap(PUBLICATION_STYLE.fontSizePx * PUBLICATION_STYLE.stereoDescriptorScale) /
-      cap(PUBLICATION_STYLE.fontSizePx);
-    expect(ratio).toBeGreaterThanOrEqual(0.6);
-    // Locants share the scale: one annotation size per figure.
+    // Decision 26's label: 50/3 px is 10 pt at the printed bond, so 0.8 of it
+    // is the 8 pt ACS artwork minimum decision 51 cites.
+    expect(PUBLICATION_STYLE.fontSizePx).toBe(50 / 3);
+    const pt = (px: number): number => (px * 10) / (50 / 3);
+    expect(pt(PUBLICATION_STYLE.fontSizePx * PUBLICATION_STYLE.stereoDescriptorScale)).toBeCloseTo(8, 12);
+    // One annotation size per figure: locants share the descriptor's scale.
     const { molecule, locants } = steroidSkeletonWithLocants();
     const sizes = new Set(
       annotationLayout(molecule, PUBLICATION_STYLE, ANNOTATED, { locants }).placements.map((p) => p.fontSizePx),
@@ -650,90 +846,89 @@ describe("decision 44: Publication's own annotation scale", () => {
     expect([...sizes]).toEqual([PUBLICATION_STYLE.fontSizePx * PUBLICATION_STYLE.stereoDescriptorScale]);
   });
 
-  it("reports what style.ts records: 42 of 516 before, 38 after", () => {
-    expect(reported(CROWDED_PUBLICATION_STYLE)).toEqual({ total: 516, unplaced: 42, descriptors: 14 });
-    expect(reported(PUBLICATION_STYLE)).toEqual({ total: 516, unplaced: 38, descriptors: 10 });
+  it("reports what style.ts records: 47 of 516 at 0.80 (12 of 28 descriptors)", () => {
+    expect(counts(PUBLICATION_STYLE)).toEqual({
+      total: 516,
+      descriptors: 28,
+      unplaced: 47,
+      unplacedDescriptors: 12,
+    });
+    // The pre-decision-44 scale, for the record style.ts keeps beside it.
+    expect(counts(CROWDED_PUBLICATION_STYLE)).toEqual({
+      total: 516,
+      descriptors: 28,
+      unplaced: 54,
+      unplacedDescriptors: 14,
+    });
   });
 
-  it("records WHICH annotations the smaller scale traded, not only how many", () => {
-    // The locant count is 28 at both scales, but it is not the same 28: seven
-    // locants are newly reported at 0.66 and seven newly clear. A count alone
-    // hid that, so the trade is pinned by id. Steroid atoms are named by their
-    // real locant (C13 is a3); every other molecule by its atom id.
-    const unplacedIds = (style: RenderStyle): Set<string> => {
-      const ids = new Set<string>();
-      for (const [name, molecule, locants] of cases()) {
-        const label = (id: string): string =>
-          name === "steroidSkeleton" ? `C${steroidSkeletonWithLocants().locants[id as AtomId]}` : id;
-        for (const view of ["skeletal", "kekule", "explicitH", "lewis"] as const) {
-          const rep = representation(view, { showStereoDescriptors: true, showLocants: true });
-          for (const u of annotationLayout(molecule, style, rep, { locants }).unplaced) {
-            const [, id, kind] = u.id.split(":");
-            ids.add(`${name}/${view}/${u.source.kind === "atom" ? label(id!) : id}:${kind}`);
-          }
-        }
-      }
-      return ids;
-    };
-    const before = unplacedIds(CROWDED_PUBLICATION_STYLE);
-    const after = unplacedIds(PUBLICATION_STYLE);
-    expect([...after].filter((id) => !before.has(id)).sort()).toEqual(
+  it("reports exactly these annotations at 0.80, by id — C17's (S) among them", () => {
+    // By id rather than by count: a scale, ladder or obstacle change that
+    // trades one report for another fails here instead of passing unchanged.
+    expect(reportedIds(PUBLICATION_STYLE)).toEqual(
       [
-        "chrysene/skeletal/a25:locant",
-        "steroidSkeleton/explicitH/C1:locant",
-        "steroidSkeleton/explicitH/C12:locant",
-        "steroidSkeleton/kekule/C13:locant",
-        "steroidSkeleton/lewis/C1:locant",
-        "steroidSkeleton/lewis/C12:locant",
-        "steroidSkeleton/skeletal/C13:locant",
-      ].sort(),
-    );
-    expect([...before].filter((id) => !after.has(id)).sort()).toEqual(
-      [
+        "butan2olWedged/explicitH/a2:descriptor",
+        "butan2olWedged/lewis/a2:descriptor",
+        "chrysene/explicitH/a16:locant",
         "chrysene/explicitH/a25:locant",
+        "chrysene/lewis/a16:locant",
         "chrysene/lewis/a25:locant",
-        "steroidSkeleton/explicitH/C10:descriptor",
+        "chrysene/skeletal/a25:locant",
+        "dimethylSulfone/explicitH/a1:locant",
+        "dimethylSulfone/kekule/a1:locant",
+        "dimethylSulfone/lewis/a1:locant",
+        "dimethylSulfone/skeletal/a1:locant",
+        "phenanthrene/explicitH/a16:locant",
+        "phenanthrene/lewis/a16:locant",
+        "steroidSkeleton/explicitH/C1:locant",
+        "steroidSkeleton/explicitH/C10:locant",
+        "steroidSkeleton/explicitH/C13:descriptor",
+        "steroidSkeleton/explicitH/C13:locant",
+        "steroidSkeleton/explicitH/C14:locant",
+        "steroidSkeleton/explicitH/C17:descriptor",
+        "steroidSkeleton/explicitH/C17:locant",
+        "steroidSkeleton/explicitH/C3:descriptor",
         "steroidSkeleton/explicitH/C3:locant",
+        "steroidSkeleton/explicitH/C5:locant",
+        "steroidSkeleton/explicitH/C8:locant",
+        "steroidSkeleton/explicitH/C9:locant",
+        "steroidSkeleton/kekule/C13:locant",
         "steroidSkeleton/kekule/C17:descriptor",
-        "steroidSkeleton/lewis/C10:descriptor",
+        "steroidSkeleton/kekule/C17:locant",
+        "steroidSkeleton/lewis/C1:locant",
+        "steroidSkeleton/lewis/C10:locant",
+        "steroidSkeleton/lewis/C13:descriptor",
+        "steroidSkeleton/lewis/C13:locant",
+        "steroidSkeleton/lewis/C14:locant",
+        "steroidSkeleton/lewis/C17:descriptor",
+        "steroidSkeleton/lewis/C17:locant",
+        "steroidSkeleton/lewis/C3:descriptor",
+        "steroidSkeleton/lewis/C3:locant",
+        "steroidSkeleton/lewis/C5:locant",
+        "steroidSkeleton/lewis/C8:locant",
+        "steroidSkeleton/lewis/C9:locant",
+        "steroidSkeleton/skeletal/C13:locant",
         "steroidSkeleton/skeletal/C17:descriptor",
-        "tertButylCation/explicitH/a1:locant",
-        "tertButylCation/lewis/a1:locant",
+        "steroidSkeleton/skeletal/C17:locant",
+        "trans2Butene/explicitH/b3:descriptor",
+        "trans2Butene/lewis/b3:descriptor",
         "unmergedDropOverlap/explicitH/a6:locant",
         "unmergedDropOverlap/lewis/a6:locant",
       ].sort(),
     );
   });
 
-  it("is the largest 0.01 step at or above the floor that sets C17's (S) clear", () => {
+  it("reports C17's (S) at 0.80 rather than passing a tie with C13 off as clear", () => {
+    // Decision 54's reason in one fixture: C17's (S) is the steroid's one
+    // skeletal descriptor with no clear slot that reads as C17's at 8 pt. It
+    // is reported, locants off and on — the author decides.
     const { molecule, locants } = steroidSkeletonWithLocants();
     const c17 = Object.entries(locants).find(([, text]) => text === "17")![0];
-    const c17Clear = (scale: number): boolean =>
-      [representation("skeletal", { showStereoDescriptors: true }), ANNOTATED].every(
-        (rep) =>
-          annotationLayout(molecule, withStyle(PUBLICATION_STYLE, { stereoDescriptorScale: scale }), rep, {
-            locants,
-          }).placements.find((p) => p.id === `atom:${c17}:descriptor`)!.clear,
-      );
-    expect(c17Clear(PUBLICATION_STYLE.stereoDescriptorScale)).toBe(true);
-    const cents = Math.round(PUBLICATION_STYLE.stereoDescriptorScale * 100);
-    for (let step = cents + 1; step <= 85; step++) {
-      expect(c17Clear(step / 100), `scale ${step / 100}`).toBe(false);
-    }
-  });
-
-  it("keeps every shipped preset's skeletal and kekule descriptors clear", () => {
-    for (const style of SHIPPED_STYLES) {
-      for (const [name, molecule, locants] of cases()) {
-        for (const view of ["skeletal", "kekule"] as const) {
-          const rep = representation(view, { showStereoDescriptors: true, showLocants: true });
-          const layout = annotationLayout(molecule, style, rep, { locants });
-          expect(
-            layout.unplaced.filter((u) => u.kind === "descriptor").map((u) => u.id),
-            `${name}/${styleLabel(style)}/${view}`,
-          ).toEqual([]);
-        }
-      }
+    for (const rep of [representation("skeletal", { showStereoDescriptors: true }), ANNOTATED]) {
+      const layout = annotationLayout(molecule, PUBLICATION_STYLE, rep, { locants });
+      expect(layout.unplaced.filter((u) => u.kind === "descriptor").map((u) => u.id)).toEqual([
+        `atom:${c17}:descriptor`,
+      ]);
     }
   });
 });
@@ -1169,7 +1364,7 @@ describe("decision 34: descriptors search the full obstacle set", () => {
             fontSizePx: h.fontSizePx,
             subscriptScale: SCREEN_STYLE.subscriptScale,
             anchor: h.anchor,
-            baseline: h.baseline,
+            baseline: "alphabetic",
           },
           BUNDLED_MEASURER,
         ),
@@ -1203,8 +1398,7 @@ describe("decision 34: descriptors search the full obstacle set", () => {
       expect(layout.unplaced, view).toEqual([]);
       const placed = layout.placements[0]!;
       expect(placed.id).toBe("atom:a2:descriptor");
-      const box = placed.box;
-      const centre = { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 };
+      const centre = inkCentre(placed, COMPACT_PUBLICATION_STYLE);
       const d2 = (p: ScenePoint): number => (p.x - centre.x) ** 2 + (p.y - centre.y) ** 2;
       const own = d2(modelToPx(COMPACT_PUBLICATION_STYLE, molecule.atoms.a2!.pos));
       for (const atomId of molecule.atomIds) {
@@ -1265,7 +1459,7 @@ describe("clearance on fused rings", () => {
           fontSizePx: run.fontSizePx,
           subscriptScale: style.subscriptScale,
           anchor: run.anchor,
-          baseline: run.baseline,
+          baseline: "alphabetic",
         },
         BUNDLED_MEASURER,
       ),
@@ -1291,7 +1485,7 @@ describe("clearance on fused rings", () => {
     };
     const whole = measureTextRun(
       run.spans,
-      { ...options, anchor: run.anchor, baseline: run.baseline },
+      { ...options, anchor: run.anchor, baseline: "alphabetic" },
       BUNDLED_MEASURER,
     );
     const baseline = { x: run.origin.x + whole.startXPx, y: run.origin.y + whole.baselineYPx };
@@ -1415,19 +1609,13 @@ describe("clearance on fused rings", () => {
             // failure, not as an unchanged count.
             //
             // - Screen: nothing is reported.
-            // - Crowded (Publication at 0.85): the steroid's C17 (S) has no
-            //   room that reads as C17's (see decision 35's C17 test), and
-            //   C17's locant, placed after it, loses too.
-            // - Publication (0.66, decision 44): C17's (S) is clear, but the
-            //   locants of C13 and C17 are reported, and so is chrysene's
-            //   locant on a25 in the skeletal view. The ladder's outermost
-            //   rung is a fixed number of the annotation's OWN cap heights, so
-            //   the smaller run also searches less far: chrysene a25's clear
-            //   slot at 0.85 sits 21.5 px north of it (a fusion vertex, with
-            //   the skeletal view's inscribed circles around it), and at 0.66
-            //   the ladder stops near 16.7 px. C13's locant was clear at 0.85
-            //   for the same reason. Reported, as the contract allows, rather
-            //   than widened here; see the escalation recorded in style.ts.
+            // - Publication (0.80, decision 54): the steroid's C17 (S) has no
+            //   room that reads as C17's at 8 pt (see decision 54's C17 test);
+            //   the locants of C13 and C17, placed after it, lose too; and
+            //   chrysene's locant on a25 (a fusion vertex inside the skeletal
+            //   view's inscribed circles) in the skeletal view.
+            // - Crowded (0.85): the same C17 (S) and C13/C17 locants, plus the
+            //   locants of C8 and C9, the B/C ring junction.
             const { locants: steroidLocants } = steroidSkeletonWithLocants();
             const byLocant = (text: string): AtomId =>
               Object.entries(steroidLocants).find(([, t]) => t === text)![0] as AtomId;
@@ -1435,9 +1623,15 @@ describe("clearance on fused rings", () => {
             const c17 = byLocant("17");
             const expected =
               name === "steroidSkeleton" && style === CROWDED_PUBLICATION_STYLE
-                ? [`atom:${c17}:descriptor`, `atom:${c17}:locant`]
+                ? [
+                    `atom:${c17}:descriptor`,
+                    `atom:${c13}:locant`,
+                    `atom:${byLocant("8")}:locant`,
+                    `atom:${byLocant("9")}:locant`,
+                    `atom:${c17}:locant`,
+                  ]
                 : name === "steroidSkeleton" && style === PUBLICATION_STYLE
-                  ? [`atom:${c13}:locant`, `atom:${c17}:locant`]
+                  ? [`atom:${c17}:descriptor`, `atom:${c13}:locant`, `atom:${c17}:locant`]
                   : name === "chrysene" && style === PUBLICATION_STYLE && kind === "skeletal"
                     ? ["atom:a25:locant"]
                     : [];
@@ -1512,4 +1706,24 @@ function boxMeetsSegment(box: LabelBox, a: ScenePoint, b: ScenePoint): boolean {
   if (!clip(-dy, a.y - box.minY)) return false;
   if (!clip(dy, box.maxY - a.y)) return false;
   return entry <= exit;
+}
+
+/**
+ * Reported placements that read as another atom's, because every slot that
+ * reads as their own prints over an annotation already placed (decision 45's
+ * first key). Only at the crowded setting's 14 px run.
+ */
+const NOT_OWN_REPORTED: readonly string[] = [
+  // C13's locant in the fully explicit views: C13 is the ring junction under
+  // C18, with C12, C14 and C17 around it and C17's "(S)" placed first.
+  "steroidSkeleton/publication-crowded@14.2px/explicitH/atom:a3:locant",
+  "steroidSkeleton/publication-crowded@14.2px/lewis/atom:a3:locant",
+];
+
+const ORIGIN_PX: ScenePoint = Object.freeze({ x: 0, y: 0 });
+
+function overlapArea(a: LabelBox, b: LabelBox): number {
+  const w = Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX);
+  const h = Math.min(a.maxY, b.maxY) - Math.max(a.minY, b.minY);
+  return w > 0 && h > 0 ? w * h : 0;
 }
