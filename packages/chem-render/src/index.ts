@@ -44,9 +44,12 @@ export * from "./text/measurer.js";
 export * from "./label/visibility.js";
 export * from "./label/compose.js";
 export * from "./label/placement.js";
-// Descriptor placement sits with the label layer because it measures text and
+// Annotation placement sits with the label layer because it measures text and
 // queries the same obstacle unions, but it is the mirror image of it: an atom
-// label claims space, a descriptor only looks for space nobody claimed.
+// label claims space, an annotation — descriptor, alpha/beta, locant, torsion
+// — only looks for space nobody claimed. `descriptors.js` is the one-descriptor
+// convenience over the same ladder.
+export * from "./label/annotations.js";
 export * from "./label/descriptors.js";
 // The bond pass: trimming, the second and third lines, and the aromatic
 // circle. It consumes the label layer's clear space and produces geometry.

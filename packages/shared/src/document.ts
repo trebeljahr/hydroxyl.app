@@ -55,6 +55,13 @@ import { z } from "zod";
  * Bumped when the on-disk shape changes incompatibly. A document carrying a
  * higher number is rejected rather than half-understood — silently dropping
  * fields we do not know about is how a save turns into data loss.
+ *
+ * KNOWN GAP WITHIN v1, OWED TO THE v2 BUMP (decision 38): the codec strips
+ * display keys it does not know. A v1 document written by a newer build that
+ * carries a flag this build lacks — `showLocants`, opened by a build from
+ * before the rename — decodes without it, and re-saving drops it. Accepted
+ * for now; the scheme-model task's v2 bump is where unknown-key handling gets
+ * decided, and nothing before it should change that behaviour.
  */
 export const SCHEMA_VERSION = 1;
 
@@ -72,10 +79,10 @@ export type StylePresetId = "publication" | "screen";
  * They used to be declared here as well, and the two declarations had already
  * drifted: the document knew four flags and the renderer eight, so a chemist
  * who turned on `showImplicitHydrogens`, `showCharges`, `showStereoBonds` or
- * `showAtomIndices` could not SAVE it. The flag set belongs where the drawing
- * happens — a flag exists the moment a render pass can honour it — and the
- * codec's job is to persist whatever that set currently is, not to hold an
- * opinion about it.
+ * `showAtomIndices` (since renamed `showLocants`) could not SAVE it. The flag
+ * set belongs where the drawing happens — a flag exists the moment a render
+ * pass can honour it — and the codec's job is to persist whatever that set
+ * currently is, not to hold an opinion about it.
  *
  * The aliases are kept because the document's vocabulary reads better in a
  * file format ("this panel's representation and its display") and because
@@ -765,10 +772,34 @@ const displayShape = Object.fromEntries(
   DISPLAY_FLAG_KEYS.map((key) => [key, z.boolean().optional()]),
 ) as { [K in DisplayFlagKey]: z.ZodOptional<z.ZodBoolean> };
 
+/**
+ * Display keys a v1 document may carry that no longer name a flag.
+ *
+ * `showAtomIndices` was persisted from decision 10 until decision 18 renamed
+ * it `showLocants`. Documents saved in between carry it, so it is ACCEPTED —
+ * and still validated as a boolean, exactly as it was — and then DROPPED:
+ * `assembleDisplay` reads only `DISPLAY_FLAG_KEYS`, so it never reaches the
+ * decoded panel or the next save.
+ *
+ * Listed explicitly rather than left to zod's default of stripping unknown
+ * keys, which is a library default this file should not be resting a
+ * compatibility promise on.
+ *
+ * Its value is deliberately NOT copied into `showLocants`. It meant "show
+ * each atom's position in `atomIds`", and an atomIds position is not a
+ * chemical locant; a document that had it on must not open claiming its
+ * structure is numbered.
+ */
+const LEGACY_DISPLAY_KEYS = ["showAtomIndices"] as const;
+
+const legacyDisplayShape = Object.fromEntries(
+  LEGACY_DISPLAY_KEYS.map((key) => [key, z.boolean().optional()]),
+) as { [K in (typeof LEGACY_DISPLAY_KEYS)[number]]: z.ZodOptional<z.ZodBoolean> };
+
 export const representationSchema = z
   .object({
     kind: z.enum(VIEW_KINDS),
-    display: z.object(displayShape),
+    display: z.object({ ...legacyDisplayShape, ...displayShape }),
   })
   .transform(
     (value): Representation => ({

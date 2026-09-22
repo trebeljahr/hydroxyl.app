@@ -308,6 +308,30 @@ describe("view commands", () => {
       .document.panels.find((panel) => panel.id === panelId)!;
     expect(after.representation.display.aromaticCircles).toBe(!before);
   });
+
+  it("lists the locants toggle disabled, with its reason, while nothing numbers the atoms", () => {
+    // Decision 37. The command exists — a chemist searching "locant" learns
+    // the feature is coming — but a switch that draws nothing would read as
+    // broken, so it is off and says why. showLocants itself defaults off.
+    const store = storeWith(benzene());
+    const command = commandById("view.show-locants");
+    expect(command.title).toBe("Toggle locants");
+    expect(command.enabled(store.getState())).toBe(false);
+    expect(command.disabledReason?.(store.getState())).toMatch(/numbering/i);
+    for (const panel of store.getState().document.panels) {
+      expect(panel.representation.display.showLocants, panel.id).toBe(false);
+    }
+    // The old id is gone, not aliased.
+    expect(COMMANDS.some((c) => c.id === "view.show-atom-indices")).toBe(false);
+  });
+
+  it("gives no other display toggle a disabled reason", () => {
+    const store = storeWith(benzene());
+    for (const command of COMMANDS.filter((c) => c.id.startsWith("view.") && c.id !== "view.show-locants")) {
+      expect(command.disabledReason, command.id).toBeUndefined();
+    }
+    expect(commandById("view.aromatic-circles").enabled(store.getState())).toBe(true);
+  });
 });
 
 describe("style preset commands (decision 21)", () => {

@@ -140,6 +140,12 @@ export interface RenderStyle {
    * symbols for the reader's eye. Not `subscriptScale`, which is a typographic
    * relationship inside one run and would drag the descriptor along with any
    * future change to how a subscript is set.
+   *
+   * It sizes EVERY annotation, not only descriptors: locants, alpha/beta and
+   * torsion labels are set at the same size (`annotationFontSizePx` in
+   * label/annotations.ts), so a preset's locant size is this scale too. A
+   * figure mixing annotation sizes reads as annotations making different
+   * kinds of claim.
    */
   readonly stereoDescriptorScale: number;
   readonly colors: RenderColors;
@@ -202,7 +208,66 @@ export const PUBLICATION_STYLE: RenderStyle = Object.freeze({
   stereoWavyPeriodPx: 8,
   explicitHydrogenLengthRatio: 0.66,
   explicitHydrogenMinStemRatio: 0.2,
-  stereoDescriptorScale: 0.85,
+  // DECISION 44: Publication's own, smaller annotation scale. It sizes the
+  // (R)/(S)/(E)/(Z) descriptors AND the locants, which share it; atom labels
+  // stay at the 10 pt of decision 26, and SCREEN_STYLE keeps 0.85.
+  //
+  // Why smaller: at 0.85 of a 50/3 px font an "(S)" is 14.2 px set against a
+  // 24 px bond, nearly a bond long, and on a fused ring the room that reads as
+  // an atom's own (decision 35) is narrower than that.
+  //
+  // MEASURED, not chosen by eye. The set: every chem-render FIXTURE, plus the
+  // steroid skeleton and phenanthrene; the skeletal, kekule, explicitH and
+  // lewis views; descriptors on and a locant on every atom. The count is
+  // annotations REPORTED unplaced (`annotationLayout(...).unplaced`).
+  //   before, at 0.85: 42 of 516 reported (14 of 28 descriptors, 28 of 488
+  //                    locants); the steroid's C17 (S) reported in the
+  //                    skeletal view.
+  //   after, at 0.66:  38 of 516 reported (10 of 28 descriptors, 28 of 488
+  //                    locants); no descriptor reported in the skeletal or
+  //                    kekule view, and C17's (S) clear with locants off and
+  //                    with them on.
+  //   Both counts are with decision 45's fallback order, which leaves the
+  //   0.85 count unchanged.
+  //
+  // The gain is in DESCRIPTORS only. The locant count is 28 at both scales,
+  // but it is a trade, not the same 28 (pinned by id in annotations.test.ts):
+  //   newly reported at 0.66: the steroid's C13 locant (skeletal, kekule),
+  //     its C12 and C1 locants (explicitH, Lewis), chrysene's a25 locant
+  //     (skeletal; also kekule with aromatic circles on);
+  //   newly clear at 0.66: tBu-cation a1, chrysene a25, unmergedDropOverlap
+  //     a6 (each explicitH and Lewis), the steroid's C3 locant (explicitH),
+  //     and the descriptors of C17 (skeletal, kekule) and C10 (explicitH,
+  //     Lewis).
+  // On the fused-ring clearance set (steroid with its real locants,
+  // butan-2-ol, numbered chrysene and acetate; four views; aromatic circles
+  // off and on) the reported total is 66 at 0.85 AND at 0.66. The locants lost
+  // are lost because the ladder's outermost rung is a fixed multiple of the
+  // annotation's OWN cap height, so a smaller run also searches less far.
+  //
+  // The rule: the LARGEST scale, at the 0.01 resolution a style number is
+  // written at, that sets C17's (S) clear and reading as C17's in the skeletal
+  // view, and is not below a legibility floor. The floor is a descriptor cap
+  // height of 60% of the atom label's; an annotation is set in the label's
+  // face, so the cap-height ratio IS the scale and the floor is 0.60. Swept
+  // from 0.85 down in 0.01 steps: C17 is reported at every scale from 0.85 to
+  // 0.67 and first clear at 0.66 (the sweep is not monotone below it: 0.62
+  // reports C17 again).
+  //
+  // "Clear" here is decision 35's rule exactly as ruled: STRICTLY nearer its
+  // own atom. It passes by a hair. At 0.66 the (S) box centre is 18.33 px from
+  // C17 and 18.45 px from C13, a 0.12 px margin, and it sits under C13 beside
+  // the C13-C14 bond. Every clear scale from 0.60 to 0.665 is the same tie
+  // (margins 0.01 to 0.81 px), because the close ladder steps outward only
+  // until the strict inequality flips. Whether "reads as its own atom" needs a
+  // margin is escalated for a ruling; if it does, no scale at or above the
+  // floor qualifies and the floor would be chosen instead.
+  // 0.66 of 50/3 px is an 11 px run, 6.6 pt at the printed 14.4 pt bond.
+  //
+  // The remaining descriptor reports are all in the explicitH and Lewis views
+  // (butan-2-ol C2, trans-2-butene, and the steroid's C13, C17 and C3), where
+  // the derived hydrogens take the room; those views are crowded by design.
+  stereoDescriptorScale: 0.66,
   colors: Object.freeze({ bond: "#000000", label: "#000000" }),
   coordinatePrecision: 3,
 });

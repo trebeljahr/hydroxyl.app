@@ -19,6 +19,7 @@ import { benzene, buildMolecule, linearChain } from "@starter/chem-core";
 import {
   acetate,
   benzylAlcoholAbbreviated,
+  butan2olWedged,
   dimethylSulfone,
   ethanol,
   FIXTURES,
@@ -192,6 +193,28 @@ describe("serializeFigure — the exported file", () => {
     const all = ids(serializeFigure(figure, { embedFont: true }));
     expect(all.length).toBeGreaterThan(20);
     expect(new Set(all).size).toBe(all.length);
+  });
+
+  it("draws each panel's stereo descriptors, their ids namespaced per panel", () => {
+    // The annotation pass names a descriptor `atom:<id>:descriptor` from its
+    // source id, so two panels of one molecule mint the SAME scene id. The
+    // figure must still carry both, each under its own panel's prefix.
+    const flags = { showStereoDescriptors: true };
+    const figure = composeFigure(butan2olWedged(), PUBLICATION_STYLE, [
+      panel("left", representation("skeletal", flags)),
+      panel("right", representation("kekule", flags)),
+      panel("plain", representation("skeletal")),
+    ]);
+    const svg = serializeFigure(figure);
+    const all = ids(svg);
+    expect(new Set(all).size).toBe(all.length);
+    const descriptors = all.filter((id) => id.endsWith("atom:a2:descriptor"));
+    expect(descriptors).toEqual([
+      `${panelIdPrefix("left")}atom:a2:descriptor`,
+      `${panelIdPrefix("right")}atom:a2:descriptor`,
+    ]);
+    expect(svg.match(/>\(R\)</g) ?? []).toHaveLength(2);
+    writeOutput("descriptors-per-panel.svg", svg);
   });
 
   it("escapes panel ids injectively, so hostile ids cannot share a namespace", () => {

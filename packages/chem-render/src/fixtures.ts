@@ -35,7 +35,7 @@ import {
   singleAtom,
   verticalMirror,
 } from "@starter/chem-core";
-import type { BondId, Molecule, Vec2 } from "@starter/chem-core";
+import type { AtomId, BondId, Molecule, Vec2 } from "@starter/chem-core";
 
 /** One unit-length step from `from`, at `degrees` counter-clockwise from +x. */
 function step(from: Vec2, degrees: number): Vec2 {
@@ -385,6 +385,26 @@ export function naphthalene(): Molecule {
 }
 
 /**
+ * Phenanthrene, C14H10: three benzo rings fused at an angle.
+ *
+ * Chrysene's first two fusions, stopped there: the second benzo lands on the
+ * rightmost free double bond of naphthalene, which turns the chain, so the
+ * result is the angular phenanthrene and never linear anthracene (whose middle
+ * ring would need a fusion across a single bond — see `chrysene`).
+ *
+ * NOT IN `FIXTURES`: it would add goldens that say nothing chrysene does not.
+ * It is here for the annotation measurements (decision 44), where the bay
+ * region's crowded inner vertices are the case that matters.
+ */
+export function phenanthrene(): Molecule {
+  let mol = coreBenzene();
+  for (let i = 0; i < 2; i++) {
+    mol = fuseRingOnBond(mol, rightmostDoubleBond(mol), "benzene").molecule;
+  }
+  return mol;
+}
+
+/**
  * Chrysene, C18H12: four benzo rings fused in a zig-zag.
  *
  * The fused tetracycle. Built by fusing three more rings onto benzene, each on
@@ -501,6 +521,141 @@ export function unmergedDropOverlap(): Molecule {
     const dropped = b.atom("C", droppedPos);
     b.bond(dropped, b.atom("O", step(droppedPos, 90)), 1);
   });
+}
+
+/**
+ * A steroid SKELETON — the C19 6-6-6-5 ring system with two angular methyls
+ * and two hydroxyls — with its steroid locants: the fused-ring ANNOTATION
+ * fixture.
+ *
+ * NAMED FOR WHAT IT DRAWS, NOT FOR A COMPOUND. A steroid parent name such as
+ * "androstane" implies the ring-junction configuration (8β, 9α, 10β, 13β,
+ * 14α), and "5α" asserts one more. This drawing puts wedges on C3, C10, C13
+ * and C17 only. The junctions at C5, C8, C9 and C14 are conventionally drawn
+ * with an H on a wedge or hash, which implicit hydrogens cannot carry, so
+ * those centres are undrawn and the structure asserts nothing about them. Calling it
+ * androstanediol would claim stereochemistry the figure does not show.
+ *
+ * Four fused rings (6-6-6-5) in the standard steroid orientation, the two
+ * angular methyls C18 and C19 and both hydroxyls on solid wedges (β, toward
+ * the viewer). Every ring atom is a fused or substituted vertex, so the free
+ * direction the label pass computes points into a bond or a substituent on
+ * almost every one of them: a placement pass that tried only that direction
+ * collides nearly everywhere, which is exactly what this is here to catch.
+ * The ring-junction hydrogens at C5, C8, C9 and C14 are not drawn (hydrogens
+ * are implicit), so those four centres are honestly undetermined and carry no
+ * descriptor; C3, C10, C13 and C17 carry wedges and do.
+ *
+ * VERTICALLY ASYMMETRIC — the methyls go up the page, the 3-OH down and to the
+ * left — so an annotation offset taken from y-up model space without the flip
+ * lands on the wrong side and shows.
+ *
+ * ATOMS ARE CREATED OUT OF NUMBERING ORDER (ring C first, then D, B, A), so an
+ * atom's id is NOT its locant: a renderer that drew ids or `atomIds` positions
+ * under `showLocants` would print a visibly wrong numbering on the contact
+ * sheet. All atoms come before any bond, so `reverseBonds` changes bond ids
+ * and neighbour order and nothing else.
+ *
+ * NOT IN `FIXTURES`: it would add a golden per view and join the rotation and
+ * hydrogen-crowding sweeps that are about other things. The contact sheet
+ * gives it its own section.
+ */
+export function steroidSkeletonWithLocants(
+  options: { readonly reverseBonds?: boolean } = {},
+): { readonly molecule: Molecule; readonly locants: Readonly<Record<AtomId, string>> } {
+  const locants: Record<AtomId, string> = {};
+  const molecule = buildMolecule((b) => {
+    const hexA: Vec2 = ORIGIN;
+    const hexB: Vec2 = { x: Math.sqrt(3), y: 0 };
+    const hexC: Vec2 = { x: 1.5 * Math.sqrt(3), y: 1.5 };
+    const on = (centre: Vec2, degrees: number): Vec2 => step(centre, degrees);
+
+    // One position per atom, computed ONCE even where two rings share it, so
+    // a fused vertex is not two points a few ulps apart.
+    const pos = new Map<string, Vec2>();
+    pos.set("1", on(hexA, 90));
+    pos.set("2", on(hexA, 150));
+    pos.set("3", on(hexA, 210));
+    pos.set("4", on(hexA, 270));
+    pos.set("5", on(hexA, 330));
+    pos.set("10", on(hexA, 30));
+    pos.set("6", on(hexB, 270));
+    pos.set("7", on(hexB, 330));
+    pos.set("8", on(hexB, 30));
+    pos.set("9", on(hexB, 90));
+    pos.set("11", on(hexC, 150));
+    pos.set("12", on(hexC, 90));
+    pos.set("13", on(hexC, 30));
+    pos.set("14", on(hexC, 330));
+    // Ring D: a regular pentagon on the C13-C14 edge, which is vertical.
+    const c13 = pos.get("13")!;
+    const c14 = pos.get("14")!;
+    const apothem = 0.5 / Math.tan(36 * DEG);
+    const circumradius = 0.5 / Math.sin(36 * DEG);
+    const hexD: Vec2 = { x: (c13.x + c14.x) / 2 + apothem, y: (c13.y + c14.y) / 2 };
+    pos.set("17", add(hexD, fromPolar(72 * DEG, circumradius)));
+    pos.set("16", add(hexD, fromPolar(0, circumradius)));
+    pos.set("15", add(hexD, fromPolar(-72 * DEG, circumradius)));
+    pos.set("18", step(c13, 90));
+    pos.set("19", step(pos.get("10")!, 90));
+
+    const ids = new Map<string, AtomId>();
+    const carbon = (locant: string): void => {
+      const id = b.atom("C", pos.get(locant)!);
+      ids.set(locant, id);
+      locants[id] = locant;
+    };
+    for (const locant of ["11", "12", "13", "14", "8", "9"]) carbon(locant);
+    for (const locant of ["15", "16", "17"]) carbon(locant);
+    for (const locant of ["5", "6", "7", "10"]) carbon(locant);
+    for (const locant of ["1", "2", "3", "4"]) carbon(locant);
+    for (const locant of ["18", "19"]) carbon(locant);
+    // The hydroxyl oxygens carry no locant of their own.
+    const o3 = b.atom("O", step(pos.get("3")!, 210));
+    const o17 = b.atom("O", step(pos.get("17")!, 72));
+
+    const id = (locant: string): AtomId => ids.get(locant)!;
+    const bonds: Array<() => void> = [];
+    const ring = (members: readonly string[]): void => {
+      members.forEach((locant, index) => {
+        const next = members[(index + 1) % members.length]!;
+        bonds.push(() => b.bond(id(locant), id(next), 1));
+      });
+    };
+    ring(["1", "2", "3", "4", "5", "10"]);
+    // Ring B without its shared C5-C10 edge, and so on for C and D.
+    for (const [from, to] of [
+      ["5", "6"],
+      ["6", "7"],
+      ["7", "8"],
+      ["8", "9"],
+      ["9", "10"],
+      ["9", "11"],
+      ["11", "12"],
+      ["12", "13"],
+      ["13", "14"],
+      ["14", "8"],
+      ["13", "17"],
+      ["17", "16"],
+      ["16", "15"],
+      ["15", "14"],
+    ] as const) {
+      bonds.push(() => b.bond(id(from), id(to), 1));
+    }
+    // Narrow end at the stereocentre: chem-core's wedge runs from `from`.
+    bonds.push(() => b.bond(id("10"), id("19"), 1, "wedge"));
+    bonds.push(() => b.bond(id("13"), id("18"), 1, "wedge"));
+    bonds.push(() => b.bond(id("3"), o3, 1, "wedge"));
+    bonds.push(() => b.bond(id("17"), o17, 1, "wedge"));
+
+    for (const addBond of options.reverseBonds ? [...bonds].reverse() : bonds) addBond();
+  });
+  return { molecule, locants: Object.freeze(locants) };
+}
+
+/** The molecule of `steroidSkeletonWithLocants`, for callers that want only it. */
+export function steroidSkeleton(): Molecule {
+  return steroidSkeletonWithLocants().molecule;
 }
 
 export interface Fixture {

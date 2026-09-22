@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PANELS,
   DISPLAY_FLAG_KEYS,
+  VIEW_KINDS,
   defaultPanelsFor,
   SCHEMA_VERSION,
   createDocument,
@@ -211,8 +212,109 @@ describe("round trip", () => {
     expect(skeletal.showCharges).toBe(true);
     expect(skeletal.showStereoBonds).toBe(true);
     expect(skeletal.showImplicitHydrogens).toBe(false);
-    expect(skeletal.showAtomIndices).toBe(false);
+    expect(skeletal.showLocants).toBe(false);
     expect(undefinedValuedPaths(decoded)).toEqual([]);
+  });
+
+  it("round-trips every display flag against every view kind's default", () => {
+    // Each flag flipped away from its kind's default, one at a time, so a
+    // codec that silently fell back to the default for any single key — the
+    // exact shape of the decision-10 drift — fails on that key by name.
+    for (const kind of VIEW_KINDS) {
+      for (const key of DISPLAY_FLAG_KEYS) {
+        const base = defaultRepresentation(kind).display;
+        const panel = createPanel(kind);
+        const flipped = {
+          ...panel,
+          representation: {
+            kind,
+            display: { ...base, [key]: !base[key] },
+          },
+        };
+        const original = createDocument({
+          id: `doc-${kind}-${key}`,
+          molecule: ethanol(),
+          panels: [flipped],
+          now: NOW,
+        });
+        const decoded = roundTrip(original);
+        expect(decoded.panels[0]!.representation, `${kind}.${key}`).toEqual(
+          flipped.representation,
+        );
+        expect(decoded.panels[0]!.representation.display[key]).toBe(!base[key]);
+      }
+    }
+  });
+
+  it("opens a document carrying the legacy showAtomIndices key, and drops it", () => {
+    // DECISION 18. Documents saved between decision 10 and the rename carry
+    // `showAtomIndices`; they must open. Its value is NOT carried into
+    // `showLocants` — an atomIds position is not a chemical locant — so a
+    // document that had it ON opens with locants at the kind's default (off).
+    // The panels alternate true and false, so neither value leaks through.
+    const encoded = encodedFixture();
+    expect(encoded.panels.length).toBeGreaterThan(1);
+    encoded.panels.forEach((panel: { representation: { display: Record<string, boolean> } }, index: number) => {
+      const display = panel.representation.display;
+      delete display.showLocants;
+      display.showAtomIndices = index % 2 === 0;
+    });
+    const json = JSON.parse(JSON.stringify(encoded)) as unknown;
+
+    const decoded = decodeDocument(json);
+    for (const panel of decoded.panels) {
+      const display = panel.representation.display;
+      expect(Object.hasOwn(display, "showAtomIndices")).toBe(false);
+      expect(display.showLocants).toBe(false);
+      expect(Object.keys(display).sort()).toEqual([...DISPLAY_FLAG_KEYS].sort());
+    }
+    expect(undefinedValuedPaths(decoded)).toEqual([]);
+
+    const reencoded = encodeDocument(decoded);
+    expect(JSON.stringify(reencoded)).not.toContain("showAtomIndices");
+    expect(undefinedValuedPaths(reencoded)).toEqual([]);
+
+    const again = decodeDocument(JSON.parse(JSON.stringify(reencoded)));
+    expect(again).toEqual(decoded);
+    expect(Object.keys(again.panels[0]!.representation.display).sort()).toEqual(
+      Object.keys(decoded.panels[0]!.representation.display).sort(),
+    );
+  });
+
+  it("still validates the legacy showAtomIndices key as a boolean", () => {
+    // Accepted, not ignored: it was a boolean field of v1, and a v1 document
+    // holding a string there is as malformed as it always was.
+    const encoded = encodedFixture();
+    encoded.panels[0].representation.display.showAtomIndices = "yes";
+    expect(safeDecodeDocument(encoded).ok).toBe(false);
+  });
+
+  it("lets a real showLocants value win over a legacy key beside it", () => {
+    const encoded = encodedFixture();
+    encoded.panels[0].representation.display.showAtomIndices = false;
+    encoded.panels[0].representation.display.showLocants = true;
+    const decoded = decodeDocument(encoded);
+    expect(decoded.panels[0]!.representation.display.showLocants).toBe(true);
+  });
+
+  it("strips a display key this build does not know (decision 38, accepted until v2)", () => {
+    // The reverse of the legacy case: a newer build's flag reaching this one
+    // is dropped on decode, so re-saving here loses it. Accepted for now and
+    // owed to the scheme-model v2 bump; this test pins today's behaviour so
+    // a change to it is a deliberate one.
+    const encoded = encodedFixture();
+    encoded.panels[0].representation.display.showSomethingNewer = true;
+    const decoded = decodeDocument(encoded);
+    expect(Object.hasOwn(decoded.panels[0]!.representation.display, "showSomethingNewer")).toBe(
+      false,
+    );
+    expect(JSON.stringify(encodeDocument(decoded))).not.toContain("showSomethingNewer");
+  });
+
+  it("is still schema version 1: the rename is additive", () => {
+    // The scheme-model task owns the single bump to 2. A second bump here
+    // would give one release two migrations.
+    expect(SCHEMA_VERSION).toBe(1);
   });
 });
 

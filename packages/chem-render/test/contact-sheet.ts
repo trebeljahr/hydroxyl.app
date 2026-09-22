@@ -21,18 +21,20 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { representationAvailability } from "../src/availability.js";
-import { FIXTURES } from "../src/fixtures.js";
+import { steroidSkeletonWithLocants, FIXTURES } from "../src/fixtures.js";
 import {
   isStructuralViewKind,
   representation,
   VIEW_KINDS,
 } from "../src/representation.js";
 import { buildScene } from "../src/scene/build.js";
+import type { SceneBuildOptions } from "../src/scene/build.js";
 import type { RenderScene } from "../src/scene/types.js";
 import { RENDER_STYLES } from "../src/style.js";
 import type { RenderStyle, RenderStyleName } from "../src/style.js";
 import { serializeScene } from "../src/svg/serialize.js";
 import type { Representation, ViewKind } from "../src/representation.js";
+import type { Molecule } from "@starter/chem-core";
 
 const OUTPUT_DIR = join(dirname(fileURLToPath(import.meta.url)), "output");
 const OUTPUT_FILE = join(OUTPUT_DIR, "contact-sheet.html");
@@ -139,13 +141,11 @@ function countPrimitives(scene: RenderScene): number {
 }
 
 function buildCell(
-  fixtureIndex: number,
+  fixture: { readonly molecule: Molecule },
   rep: Representation,
   style: RenderStyle,
+  options?: SceneBuildOptions,
 ): Cell {
-  const fixture = FIXTURES[fixtureIndex];
-  if (fixture === undefined) throw new Error(`No fixture ${fixtureIndex}`);
-
   // A VIEW THAT CANNOT BE PRODUCED PRINTS ITS REASON, and this is the whole
   // point of the availability function existing: a blank cell on a contact
   // sheet is indistinguishable from a rendering bug, and a blank cell in an
@@ -161,7 +161,7 @@ function buildCell(
     };
   }
 
-  const scene = buildScene(fixture.molecule, style, rep);
+  const scene = buildScene(fixture.molecule, style, rep, options);
   return {
     // `standalone: false` drops the XML declaration, which is invalid inside
     // an HTML document and makes browsers refuse the whole page.
@@ -185,50 +185,98 @@ function round(n: number): string {
   return (Math.round(n * 10) / 10).toString();
 }
 
-export function renderContactSheet(): string {
-  const sections = FIXTURES.map((fixture, index) => {
-    const rows = ROWS.map((row) => {
-      const cells = PRESET_NAMES.map((presetName) => {
-        const cell = buildCell(index, row.representation, RENDER_STYLES[presetName]);
-        const body =
-          cell.unavailable === undefined
-            ? `          <div class="stage stage--${presetName}">${cell.svg}</div>`
-            : `          <div class="stage stage--${presetName}"><p class="why">${escapeHtml(cell.unavailable)}</p></div>`;
-        const meta =
-          cell.unavailable === undefined
-            ? [
-                `            <span class="meta">${cell.primitiveCount} primitives</span>`,
-                `            <span class="meta">${round(cell.width)} &times; ${round(cell.height)} px</span>`,
-              ]
-            : [`            <span class="meta">unavailable</span>`];
-        return [
-          `        <figure class="cell">`,
-          body,
-          `          <figcaption>`,
-          `            <span class="preset">${escapeHtml(presetName)}</span>`,
-          ...meta,
-          `          </figcaption>`,
-          `        </figure>`,
-        ].join("\n");
-      }).join("\n");
+/**
+ * The fused-ring ANNOTATION section: a steroid with every ring atom numbered
+ * and its four provable stereocentres labelled.
+ *
+ * Its own section rather than a `FIXTURES` entry, because the locants are an
+ * INJECTED input (`SceneBuildOptions.locants`) that no other fixture has, and
+ * because this is where a locant sitting on a wedge, or a descriptor pushed
+ * into a ring, gets seen. The numbering is the steroid's real one and the
+ * atom ids are deliberately not in that order, so a sheet showing 1..17
+ * running round the rings in id order would be showing ids.
+ */
+const ANNOTATED = steroidSkeletonWithLocants();
+export const ANNOTATED_SECTION_NAME = "steroid skeleton (locants injected)";
+const ANNOTATED_ROWS: readonly Row[] = Object.freeze([
+  Object.freeze({
+    label: "skeletal",
+    note: "no annotations",
+    representation: representation("skeletal"),
+  }),
+  Object.freeze({
+    label: "skeletal",
+    note: "stereo descriptors + locants",
+    representation: representation("skeletal", {
+      showStereoDescriptors: true,
+      showLocants: true,
+    }),
+  }),
+]);
 
-      return [
-        `      <div class="row">`,
-        `        <h3 class="kind">${escapeHtml(row.label)}${
-          row.note === undefined ? "" : ` <em>${escapeHtml(row.note)}</em>`
-        }</h3>`,
-        cells,
-        `      </div>`,
-      ].join("\n");
-    }).join("\n");
-
+function renderRow(
+  row: Row,
+  fixture: { readonly molecule: Molecule },
+  options?: SceneBuildOptions,
+): string {
+  const cells = PRESET_NAMES.map((presetName) => {
+    const cell = buildCell(fixture, row.representation, RENDER_STYLES[presetName], options);
+    const body =
+      cell.unavailable === undefined
+        ? `          <div class="stage stage--${presetName}">${cell.svg}</div>`
+        : `          <div class="stage stage--${presetName}"><p class="why">${escapeHtml(cell.unavailable)}</p></div>`;
+    const meta =
+      cell.unavailable === undefined
+        ? [
+            `            <span class="meta">${cell.primitiveCount} primitives</span>`,
+            `            <span class="meta">${round(cell.width)} &times; ${round(cell.height)} px</span>`,
+          ]
+        : [`            <span class="meta">unavailable</span>`];
     return [
-      `    <section>`,
-      `      <h2>${escapeHtml(fixture.name)}</h2>`,
-      rows,
-      `    </section>`,
+      `        <figure class="cell">`,
+      body,
+      `          <figcaption>`,
+      `            <span class="preset">${escapeHtml(presetName)}</span>`,
+      ...meta,
+      `          </figcaption>`,
+      `        </figure>`,
     ].join("\n");
   }).join("\n");
+
+  return [
+    `      <div class="row">`,
+    `        <h3 class="kind">${escapeHtml(row.label)}${
+      row.note === undefined ? "" : ` <em>${escapeHtml(row.note)}</em>`
+    }</h3>`,
+    cells,
+    `      </div>`,
+  ].join("\n");
+}
+
+function renderSection(name: string, rows: readonly string[]): string {
+  return [
+    `    <section>`,
+    `      <h2>${escapeHtml(name)}</h2>`,
+    rows.join("\n"),
+    `    </section>`,
+  ].join("\n");
+}
+
+export function renderContactSheet(): string {
+  const sections = [
+    ...FIXTURES.map((fixture) =>
+      renderSection(
+        fixture.name,
+        ROWS.map((row) => renderRow(row, fixture)),
+      ),
+    ),
+    renderSection(
+      ANNOTATED_SECTION_NAME,
+      ANNOTATED_ROWS.map((row) =>
+        renderRow(row, ANNOTATED, { locants: ANNOTATED.locants }),
+      ),
+    ),
+  ].join("\n");
 
   return `<!doctype html>
 <html lang="en">

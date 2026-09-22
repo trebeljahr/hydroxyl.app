@@ -6,6 +6,7 @@ import {
   PUBLICATION_STYLE,
   SCREEN_STYLE,
   benzylAlcoholAbbreviated,
+  butan2olWedged,
   ethanol,
 } from "@starter/chem-render";
 import { benzene, buildMolecule, emptyMolecule, linearChain } from "@starter/chem-core";
@@ -108,6 +109,38 @@ describe("the figure a document exports", () => {
       "(b)",
       "(c)",
     ]);
+  });
+
+  it("exports each panel's stereo descriptors under that panel's id prefix, in both presets", () => {
+    // The document's display flags reach the exported file through the same
+    // annotation pass the canvas uses; two panels of one molecule mint the
+    // same `atom:<id>:descriptor`, so only the panel prefix keeps them apart.
+    for (const preset of ["publication", "screen"] as const) {
+      const withDescriptors = (panel: ReturnType<typeof createPanel>) => ({
+        ...panel,
+        representation: {
+          ...panel.representation,
+          display: { ...panel.representation.display, showStereoDescriptors: true },
+        },
+      });
+      const doc = createDocument({
+        molecule: butan2olWedged(),
+        stylePreset: preset,
+        panels: [
+          withDescriptors(createPanel("skeletal", undefined, preset)),
+          withDescriptors(createPanel("kekule", undefined, preset)),
+        ],
+        now: NOW,
+      });
+      for (const svg of [figureSvgForFile(prepared(doc)), figureSvgForRaster(prepared(doc))]) {
+        const ids = [...svg.matchAll(/\sid="([^"]*)"/g)].map((m) => m[1]!);
+        expect(new Set(ids).size, preset).toBe(ids.length);
+        const descriptors = ids.filter((id) => id.endsWith(":descriptor"));
+        expect(descriptors, preset).toHaveLength(2);
+        expect(new Set(descriptors.map((id) => id.slice(0, id.indexOf(".") + 1))).size, preset).toBe(2);
+        expect(svg.match(/\(R\)/g) ?? [], preset).toHaveLength(2);
+      }
+    }
   });
 
   it("sizes the raster from the final printed width, not from the column", () => {

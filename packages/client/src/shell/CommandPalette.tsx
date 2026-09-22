@@ -133,6 +133,7 @@ function PaletteList(): ReactElement {
         <CommandGroup key={group} heading={GROUP_TITLES[group]}>
           {commands.map((command) => {
             const enabled = command.enabled(state);
+            const reason = enabled ? undefined : command.disabledReason?.(state);
             return (
               <CommandItem
                 key={command.id}
@@ -140,6 +141,7 @@ function PaletteList(): ReactElement {
                 keywords={[...command.keywords]}
                 data-palette-command={command.id}
                 disabled={!enabled}
+                title={reason}
                 onSelect={() => {
                   if (!enabled) return;
                   // Closed FIRST. Several commands read the palette flag —
@@ -151,6 +153,11 @@ function PaletteList(): ReactElement {
                 }}
               >
                 <span>{command.title}</span>
+                {reason === undefined ? null : (
+                  <span data-disabled-reason className="text-muted-foreground truncate text-xs">
+                    {reason}
+                  </span>
+                )}
                 {command.shortcut === undefined ? null : (
                   <CommandShortcut>
                     {formatShortcut(command.shortcut, apple)}

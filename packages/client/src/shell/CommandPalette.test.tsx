@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { benzene } from "@starter/chem-core";
 import { createDocument } from "@starter/shared";
 
-import { COMMANDS } from "@/editor/commands/registry";
+import { COMMANDS, commandById } from "@/editor/commands/registry";
 import { editorStore } from "@/state";
 
 import { CommandPalette, GROUP_ORDER } from "./CommandPalette";
@@ -73,6 +73,21 @@ describe("CommandPalette", () => {
     const paste = document.querySelector('[data-palette-command="edit.paste"]');
     expect(paste).not.toBeNull();
     expect(paste?.getAttribute("data-disabled")).toBe("true");
+  });
+
+  it("greys out the locants toggle and shows why (decision 37)", () => {
+    open();
+    const locants = document.querySelector<HTMLElement>('[data-palette-command="view.show-locants"]');
+    expect(locants).not.toBeNull();
+    expect(locants!.getAttribute("data-disabled")).toBe("true");
+    const reason = commandById("view.show-locants").disabledReason?.(editorStore.getState());
+    expect(reason).toMatch(/numbering/i);
+    expect(locants!.getAttribute("title")).toBe(reason);
+    expect(locants!.querySelector("[data-disabled-reason]")?.textContent).toBe(reason);
+    // An enabled entry carries no reason.
+    const circles = document.querySelector('[data-palette-command="view.aromatic-circles"]');
+    expect(circles?.getAttribute("title")).toBeNull();
+    expect(circles?.querySelector("[data-disabled-reason]")).toBeNull();
   });
 
   it("runs a command and closes itself", () => {

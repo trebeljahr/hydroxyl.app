@@ -3,6 +3,7 @@ import { benzene, buildMolecule, linearChain } from "./builders.js";
 import * as M from "./molecule.js";
 import { removeAtom } from "./ops.js";
 import {
+  compareIds,
   EMPTY_SELECTION,
   expandToBonds,
   growSelection,
@@ -463,5 +464,15 @@ describe("selectionBounds", () => {
     const box = selectionBounds(mol, stale);
     expectVecClose(box.min, vec(0, 0));
     expectVecClose(box.max, vec(0, 0));
+  });
+});
+
+describe("compareIds", () => {
+  it("is a total order that reads ids the way a human does", () => {
+    const ids = ["b3", "a10", "a9", "a", "a01", "a1", "b10"];
+    expect([...ids].sort(compareIds)).toEqual(["a", "a01", "a1", "a9", "a10", "b3", "b10"]);
+    expect(compareIds("a9", "a10")).toBeLessThan(0);
+    expect(compareIds("a10", "a9")).toBeGreaterThan(0);
+    expect(compareIds("a7", "a7")).toBe(0);
   });
 });

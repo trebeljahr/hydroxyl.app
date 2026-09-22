@@ -22,7 +22,22 @@ export interface DisplayFlags {
   readonly showLonePairs: boolean;
   readonly showCharges: boolean;
   readonly showStereoBonds: boolean;
-  readonly showAtomIndices: boolean;
+  /**
+   * Draw each atom's CHEMICAL locant — "1", "4a", "C3′" — beside it.
+   *
+   * Real numbering only (decision 18). The numbers come from the caller
+   * (`SceneBuildOptions.locants`; later the document-level numbering map), and
+   * an atom with no locant draws nothing. It NEVER falls back to the atom's
+   * position in `atomIds` or to its id: ids come from a monotonic counter and
+   * are never reused, so an unrelated deletion would renumber everything
+   * between the draft the author checked and the export they submitted — and
+   * the result would reach a manuscript looking exactly like IUPAC numbering.
+   *
+   * Replaces `showAtomIndices`, which was persisted but never drawn. A
+   * developer id overlay, if one is wanted, is client UI state, never a
+   * member of this interface.
+   */
+  readonly showLocants: boolean;
   /**
    * Draw a perceived aromatic ring as one inscribed circle instead of the
    * stored Kekule alternation.
@@ -145,7 +160,7 @@ export const DISPLAY_FLAG_KEYS = [
   "showLonePairs",
   "showCharges",
   "showStereoBonds",
-  "showAtomIndices",
+  "showLocants",
   "aromaticCircles",
   "showStereoDescriptors",
 ] as const satisfies readonly DisplayFlagKey[];
@@ -169,7 +184,9 @@ export const DEFAULT_DISPLAY_FLAGS: DisplayFlags = Object.freeze({
   showLonePairs: false,
   showCharges: true,
   showStereoBonds: true,
-  showAtomIndices: false,
+  // Off: numbering is what a figure ABOUT a numbering scheme turns on, and
+  // with no locants supplied it would draw nothing anyway.
+  showLocants: false,
   // Off by default even on skeletal: chem-core stores benzene as an explicit
   // Kekule ring, so a circle drawn ON TOP of the alternation would state the
   // delocalisation twice. Switching the flag on is what makes the renderer
@@ -250,7 +267,7 @@ export function isStructural(r: Representation): r is StructuralRepresentation {
  * The overloads are the enforcement point for the union above: passing flags
  * alongside a text kind is a compile error, not a value quietly dropped on the
  * floor. For a structural kind the given flags are layered over that kind's
- * defaults, so a caller can say "explicitH, but with indices" without
+ * defaults, so a caller can say "explicitH, but with locants" without
  * restating all six.
  */
 export function representation(

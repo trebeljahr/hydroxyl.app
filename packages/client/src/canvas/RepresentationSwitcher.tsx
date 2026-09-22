@@ -32,8 +32,10 @@ import { DISPLAY_FLAG_KEYS } from "@starter/shared";
 import type { DisplayFlagKey } from "@starter/shared";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { commandById, displayFlagCommandId } from "@/editor/commands/registry";
 import { cn } from "@/lib/utils";
 import { editorStore, useEditorStore } from "@/state";
+import type { EditorState } from "@/state";
 
 import { canvasPanelFor, canvasRefusal } from "./scene-bridge";
 
@@ -43,10 +45,28 @@ const FLAG_LABELS: Readonly<Record<DisplayFlagKey, string>> = {
   showLonePairs: "Lone pairs",
   showCharges: "Formal charges",
   showStereoBonds: "Wedge and hash bonds",
-  showAtomIndices: "Atom indices",
+  // Chemical locants, never atom ids or positions (decision 18).
+  showLocants: "Locants",
   aromaticCircles: "Aromatic circles",
   showStereoDescriptors: "R/S and E/Z descriptors",
 };
+
+/**
+ * Whether a checkbox is live, and if not why — read from the flag's COMMAND.
+ *
+ * The palette greys `view.show-locants` out with a reason until something
+ * numbers the atoms (decision 37). A checkbox that bypassed the registry would
+ * be a second door onto the same switch, open while the palette's is shut, so
+ * the popover asks the very command the palette asks.
+ */
+function flagAvailability(
+  key: DisplayFlagKey,
+  state: EditorState,
+): { readonly enabled: boolean; readonly reason: string | undefined } {
+  const command = commandById(displayFlagCommandId(key));
+  const enabled = command.enabled(state);
+  return { enabled, reason: enabled ? undefined : command.disabledReason?.(state) };
+}
 
 export function RepresentationSwitcher(): ReactElement {
   const doc = useEditorStore((state) => state.document);
@@ -126,21 +146,42 @@ export function RepresentationSwitcher(): ReactElement {
               <legend className="text-muted-foreground mb-1 text-[11px]">
                 {VIEW_KIND_TITLES[shown.representation.kind]} panel
               </legend>
-              {DISPLAY_FLAG_KEYS.map((key) => (
-                <label key={key} className="flex items-center gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    data-view-flag={key}
-                    checked={shown.representation.display[key]}
-                    onChange={(event) => {
-                      editorStore
-                        .getState()
-                        .updatePanel(shown.id, { display: { [key]: event.target.checked } });
-                    }}
-                  />
-                  {FLAG_LABELS[key]}
-                </label>
-              ))}
+              {DISPLAY_FLAG_KEYS.map((key) => {
+                const { enabled, reason } = flagAvailability(key, editorStore.getState());
+                return (
+                  <label
+                    key={key}
+                    className={cn(
+                      "flex flex-wrap items-center gap-x-2 text-xs",
+                      !enabled && "text-muted-foreground",
+                    )}
+                    title={reason}
+                  >
+                    <input
+                      type="checkbox"
+                      data-view-flag={key}
+                      checked={shown.representation.display[key]}
+                      disabled={!enabled}
+                      onChange={(event) => {
+                        // `disabled` alone is not a guarantee: a synthetic or
+                        // scripted click still reaches React's onChange. The
+                        // command's own answer is re-asked at the moment of
+                        // the change, not trusted from the last render.
+                        if (!flagAvailability(key, editorStore.getState()).enabled) return;
+                        editorStore
+                          .getState()
+                          .updatePanel(shown.id, { display: { [key]: event.target.checked } });
+                      }}
+                    />
+                    {FLAG_LABELS[key]}
+                    {reason === undefined ? null : (
+                      <span data-disabled-reason className="basis-full pl-5 text-[10px]">
+                        {reason}
+                      </span>
+                    )}
+                  </label>
+                );
+              })}
             </fieldset>
           </PopoverContent>
         </Popover>

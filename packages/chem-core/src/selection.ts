@@ -73,6 +73,11 @@ const NUMERIC_TAIL = /^(\D*)(\d+)$/;
  * numberless ids ahead of numbered ones within the same prefix, then the
  * integer numerically, then the whole string to break remaining ties (`a01`
  * and `a1` share a prefix and a number but are different ids).
+ *
+ * Exported because it is also the ONE tie-break order for things keyed by
+ * source id outside a selection — chem-render's annotation pass breaks a tie
+ * between two locants by it (decision 17). A second copy there would be free
+ * to disagree about `a01` versus `a1`.
  */
 export function compareIds(a: string, b: string): number {
   const ma = NUMERIC_TAIL.exec(a);

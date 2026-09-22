@@ -127,10 +127,10 @@ describe("toRenderRepresentation", () => {
     expect(rendered.flags.showStereoDescriptors).toBe(true);
     expect(Object.keys(rendered.flags).sort()).toEqual([
       "aromaticCircles",
-      "showAtomIndices",
       "showCarbonLabels",
       "showCharges",
       "showImplicitHydrogens",
+      "showLocants",
       "showLonePairs",
       "showStereoBonds",
       "showStereoDescriptors",

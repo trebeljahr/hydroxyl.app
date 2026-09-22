@@ -18,7 +18,12 @@ import { afterAll, describe, expect, it } from "vitest";
 import { FIXTURES } from "../src/fixtures.js";
 import { VIEW_KINDS } from "../src/representation.js";
 
-import { contactSheetPath, contactSheetUrl, writeContactSheet } from "./contact-sheet.js";
+import {
+  ANNOTATED_SECTION_NAME,
+  contactSheetPath,
+  contactSheetUrl,
+  writeContactSheet,
+} from "./contact-sheet.js";
 
 const path = writeContactSheet();
 const html = readFileSync(path, "utf8");
@@ -51,13 +56,24 @@ describe("contact sheet", () => {
       // is not a kind and would be invisible on the sheet otherwise, which is
       // where a circle at the wrong radius or a descriptor sitting on a bond
       // would go unnoticed forever.
+      //
+      // The fused-ring annotation section adds two more skeletal rows of its
+      // own: the bare steroid, and the steroid with descriptors and locants.
       const rows = html.split(`class="kind">${kind}`).length - 1;
-      expect(rows, kind).toBe(FIXTURES.length * (kind === "skeletal" ? 3 : 1));
+      expect(rows, kind).toBe(
+        FIXTURES.length * (kind === "skeletal" ? 3 : 1) + (kind === "skeletal" ? 2 : 0),
+      );
     }
     expect(html).toContain("<em>kekule alternation</em>");
     expect(html).toContain("<em>stereo descriptors</em>");
     const cells = html.split('class="cell"').length - 1;
-    expect(cells).toBe(FIXTURES.length * (VIEW_KINDS.length + 2) * 2);
+    expect(cells).toBe(FIXTURES.length * (VIEW_KINDS.length + 2) * 2 + 2 * 2);
+  });
+
+  it("carries the fused-ring annotation section, locants drawn", () => {
+    expect(html).toContain(`<h2>${ANNOTATED_SECTION_NAME}</h2>`);
+    expect(html).toContain("<em>stereo descriptors + locants</em>");
+    expect(html).toMatch(/id="atom:a\d+:locant"/);
   });
 
   it("embeds the SVG rather than linking it", () => {

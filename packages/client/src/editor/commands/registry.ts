@@ -121,6 +121,13 @@ export interface Command {
    * so letting the platform paste is strictly better than nothing happening.
    */
   readonly passThroughWhenDisabled?: boolean;
+  /**
+   * Why the command is disabled, for a tooltip beside the greyed-out entry.
+   * Only consulted while `enabled(state)` is false. A command that is off for
+   * a reason the user cannot see from the canvas says so here, rather than
+   * looking broken.
+   */
+  disabledReason?(state: EditorState): string | undefined;
   enabled(state: EditorState): boolean;
   run(store: EditorStore): void | Promise<void>;
 }
@@ -472,9 +479,15 @@ const DISPLAY_FLAG_LABELS = {
     title: "Toggle wedge and hash bonds",
     keywords: ["wedge", "hash", "stereo", "bond", "display"],
   },
-  showAtomIndices: {
-    title: "Toggle atom indices",
-    keywords: ["index", "indices", "number", "debug", "display"],
+  // Chemical locants only (decision 18): with no numbering for an atom it
+  // draws nothing, and it never shows an atom's id or position. Nothing in
+  // the document numbers atoms yet, so the toggle would be a switch that does
+  // nothing: listed, disabled, and saying why (decision 37) until a
+  // numbering source exists.
+  showLocants: {
+    title: "Toggle locants",
+    keywords: ["locant", "numbering", "number", "display"],
+    unavailable: "No numbering source yet: the document does not number its atoms",
   },
   showStereoDescriptors: {
     title: "Toggle R/S and E/Z descriptors",
@@ -482,15 +495,31 @@ const DISPLAY_FLAG_LABELS = {
   },
 } as const satisfies Record<
   DisplayFlagKey,
-  { readonly title: string; readonly keywords: readonly string[]; readonly shortcut?: string }
+  {
+    readonly title: string;
+    readonly keywords: readonly string[];
+    readonly shortcut?: string;
+    /** Set: the command is always disabled, with this as its reason. */
+    readonly unavailable?: string;
+  }
 >;
+
+/**
+ * The command id that toggles `key`: `showLocants` → `view.show-locants`.
+ *
+ * Kebab-cased from the flag key, so the id is derived from the thing it
+ * toggles rather than invented alongside it. Exported so the representation
+ * switcher's checkboxes resolve the SAME command as the palette, and with it
+ * the same enabled state and the same disabled reason (decision 37).
+ */
+export function displayFlagCommandId(key: DisplayFlagKey): string {
+  return `view.${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`;
+}
 
 const DISPLAY_FLAG_COMMANDS: readonly Command[] = DISPLAY_FLAG_KEYS.map((key) => {
   const label = DISPLAY_FLAG_LABELS[key];
   const command: { -readonly [K in keyof Command]: Command[K] } = {
-    // Kebab-cased from the flag key, so the id is derived from the thing it
-    // toggles rather than invented alongside it.
-    id: `view.${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`,
+    id: displayFlagCommandId(key),
     title: label.title,
     keywords: [...label.keywords],
     group: "view",
@@ -510,6 +539,11 @@ const DISPLAY_FLAG_COMMANDS: readonly Command[] = DISPLAY_FLAG_KEYS.map((key) =>
     },
   };
   if ("shortcut" in label) command.shortcut = label.shortcut;
+  if ("unavailable" in label) {
+    const reason = label.unavailable;
+    command.enabled = () => false;
+    command.disabledReason = () => reason;
+  }
   return command;
 });
 

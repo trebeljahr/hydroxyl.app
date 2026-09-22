@@ -36,12 +36,24 @@ import type { BondAxis } from "../bond/geometry.js";
 import { resolveDoubleBondSide } from "../bond/doubleBond.js";
 import {
   crossedDouble,
+  hashBars,
   hashPathData,
+  STEREO_MARKS,
   wavyPathData,
   wedgePoints,
 } from "../bond/stereo.js";
-import { placeDescriptor } from "../label/descriptors.js";
-import type { DescriptorSegment } from "../label/descriptors.js";
+import {
+  canonicalFreeDirection,
+  EMPTY_ANNOTATION_LAYOUT,
+  placeAnnotations,
+} from "../label/annotations.js";
+import type {
+  AnnotationAtomCentre,
+  AnnotationCircle,
+  AnnotationLayout,
+  AnnotationRequest,
+  AnnotationSegment,
+} from "../label/annotations.js";
 import {
   composeAtomLabel,
   detachedChargeId,
@@ -54,8 +66,9 @@ import {
   phantomHydrogenId,
   phantomHydrogens,
 } from "../modes/explicitH.js";
-import { freeDirection, placeAtomLabel } from "../label/placement.js";
-import type { AtomLabelPlacement, LabelObstacle } from "../label/placement.js";
+import type { PhantomHydrogen } from "../modes/explicitH.js";
+import { placeAtomLabel } from "../label/placement.js";
+import type { AtomLabelPlacement, LabelObstacle, PlacedTextRun } from "../label/placement.js";
 import { isStructural } from "../representation.js";
 import type {
   Representation,
@@ -64,7 +77,7 @@ import type {
 } from "../representation.js";
 import { modelToPx } from "../style.js";
 import type { RenderStyle } from "../style.js";
-import { measurerFor, measureTextRun } from "../text/measurer.js";
+import { measurerFor, measureTextRun, textRunRect } from "../text/measurer.js";
 import { sceneBounds } from "./bounds.js";
 import type {
   CirclePrimitive,
@@ -98,17 +111,22 @@ import type {
  * trimmed axis, whose `a` is `bond.from`, the narrow end lands where chem-core
  * says it does and `flipBond` inverts the picture with no second rule.
  *
- * `showStereoDescriptors` adds a final pass of `(R)`/`(S)`/`(E)`/`(Z)` runs.
- * It is LAST because it has to see everything else first: a descriptor is
- * annotation and looks for the hole nothing else wanted.
+ * `showStereoDescriptors` and `showLocants` add a final ANNOTATION pass
+ * (`label/annotations.ts`): `(R)`/`(S)`/`(E)`/`(Z)` runs and locants, placed
+ * together in decision 17's priority order. It is LAST because it has to see
+ * everything else first: an annotation looks for the hole nothing else wanted.
+ *
+ * `options` carries what the molecule itself does not: today, the locants.
+ * Omitting it changes nothing about any scene built before it existed.
  */
 export function buildScene(
   mol: Molecule,
   style: RenderStyle,
   representation: Representation,
+  options?: SceneBuildOptions,
 ): RenderScene {
   const primitives = isStructural(representation)
-    ? buildStructural(mol, style, representation)
+    ? buildStructural(mol, style, representation, options).primitives
     : [buildFormulaRun(mol, style, representation.kind)];
 
   return {
@@ -117,6 +135,48 @@ export function buildScene(
     style,
     representation,
   };
+}
+
+/**
+ * Inputs to a scene that do not live on the molecule.
+ *
+ * INJECTED rather than read from anywhere, so every existing call site stays
+ * untouched and chem-render keeps its one dependency. The document-level
+ * numbering map a later task adds is what a caller will pass here.
+ */
+export interface SceneBuildOptions {
+  /**
+   * Each atom's CHEMICAL locant: "1", "4a", "3′". Drawn only while
+   * `flags.showLocants` is on.
+   *
+   * An atom the record or callback has no string for gets NOTHING — never its
+   * id, never its position in `atomIds` (decision 18). An empty string also
+   * draws nothing. A record is read with `Object.hasOwn`, so an atom id of
+   * "constructor" cannot resolve up the prototype chain.
+   */
+  readonly locants?:
+    | Readonly<Record<AtomId, string>>
+    | ((atomId: AtomId) => string | undefined);
+}
+
+/**
+ * The annotation pass's REPORT for a scene: every placement, and the ones that
+ * could not be placed clear.
+ *
+ * A free function rather than a field on `RenderScene`, for the reason
+ * `detectCollisions` is one (see scene/collide.ts): a report hanging off the
+ * scene is paid for inside every drag-loop build and is a field somebody
+ * eventually serialises. It rebuilds the structural scene to get the same
+ * obstacles the drawing used, so its placements are the drawn ones exactly.
+ */
+export function annotationLayout(
+  mol: Molecule,
+  style: RenderStyle,
+  representation: Representation,
+  options?: SceneBuildOptions,
+): AnnotationLayout {
+  if (!isStructural(representation)) return EMPTY_ANNOTATION_LAYOUT;
+  return buildStructural(mol, style, representation, options).annotations;
 }
 
 /**
@@ -222,7 +282,8 @@ function buildStructural(
   mol: Molecule,
   style: RenderStyle,
   representation: StructuralRepresentation,
-): readonly ScenePrimitive[] {
+  options: SceneBuildOptions | undefined,
+): { readonly primitives: readonly ScenePrimitive[]; readonly annotations: AnnotationLayout } {
   const primitives: ScenePrimitive[] = [];
 
   const centres = new Map<AtomId, ScenePoint>();
@@ -237,10 +298,13 @@ function buildStructural(
     ? aromaticCirclePrimitives(mol, style, centres)
     : EMPTY_CIRCLES;
 
-  // The bond corridors, kept as the descriptor pass sees them: one segment
-  // per bond whatever shape actually drew it, so a wedge and a hash ladder
-  // fence off the same space a plain line would.
-  const corridors = new Map<BondId, DescriptorSegment>();
+  // The bond corridors: one segment per bond whatever shape actually drew
+  // it, which is where a bond annotation anchors and what it must not cross.
+  const corridors = new Map<BondId, AnnotationSegment>();
+  // Everything bonds and hydrogen stems actually DREW, as segments: both lines
+  // of a double bond, a wedge's outline, a hash ladder's bars and rails. The
+  // corridor alone lets a locant graze the second line of a ring bond.
+  const drawn: AnnotationSegment[] = [];
 
   for (const bondId of mol.bondIds) {
     pushBondPrimitives(
@@ -253,6 +317,7 @@ function buildStructural(
       circles.suppressedBondIds,
       representation,
       corridors,
+      drawn,
     );
   }
 
@@ -352,13 +417,110 @@ function buildStructural(
     }
   }
 
-  pushHydrogenPrimitives(primitives, mol, style, representation, centres, placements);
+  const hydrogens = phantomHydrogens(mol, style, representation, placements);
+  pushHydrogenPrimitives(primitives, style, hydrogens, centres, placements, drawn);
 
-  if (representation.flags.showStereoDescriptors) {
-    pushDescriptorPrimitives(primitives, mol, style, centres, placements, corridors);
+  const requests = annotationRequests(mol, representation, centres, corridors, options);
+  if (requests.length === 0) {
+    return { primitives, annotations: EMPTY_ANNOTATION_LAYOUT };
   }
 
-  return primitives;
+  const obstacles: LabelObstacle[] = [];
+  const atomCentres: AnnotationAtomCentre[] = [];
+  for (const atomId of mol.atomIds) {
+    const centre = centres.get(atomId);
+    if (centre !== undefined) atomCentres.push({ atomId, centre });
+    const placement = placements.get(atomId);
+    if (placement !== undefined) {
+      obstacles.push(...placement.obstacles);
+      obstacles.push(...glyphBandObstacles(placement.run, style));
+      if (placement.detachedCharge !== undefined) {
+        obstacles.push(...glyphBandObstacles(placement.detachedCharge, style));
+      }
+    } else if (style.atomDotRadiusPx > 0 && centre !== undefined) {
+      obstacles.push({ kind: "disc", centre, radius: style.atomDotRadiusPx });
+    }
+  }
+  for (const hydrogen of hydrogens) {
+    obstacles.push(...hydrogen.placement.obstacles);
+    obstacles.push(...glyphBandObstacles(hydrogen.placement.run, style));
+  }
+
+  const circleOutlines: AnnotationCircle[] = circles.primitives.map((circle) => ({
+    centre: circle.centre,
+    radius: circle.radius,
+    halfWidth: (circle.stroke?.width ?? 0) / 2,
+  }));
+
+  // EVERY kind searches the full set (decision 34): label glyphs, bare-vertex
+  // dots, derived hydrogens, every drawn line and outline, and the circles.
+  const annotations = placeAnnotations(requests, {
+    style,
+    obstacles,
+    segments: [...corridors.values(), ...drawn],
+    circles: circleOutlines,
+    atomCentres,
+  });
+
+  // Emitted in PLACEMENT order — priority, then source id — so the scene's
+  // order is the same function of the molecule the placements are.
+  for (const placed of annotations.placements) {
+    const run: TextRunPrimitive = {
+      id: placed.id,
+      source: placed.source,
+      type: "textRun",
+      origin: placed.origin,
+      spans: [{ text: placed.text }],
+      fontFamily: style.fontFamily,
+      fontSizePx: placed.fontSizePx,
+      fill: { color: style.colors.label },
+      anchor: "middle",
+      baseline: "middle",
+    };
+    primitives.push(run);
+  }
+
+  return { primitives, annotations };
+}
+
+/**
+ * One rect per span of a drawn label run, each its span's FULL ascent-to-
+ * descent band at its own size and script shift.
+ *
+ * For the annotation pass only, on top of the label's own obstacles. Those are
+ * cap-band boxes, tight on purpose: a bond is trimmed against them and should
+ * reach as near the glyph as its ink allows. An annotation is a second run of
+ * text set beside the first, and two runs whose line bands meet read as one
+ * crowded line even where no stroke touches; the close ladder steps near
+ * enough to find exactly that spot.
+ */
+function glyphBandObstacles(run: PlacedTextRun, style: RenderStyle): LabelObstacle[] {
+  const measurer = measurerFor(style);
+  const options = {
+    fontFamily: style.fontFamily,
+    fontSizePx: run.fontSizePx,
+    subscriptScale: style.subscriptScale,
+  };
+  const whole = measureTextRun(
+    run.spans,
+    { ...options, anchor: run.anchor, baseline: run.baseline },
+    measurer,
+  );
+  const baseline = { x: run.origin.x + whole.startXPx, y: run.origin.y + whole.baselineYPx };
+  return whole.spans.flatMap((measured): LabelObstacle[] => {
+    if (measured.span.text.length === 0) return [];
+    const alone = measureTextRun(
+      [measured.span],
+      { ...options, anchor: "start", baseline: "alphabetic" },
+      measurer,
+    );
+    return [
+      {
+        kind: "rect",
+        box: textRunRect(alone, { x: baseline.x + measured.startXPx, y: baseline.y }),
+      },
+    ];
+  });
 }
 
 /**
@@ -384,13 +546,13 @@ function buildStructural(
  */
 function pushHydrogenPrimitives(
   primitives: ScenePrimitive[],
-  mol: Molecule,
   style: RenderStyle,
-  representation: StructuralRepresentation,
+  hydrogens: readonly PhantomHydrogen[],
   centres: ReadonlyMap<AtomId, ScenePoint>,
   placements: ReadonlyMap<AtomId, AtomLabelPlacement | undefined>,
+  drawn: AnnotationSegment[],
 ): void {
-  for (const hydrogen of phantomHydrogens(mol, style, representation, placements)) {
+  for (const hydrogen of hydrogens) {
     const hostCentre = centres.get(hydrogen.hostAtomId);
     if (hostCentre === undefined) continue;
     const id = phantomHydrogenId(hydrogen.hostAtomId, hydrogen.index);
@@ -417,6 +579,7 @@ function pushHydrogenPrimitives(
         stroke: { color: style.colors.bond, width: style.bondLineWidthPx },
       };
       primitives.push(stem);
+      drawn.push({ a: axis.a, b: axis.b, halfWidth: style.bondLineWidthPx / 2 });
     }
 
     const run: TextRunPrimitive = {
@@ -435,117 +598,139 @@ function pushHydrogenPrimitives(
 }
 
 /**
- * The `(R)`, `(S)`, `(E)` and `(Z)` runs, in the molecule's own order: atoms
- * first, then bonds.
+ * Every annotation the representation asks for, as requests — unordered.
  *
- * ONLY WHERE CHEM-CORE PROVED ONE. `cipDescriptor` returns `undetermined` for
- * a centre whose ranking it could not resolve and for one nobody drew a wedge
- * on, and `descriptorText` renders that as nothing at all rather than as a
- * "(?)" — a question mark beside a centre reads as a wavy bond, which is a
- * chemical claim, not a note about the software.
+ * `placeAnnotations` sorts them (decision 17), so the order built here decides
+ * nothing; it is atoms then bonds only because that reads naturally.
  *
- * Each placed descriptor becomes an obstacle for the next, so two centres a
- * bond apart cannot both take the space between them. That makes the result
- * order-dependent, which is why the order is the molecule's insertion order
- * and not a sort.
+ * DESCRIPTORS ONLY WHERE CHEM-CORE PROVED ONE. `cipDescriptor` returns
+ * `undetermined` for a centre whose ranking it could not resolve and for one
+ * nobody drew a wedge on, and `descriptorText` renders that as nothing at all
+ * rather than as a "(?)" — a question mark beside a centre reads as a wavy
+ * bond, which is a chemical claim, not a note about the software.
+ *
+ * LOCANTS ONLY WHERE THE CALLER SUPPLIED ONE (decision 18). Walked over
+ * `mol.atomIds`, never over the keys of the supplied record, so a locant for
+ * an atom that no longer exists is silently not drawn; and an atom with no
+ * locant gets nothing — no fallback to its id or its index.
+ *
+ * alphaBeta and torsion have no producer yet; the pass accepts them.
  */
-function pushDescriptorPrimitives(
-  primitives: ScenePrimitive[],
+function annotationRequests(
   mol: Molecule,
-  style: RenderStyle,
+  representation: StructuralRepresentation,
   centres: ReadonlyMap<AtomId, ScenePoint>,
-  placements: ReadonlyMap<AtomId, AtomLabelPlacement | undefined>,
-  corridors: ReadonlyMap<BondId, DescriptorSegment>,
-): void {
-  const obstacles: LabelObstacle[] = [];
-  for (const atomId of mol.atomIds) {
-    const placement = placements.get(atomId);
-    if (placement !== undefined) obstacles.push(...placement.obstacles);
-  }
-  const segments = [...corridors.values()];
-
-  const emit = (
-    id: string,
-    source: ScenePrimitive["source"],
-    text: string,
-    anchor: ScenePoint,
-    preferred: ScenePoint,
-  ): void => {
-    const placed = placeDescriptor({
-      text,
-      anchor,
-      preferred,
-      style,
-      obstacles,
-      segments,
-    });
-    // Every descriptor blocks the next one, itself included in the union the
-    // following call queries.
-    obstacles.push({ kind: "rect", box: placed.box });
-    const run: TextRunPrimitive = {
-      id,
-      source,
-      type: "textRun",
-      origin: placed.origin,
-      spans: [{ text }],
-      fontFamily: style.fontFamily,
-      fontSizePx: placed.fontSizePx,
-      fill: { color: style.colors.label },
-      anchor: "middle",
-    };
-    primitives.push(run);
-  };
+  corridors: ReadonlyMap<BondId, AnnotationSegment>,
+  options: SceneBuildOptions | undefined,
+): AnnotationRequest[] {
+  const requests: AnnotationRequest[] = [];
+  const descriptors = representation.flags.showStereoDescriptors;
+  const locants = representation.flags.showLocants ? options?.locants : undefined;
+  if (!descriptors && locants === undefined) return requests;
 
   for (const atomId of mol.atomIds) {
     const centre = centres.get(atomId);
     if (centre === undefined) continue;
-    const text = descriptorText(cipDescriptor(mol, atomId));
-    if (text === undefined) continue;
-    const placement = placements.get(atomId);
-    // The label pass already worked out the emptiest direction around this
-    // atom; a bare vertex has no placement, so it is asked for directly.
-    const preferred =
-      placement?.freeDirection ??
-      freeDirection(
-        centre,
-        neighborIds(mol, atomId).flatMap((id) => {
-          const point = centres.get(id);
-          return point === undefined ? [] : [point];
-        }),
-      );
-    emit(
-      `atom:${atomId}:descriptor`,
-      { kind: "atom", atomId },
-      text,
-      centre,
-      preferred,
-    );
+    const source = { kind: "atom", atomId } as const;
+    let preferred: ScenePoint | undefined;
+    const preferredDirection = (): ScenePoint =>
+      (preferred ??= atomAnnotationDirection(mol, atomId, centre, centres));
+
+    if (descriptors) {
+      const text = descriptorText(cipDescriptor(mol, atomId));
+      if (text !== undefined) {
+        requests.push({
+          kind: "descriptor",
+          source,
+          text,
+          anchor: centre,
+          preferred: preferredDirection(),
+        });
+      }
+    }
+
+    if (locants !== undefined) {
+      const text = locantOf(locants, atomId);
+      if (text !== undefined) {
+        requests.push({
+          kind: "locant",
+          source,
+          text,
+          anchor: centre,
+          preferred: preferredDirection(),
+        });
+      }
+    }
   }
 
-  for (const bondId of mol.bondIds) {
-    const text = descriptorText(doubleBondDescriptor(mol, bondId));
-    if (text === undefined) continue;
-    const corridor = corridors.get(bondId);
-    if (corridor === undefined) continue;
-    const midpoint: ScenePoint = {
-      x: (corridor.a.x + corridor.b.x) / 2,
-      y: (corridor.a.y + corridor.b.y) / 2,
-    };
-    const dx = corridor.b.x - corridor.a.x;
-    const dy = corridor.b.y - corridor.a.y;
-    const length = Math.sqrt(dx * dx + dy * dy);
-    // Perpendicular to the bond, which is the only direction with room beside
-    // a double bond. The ladder tries the other side next.
-    const preferred: ScenePoint =
-      length === 0 ? { x: 0, y: -1 } : { x: dy / length, y: -dx / length };
-    emit(
-      `bond:${bondId}:descriptor`,
-      { kind: "bond", bondId },
-      text,
-      midpoint,
-      preferred,
-    );
+  if (descriptors) {
+    for (const bondId of mol.bondIds) {
+      const text = descriptorText(doubleBondDescriptor(mol, bondId));
+      if (text === undefined) continue;
+      const corridor = corridors.get(bondId);
+      if (corridor === undefined) continue;
+      const midpoint: ScenePoint = {
+        x: (corridor.a.x + corridor.b.x) / 2,
+        y: (corridor.a.y + corridor.b.y) / 2,
+      };
+      const dx = corridor.b.x - corridor.a.x;
+      const dy = corridor.b.y - corridor.a.y;
+      const length = Math.sqrt(dx * dx + dy * dy);
+      // Perpendicular to the bond, which is the only direction with room beside
+      // a double bond. The ladder tries the other side next.
+      const preferred: ScenePoint =
+        length === 0 ? { x: 0, y: -1 } : { x: dy / length, y: -dx / length };
+      requests.push({
+        kind: "descriptor",
+        source: { kind: "bond", bondId },
+        text,
+        anchor: midpoint,
+        preferred,
+        anchorSegment: corridor,
+      });
+    }
   }
+
+  return requests;
+}
+
+/**
+ * The locant text for `atomId`, or undefined for "draw nothing".
+ *
+ * `Object.hasOwn` on a record, because the ids are data: `locants.constructor`
+ * is a function on every plain object, and "constructor" is a legal atom id in
+ * an imported file.
+ */
+function locantOf(
+  locants: NonNullable<SceneBuildOptions["locants"]>,
+  atomId: AtomId,
+): string | undefined {
+  const text =
+    typeof locants === "function"
+      ? locants(atomId)
+      : Object.hasOwn(locants, atomId)
+        ? locants[atomId]
+        : undefined;
+  return typeof text === "string" && text.length > 0 ? text : undefined;
+}
+
+/**
+ * The direction that ranks an atom annotation's candidates: the atom's free
+ * direction with its neighbours in canonical order (`canonicalFreeDirection`),
+ * not the one stored on `AtomLabelPlacement`, which sums them in bond
+ * insertion order. The centres are already scene px, so nothing here flips.
+ */
+function atomAnnotationDirection(
+  mol: Molecule,
+  atomId: AtomId,
+  centre: ScenePoint,
+  centres: ReadonlyMap<AtomId, ScenePoint>,
+): ScenePoint {
+  const neighbours = neighborIds(mol, atomId).flatMap((id) => {
+    const point = centres.get(id);
+    return point === undefined ? [] : [point];
+  });
+  return canonicalFreeDirection(centre, neighbours);
 }
 
 /**
@@ -566,7 +751,8 @@ function pushBondPrimitives(
   placements: ReadonlyMap<AtomId, AtomLabelPlacement | undefined>,
   suppressedBondIds: ReadonlySet<BondId>,
   representation: StructuralRepresentation,
-  corridors: Map<BondId, DescriptorSegment>,
+  corridors: Map<BondId, AnnotationSegment>,
+  drawn: AnnotationSegment[],
 ): void {
   const bond = mol.bonds[bondId];
   if (bond === undefined) return;
@@ -586,7 +772,10 @@ function pushBondPrimitives(
     style.bondLineWidthPx,
   );
   if (axis === undefined) return;
-  corridors.set(bondId, { a: axis.a, b: axis.b });
+  // Every segment below is inked at the bond stroke, except a wedge's
+  // outline, which is a filled edge with no stroke of its own.
+  const halfWidth = style.bondLineWidthPx / 2;
+  corridors.set(bondId, { a: axis.a, b: axis.b, halfWidth });
 
   const stroke = { color: style.colors.bond, width: style.bondLineWidthPx };
   const line = (
@@ -600,6 +789,7 @@ function pushBondPrimitives(
     // double bond at least matches what a reader can see is crowded. The bond
     // losing EVERY line is reported as `bond-swallowed-by-labels`.
     if (ends === undefined) return;
+    drawn.push({ a: ends.a, b: ends.b, halfWidth });
     const primitive: LinePrimitive = {
       id: `bond:${bondId}:${suffix}`,
       source: { kind: "bond", bondId },
@@ -627,14 +817,16 @@ function pushBondPrimitives(
   // than as a triangle asserting a configuration nobody can read off it.
   if (representation.flags.showStereoBonds) {
     if (bond.order === 1 && bond.stereo === "wedge") {
+      const points = wedgePoints(axis, style.stereoWedgeWidthPx);
       const wedge: PolygonPrimitive = {
         id: `bond:${bondId}:wedge`,
         source: { kind: "bond", bondId },
         type: "polygon",
-        points: wedgePoints(axis, style.stereoWedgeWidthPx),
+        points,
         fill: { color: style.colors.bond },
       };
       primitives.push(wedge);
+      pushOutline(drawn, points);
       return;
     }
     if (bond.order === 1 && bond.stereo === "hash") {
@@ -652,6 +844,16 @@ function pushBondPrimitives(
         stroke,
       };
       primitives.push(hash);
+      const bars = hashBars(axis, style.stereoWedgeWidthPx, style.stereoHashPeriodPx);
+      for (const bar of bars) drawn.push({ a: bar.a, b: bar.b, halfWidth });
+      const firstBar = bars[0];
+      const lastBar = bars[bars.length - 1];
+      if (firstBar !== undefined && lastBar !== undefined) {
+        drawn.push(
+          { a: firstBar.a, b: lastBar.a, halfWidth },
+          { a: firstBar.b, b: lastBar.b, halfWidth },
+        );
+      }
       return;
     }
     if (bond.order === 1 && bond.stereo === "wavy") {
@@ -668,6 +870,18 @@ function pushBondPrimitives(
         stroke,
       };
       primitives.push(wavy);
+      // The wave's envelope: two rails at its amplitude either side of the
+      // axis (already in the corridors). A box that clears all three cannot
+      // reach the curve between them.
+      const amplitude = style.stereoWavyPeriodPx * STEREO_MARKS.wavyAmplitudeRatio;
+      const normal = leftNormal(axis.unit);
+      for (const side of [amplitude, -amplitude]) {
+        drawn.push({
+          a: { x: axis.a.x + normal.x * side, y: axis.a.y + normal.y * side },
+          b: { x: axis.b.x + normal.x * side, y: axis.b.y + normal.y * side },
+          halfWidth,
+        });
+      }
       return;
     }
     if (bond.order === 2 && bond.stereo === "either") {
@@ -744,6 +958,15 @@ function pushBondPrimitives(
       minimum,
     ),
   );
+}
+
+/** A closed polygon's edges, as segments. */
+function pushOutline(drawn: AnnotationSegment[], points: readonly ScenePoint[]): void {
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    if (a !== undefined && b !== undefined) drawn.push({ a, b });
+  }
 }
 
 /**

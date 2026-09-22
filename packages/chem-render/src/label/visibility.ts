@@ -215,8 +215,9 @@ export function atomLabelVisible(
  * off it as well. This is the one place that can say so, and it is the only
  * condition that changed — every other view is untouched.
  *
- * `flags.showAtomIndices` is still not consulted here: atom indices are a
- * debugging overlay that belongs beside the label rather than inside its run.
+ * `flags.showLocants` is not consulted here: a locant is an annotation that
+ * sits beside the label rather than inside its run, and the annotation pass
+ * (`label/annotations.ts`) places it.
  */
 export function atomShowsHydrogens(
   mol: Molecule,
