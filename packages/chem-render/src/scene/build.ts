@@ -510,6 +510,17 @@ function buildStructural(
     obstacles.push(...glyphBandObstacles(hydrogen.placement.run, style));
     glyphInk.push(...runGlyphInk(hydrogen.placement.run, style));
   }
+  // Decision 65: a FILLED shape is ink like a glyph — a solid wedge is a
+  // black triangle, and a locant printed inside one is as unreadable as one
+  // printed on a letter. Taken from the primitives already emitted, so a
+  // filled shape added later is covered without a second rule. A hashed
+  // wedge and every plain line stay lines (their strokes are in `drawn`),
+  // and the filled dots are added above, each for its own reason
+  // (decision 61).
+  for (const primitive of primitives) {
+    if (primitive.type !== "polygon" || primitive.fill === undefined) continue;
+    glyphInk.push(...filledShapeInk(primitive.points));
+  }
 
   const circleOutlines: AnnotationCircle[] = circles.primitives.map((circle) => ({
     centre: circle.centre,
@@ -607,6 +618,75 @@ function runGlyphInk(run: PlacedTextRun, style: RenderStyle): LabelBox[] {
     measurer,
   );
   return glyphInkRects(measured, run.origin, measurer, style.fontFamily);
+}
+
+/**
+ * A filled polygon's ink, as boxes: `FILLED_SHAPE_SLICES` slabs across its
+ * longer side, each bounding only the part of the shape inside that slab.
+ *
+ * A single bounding box would be far too coarse for the shape this exists
+ * for: a wedge is a thin triangle whose box is nearly twice its ink and
+ * mostly empty page beside the narrow end, and an annotation there would be
+ * dropped for touching nothing. Slabs follow the taper closely enough that
+ * the error is a fraction of a slab, and for a convex shape (every filled
+ * shape this package draws) the bound is exact at each slab's edges: the
+ * extremes over a slab lie on the boundary, which is what is sampled.
+ */
+const FILLED_SHAPE_SLICES = 8;
+
+function filledShapeInk(points: readonly ScenePoint[]): LabelBox[] {
+  if (points.length < 3) return [];
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const point of points) {
+    if (point.x < minX) minX = point.x;
+    if (point.y < minY) minY = point.y;
+    if (point.x > maxX) maxX = point.x;
+    if (point.y > maxY) maxY = point.y;
+  }
+  const alongX = maxX - minX >= maxY - minY;
+  const low = alongX ? minX : minY;
+  const high = alongX ? maxX : maxY;
+  const span = high - low;
+  if (!(span > 0)) return [{ minX, minY, maxX, maxY }];
+  const step = span / FILLED_SHAPE_SLICES;
+  const boxes: LabelBox[] = [];
+  for (let slice = 0; slice < FILLED_SHAPE_SLICES; slice++) {
+    const from = low + slice * step;
+    const to = slice === FILLED_SHAPE_SLICES - 1 ? high : from + step;
+    // Every boundary point inside the slab: the vertices in it, and where
+    // each edge crosses its two ends.
+    let boxMinX = Number.POSITIVE_INFINITY;
+    let boxMinY = Number.POSITIVE_INFINITY;
+    let boxMaxX = Number.NEGATIVE_INFINITY;
+    let boxMaxY = Number.NEGATIVE_INFINITY;
+    const add = (point: ScenePoint): void => {
+      if (point.x < boxMinX) boxMinX = point.x;
+      if (point.y < boxMinY) boxMinY = point.y;
+      if (point.x > boxMaxX) boxMaxX = point.x;
+      if (point.y > boxMaxY) boxMaxY = point.y;
+    };
+    for (let i = 0; i < points.length; i++) {
+      const a = points[i]!;
+      const b = points[(i + 1) % points.length]!;
+      const aAt = alongX ? a.x : a.y;
+      const bAt = alongX ? b.x : b.y;
+      if (aAt >= from && aAt <= to) add(a);
+      for (const edge of [from, to]) {
+        // The edge crosses this slab boundary: interpolate the crossing.
+        if ((aAt < edge && bAt > edge) || (aAt > edge && bAt < edge)) {
+          const t = (edge - aAt) / (bAt - aAt);
+          add({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+        }
+      }
+    }
+    if (boxMinX <= boxMaxX && boxMinY <= boxMaxY) {
+      boxes.push({ minX: boxMinX, minY: boxMinY, maxX: boxMaxX, maxY: boxMaxY });
+    }
+  }
+  return boxes;
 }
 
 /** A dot's ink box: the square its disc fills. */

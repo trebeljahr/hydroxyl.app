@@ -226,28 +226,32 @@ export const PUBLICATION_STYLE: RenderStyle = Object.freeze({
   // FIXTURE, plus the steroid skeleton and phenanthrene; the skeletal, kekule,
   // explicitH and lewis views; descriptors on and a locant on every atom.
   // Counted are annotations REPORTED unplaced (`annotationLayout().unplaced`),
-  // with decision 45's fallback order, decision 55's ink-area glyph hits,
-  // decision 57's ink-centre proximity, decision 58's dropping and decision
-  // 59's label-sized ladder:
-  //   42 of 516 reported: 12 of 28 descriptors, 30 of 488 locants. 4 of the
-  //   42 are not drawn (decision 58): the steroid's C17 (S) and C14 locant,
-  //   each in the explicitH and Lewis views.
-  //   (0.85, the pre-decision-44 value, measures the same 42 and 12 on the
-  //   same code: with the ladder sized from the label, the annotation's size
-  //   no longer changes how far the search reaches.)
-  // Notable reports at 0.80, all pinned by id in annotations.test.ts:
-  //   - the steroid's C17 (S) in all four views: no slot reads as C17's at
-  //     8 pt, between the wedge to O17 and the bonds to C13 and C16. Drawn in
-  //     the skeletal and kekule views (it crosses lines, not text), dropped
-  //     in explicitH and Lewis, where it would print on a derived "H";
-  //   - the steroid's C13 and C17 locants in all four views;
-  //   - dimethyl sulfone's a1 locant in all four views;
-  //   - otherwise only in the explicitH and Lewis views, where the derived
-  //     hydrogens take the room: butan-2-ol's C2 (R), trans-2-butene's (E),
-  //     the steroid's C13 and C3 descriptors and six more of its locants
-  //     (C3, C5, C8, C9, C10, C14), chrysene and phenanthrene a16, and
-  //     the tert-butyl cation's a1.
-  // No descriptor is reported in the skeletal or kekule view except C17's.
+  // under every ruling this pass now carries — 45's fallback order, 55's
+  // ink-area glyph hits, 57's ink-centre proximity, 58/64's dropping, 59's
+  // label-sized ladder, 63's proximity margin and 65's filled-shape ink:
+  //   104 of 516 reported, 53 of them not drawn (decisions 58 and 64).
+  //   24 of the 28 descriptors are reported, 10 not drawn.
+  //   (0.85, the pre-decision-44 value, measures 106 and 51 on the same code:
+  //   with the ladder sized from the label, the annotation's own size barely
+  //   moves the count. SCREEN_STYLE, whose annotations are the same 0.85 of a
+  //   16 px label on a 44 px bond, measures 8 of 516 and drops none.)
+  //
+  // MOST OF THAT IS DECISION 63, NOT THIS SCALE. Requiring a slot to be 15%
+  // nearer its own atom than the next heavy one is a hard test on a 24 px
+  // bond: the ladder's first rung is already about 27 px out, so a slot that
+  // reads as its own atom's has to come from the close ladder, between the
+  // atom's own bonds, and on a fused ring that room is usually taken. All
+  // four steroid descriptors and butan-2-ol's (R) are reported at
+  // Publication; Screen, whose bond is 44 px, reports none of them.
+  // Notable, all pinned by id in annotations.test.ts:
+  //   - the steroid's C13, C17, C10 and C3 descriptors in every view. C3's is
+  //     dropped: it would sit inside the solid wedge to O17, which is ink
+  //     (decision 65). C17's crosses bond lines only and is drawn.
+  //   - butan-2-ol's C2 (R) in every view, drawn in the skeletal and kekule
+  //     ones and dropped in explicitH and Lewis, where the derived hydrogens
+  //     leave nothing a clearance away.
+  //   - chrysene's a16 and a25 locants in every view, and every locant on an
+  //     atom whose numbering neighbours sit as close as its own atom does.
   stereoDescriptorScale: 0.8,
   colors: Object.freeze({ bond: "#000000", label: "#000000" }),
   coordinatePrecision: 3,

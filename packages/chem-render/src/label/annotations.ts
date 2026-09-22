@@ -43,8 +43,9 @@
  *     candidates checked against the obstacles does not.
  *
  * A CANDIDATE IS CLEAR ONLY IF IT READS AS ITS OWN ATOM'S (decision 35): the
- * centre of its measured INK box (decision 57) must lie strictly nearer its
- * own anchor — the atom centre, or
+ * centre of its measured INK box (decision 57) must lie at most
+ * `ownDistanceRatio` of the way (decision 63) to the nearest other heavy atom
+ * from its own anchor — the atom centre, or
  * for a bond annotation the bond segment — than any other atom centre. Room
  * alone is not enough. The outer rungs of the ladder reach far enough to sit
  * beside a NEIGHBOUR, and a clear "(S)" or "17" there is read as the
@@ -147,6 +148,17 @@ export const ANNOTATION_PLACEMENT = Object.freeze({
   /** Extra clear space demanded around the annotation's measured box, px. */
   clearancePx: 1,
   /**
+   * Decision 63: how near another heavy atom a slot may be and still read as
+   * its own atom's, as a fraction of its distance to its own anchor.
+   *
+   * A strict inequality (what decision 35 was implemented as) passes a slot
+   * that is 0.01 px nearer its own atom than a neighbour — the steroid's C10
+   * (S) sat in the middle of ring A and "read as its own" by a hair. A
+   * reader has no such precision: the annotation has to be VISIBLY nearer,
+   * and 0.85 is the margin ruled for it.
+   */
+  ownDistanceRatio: 0.85,
+  /**
    * Resolution at which two compass directions count as EQUALLY close to the
    * preferred one: closeness is compared as `Math.round(dot * quantum)`.
    *
@@ -228,7 +240,9 @@ export interface AnnotationObstacleSet {
    * The INK box of every label glyph and electron dot the drawing set,
    * UNPADDED, one entry per glyph: what a fallback's glyph hit is measured
    * against (decision 55), and what a reported annotation must not print on
-   * to be drawn at all (decision 58). Bare-vertex dots are not in it
+   * to be drawn at all (decisions 58 and 64). Filled shapes — a solid wedge
+   * above all — are ink like a glyph (decision 65); a hashed wedge and every
+   * plain line stay lines. Bare-vertex dots are not in it
    * (decision 61; they stay in `obstacles`): they
    * mark where bond lines meet, and an annotation crossing them is crowded
    * the way one crossing a line is, not text printed on text.
@@ -288,9 +302,10 @@ export interface AnnotationPlacement {
    */
   readonly clear: boolean;
   /**
-   * False for a REPORTED placement whose ink would print on a label glyph's
-   * ink (decision 58): it is not drawn, and it blocks nothing. Always true for
-   * a clear one, and for a reported one that only crosses bond lines.
+   * False for a REPORTED placement whose ink would print on a glyph's ink, or
+   * within the clearance of it (decisions 58 and 64): it is not drawn, and it
+   * blocks nothing. Always true for a clear one, and for a reported one that
+   * only crosses bond lines.
    */
   readonly drawn: boolean;
 }
@@ -299,8 +314,11 @@ export interface AnnotationPlacement {
 export type UnplacedReason =
   /** No clear slot; drawn at the least wrong one (decision 45). */
   | "crowded"
-  /** No clear slot, and the least wrong one prints on text: not drawn (decision 58). */
-  | "overprintsText";
+  /**
+   * No clear slot, and the least wrong one lands on text or within the
+   * clearance of it: not drawn (decisions 58 and 64).
+   */
+  | "printsOnText";
 
 /** An annotation that could not be placed clear, and where it went instead. */
 export interface UnplacedAnnotation {
@@ -410,11 +428,12 @@ export function placeAnnotations(
     seen.add(id);
 
     const found = placeAnnotation(request, local);
-    // Decision 58: a reported annotation that would print its ink on a
-    // glyph's ink is not drawn — "(S)" over "OH" makes both unreadable, and
-    // the report says what is missing. One that only crosses a bond line is
-    // crowded but legible, and still drawn.
-    const dropped = !found.clear && overprintsText(found.inkBox, glyphInk);
+    // Decision 58, with decision 64's clearance: a reported annotation whose
+    // ink lands on a glyph's ink, or within `clearancePx` of it, is not drawn
+    // — "(S)" over "OH" makes both unreadable, and "13" a half pixel from a
+    // "C" reads as 13-C. The report says what is missing. One that only
+    // crosses a bond line is crowded but legible, and still drawn.
+    const dropped = !found.clear && printsOnText(found.inkBox, glyphInk);
     const placed: AnnotationPlacement = dropped ? { ...found, drawn: false } : found;
     // Every DRAWN annotation blocks the next one, the unclear ones included:
     // an overlap already reported must not be compounded by a second. A
@@ -429,7 +448,7 @@ export function placeAnnotations(
         text: placed.text,
         box: placed.box,
         dropped,
-        reason: dropped ? "overprintsText" : "crowded",
+        reason: dropped ? "printsOnText" : "crowded",
       });
     }
   }
@@ -761,7 +780,9 @@ function fallbackScore(
 
 /** Rules 1 and 2 of `compareFallbacks` as one number, lower less wrong. */
 function fallbackClass(score: FallbackScore): number {
-  return (score.overprints ? 2 : 0) + (score.own < score.nearestOther ? 0 : 1);
+  // The same margin the clear search applies (decision 63), so a fallback
+  // cannot count as "reads as its own" on a tie the search refused.
+  return (score.overprints ? 2 : 0) + (readsAsOwnAt(score.own, score.nearestOther) ? 0 : 1);
 }
 
 /**
@@ -797,13 +818,15 @@ const NO_ATOMS: readonly AnnotationAtomCentre[] = Object.freeze([]);
 const NO_BOXES: readonly LabelBox[] = Object.freeze([]);
 
 /**
- * Decision 35: is `centre` — the annotation's INK-box centre (decision 57) —
- * STRICTLY nearer the request's own anchor than every other atom centre?
+ * Decision 35, with decision 63's margin: is `centre` — the annotation's
+ * INK-box centre (decision 57) — at most `ownDistanceRatio` times as far from
+ * every other atom centre as it is from the request's own anchor?
  *
- * Strict, so a tie — a slot exactly between two atoms, or past the end of a
- * bond where its atom is as near as the bond is — reads as ambiguous and is
- * not taken. Squared distances throughout: no square root, so no rounding
- * between two comparisons of the same pair.
+ * A margin rather than a strict inequality, so a near-tie — a slot between
+ * two atoms, or past the end of a bond where its atom is as near as the bond
+ * is — reads as ambiguous and is not taken. Squared distances throughout: no
+ * square root, so no rounding between two comparisons of the same pair, and
+ * the ratio is squared once as a module constant.
  */
 function readsAsOwn(
   centre: ScenePoint,
@@ -815,9 +838,17 @@ function readsAsOwn(
   const ownAtomId = request.source.kind === "atom" ? request.source.atomId : undefined;
   for (const atom of atomCentres) {
     if (atom.atomId === ownAtomId) continue;
-    if (!(own < squaredDistance(centre, atom.centre))) return false;
+    if (!readsAsOwnAt(own, squaredDistance(centre, atom.centre))) return false;
   }
   return true;
+}
+
+/** Decision 63, on SQUARED distances: own <= (0.85 × other)². */
+const OWN_DISTANCE_RATIO_SQUARED =
+  ANNOTATION_PLACEMENT.ownDistanceRatio * ANNOTATION_PLACEMENT.ownDistanceRatio;
+
+function readsAsOwnAt(ownSquared: number, otherSquared: number): boolean {
+  return ownSquared <= OWN_DISTANCE_RATIO_SQUARED * otherSquared;
 }
 
 function boxCentre(box: LabelBox): ScenePoint {
@@ -921,9 +952,17 @@ function boxMeetsObstacle(box: LabelBox, obstacle: LabelObstacle): boolean {
   return dx * dx + dy * dy < obstacle.radius * obstacle.radius;
 }
 
-/** Does the ink box share any area with a glyph's ink (decision 58)? */
-function overprintsText(inkBox: LabelBox, glyphInk: readonly LabelBox[]): boolean {
-  for (const glyph of glyphInk) if (overlapArea(inkBox, glyph) > 0) return true;
+/**
+ * Decision 64: does the ink come within the clearance of a glyph's ink — on
+ * it, or nearer than `clearancePx` (decision 58 dropped only on an overlap)?
+ *
+ * Zero overlap is not enough to read: a "13" half a pixel from a "C" is read
+ * as 13-C, and an "H" that near a "3" as a formula. The annotation's own ink
+ * box is grown by the same clearance every placed box already demands.
+ */
+function printsOnText(inkBox: LabelBox, glyphInk: readonly LabelBox[]): boolean {
+  const near = pad(inkBox, ANNOTATION_PLACEMENT.clearancePx);
+  for (const glyph of glyphInk) if (overlapArea(near, glyph) > 0) return true;
   return false;
 }
 
