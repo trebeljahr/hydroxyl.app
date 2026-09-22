@@ -71,11 +71,17 @@ function unplacedLine(u: UnplacedAnnotation): string {
 
 /**
  * Annotations the canvas's panel could not place (decision 62), or nothing
- * when all were placed. Styled like the valence issues beside it; the list
- * is the tooltip. "dropped": not drawn, it would print on text (decision
- * 58); "crowded": drawn, but where it crosses a line or reads ambiguously.
- * The report comes from the canvas's own build — `canvasAnnotatedScene` —
- * so it describes exactly the picture on screen.
+ * when all were placed. The list is the tooltip. "dropped": not drawn, it
+ * would print on text or within a hair of it (decisions 58 and 64);
+ * "crowded": drawn, but where it crosses a line or reads ambiguously. The
+ * report comes from the canvas's own build — `canvasAnnotatedScene` — so it
+ * describes exactly the picture on screen.
+ *
+ * A WARNING TONE, NOT THE DESTRUCTIVE ONE (decision 66). The red beside it is
+ * for valence and structural errors: the structure is wrong and the file
+ * would be wrong. A crowded annotation is a crowded picture — the chemistry
+ * is fine, the author may want to move something — so it reads as the export
+ * dialog's own warnings do, in amber.
  */
 function UnplacedAnnotations(): ReactElement | null {
   const doc = useEditorStore((state) => state.document);
@@ -86,7 +92,7 @@ function UnplacedAnnotations(): ReactElement | null {
     <span
       data-status="annotations"
       title={unplaced.map(unplacedLine).join("\n")}
-      className="text-destructive flex items-center gap-1"
+      className="flex items-center gap-1 font-medium text-amber-700 dark:text-amber-400"
     >
       <AlertTriangleIcon className="size-3" />
       {unplaced.length} {unplaced.length === 1 ? "annotation" : "annotations"} not placed

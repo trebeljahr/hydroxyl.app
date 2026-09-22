@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { buildMolecule } from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
-import { butan2olWedged, steroidSkeletonWithLocants } from "@starter/chem-render";
+import { cis2Butene, steroidSkeletonWithLocants } from "@starter/chem-render";
 import { createDocument, createPanel } from "@starter/shared";
 import type { SketchDocument } from "@starter/shared";
 
@@ -205,44 +205,94 @@ function descriptorDoc(molecule: Molecule, kind: "skeletal" | "explicitH"): Sket
   });
 }
 
-describe("StatusBar — annotations not placed (decision 62)", () => {
+describe("StatusBar — annotations not placed (decisions 62 and 66)", () => {
   const steroid = steroidSkeletonWithLocants();
-  const c17 = Object.entries(steroid.locants).find(([, text]) => text === "17")![0];
+  const idOf = (locant: string): string =>
+    Object.entries(steroid.locants).find(([, text]) => text === locant)![0];
   const unplacedNode = (): HTMLElement | null =>
     document.querySelector<HTMLElement>('[data-status="annotations"]');
 
   it("shows nothing when every annotation was placed", () => {
-    act(() => editorStore.getState().openDocument(descriptorDoc(butan2olWedged(), "skeletal")));
+    // cis-2-butene's (Z) has room beside its double bond at Publication.
+    act(() => editorStore.getState().openDocument(descriptorDoc(cis2Butene(), "skeletal")));
     render(<StatusBar />);
-    expect(canvasAnnotatedScene(editorStore.getState().document, null).annotations.placements).toHaveLength(1);
+    const layout = canvasAnnotatedScene(editorStore.getState().document, null).annotations;
+    expect(layout.placements).toHaveLength(1);
+    expect(layout.unplaced).toEqual([]);
     expect(unplacedNode()).toBeNull();
   });
 
-  it("counts a crowded annotation, and lists it as crowded", () => {
-    // Skeletal steroid at Publication: C17's (S) has no clear slot, crosses
-    // lines only, and is still drawn.
+  it("counts the crowded ones, and lists each as crowded", () => {
+    // Skeletal steroid at Publication: no slot on a ring junction is 15%
+    // nearer its own atom than the next (decision 63), so all four
+    // descriptors are reported; three cross lines only and are drawn.
     act(() => editorStore.getState().openDocument(descriptorDoc(steroid.molecule, "skeletal")));
     render(<StatusBar />);
     const node = unplacedNode()!;
     expect(node).not.toBeNull();
-    expect(node.textContent).toBe("1 annotation not placed");
-    expect(node.getAttribute("title")).toBe(`${c17} (S): crowded`);
+    expect(node.textContent).toBe("4 annotations not placed");
+    const lines = node.getAttribute("title")!.split("\n");
+    expect(lines.filter((line) => line.endsWith(": crowded"))).toHaveLength(3);
+    expect(lines).toContain(`${idOf("17")} (S): crowded`);
   });
 
-  it("lists a dropped annotation as dropped, beside the crowded ones", () => {
-    // Explicit-H: C17's (S) would print on a derived "H" and is not drawn;
-    // C13's and C3's are crowded.
-    act(() => editorStore.getState().openDocument(descriptorDoc(steroid.molecule, "explicitH")));
+  it("lists a dropped annotation as dropped, and keeps it out of the drawing", () => {
+    // C3's (S) would sit inside the solid wedge to O17, which is ink
+    // (decision 65), so it is reported and not drawn.
+    act(() => editorStore.getState().openDocument(descriptorDoc(steroid.molecule, "skeletal")));
     render(<StatusBar />);
-    const node = unplacedNode()!;
-    expect(node.textContent).toBe("3 annotations not placed");
-    const lines = node.getAttribute("title")!.split("\n");
-    expect(lines).toHaveLength(3);
-    expect(lines).toContain(`${c17} (S): dropped`);
-    expect(lines.filter((line) => line.endsWith(": crowded"))).toHaveLength(2);
-    // And the canvas really does not draw it.
+    const lines = unplacedNode()!.getAttribute("title")!.split("\n");
+    expect(lines).toContain(`${idOf("3")} (S): dropped`);
     const scene = buildCanvasScene(editorStore.getState().document, null);
-    expect(scene.primitives.some((p) => p.id === `atom:${c17}:descriptor`)).toBe(false);
+    expect(scene.primitives.some((p) => p.id === `atom:${idOf("3")}:descriptor`)).toBe(false);
+    expect(scene.primitives.some((p) => p.id === `atom:${idOf("17")}:descriptor`)).toBe(true);
+  });
+
+  it("warns in amber, not in the red the valence errors use (decision 66)", () => {
+    act(() => editorStore.getState().openDocument(descriptorDoc(steroid.molecule, "skeletal")));
+    render(<StatusBar />);
+    const className = unplacedNode()!.className;
+    expect(className).toContain("amber");
+    expect(className).not.toContain("destructive");
+    // The valence count beside it keeps the destructive tone for a real error.
+    const pentavalent = buildMolecule((b) => {
+      const c = b.atom("C", { x: 0, y: 0 });
+      for (const [x, y] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1]] as const) {
+        b.bond(c, b.atom("C", { x, y }), 1);
+      }
+    });
+    act(() => editorStore.getState().openDocument(descriptorDoc(pentavalent, "skeletal")));
+    render(<StatusBar />);
+    expect(document.querySelector('[data-status="issues"]')!.className).toContain("destructive");
+  });
+
+  it("reports the ACTIVE panel, not the document's first one", () => {
+    // Two panels of the steroid: skeletal, where three of the four reported
+    // descriptors are still drawn, and explicit-H, where the derived
+    // hydrogens leave nothing a clearance away and three are dropped.
+    const skeletal = descriptorDoc(steroid.molecule, "skeletal").panels[0]!;
+    const explicitH = { ...descriptorDoc(steroid.molecule, "explicitH").panels[0]!, id: "panel-explicit" };
+    const doc: SketchDocument = {
+      ...descriptorDoc(steroid.molecule, "skeletal"),
+      panels: [skeletal, explicitH],
+    };
+    act(() => {
+      editorStore.getState().openDocument(doc);
+      editorStore.getState().setActivePanel(explicitH.id);
+    });
+    render(<StatusBar />);
+    const active = editorStore.getState().ui.activePanelId;
+    expect(active).toBe(explicitH.id);
+    const shown = unplacedNode()!.getAttribute("title")!.split("\n");
+    const first = canvasAnnotatedScene(doc, skeletal.id).annotations;
+    const second = canvasAnnotatedScene(doc, explicitH.id).annotations;
+    // The two panels disagree, so the assertion cannot pass by accident.
+    expect(second.unplaced.filter((u) => u.dropped).length).not.toBe(
+      first.unplaced.filter((u) => u.dropped).length,
+    );
+    expect(shown.filter((line) => line.endsWith(": dropped"))).toHaveLength(
+      second.unplaced.filter((u) => u.dropped).length,
+    );
   });
 
   it("reads the canvas's own build: one placement run per document", () => {
