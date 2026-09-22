@@ -25,12 +25,14 @@
 
 import {
   RENDER_STYLES,
+  buildAnnotatedScene,
   buildScene,
   isStructuralViewKind,
   representation,
   representationAvailability,
 } from "@starter/chem-render";
 import type {
+  AnnotatedScene,
   RenderScene,
   RenderStyle,
   RenderStyleName,
@@ -210,10 +212,43 @@ function canvasCanDraw(doc: SketchDocument, panel: Panel): boolean {
   return canvasRefusal(doc, panel) === null;
 }
 
+/**
+ * The canvas's scene and its annotation report, memoised on the document.
+ *
+ * ONE BUILD FOR BOTH READERS (decision 62). The canvas draws `scene`; the
+ * status bar says which annotations `annotations.unplaced` could not place.
+ * Both call this, so the report is the drawing's own and the annotation pass
+ * runs once per document change, not once per consumer per render. Keyed on
+ * the `SketchDocument` object for the same reason `EditorCanvas`'s memo is:
+ * the store hands out a new one only when the saved document changed. A
+ * `WeakMap`, like `@/editor/derived`, so undo/redo between two documents
+ * keeps hitting, and an entry dies with its document.
+ */
+const canvasSceneCache = new WeakMap<SketchDocument, Map<PanelId | null, AnnotatedScene>>();
+
+export function canvasAnnotatedScene(
+  doc: SketchDocument,
+  activePanelId: PanelId | null,
+): AnnotatedScene {
+  let byPanel = canvasSceneCache.get(doc);
+  if (byPanel === undefined) {
+    byPanel = new Map();
+    canvasSceneCache.set(doc, byPanel);
+  }
+  const cached = byPanel.get(activePanelId);
+  if (cached !== undefined) return cached;
+  const panel = panelToDraw(doc, canvasPanelFor(doc, activePanelId)?.id);
+  const rep =
+    panel === undefined ? representation("skeletal") : toRenderRepresentation(panel.representation);
+  const built = buildAnnotatedScene(doc.molecule, renderStyleFor(doc), rep);
+  byPanel.set(activePanelId, built);
+  return built;
+}
+
 /** The scene the editor canvas shows. */
 export function buildCanvasScene(
   doc: SketchDocument,
   activePanelId: PanelId | null,
 ): RenderScene {
-  return buildDocumentScene(doc, canvasPanelFor(doc, activePanelId)?.id);
+  return canvasAnnotatedScene(doc, activePanelId).scene;
 }

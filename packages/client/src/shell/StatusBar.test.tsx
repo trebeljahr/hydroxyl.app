@@ -12,9 +12,13 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { buildMolecule } from "@starter/chem-core";
-import { createDocument } from "@starter/shared";
+import type { Molecule } from "@starter/chem-core";
+import { butan2olWedged, steroidSkeletonWithLocants } from "@starter/chem-render";
+import { createDocument, createPanel } from "@starter/shared";
+import type { SketchDocument } from "@starter/shared";
 
 import { EditorCanvas, fixtureDocument } from "@/canvas";
+import { buildCanvasScene, canvasAnnotatedScene } from "@/canvas/scene-bridge";
 import { editorStore } from "@/state";
 
 import { StatusBar } from "./StatusBar";
@@ -179,5 +183,72 @@ describe("StatusBar — the viewport buttons are registry entries", () => {
     });
     const button = document.querySelector('[data-command="view.fit"]');
     expect((button as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+/** One Publication panel of `kind`, with R/S and E/Z descriptors shown. */
+function descriptorDoc(molecule: Molecule, kind: "skeletal" | "explicitH"): SketchDocument {
+  const panel = createPanel(kind, undefined, "publication");
+  return createDocument({
+    molecule,
+    stylePreset: "publication",
+    panels: [
+      {
+        ...panel,
+        representation: {
+          ...panel.representation,
+          display: { ...panel.representation.display, showStereoDescriptors: true },
+        },
+      },
+    ],
+    now: "2024-01-01T00:00:00.000Z",
+  });
+}
+
+describe("StatusBar — annotations not placed (decision 62)", () => {
+  const steroid = steroidSkeletonWithLocants();
+  const c17 = Object.entries(steroid.locants).find(([, text]) => text === "17")![0];
+  const unplacedNode = (): HTMLElement | null =>
+    document.querySelector<HTMLElement>('[data-status="annotations"]');
+
+  it("shows nothing when every annotation was placed", () => {
+    act(() => editorStore.getState().openDocument(descriptorDoc(butan2olWedged(), "skeletal")));
+    render(<StatusBar />);
+    expect(canvasAnnotatedScene(editorStore.getState().document, null).annotations.placements).toHaveLength(1);
+    expect(unplacedNode()).toBeNull();
+  });
+
+  it("counts a crowded annotation, and lists it as crowded", () => {
+    // Skeletal steroid at Publication: C17's (S) has no clear slot, crosses
+    // lines only, and is still drawn.
+    act(() => editorStore.getState().openDocument(descriptorDoc(steroid.molecule, "skeletal")));
+    render(<StatusBar />);
+    const node = unplacedNode()!;
+    expect(node).not.toBeNull();
+    expect(node.textContent).toBe("1 annotation not placed");
+    expect(node.getAttribute("title")).toBe(`${c17} (S): crowded`);
+  });
+
+  it("lists a dropped annotation as dropped, beside the crowded ones", () => {
+    // Explicit-H: C17's (S) would print on a derived "H" and is not drawn;
+    // C13's and C3's are crowded.
+    act(() => editorStore.getState().openDocument(descriptorDoc(steroid.molecule, "explicitH")));
+    render(<StatusBar />);
+    const node = unplacedNode()!;
+    expect(node.textContent).toBe("3 annotations not placed");
+    const lines = node.getAttribute("title")!.split("\n");
+    expect(lines).toHaveLength(3);
+    expect(lines).toContain(`${c17} (S): dropped`);
+    expect(lines.filter((line) => line.endsWith(": crowded"))).toHaveLength(2);
+    // And the canvas really does not draw it.
+    const scene = buildCanvasScene(editorStore.getState().document, null);
+    expect(scene.primitives.some((p) => p.id === `atom:${c17}:descriptor`)).toBe(false);
+  });
+
+  it("reads the canvas's own build: one placement run per document", () => {
+    const doc = descriptorDoc(steroid.molecule, "skeletal");
+    const first = canvasAnnotatedScene(doc, null);
+    expect(canvasAnnotatedScene(doc, null)).toBe(first);
+    expect(buildCanvasScene(doc, null)).toBe(first.scene);
   });
 });

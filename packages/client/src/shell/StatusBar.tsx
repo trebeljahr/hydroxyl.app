@@ -44,6 +44,9 @@
 import type { ReactElement } from "react";
 import { AlertTriangleIcon } from "lucide-react";
 
+import type { UnplacedAnnotation } from "@starter/chem-render";
+
+import { canvasAnnotatedScene } from "@/canvas/scene-bridge";
 import { commandById } from "@/editor/commands/registry";
 import { useSaveState } from "@/persistence/save-state";
 import { moleculeIssues, moleculeMass } from "@/editor/derived";
@@ -58,6 +61,37 @@ function formatMass(value: number): string {
 function formatCharge(charge: number): string {
   if (charge === 0) return "neutral";
   return charge > 0 ? `+${String(charge)}` : String(charge);
+}
+
+/** "a9 (S): dropped" — which atom or bond, what text, and what became of it. */
+function unplacedLine(u: UnplacedAnnotation): string {
+  const where = u.source.kind === "atom" ? u.source.atomId : u.source.bondId;
+  return `${where} ${u.text}: ${u.dropped ? "dropped" : "crowded"}`;
+}
+
+/**
+ * Annotations the canvas's panel could not place (decision 62), or nothing
+ * when all were placed. Styled like the valence issues beside it; the list
+ * is the tooltip. "dropped": not drawn, it would print on text (decision
+ * 58); "crowded": drawn, but where it crosses a line or reads ambiguously.
+ * The report comes from the canvas's own build — `canvasAnnotatedScene` —
+ * so it describes exactly the picture on screen.
+ */
+function UnplacedAnnotations(): ReactElement | null {
+  const doc = useEditorStore((state) => state.document);
+  const activePanelId = useEditorStore((state) => state.ui.activePanelId);
+  const { unplaced } = canvasAnnotatedScene(doc, activePanelId).annotations;
+  if (unplaced.length === 0) return null;
+  return (
+    <span
+      data-status="annotations"
+      title={unplaced.map(unplacedLine).join("\n")}
+      className="text-destructive flex items-center gap-1"
+    >
+      <AlertTriangleIcon className="size-3" />
+      {unplaced.length} {unplaced.length === 1 ? "annotation" : "annotations"} not placed
+    </span>
+  );
 }
 
 /**
@@ -169,6 +203,8 @@ export function StatusBar(): ReactElement {
         {issues.length > 0 ? <AlertTriangleIcon className="size-3" /> : null}
         {issues.length} valence {issues.length === 1 ? "issue" : "issues"}
       </span>
+
+      <UnplacedAnnotations />
 
       {buffer === "" ? null : (
         <span data-status="element-buffer" className="font-mono">
