@@ -172,7 +172,8 @@ export interface SceneBuildOptions {
  * `detectCollisions` is one (see scene/collide.ts): a report hanging off the
  * scene is paid for inside every drag-loop build and is a field somebody
  * eventually serialises. It rebuilds the structural scene to get the same
- * obstacles the drawing used, so its placements are the drawn ones exactly.
+ * obstacles the drawing used, so its placements are the scene's exactly, and
+ * `drawn` says which of them the scene emits (decision 58).
  */
 export function annotationLayout(
   mol: Molecule,
@@ -431,8 +432,9 @@ function buildStructural(
   }
 
   const obstacles: LabelObstacle[] = [];
-  // Decision 55: the unpadded INK of every glyph and dot, one box each — what
-  // an unclear annotation's overprint is measured against. `obstacles` are
+  // Decisions 55 and 58: the unpadded INK of every label glyph and electron
+  // dot, one box each — what an unclear annotation's overprint is measured
+  // against, and what decides whether it is drawn at all. `obstacles` are
   // clearance boxes and name one glyph several times.
   const glyphInk: LabelBox[] = [];
   const atomCentres: AnnotationAtomCentre[] = [];
@@ -451,8 +453,9 @@ function buildStructural(
         glyphInk.push(...runGlyphInk(placement.detachedCharge, style));
       }
     } else if (style.atomDotRadiusPx > 0 && centre !== undefined) {
+      // An obstacle, but not glyph ink: a bare-vertex dot is where bond lines
+      // meet, not text (see `AnnotationObstacleSet.glyphInk`).
       obstacles.push({ kind: "disc", centre, radius: style.atomDotRadiusPx });
-      glyphInk.push(discInk(centre, style.atomDotRadiusPx));
     }
   }
   for (const hydrogen of hydrogens) {
@@ -481,6 +484,8 @@ function buildStructural(
   // Emitted in PLACEMENT order — priority, then source id — so the scene's
   // order is the same function of the molecule the placements are.
   for (const placed of annotations.placements) {
+    // Reported and printing on text (decision 58): listed, not drawn.
+    if (!placed.drawn) continue;
     const run: TextRunPrimitive = {
       id: placed.id,
       source: placed.source,

@@ -121,21 +121,25 @@ void ANNOTATION_PRIORITY_IS_TOTAL;
 
 export const ANNOTATION_PLACEMENT = Object.freeze({
   /**
-   * The first radius tried, as a multiple of the annotation's own cap height.
+   * The first radius tried, as a multiple of the ATOM LABEL's cap height at
+   * the style (decision 59), plus half the annotation's own width.
    *
-   * Measured from the anchor to the CENTRE of the annotation's box, so it has
-   * to clear roughly half the box before it clears anything else. 1.4 puts a
-   * two-glyph run just outside a bare vertex and just outside a one-letter
-   * atom label; the ladder handles everything wider.
+   * Every radius of both ladders is sized from the label, never from the
+   * annotation: the room around an atom is set by its label and its bonds,
+   * and a search that shrank with the annotation would stop short of room
+   * that is there — a smaller run would report MORE, not fewer. Measured from
+   * the anchor to the CENTRE of the annotation's box. 1.4 puts a two-glyph
+   * run just outside a bare vertex and just outside a one-letter atom label;
+   * the ladder handles everything wider.
    */
   firstRadiusCapHeights: 1.4,
-  /** How much further out each rung of the ladder reaches. */
+  /** How much further out each rung of the ladder reaches, in label cap heights. */
   radiusStepCapHeights: 0.55,
   /** Rungs of the coarse ladder. The close ladder stops at the last one. */
   radiusSteps: 5,
   /**
-   * The close ladder's step, as a multiple of the annotation's cap height:
-   * between 1 and 2 px at the shipped presets. Fine enough to find the gap
+   * The close ladder's step, as a multiple of the atom label's cap height
+   * (decision 59): between 2 and 3 px at the shipped presets. Fine enough to find the gap
    * between two bonds at a vertex whose clear room is only a few pixels deep;
    * see `candidateOrigins`.
    */
@@ -221,8 +225,12 @@ export interface AnnotationObstacleSet {
   readonly segments: readonly AnnotationSegment[];
   readonly circles?: readonly AnnotationCircle[];
   /**
-   * The INK box of every glyph and dot the drawing set, UNPADDED, one entry
-   * per glyph: what a fallback's glyph hit is measured against (decision 55).
+   * The INK box of every label glyph and electron dot the drawing set,
+   * UNPADDED, one entry per glyph: what a fallback's glyph hit is measured
+   * against (decision 55), and what a reported annotation must not print on
+   * to be drawn at all (decision 58). Bare-vertex dots are not in it: they
+   * mark where bond lines meet, and an annotation crossing them is crowded
+   * the way one crossing a line is, not text printed on text.
    *
    * Kept apart from `obstacles`, which are clearance boxes — padded cap-band
    * boxes plus each run's full line band, so one glyph is several records
@@ -278,7 +286,20 @@ export interface AnnotationPlacement {
    * is also in `AnnotationLayout.unplaced`.
    */
   readonly clear: boolean;
+  /**
+   * False for a REPORTED placement whose ink would print on a label glyph's
+   * ink (decision 58): it is not drawn, and it blocks nothing. Always true for
+   * a clear one, and for a reported one that only crosses bond lines.
+   */
+  readonly drawn: boolean;
 }
+
+/** Why an annotation is in `AnnotationLayout.unplaced`. */
+export type UnplacedReason =
+  /** No clear slot; drawn at the least wrong one (decision 45). */
+  | "crowded"
+  /** No clear slot, and the least wrong one prints on text: not drawn (decision 58). */
+  | "overprintsText";
 
 /** An annotation that could not be placed clear, and where it went instead. */
 export interface UnplacedAnnotation {
@@ -287,10 +308,16 @@ export interface UnplacedAnnotation {
   readonly source: AnnotationSource;
   readonly text: string;
   readonly box: LabelBox;
+  /** True when it is left out of the drawing (decision 58). */
+  readonly dropped: boolean;
+  readonly reason: UnplacedReason;
 }
 
 export interface AnnotationLayout {
-  /** In placement order — priority, then source id. Emission follows it. */
+  /**
+   * In placement order — priority, then source id. Emission follows it, and
+   * skips the ones with `drawn: false`.
+   */
   readonly placements: readonly AnnotationPlacement[];
   /** The placements that are NOT clear, in the same order. */
   readonly unplaced: readonly UnplacedAnnotation[];
@@ -370,6 +397,7 @@ export function placeAnnotations(
   const sorted = [...requests].sort(compareAnnotationRequests);
 
   const placedBoxes: LabelBox[] = [...(context.placed ?? [])];
+  const glyphInk = context.glyphInk ?? NO_BOXES;
   const local: AnnotationContext = { ...context, placed: placedBoxes };
   const placements: AnnotationPlacement[] = [];
   const unplaced: UnplacedAnnotation[] = [];
@@ -380,10 +408,17 @@ export function placeAnnotations(
     if (seen.has(id)) throw new Error(`Two annotation requests share the id ${id}`);
     seen.add(id);
 
-    const placed = placeAnnotation(request, local);
-    // Every annotation blocks the next one, the unclear ones included: an
-    // overlap already reported must not be compounded by a second.
-    placedBoxes.push(placed.box);
+    const found = placeAnnotation(request, local);
+    // Decision 58: a reported annotation that would print its ink on a
+    // glyph's ink is not drawn — "(S)" over "OH" makes both unreadable, and
+    // the report says what is missing. One that only crosses a bond line is
+    // crowded but legible, and still drawn.
+    const dropped = !found.clear && overprintsText(found.inkBox, glyphInk);
+    const placed: AnnotationPlacement = dropped ? { ...found, drawn: false } : found;
+    // Every DRAWN annotation blocks the next one, the unclear ones included:
+    // an overlap already reported must not be compounded by a second. A
+    // dropped one is not on the page, so it blocks nothing.
+    if (placed.drawn) placedBoxes.push(placed.box);
     placements.push(placed);
     if (!placed.clear) {
       unplaced.push({
@@ -392,6 +427,8 @@ export function placeAnnotations(
         source: placed.source,
         text: placed.text,
         box: placed.box,
+        dropped,
+        reason: dropped ? "overprintsText" : "crowded",
       });
     }
   }
@@ -510,8 +547,15 @@ export function placeAnnotation(
   const inkOffset: LabelBox =
     textRunInkRect(measured, ZERO, measurer, style.fontFamily) ?? textRunRect(measured, ZERO);
 
-  const step = measured.capHeightPx * ANNOTATION_PLACEMENT.radiusStepCapHeights;
-  const first = measured.capHeightPx * ANNOTATION_PLACEMENT.firstRadiusCapHeights;
+  // Decision 59: every radius from the ATOM LABEL's cap height at this style,
+  // so shrinking the annotation cannot shrink the search.
+  const labelCapPx = measurer.verticalMetrics({
+    family: style.fontFamily,
+    sizePx: style.fontSizePx,
+  }).capHeightPx;
+  const step = labelCapPx * ANNOTATION_PLACEMENT.radiusStepCapHeights;
+  const first = labelCapPx * ANNOTATION_PLACEMENT.firstRadiusCapHeights;
+  const closeStep = labelCapPx * ANNOTATION_PLACEMENT.closeStepCapHeights;
   // Half the run's own width, so a wide annotation starts further out than a
   // narrow one instead of overlapping the thing it annotates.
   const reach = first + measured.advanceWidthPx / 2;
@@ -535,8 +579,9 @@ export function placeAnnotation(
       maxY: centre.y + inkOffset.maxY,
     },
     clear: true,
+    drawn: true,
   });
-  const centres = candidateOrigins(request, measured, reach, step);
+  const centres = candidateOrigins(request, measured, reach, step, closeStep);
 
   // Cheapest test first: proximity touches a few dozen points, the obstacle
   // test every glyph and line in the drawing.
@@ -591,12 +636,13 @@ function onBaseline(centre: ScenePoint, box: TextRunBox): ScenePoint {
  * TWO LADDERS, THE COARSE ONE FIRST.
  *
  * 1. The original ladder: eight compass directions at `radiusSteps` rungs
- *    starting a cap-height-and-a-bit plus half the run's width out. It is kept
- *    FIRST and unchanged, so every annotation it already placed clear — every
- *    descriptor in a committed golden — stays byte-identical.
+ *    starting a label-cap-height-and-a-bit plus half the run's width out. It
+ *    is kept FIRST, so an annotation it places clear lands where it always
+ *    did for a given label size.
  *
  * 2. The close ladder: sixteen directions, from the radius at which the box
- *    just stops covering its anchor, outward in `closeStepCapHeights` steps up
+ *    just stops covering its anchor, outward in `closeStepCapHeights` (label
+ *    cap heights, decision 59) steps up
  *    to the coarse ladder's last rung, nearest step first. The coarse ladder's
  *    first rung sits a fixed number of cap heights out whatever the bond
  *    length. With a label font large against the bond (the ACS 1996 setting:
@@ -616,6 +662,7 @@ function candidateOrigins(
   measured: TextRunBox,
   reach: number,
   step: number,
+  closeStep: number,
 ): ScenePoint[] {
   const origins: ScenePoint[] = [];
   const along = (direction: ScenePoint, radius: number): ScenePoint => ({
@@ -630,7 +677,6 @@ function candidateOrigins(
   }
 
   const outermost = reach + (ANNOTATION_PLACEMENT.radiusSteps - 1) * step;
-  const closeStep = measured.capHeightPx * ANNOTATION_PLACEMENT.closeStepCapHeights;
   if (!(closeStep > 0)) return origins;
   // Half the padded box: the radius along a direction at which the box's edge
   // reaches the anchor. Anything nearer covers the atom it annotates.
@@ -872,6 +918,12 @@ function boxMeetsObstacle(box: LabelBox, obstacle: LabelObstacle): boolean {
   const dx = obstacle.centre.x - x;
   const dy = obstacle.centre.y - y;
   return dx * dx + dy * dy < obstacle.radius * obstacle.radius;
+}
+
+/** Does the ink box share any area with a glyph's ink (decision 58)? */
+function overprintsText(inkBox: LabelBox, glyphInk: readonly LabelBox[]): boolean {
+  for (const glyph of glyphInk) if (overlapArea(inkBox, glyph) > 0) return true;
+  return false;
 }
 
 /** The area two boxes share, px²; 0 when they only touch or are apart. */

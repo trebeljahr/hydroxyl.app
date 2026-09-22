@@ -226,23 +226,27 @@ export const PUBLICATION_STYLE: RenderStyle = Object.freeze({
   // FIXTURE, plus the steroid skeleton and phenanthrene; the skeletal, kekule,
   // explicitH and lewis views; descriptors on and a locant on every atom.
   // Counted are annotations REPORTED unplaced (`annotationLayout().unplaced`),
-  // with decision 45's fallback order, decision 55's ink-area glyph hits and
-  // decision 57's ink-centre proximity:
-  //   47 of 516 reported: 12 of 28 descriptors, 35 of 488 locants.
-  //   (0.85, the pre-decision-44 value, measures 54 of 516, 14 of 28
-  //   descriptors, on the same code.)
+  // with decision 45's fallback order, decision 55's ink-area glyph hits,
+  // decision 57's ink-centre proximity, decision 58's dropping and decision
+  // 59's label-sized ladder:
+  //   42 of 516 reported: 12 of 28 descriptors, 30 of 488 locants. 4 of the
+  //   42 are not drawn (decision 58): the steroid's C17 (S) and C14 locant,
+  //   each in the explicitH and Lewis views.
+  //   (0.85, the pre-decision-44 value, measures the same 42 and 12 on the
+  //   same code: with the ladder sized from the label, the annotation's size
+  //   no longer changes how far the search reaches.)
   // Notable reports at 0.80, all pinned by id in annotations.test.ts:
   //   - the steroid's C17 (S) in all four views: no slot reads as C17's at
-  //     8 pt, between the wedge to O17 and the bonds to C13 and C16;
+  //     8 pt, between the wedge to O17 and the bonds to C13 and C16. Drawn in
+  //     the skeletal and kekule views (it crosses lines, not text), dropped
+  //     in explicitH and Lewis, where it would print on a derived "H";
   //   - the steroid's C13 and C17 locants in all four views;
-  //   - chrysene's a25 locant in the skeletal view, a fusion vertex inside
-  //     two inscribed circles;
   //   - dimethyl sulfone's a1 locant in all four views;
   //   - otherwise only in the explicitH and Lewis views, where the derived
   //     hydrogens take the room: butan-2-ol's C2 (R), trans-2-butene's (E),
-  //     the steroid's C13 and C3 descriptors and seven more of its locants
-  //     (C1, C3, C5, C8, C9, C10, C14),
-  //     chrysene a16/a25, phenanthrene a16 and unmergedDropOverlap a6.
+  //     the steroid's C13 and C3 descriptors and six more of its locants
+  //     (C3, C5, C8, C9, C10, C14), chrysene and phenanthrene a16, and
+  //     the tert-butyl cation's a1.
   // No descriptor is reported in the skeletal or kekule view except C17's.
   stereoDescriptorScale: 0.8,
   colors: Object.freeze({ bond: "#000000", label: "#000000" }),
