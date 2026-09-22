@@ -228,7 +228,8 @@ export interface AnnotationObstacleSet {
    * The INK box of every label glyph and electron dot the drawing set,
    * UNPADDED, one entry per glyph: what a fallback's glyph hit is measured
    * against (decision 55), and what a reported annotation must not print on
-   * to be drawn at all (decision 58). Bare-vertex dots are not in it: they
+   * to be drawn at all (decision 58). Bare-vertex dots are not in it
+   * (decision 61; they stay in `obstacles`): they
    * mark where bond lines meet, and an annotation crossing them is crowded
    * the way one crossing a line is, not text printed on text.
    *

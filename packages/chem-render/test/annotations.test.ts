@@ -44,11 +44,17 @@ import {
   chrysene,
   ethanol,
   FIXTURES,
+  methylRadical,
   phenanthrene,
 } from "../src/fixtures.js";
 import { representation } from "../src/representation.js";
 import type { StructuralRepresentation } from "../src/representation.js";
-import { annotationLayout, buildScene } from "../src/scene/build.js";
+import {
+  annotationLayout,
+  annotationObstacles,
+  buildAnnotatedScene,
+  buildScene,
+} from "../src/scene/build.js";
 import type { SceneBuildOptions } from "../src/scene/build.js";
 import type {
   RenderScene,
@@ -777,6 +783,50 @@ describe("decision 58: a reported annotation that would print on text is not dra
       }
     }
     expect(annotations).toBeGreaterThan(1000);
+  });
+});
+
+describe("decision 61: which dots are glyph ink", () => {
+  it("counts radical and lone-pair dots as glyph ink, and a bare-vertex dot only as an obstacle", () => {
+    const cases: [Molecule, "skeletal" | "lewis", RegExp, boolean][] = [
+      [ethanol(), "skeletal", /^atom:a\d+:dot$/, false],
+      [methylRadical(), "skeletal", /:radical:/, true],
+      [acetate(), "lewis", /:lonepair:/, true],
+    ];
+    for (const [molecule, view, pattern, isInk] of cases) {
+      const rep = representation(view, { showLocants: true });
+      const locants = { [molecule.atomIds[0]!]: "1" };
+      const context = annotationObstacles(molecule, PUBLICATION_STYLE, rep, { locants })!;
+      const dots = buildScene(molecule, PUBLICATION_STYLE, rep, { locants }).primitives.filter(
+        (p) => p.type === "circle" && pattern.test(p.id),
+      );
+      expect(dots.length, String(pattern)).toBeGreaterThan(0);
+      for (const dot of dots) {
+        if (dot.type !== "circle") continue;
+        const box = {
+          minX: dot.centre.x - dot.radius,
+          minY: dot.centre.y - dot.radius,
+          maxX: dot.centre.x + dot.radius,
+          maxY: dot.centre.y + dot.radius,
+        };
+        // Glyph ink or not, as ruled.
+        expect(context.glyphInk!.some((ink) => overlaps(ink, box)), dot.id).toBe(isInk);
+        // Either way it stops a slot counting as clear.
+        expect(
+          context.obstacles.some(
+            (o) => (o.kind === "disc" ? discMeetsBox(o.centre, o.radius, box) : overlaps(o.box, box)),
+          ),
+          dot.id,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("reports the build's own annotations beside its scene, from one placement run", () => {
+    const { molecule, locants } = steroidSkeletonWithLocants();
+    const built = buildAnnotatedScene(molecule, PUBLICATION_STYLE, ANNOTATED, { locants });
+    expect(serializeScene(built.scene)).toBe(serializeScene(buildScene(molecule, PUBLICATION_STYLE, ANNOTATED, { locants })));
+    expect(built.annotations).toEqual(annotationLayout(molecule, PUBLICATION_STYLE, ANNOTATED, { locants }));
   });
 });
 

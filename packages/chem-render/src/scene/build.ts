@@ -51,6 +51,7 @@ import type {
   AnnotationAtomCentre,
   AnnotationCircle,
   AnnotationLayout,
+  AnnotationObstacleSet,
   AnnotationRequest,
   AnnotationSegment,
 } from "../label/annotations.js";
@@ -130,15 +131,41 @@ export function buildScene(
   representation: Representation,
   options?: SceneBuildOptions,
 ): RenderScene {
-  const primitives = isStructural(representation)
-    ? buildStructural(mol, style, representation, options).primitives
-    : [buildFormulaRun(mol, style, representation.kind)];
+  return buildAnnotatedScene(mol, style, representation, options).scene;
+}
 
+/** A scene and the annotation report of the SAME build. */
+export interface AnnotatedScene {
+  readonly scene: RenderScene;
+  /** `EMPTY_ANNOTATION_LAYOUT` for a text view, or when nothing is annotated. */
+  readonly annotations: AnnotationLayout;
+}
+
+/**
+ * `buildScene`, plus the annotation pass's report from the very same build.
+ *
+ * For a caller that draws the scene AND tells the user what could not be
+ * placed (the editor's status bar, decision 62): one placement run, so the
+ * report cannot disagree with the picture and nothing is placed twice.
+ */
+export function buildAnnotatedScene(
+  mol: Molecule,
+  style: RenderStyle,
+  representation: Representation,
+  options?: SceneBuildOptions,
+): AnnotatedScene {
+  const built = isStructural(representation)
+    ? buildStructural(mol, style, representation, options)
+    : { primitives: [buildFormulaRun(mol, style, representation.kind)], annotations: EMPTY_ANNOTATION_LAYOUT };
+  const { primitives } = built;
   return {
-    primitives,
-    bounds: sceneBounds(primitives, style),
-    style,
-    representation,
+    scene: {
+      primitives,
+      bounds: sceneBounds(primitives, style),
+      style,
+      representation,
+    },
+    annotations: built.annotations,
   };
 }
 
@@ -183,6 +210,21 @@ export function annotationLayout(
 ): AnnotationLayout {
   if (!isStructural(representation)) return EMPTY_ANNOTATION_LAYOUT;
   return buildStructural(mol, style, representation, options).annotations;
+}
+
+/**
+ * The obstacles and glyph ink the annotation pass searched, for a scene with
+ * something to annotate; undefined otherwise. Diagnostic, like
+ * `annotationLayout`: it rebuilds the structural scene.
+ */
+export function annotationObstacles(
+  mol: Molecule,
+  style: RenderStyle,
+  representation: Representation,
+  options?: SceneBuildOptions,
+): AnnotationObstacleSet | undefined {
+  if (!isStructural(representation)) return undefined;
+  return buildStructural(mol, style, representation, options).context;
 }
 
 /**
@@ -289,7 +331,11 @@ function buildStructural(
   style: RenderStyle,
   representation: StructuralRepresentation,
   options: SceneBuildOptions | undefined,
-): { readonly primitives: readonly ScenePrimitive[]; readonly annotations: AnnotationLayout } {
+): {
+  readonly primitives: readonly ScenePrimitive[];
+  readonly annotations: AnnotationLayout;
+  readonly context?: AnnotationObstacleSet;
+} {
   const primitives: ScenePrimitive[] = [];
 
   const centres = new Map<AtomId, ScenePoint>();
@@ -453,8 +499,9 @@ function buildStructural(
         glyphInk.push(...runGlyphInk(placement.detachedCharge, style));
       }
     } else if (style.atomDotRadiusPx > 0 && centre !== undefined) {
-      // An obstacle, but not glyph ink: a bare-vertex dot is where bond lines
-      // meet, not text (see `AnnotationObstacleSet.glyphInk`).
+      // Decision 61: a bare-vertex dot stops a slot counting as clear, but it
+      // is not glyph ink — crossing one is "crowded", never a drop — while
+      // radical and lone-pair dots above are glyph ink.
       obstacles.push({ kind: "disc", centre, radius: style.atomDotRadiusPx });
     }
   }
@@ -472,14 +519,13 @@ function buildStructural(
 
   // EVERY kind searches the full set (decision 34): label glyphs, bare-vertex
   // dots, derived hydrogens, every drawn line and outline, and the circles.
-  const annotations = placeAnnotations(requests, {
-    style,
+  const context: AnnotationObstacleSet = {
     obstacles,
     segments: [...corridors.values(), ...drawn],
     circles: circleOutlines,
-    atomCentres,
     glyphInk,
-  });
+  };
+  const annotations = placeAnnotations(requests, { ...context, style, atomCentres });
 
   // Emitted in PLACEMENT order — priority, then source id — so the scene's
   // order is the same function of the molecule the placements are.
@@ -502,7 +548,7 @@ function buildStructural(
     primitives.push(run);
   }
 
-  return { primitives, annotations };
+  return { primitives, annotations, context };
 }
 
 /**
