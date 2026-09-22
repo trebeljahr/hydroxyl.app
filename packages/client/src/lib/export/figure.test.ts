@@ -18,6 +18,7 @@ import { INITIAL_UI_STATE } from "@/state/slices/ui";
 import type { FigureExportSettings } from "@/state/types";
 
 import {
+  annotationSizeNotice,
   bondLengthNotice,
   documentFigure,
   exportWidthCm,
@@ -379,5 +380,90 @@ describe("refusals", () => {
     const svg = figurePreviewSvg(threePanelDoc(benzylAlcoholAbbreviated()), "publication");
     expect(svg).toContain('data-unavailable="abbreviated-label"');
     expect(svg).toContain("Sum formula view unavailable.");
+  });
+});
+
+/** butan-2-ol in three panels with its (R) shown in each. */
+function descriptorDoc(stylePreset: "screen" | "publication" = "publication", show = true): SketchDocument {
+  const withDescriptors = (panel: ReturnType<typeof createPanel>) => ({
+    ...panel,
+    representation: {
+      ...panel.representation,
+      display: { ...panel.representation.display, showStereoDescriptors: show },
+    },
+  });
+  return createDocument({
+    molecule: butan2olWedged(),
+    stylePreset,
+    panels: [
+      withDescriptors(createPanel("skeletal", undefined, stylePreset)),
+      withDescriptors(createPanel("kekule", undefined, stylePreset)),
+      withDescriptors(createPanel("lewis", undefined, stylePreset)),
+    ],
+    now: NOW,
+  });
+}
+
+describe("annotations below 8 pt (decision 60)", () => {
+  const custom = (customWidthCm: number): FigureExportSettings => ({
+    width: "custom",
+    customWidthCm,
+    dpi: 300,
+    style: "publication",
+  });
+
+  it("says nothing at Publication's natural size, where descriptors print at exactly 8 pt", () => {
+    const p = prepared(descriptorDoc(), custom(60));
+    expect(p.size.scaled).toBe(false);
+    expect(p.figure.cells.some((c) => c.content.kind === "scene" && c.content.scene.primitives.some((q) => q.id.endsWith(":descriptor")))).toBe(true);
+    expect(annotationSizeNotice(p, custom(60))).toBeNull();
+  });
+
+  it("names the stereo descriptors fit scaling takes under 8 pt while the labels still clear it, and still exports", () => {
+    const natural = prepared(descriptorDoc(), custom(60)).size.naturalWidthCm;
+    const settings = custom(natural * 0.9);
+    expect(settings.customWidthCm).toBeGreaterThan(2);
+    const p = prepared(descriptorDoc(), settings);
+    expect(p.size.scaled).toBe(true);
+    // Labels at 9 pt: decision 51's own check is quiet.
+    expect(p.size.fontSizePt).toBeCloseTo(9, 6);
+    expect(labelSizeNotice(p, settings)).toBeNull();
+
+    const notice = annotationSizeNotice(p, settings)!;
+    expect(notice.kinds).toEqual(["descriptor"]);
+    expect(notice.fontSizePt).toBeCloseTo(7.2, 6);
+    expect(notice.summary).toBe(
+      `Stereo descriptors print at ${formatPt(notice.fontSizePt)} pt, below the 8 pt minimum ACS asks for in figures.`,
+    );
+    // They reach 8 pt only at the natural width: nothing narrower helps.
+    const neededCm = String(Math.ceil(natural * 100 - 1e-6) / 100);
+    expect(notice.advice).toBe(
+      `They reach 8 pt at a maximum width of ${neededCm} cm. Try a double column, fewer panels per row, or fewer panels.`,
+    );
+    // A warning, not a refusal.
+    expect(figureSvgForFile(p)).toContain("(R)");
+  });
+
+  it("says nothing when the figure draws no annotation, flag on or off", () => {
+    const settings = custom(2);
+    // Flag on, but ethanol has no stereocentre: nothing is drawn.
+    const ethanolDoc = descriptorDoc();
+    const noStereo: SketchDocument = { ...ethanolDoc, molecule: ethanol() };
+    expect(prepared(noStereo, settings).size.scaled).toBe(true);
+    expect(annotationSizeNotice(prepared(noStereo, settings), settings)).toBeNull();
+    // Flag off.
+    expect(annotationSizeNotice(prepared(descriptorDoc("publication", false), settings), settings)).toBeNull();
+  });
+
+  it("sends a style whose annotations are under 8 pt at full size to Publication", () => {
+    const settings: FigureExportSettings = { ...custom(60), style: "canvas" };
+    const p = prepared(descriptorDoc("screen"), settings);
+    expect(p.size.scaled).toBe(false);
+    const notice = annotationSizeNotice(p, settings)!;
+    expect(notice.kinds).toEqual(["descriptor"]);
+    expect(notice.fontSizePt).toBeCloseTo(p.size.fontSizePt * SCREEN_STYLE.stereoDescriptorScale, 9);
+    expect(notice.advice).toBe(
+      "This style sets them under 8 pt even at full size, so no width fixes it. Choose a style with larger annotations, such as Publication.",
+    );
   });
 });

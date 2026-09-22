@@ -39,6 +39,11 @@
  * `MIN_PRINTED_LABEL_PT`, `labelSizeNotice` says so with the printed size and
  * what would bring them back — never a refusal, since a small figure can be
  * exactly what was wanted.
+ *
+ * The same check covers the stereo descriptors and locants a figure draws
+ * (decision 60): `annotationSizeNotice` names which of them print small.
+ * Publication sets them at exactly 8 pt (decision 54), so ANY scaling to fit
+ * takes them under while the labels, at 10 pt, still have room.
  */
 
 import { BOND_LENGTH_NORMALIZE_TOLERANCE, isEmpty } from "@starter/chem-core";
@@ -197,7 +202,7 @@ export function labelSizeNotice(
   prepared: PreparedFigure,
   settings: FigureExportSettings,
 ): LabelSizeNotice | null {
-  const { size, figure } = prepared;
+  const { size } = prepared;
   if (!size.labelsBelowMinimum) return null;
   const summary = `Labels print at ${formatPt(size.fontSizePt)} pt, below the ${MIN_PRINTED_LABEL_PT} pt minimum ACS asks for in figures.`;
   const needed = size.minWidthCmForMinLabel;
@@ -207,6 +212,16 @@ export function labelSizeNotice(
       advice: `This style's labels are under ${MIN_PRINTED_LABEL_PT} pt even at full size, so no width fixes it. Choose a style with larger labels, such as Publication.`,
     };
   }
+  return { summary, advice: widthAdvice(prepared, settings, needed) };
+}
+
+/** "They reach 8 pt at a maximum width of N cm. Try …", for text that can. */
+function widthAdvice(
+  prepared: PreparedFigure,
+  settings: FigureExportSettings,
+  needed: number,
+): string {
+  const { figure } = prepared;
   const remedies: string[] = [];
   if (settings.width !== "double" && needed <= JOURNAL_WIDTHS_CM.double * (1 + 1e-9)) {
     remedies.push("a double column");
@@ -216,10 +231,86 @@ export function labelSizeNotice(
   // Up, so the width it names really does reach the minimum.
   const neededCm = String(Math.ceil(needed * 100 - 1e-6) / 100);
   const reach = `They reach ${MIN_PRINTED_LABEL_PT} pt at a maximum width of ${neededCm} cm.`;
-  return {
-    summary,
-    advice: remedies.length === 0 ? reach : `${reach} Try ${joinOr(remedies)}.`,
-  };
+  return remedies.length === 0 ? reach : `${reach} Try ${joinOr(remedies)}.`;
+}
+
+/** The annotation kinds decision 60 checks, in the order a notice names them. */
+export const CHECKED_ANNOTATION_KINDS = ["descriptor", "locant"] as const;
+export type CheckedAnnotationKind = (typeof CHECKED_ANNOTATION_KINDS)[number];
+
+const ANNOTATION_NAMES: Readonly<Record<CheckedAnnotationKind, string>> = {
+  descriptor: "Stereo descriptors",
+  locant: "Locants",
+};
+
+export interface AnnotationSizeNotice extends LabelSizeNotice {
+  /** The kinds that print under the minimum, in `CHECKED_ANNOTATION_KINDS` order. */
+  readonly kinds: readonly CheckedAnnotationKind[];
+  /** The smallest of them, as it prints after scaling. */
+  readonly fontSizePt: number;
+}
+
+/**
+ * Each annotation kind the figure DRAWS, with its run size in px: a kind that
+ * is switched on but has nothing to draw (no stereocentre, no numbering) is
+ * not shown, and a warning about it would be about nothing. Read from the
+ * composed scenes, so it is the size the file carries.
+ */
+function drawnAnnotationSizesPx(prepared: PreparedFigure): Map<CheckedAnnotationKind, number> {
+  const sizes = new Map<CheckedAnnotationKind, number>();
+  for (const cell of prepared.figure.cells) {
+    if (cell.content.kind !== "scene") continue;
+    for (const primitive of cell.content.scene.primitives) {
+      if (primitive.type !== "textRun") continue;
+      for (const kind of CHECKED_ANNOTATION_KINDS) {
+        if (!primitive.id.endsWith(`:${kind}`)) continue;
+        const known = sizes.get(kind);
+        if (known === undefined || primitive.fontSizePx < known) sizes.set(kind, primitive.fontSizePx);
+      }
+    }
+  }
+  return sizes;
+}
+
+/**
+ * Decision 60: decision 51's 8 pt check, for the stereo descriptors and
+ * locants a figure draws. Null when none is drawn, or when every drawn one
+ * prints at the minimum or above. Names the kinds that are small, and, like
+ * `labelSizeNotice`, what would help; export stays enabled either way.
+ */
+export function annotationSizeNotice(
+  prepared: PreparedFigure,
+  settings: FigureExportSettings,
+): AnnotationSizeNotice | null {
+  const { size, figure } = prepared;
+  // Every run scales with the label: its printed size is the label's times
+  // its share of the label's px size.
+  const printed = (px: number): number => (size.fontSizePt * px) / figure.style.fontSizePx;
+  const natural = (px: number): number => (size.naturalFontSizePt * px) / figure.style.fontSizePx;
+  const minimum = MIN_PRINTED_LABEL_PT * (1 - 1e-9);
+  const small = [...drawnAnnotationSizesPx(prepared)]
+    .filter(([, px]) => printed(px) < minimum)
+    .sort(([a], [b]) => CHECKED_ANNOTATION_KINDS.indexOf(a) - CHECKED_ANNOTATION_KINDS.indexOf(b));
+  if (small.length === 0) return null;
+  const kinds = small.map(([kind]) => kind);
+  const smallestPx = Math.min(...small.map(([, px]) => px));
+  const fontSizePt = printed(smallestPx);
+  const names = kinds.map((kind, index) =>
+    index === 0 ? ANNOTATION_NAMES[kind] : ANNOTATION_NAMES[kind].toLowerCase(),
+  );
+  const summary = `${names.join(" and ")} print at ${formatPt(fontSizePt)} pt, below the ${MIN_PRINTED_LABEL_PT} pt minimum ACS asks for in figures.`;
+  const naturalPt = natural(smallestPx);
+  if (naturalPt < minimum) {
+    return {
+      kinds,
+      fontSizePt,
+      summary,
+      advice: `This style sets them under ${MIN_PRINTED_LABEL_PT} pt even at full size, so no width fixes it. Choose a style with larger annotations, such as Publication.`,
+    };
+  }
+  // Linear in the width, as for the labels; never past the natural width.
+  const needed = Math.min(size.naturalWidthCm, (size.naturalWidthCm * MIN_PRINTED_LABEL_PT) / naturalPt);
+  return { kinds, fontSizePt, summary, advice: widthAdvice(prepared, settings, needed) };
 }
 
 function joinOr(items: readonly string[]): string {

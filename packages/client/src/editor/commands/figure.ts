@@ -21,6 +21,7 @@ import { isEmpty } from "@starter/chem-core";
 import type { AtomId } from "@starter/chem-core";
 
 import {
+  annotationSizeNotice,
   figureSvgForFile,
   figureSvgForRaster,
   prepareFigure,
@@ -55,7 +56,8 @@ function sizeNote(store: EditorStore, p: PreparedFigure): string {
   const settings = store.getState().ui.figureExport;
   const notice = scaleNotice(p.size, settings);
   const labels = labelSizeNotice(p, settings);
-  return [notice === null ? `${size}.` : `${size}. ${notice}`, labels?.summary]
+  const annotations = annotationSizeNotice(p, settings);
+  return [notice === null ? `${size}.` : `${size}. ${notice}`, labels?.summary, annotations?.summary]
     .filter((part) => part !== undefined)
     .join(" ");
 }

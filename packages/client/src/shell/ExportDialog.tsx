@@ -43,6 +43,7 @@ import { STYLE_PRESET_TITLES } from "@/canvas/scene-bridge";
 import { commandById } from "@/editor/commands/registry";
 import {
   CUSTOM_WIDTH_RANGE_CM,
+  annotationSizeNotice,
   bondLengthNotice,
   figurePreviewSvg,
   figureStyleNotice,
@@ -109,6 +110,8 @@ export function ExportDialog(): ReactElement {
   const notice = prepared?.ok === true ? scaleNotice(prepared.value.size, settings) : null;
   const bondNotice = prepared?.ok === true ? bondLengthNotice(prepared.value) : null;
   const labelNotice = prepared?.ok === true ? labelSizeNotice(prepared.value, settings) : null;
+  const annotationNotice =
+    prepared?.ok === true ? annotationSizeNotice(prepared.value, settings) : null;
   const canExport = prepared?.ok === true;
   const styleNotice = figureStyleNotice(doc, settings);
   const exportPreset = settings.style === "canvas" ? doc.stylePreset : "publication";
@@ -261,6 +264,17 @@ export function ExportDialog(): ReactElement {
                 className="-mt-2 mb-3 text-xs font-medium text-amber-700 dark:text-amber-400"
               >
                 {labelNotice.summary} {labelNotice.advice}
+              </p>
+            )}
+            {annotationNotice === null ? null : (
+              <p
+                data-shell="figure-annotation-size"
+                data-annotation-pt={formatPt(annotationNotice.fontSizePt)}
+                data-annotation-kinds={annotationNotice.kinds.join(" ")}
+                role="status"
+                className="-mt-2 mb-3 text-xs font-medium text-amber-700 dark:text-amber-400"
+              >
+                {annotationNotice.summary} {annotationNotice.advice}
               </p>
             )}
             {bondNotice === null ? null : (
