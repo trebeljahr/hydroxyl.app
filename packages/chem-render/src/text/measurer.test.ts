@@ -23,6 +23,8 @@ import {
   type Measurer,
   measureTextRun,
   measurerFor,
+  glyphInkRects,
+  textRunInkRect,
   textRunRect,
 } from "./measurer.js";
 import { EM_ASCENT, EM_CAP_HEIGHT, EM_DESCENT, EM_NOTDEF_ADVANCE } from "./metrics.js";
@@ -335,5 +337,69 @@ describe("textRunRect", () => {
     );
     expect(centred.minX).toBe(-7.5);
     expect(centred.maxX).toBe(7.5);
+  });
+});
+
+describe("glyphInkRects", () => {
+  // Ink boxes from the glyph outlines, font units y-up:
+  // O 97,-20,1495,1430 (advance 1593); H 168,0,1312,1409; 3 78,-20,1049,1430.
+  it("gives each glyph its own outline box, once, at its pen position", () => {
+    const box = measureTextRun([{ text: "OH" }], OPTIONS, BUNDLED_MEASURER);
+    const rects = glyphInkRects(box, { x: 100, y: 50 }, BUNDLED_MEASURER, OPTIONS.fontFamily);
+    expect(rects).toEqual([
+      { minX: 100 + px(97), minY: 50 - px(1430), maxX: 100 + px(1495), maxY: 50 + px(20) },
+      { minX: 100 + px(1593 + 168), minY: 50 - px(1409), maxX: 100 + px(1593 + 1312), maxY: 50 },
+    ]);
+    // Tighter than the typographic band on both sides.
+    const band = textRunRect(box, { x: 100, y: 50 });
+    for (const rect of rects) {
+      expect(rect.minY).toBeGreaterThan(band.minY);
+      expect(rect.maxY).toBeLessThan(band.maxY);
+    }
+  });
+
+  it("sets a subscript's ink at its own size and shift", () => {
+    const box = measureTextRun([{ text: "H" }, { text: "3", script: "sub" }], OPTIONS, BUNDLED_MEASURER);
+    const [h, three] = glyphInkRects(box, { x: 0, y: 0 }, BUNDLED_MEASURER, OPTIONS.fontFamily);
+    const sub = FONT_SIZE_PX * 0.72;
+    const x = px(1479);
+    const dy = FONT_SIZE_PX * 0.25;
+    expect(h).toEqual({ minX: px(168), minY: -px(1409), maxX: px(1312), maxY: 0 });
+    expect(three).toEqual({
+      minX: x + px(78, sub),
+      minY: dy - px(1430, sub),
+      maxX: x + px(1049, sub),
+      maxY: dy + px(20, sub),
+    });
+  });
+
+  it("gives a space no ink, and a run of spaces no ink box at all", () => {
+    const box = measureTextRun([{ text: "O H" }], OPTIONS, BUNDLED_MEASURER);
+    expect(glyphInkRects(box, { x: 0, y: 0 }, BUNDLED_MEASURER, OPTIONS.fontFamily)).toHaveLength(2);
+    const blank = measureTextRun([{ text: "  " }], OPTIONS, BUNDLED_MEASURER);
+    expect(textRunInkRect(blank, { x: 0, y: 0 }, BUNDLED_MEASURER, OPTIONS.fontFamily)).toBeUndefined();
+  });
+
+  it("falls back to each span's full band for a measurer that knows only advances", () => {
+    // Looser, never tighter: an ink test run against it can only report
+    // more, never pass ink off as clear.
+    const advancesOnly: Measurer = {
+      id: "advances-only",
+      measureText: BUNDLED_MEASURER.measureText,
+      verticalMetrics: BUNDLED_MEASURER.verticalMetrics,
+    };
+    const box = measureTextRun([{ text: "OH" }], OPTIONS, advancesOnly);
+    expect(glyphInkRects(box, { x: 0, y: 0 }, advancesOnly, OPTIONS.fontFamily)).toEqual([
+      textRunRect(box, { x: 0, y: 0 }),
+    ]);
+  });
+
+  it("unions to the run's ink box", () => {
+    const box = measureTextRun([{ text: "(S)" }], options({ anchor: "middle" }), BUNDLED_MEASURER);
+    const ink = textRunInkRect(box, { x: 0, y: 0 }, BUNDLED_MEASURER, OPTIONS.fontFamily)!;
+    const rects = glyphInkRects(box, { x: 0, y: 0 }, BUNDLED_MEASURER, OPTIONS.fontFamily);
+    expect(rects).toHaveLength(3);
+    expect(ink.minX).toBe(Math.min(...rects.map((r) => r.minX)));
+    expect(ink.maxY).toBe(Math.max(...rects.map((r) => r.maxY)));
   });
 });

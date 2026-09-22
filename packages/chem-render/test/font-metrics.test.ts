@@ -26,6 +26,8 @@ import { describe, expect, it } from "vitest";
 import {
   extractMetrics,
   fontSha256,
+  OUT_PATH,
+  render,
 } from "../scripts/generate-font-metrics.mjs";
 import {
   ADVANCE_WIDTHS,
@@ -35,7 +37,9 @@ import {
   FONT_FAMILY,
   FONT_SHA256,
   FONT_VERSION,
+  INK_BOUNDS,
   NOTDEF_ADVANCE,
+  NOTDEF_INK,
   UNITS_PER_EM,
   X_HEIGHT,
 } from "../src/text/generated/arimo-metrics.js";
@@ -47,6 +51,7 @@ import {
   EM_NOTDEF_ADVANCE,
   EM_X_HEIGHT,
   advanceWidthUnits,
+  glyphInkUnits,
 } from "../src/text/metrics.js";
 
 const FONT_BYTES = readFileSync(
@@ -89,6 +94,19 @@ describe("the committed table still describes the vendored font", () => {
     // regenerated from a different character set would differ only in the
     // entries nobody thought to sample.
     expect(EXTRACTED.widths).toEqual(ADVANCE_WIDTHS.map(([cp, w]) => [cp, w]));
+  });
+
+  it("agrees on every glyph's ink box", () => {
+    // The ink boxes decide proximity and overprint for annotations
+    // (decisions 55 and 57); a stale one moves a placement silently.
+    expect(EXTRACTED.inks).toEqual(INK_BOUNDS.map((row) => [...row]));
+    expect(EXTRACTED.notdefInk).toEqual(NOTDEF_INK === undefined ? null : [...NOTDEF_INK]);
+  });
+
+  it("regenerates the committed file byte for byte", () => {
+    // Stronger than the field checks: the generator's output IS the file, so
+    // a hand edit anywhere in it — a comment included — fails here.
+    expect(render(EXTRACTED, fontSha256(FONT_BYTES))).toBe(readFileSync(OUT_PATH, "utf8"));
   });
 
   it("is codepoint-ascending with no duplicates", () => {
@@ -148,6 +166,25 @@ describe("metrics.ts derives em fractions from the table", () => {
     expect(EM_DESCENT).toBeGreaterThan(0);
     expect(EM_DESCENT).toBe(0.2119140625);
     expect(EM_DESCENT).toBe(-DESCENDER / UNITS_PER_EM);
+  });
+
+  it("gives digits ink from the baseline to the cap height, and none to a space", () => {
+    // Real outlines, not the typographic band: a digit's ink stops just
+    // below the baseline's overshoot and at about the cap height, and a
+    // parenthesis reaches below the baseline.
+    const zero = glyphInkUnits(0x30)!;
+    expect(zero.yMin).toBeLessThanOrEqual(0);
+    expect(zero.yMin).toBeGreaterThan(DESCENDER);
+    expect(zero.yMax).toBeGreaterThan(CAP_HEIGHT * 0.95);
+    expect(zero.yMax).toBeLessThan(ASCENDER);
+    expect(glyphInkUnits(0x28)!.yMin).toBeLessThan(-200);
+    expect(glyphInkUnits(0x20)).toBeUndefined();
+    // Outside the subset: .notdef's box, which still paints.
+    expect(glyphInkUnits(0x03a9)).toEqual(
+      NOTDEF_INK === undefined
+        ? undefined
+        : { xMin: NOTDEF_INK[0], yMin: NOTDEF_INK[1], xMax: NOTDEF_INK[2], yMax: NOTDEF_INK[3] },
+    );
   });
 
   it("looks up covered code points and falls back for the rest", () => {

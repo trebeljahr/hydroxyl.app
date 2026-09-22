@@ -25,7 +25,9 @@ import {
   ADVANCE_WIDTHS,
   CAP_HEIGHT,
   DESCENDER,
+  INK_BOUNDS,
   NOTDEF_ADVANCE,
+  NOTDEF_INK,
   UNITS_PER_EM,
   X_HEIGHT,
 } from "./generated/arimo-metrics.js";
@@ -182,4 +184,36 @@ export function advanceWidthUnitsOf(text: string): {
     }
   }
   return { units, notdefCount };
+}
+
+/** A glyph's ink box in font units, y-UP, x from its own pen position. */
+export interface GlyphInkUnits {
+  readonly xMin: number;
+  readonly yMin: number;
+  readonly xMax: number;
+  readonly yMax: number;
+}
+
+const INK_BY_CODEPOINT: ReadonlyMap<number, GlyphInkUnits> = new Map(
+  INK_BOUNDS.map(([codepoint, xMin, yMin, xMax, yMax]) => [codepoint, { xMin, yMin, xMax, yMax }]),
+);
+
+const NOTDEF_INK_UNITS: GlyphInkUnits | undefined =
+  NOTDEF_INK === undefined
+    ? undefined
+    : { xMin: NOTDEF_INK[0], yMin: NOTDEF_INK[1], xMax: NOTDEF_INK[2], yMax: NOTDEF_INK[3] };
+
+/**
+ * The INK a code point puts on the page, in font units; `undefined` for a
+ * character with no outline (the space).
+ *
+ * Distinct from the advance and from the typographic ascender/descender band
+ * the measured box uses: a digit's ink sits between the baseline and the cap
+ * height, a parenthesis reaches below the baseline. A code point outside the
+ * subset gets `.notdef`'s ink, for the same reason it gets `.notdef`'s
+ * advance: the tofu box still paints.
+ */
+export function glyphInkUnits(codepoint: number): GlyphInkUnits | undefined {
+  if (ADVANCE_BY_CODEPOINT.has(codepoint)) return INK_BY_CODEPOINT.get(codepoint);
+  return NOTDEF_INK_UNITS;
 }

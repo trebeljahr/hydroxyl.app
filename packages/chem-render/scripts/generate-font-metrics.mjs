@@ -131,6 +131,35 @@ function readAdvances(hhea, hmtx, glyphCount) {
   return advances;
 }
 
+/**
+ * Each glyph's ink bounding box in font units, y-UP as the font stores it:
+ * `[xMin, yMin, xMax, yMax]`, or `undefined` for a glyph with no outline.
+ *
+ * Read from each glyf record's own header, which a font compiler writes as the
+ * exact bounds of the outline (composite glyphs included). This is the INK a
+ * glyph puts on the page, as opposed to its advance and the typographic
+ * ascender/descender band: a digit's ink stops at the baseline and near the
+ * cap height, a parenthesis reaches below the baseline. Annotation placement
+ * judges proximity and overprint on it (decisions 55 and 57).
+ */
+function readInkBounds(head, loca, glyf, glyphCount) {
+  const longOffsets = head.getInt16(50) === 1;
+  const offsetOf = (g) => (longOffsets ? loca.getUint32(g * 4) : loca.getUint16(g * 2) * 2);
+  const bounds = new Array(glyphCount);
+  for (let g = 0; g < glyphCount; g++) {
+    const start = offsetOf(g);
+    // An empty glyph (a space) has a zero-length glyf record: no ink at all.
+    if (offsetOf(g + 1) === start) continue;
+    bounds[g] = [
+      glyf.getInt16(start + 2),
+      glyf.getInt16(start + 4),
+      glyf.getInt16(start + 6),
+      glyf.getInt16(start + 8),
+    ];
+  }
+  return bounds;
+}
+
 /** The first name-table record for `nameId`, preferring the Windows/BMP one. */
 function readName(name, nameId) {
   const count = name.getUint16(2);
@@ -177,14 +206,23 @@ export function extractMetrics(fontBytes) {
   const glyphCount = maxp.getUint16(4);
   const advances = readAdvances(hhea, hmtx, glyphCount);
   const cmap = readCmap(requireTable(tables, "cmap"));
+  const inkBounds = readInkBounds(
+    head,
+    requireTable(tables, "loca"),
+    requireTable(tables, "glyf"),
+    glyphCount,
+  );
 
   const widths = [];
+  const inks = [];
   for (const cp of [...cmap.keys()].sort((a, b) => a - b)) {
     const glyph = cmap.get(cp);
     // Control characters have no ink and no business in a label; they would
     // only bloat the table. Space (0x20) is kept — condensed formulae use it.
     if (cp < 0x20 || (cp >= 0x7f && cp <= 0x9f)) continue;
     widths.push([cp, advances[glyph]]);
+    const ink = inkBounds[glyph];
+    if (ink !== undefined) inks.push([cp, ...ink]);
   }
 
   return {
@@ -200,7 +238,9 @@ export function extractMetrics(fontBytes) {
     xHeight: os2.getInt16(86),
     // .notdef's advance, used for any character the subset does not cover.
     notdefAdvance: advances[0],
+    notdefInk: inkBounds[0] ?? null,
     widths,
+    inks,
   };
 }
 
@@ -212,6 +252,15 @@ function render(metrics, sha256) {
   const rows = metrics.widths
     .map(([cp, advance]) => `  [0x${cp.toString(16).padStart(4, "0")}, ${advance}],`)
     .join("\n");
+
+  const inkRows = metrics.inks
+    .map(
+      ([cp, xMin, yMin, xMax, yMax]) =>
+        `  [0x${cp.toString(16).padStart(4, "0")}, ${xMin}, ${yMin}, ${xMax}, ${yMax}],`,
+    )
+    .join("\n");
+  const notdefInk =
+    metrics.notdefInk === null ? "undefined" : `[${metrics.notdefInk.join(", ")}]`;
 
   return `/**
  * GENERATED FILE — DO NOT EDIT.
@@ -252,6 +301,18 @@ export const NOTDEF_ADVANCE = ${metrics.notdefAdvance};
 /** [codepoint, advance width] for every covered character, codepoint-ascending. */
 export const ADVANCE_WIDTHS: readonly (readonly [number, number])[] = [
 ${rows}
+];
+
+/** .notdef's ink box, [xMin, yMin, xMax, yMax], y-up; undefined if it has none. */
+export const NOTDEF_INK: readonly [number, number, number, number] | undefined = ${notdefInk};
+
+/**
+ * [codepoint, xMin, yMin, xMax, yMax] of each covered character's glyph INK,
+ * font units, y-UP from the baseline and x from the pen position,
+ * codepoint-ascending. A character with no outline (the space) is absent.
+ */
+export const INK_BOUNDS: readonly (readonly [number, number, number, number, number])[] = [
+${inkRows}
 ];
 `;
 }

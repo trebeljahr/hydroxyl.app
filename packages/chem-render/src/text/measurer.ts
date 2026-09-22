@@ -34,7 +34,9 @@ import {
   EM_DESCENT,
   EM_X_HEIGHT,
   UNITS_PER_EM,
+  advanceWidthUnits,
   advanceWidthUnitsOf,
+  glyphInkUnits,
   scriptDyPx,
   scriptFontSizePx,
 } from "./metrics.js";
@@ -80,6 +82,26 @@ export interface Measurer {
   readonly id: string;
   measureText(text: string, font: FontRequest): GlyphRunMetrics;
   verticalMetrics(font: FontRequest): FontVerticalMetrics;
+  /**
+   * One ink box per glyph of `text` that has ink, px, relative to the text's
+   * pen start ON ITS BASELINE, y-DOWN (so a glyph above the baseline has a
+   * negative `minY`).
+   *
+   * Optional, because a measurer that only knows advances cannot answer it.
+   * Without it `glyphInkRects` falls back to each span's full measured box —
+   * the advance by the ascender-to-descender band — which contains the ink,
+   * so an ink test degrades to the looser em-box test and never passes ink
+   * off as clear.
+   */
+  inkBoxes?(text: string, font: FontRequest): readonly InkRect[];
+}
+
+/** A rectangle in px, y-down: `minY` is the top edge. */
+export interface InkRect {
+  readonly minX: number;
+  readonly minY: number;
+  readonly maxX: number;
+  readonly maxY: number;
 }
 
 /**
@@ -106,6 +128,30 @@ export const BUNDLED_MEASURER: Measurer = Object.freeze({
       capHeightPx: EM_CAP_HEIGHT * font.sizePx,
       xHeightPx: EM_X_HEIGHT * font.sizePx,
     };
+  },
+
+  inkBoxes(text: string, font: FontRequest): readonly InkRect[] {
+    // The pen advances in integer font units and each edge is divided once,
+    // the same discipline as `measureText`, so a glyph's box does not depend
+    // on how many glyphs came before it in floating point.
+    const boxes: InkRect[] = [];
+    let penUnits = 0;
+    for (const character of text) {
+      const codepoint = character.codePointAt(0);
+      if (codepoint === undefined) continue;
+      const ink = glyphInkUnits(codepoint);
+      if (ink !== undefined) {
+        boxes.push({
+          minX: ((penUnits + ink.xMin) * font.sizePx) / UNITS_PER_EM,
+          // y-up font units to y-down px: the top edge is the glyph's yMax.
+          minY: (-ink.yMax * font.sizePx) / UNITS_PER_EM,
+          maxX: ((penUnits + ink.xMax) * font.sizePx) / UNITS_PER_EM,
+          maxY: (-ink.yMin * font.sizePx) / UNITS_PER_EM,
+        });
+      }
+      penUnits += advanceWidthUnits(codepoint);
+    }
+    return boxes;
   },
 });
 
@@ -308,4 +354,65 @@ export function textRunRect(
     maxX: minX + box.advanceWidthPx,
     maxY: baselineY + box.descentPx,
   };
+}
+
+/**
+ * One INK rectangle per drawn glyph of a measured run placed at `origin`, in
+ * scene px, y-down — each glyph once, whatever its span.
+ *
+ * `box` must be the run as measured with the same anchor and baseline the
+ * `origin` is given in, exactly as for `textRunRect`. Spans keep their script
+ * size and shift. A measurer with no `inkBoxes` yields each non-empty span's
+ * measured box instead (see `Measurer.inkBoxes`).
+ */
+export function glyphInkRects(
+  box: TextRunBox,
+  origin: ScenePoint,
+  measurer: Measurer,
+  fontFamily: string,
+): InkRect[] {
+  const penX = origin.x + box.startXPx;
+  const baselineY = origin.y + box.baselineYPx;
+  const rects: InkRect[] = [];
+  for (const span of box.spans) {
+    if (span.span.text.length === 0) continue;
+    const x = penX + span.startXPx;
+    const y = baselineY + span.dyPx;
+    if (measurer.inkBoxes === undefined) {
+      rects.push({
+        minX: x,
+        minY: y - EM_ASCENT * span.fontSizePx,
+        maxX: x + span.advanceWidthPx,
+        maxY: y + EM_DESCENT * span.fontSizePx,
+      });
+      continue;
+    }
+    for (const ink of measurer.inkBoxes(span.span.text, { family: fontFamily, sizePx: span.fontSizePx })) {
+      rects.push({ minX: x + ink.minX, minY: y + ink.minY, maxX: x + ink.maxX, maxY: y + ink.maxY });
+    }
+  }
+  return rects;
+}
+
+/**
+ * The bounding box of a run's ink: the union of `glyphInkRects`, or
+ * `undefined` for a run that draws nothing.
+ */
+export function textRunInkRect(
+  box: TextRunBox,
+  origin: ScenePoint,
+  measurer: Measurer,
+  fontFamily: string,
+): InkRect | undefined {
+  let union: { minX: number; minY: number; maxX: number; maxY: number } | undefined;
+  for (const r of glyphInkRects(box, origin, measurer, fontFamily)) {
+    if (union === undefined) union = { ...r };
+    else {
+      if (r.minX < union.minX) union.minX = r.minX;
+      if (r.minY < union.minY) union.minY = r.minY;
+      if (r.maxX > union.maxX) union.maxX = r.maxX;
+      if (r.maxY > union.maxY) union.maxY = r.maxY;
+    }
+  }
+  return union;
 }
