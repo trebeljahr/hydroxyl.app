@@ -25,8 +25,16 @@
  *   selenoxide, P(III), As(III) or aziridine/bridgehead nitrogen centre.
  *
  *   NO DUPLICATES AT THE ROOT (decision 47). A multiple bond incident to the
- *   stereogenic atom itself is not duplicated at either end. Cited from the
- *   2013 text (https://iupac.qmul.ac.uk/BlueBook/P9.html), read, not recalled:
+ *   stereogenic atom itself is not duplicated at either end.
+ *
+ *   WHAT WAS VERIFIED, AND WHEN (decision 78). The passages below were read at
+ *   https://iupac.qmul.ac.uk/BlueBook/P9.html on 2026-09-23 and match that
+ *   page. Nothing else from P-93 is cited here. An earlier version of this
+ *   header cited P-93.3.4.1 together with a worked figure for ethyl
+ *   (R)-4-nitrobenzene-1-sulfinate; neither could be confirmed at that URL, so
+ *   both are gone and P-93.3.3.2 stands in their place. A rule this module
+ *   implements is either quoted from a source that was opened or it is not
+ *   claimed at all.
  *     - P-93.2.4: "The 'P=O' bond, as conventionally written in phosphates,
  *       phosphonates and related compounds, is considered as a single bond,
  *       as there are already four atoms or groups in the tetrahedral
@@ -37,11 +45,13 @@
  *     - P-93.2.3: in phosphane oxides "the oxygen atom is treated as the
  *       fourth atom. The nature of the bonding to this oxygen atom is not
  *       relevant."
- *     - P-93.3.4.1: a trigonal pyramidal centre takes "a phantom atom of low
- *       priority, and not a pair of electrons". Its figure for ethyl
- *       (R)-4-nitrobenzene-1-sulfinate ranks OEt above =O, which holds only
- *       without a duplicate S on the oxygen; P-93.2.4's methyl
- *       phenylphosphinate figure ranks OMe above =O the same way.
+ *     - P-93.3.3.2, "Trigonal pyramid": the lone pair of such a centre is
+ *       treated as "a phantom atom of atomic number 0", the lowest ligand,
+ *       and not as a pair of electrons to be ranked.
+ *   The no-duplicate-at-the-root rule rests on P-93.2.3/2.4/2.5 alone: each
+ *   says in terms that the doubly bonded oxygen IS the fourth ligand and that
+ *   the nature of its bond does not matter, which is a duplicate-free centre
+ *   stated in words. P-93.3.3.2 is cited only for where the phantom ranks.
  *   RDKit's CIPLabeler (`Digraph::expand`, "duplicate nodes for bond orders
  *   (except for root atoms...) for example >S=O") does the same. S=O and
  *   S⁺–O⁻ drawings of one sulfoxide therefore rank alike by construction
@@ -1943,9 +1953,11 @@ function isBridgedRingAtom(mol: Molecule, atomId: AtomId): boolean {
  * and made `isAchiral` answer `unspecified-unit` for molecules that are
  * plainly achiral.
  *
- * WHY NOT AUTOMORPHISMS ALONE. The obvious repair — drop the unit when an
- * automorphism swaps its two tied branches — cannot work, and the reason is
- * worth recording. Strip norbornane to its graph and it is a six-ring whose 1
+ * WHY NOT AUTOMORPHISMS ALONE — RULED, DECISION 79. The obvious repair, and
+ * the one first proposed, was to drop the unit when an automorphism swaps its
+ * two tied branches. It cannot work, the counterexample below is why, and the
+ * bridge criterion with the symmetry class beside it was accepted in its
+ * place. Strip norbornane to its graph and it is a six-ring whose 1
  * and 4 positions carry a third heavy neighbour; so is
  * 1,4-dimethylcyclohexane. Both have the automorphism that swaps the two arms
  * and fixes both bridgeheads, and in both it transposes two ligands at each,
@@ -1966,6 +1978,15 @@ function isBridgedRingAtom(mol: Molecule, atomId: AtomId): boolean {
  * WHAT THIS DOES NOT DO. It never touches a unit whose ligands rank pairwise
  * distinct, so memantine's two methylated bridgeheads keep their letters while
  * its amine and CH bridgeheads, both tied, go.
+ *
+ * AND WHAT IT DELIBERATELY LEAVES ALONE — RULED, DECISION 80. A 4-substituted
+ * cyclohexanone oxime or hydrazone keeps BOTH its ring C4 and its C=N, and
+ * RDKit perceives neither. The two look like the cage case and are not: the
+ * automorphism that swaps C4's two ring arms also exchanges the atoms the C=N
+ * is measured against, so it flips that bond's geometry and is no symmetry of
+ * the molecule. The divergence from RDKit is intended, and the cross-check in
+ * packages/client permits it only because chem-core gives both units no
+ * letter — a LETTER RDKit does not have still fails there.
  */
 function heldByABridge(
   mol: Molecule,
