@@ -77,6 +77,18 @@
  *   mancude duplicate takes part in no distance order: where it sits is a
  *   Kekulé artefact, and ordering on it ranked toluene's two ortho branches
  *   apart.
+ *     PINNED AS A COMPARATOR, NOT AS A LETTER. `compareRule1b` is exported and
+ *     unit-tested, because no molecule pins it: replacing the whole rule with
+ *     "tie" leaves every letter in the fixture corpus unchanged. It is not
+ *     dead code — over the 109 checked-in molecules it decides 1074
+ *     ring-closure pairs by distance in each reading, and 90
+ *     ring-against-mancude pairs in the Hanson reading alone — but some
+ *     earlier key or later rule always settles the comparison a letter hangs
+ *     on, so a molecule-level test cannot tell a correct rule 1b from a
+ *     missing one. Two shapes are not reached by that corpus at all: the
+ *     IUPAC distance order between two MULTIPLE-BOND duplicates, and the
+ *     Hanson rank of a ring-closure duplicate over a plain atom. The unit
+ *     test covers both, and says which are which.
  *
  *   RULE 2, mass number (P-92.3: "81Br > Br > 79Br"). An unlabelled atom ranks
  *   at its standard atomic weight, a labelled one at its mass number, and 1H
@@ -667,6 +679,69 @@ function sign(value: number): -1 | 0 | 1 {
 // Keys
 // ---------------------------------------------------------------------------
 
+/**
+ * What rule 1b looks at in one digraph node. Exported, with `compareRule1b`,
+ * so the rule can be asserted directly: the whole of it is reachable only
+ * through ring-closure and multiple-bond duplicates deep inside a comparison
+ * that some other rule usually decides first, and a comparator nothing pins
+ * can be replaced by `return 0` without a single molecule noticing.
+ */
+export interface Rule1bNode {
+  /** A duplicate atom rather than a real one. */
+  readonly duplicate: boolean;
+  /** A duplicate that closes a ring, as against one that pads a multiple bond. */
+  readonly ringDuplicate: boolean;
+  /** A duplicate standing on a bond whose order is a Kekulé artefact. */
+  readonly mancudeDuplicate: boolean;
+  /** The sphere of the atom this duplicate stands for. */
+  readonly originDepth: number;
+}
+
+/**
+ * RULE 1b, in the two readings the header names, as a pure comparison:
+ * positive when `a` outranks `b`.
+ *
+ * `"iupac"` is P-92.1.3.1(b) read literally — "duplicate atoms ... nearer the
+ * root rank higher" — applied to every duplicate, with the mancude carve-out:
+ * a duplicate sitting where the drawn Kekulé form happened to put a double
+ * bond carries no information about the molecule, and ordering on it ranked
+ * toluene's two ortho branches apart, which is plainly wrong.
+ *
+ * `"hanson"` is Hanson et al. (J. Chem. Inf. Model. 2018, 58, 1755) and
+ * RDKit: the distance only orders two RING-CLOSURE duplicates, and any
+ * ring-closure duplicate outranks anything else at the same key.
+ *
+ * Both are computed wherever a duplicate reaches rule 1b, and a ranking they
+ * disagree on is `ranking-unsupported`: this function is the whole of what
+ * they can disagree about.
+ */
+function rule1bNode(node: DNode): Rule1bNode {
+  return {
+    duplicate: node.kind === "duplicate",
+    ringDuplicate: node.ringDuplicate,
+    mancudeDuplicate: node.mancudeDuplicate,
+    originDepth: node.origDepth,
+  };
+}
+
+export function compareRule1b(
+  variant: "iupac" | "hanson",
+  a: Rule1bNode,
+  b: Rule1bNode,
+): -1 | 0 | 1 {
+  if (!a.duplicate && !b.duplicate) return 0;
+  if (variant === "iupac") {
+    if (a.mancudeDuplicate || b.mancudeDuplicate) return 0;
+    return a.duplicate && b.duplicate ? sign(b.originDepth - a.originDepth) : 0;
+  }
+  const aRing = a.duplicate && a.ringDuplicate;
+  const bRing = b.duplicate && b.ringDuplicate;
+  if (aRing && bRing) return sign(b.originDepth - a.originDepth);
+  if (aRing) return 1;
+  if (bRing) return -1;
+  return 0;
+}
+
 function ord3(aux: Aux): number {
   return aux === "Z" ? 2 : aux === "E" ? 1 : 0;
 }
@@ -702,23 +777,13 @@ function keyCompare(
       if (a.fuzzy || b.fuzzy) return UNSUPPORTED;
       return sign(a.z - b.z);
     case RULE_1B: {
-      const aDup = a.kind === "duplicate";
-      const bDup = b.kind === "duplicate";
-      if (!aDup && !bDup) return 0;
+      const nodeA = rule1bNode(a);
+      const nodeB = rule1bNode(b);
+      if (!nodeA.duplicate && !nodeB.duplicate) return 0;
+      // Both variants are computed from here on, so the caller must know that
+      // this key could tell them apart.
       g.dupAt1b = true;
-      if (g.variant === "iupac") {
-        // A mancude duplicate sits wherever the drawn Kekulé form put a double
-        // bond, so its distance says nothing about the molecule: toluene's two
-        // ortho branches would rank apart. It takes part in no distance order.
-        if (a.mancudeDuplicate || b.mancudeDuplicate) return 0;
-        return aDup && bDup ? sign(b.origDepth - a.origDepth) : 0;
-      }
-      const aRing = aDup && a.ringDuplicate;
-      const bRing = bDup && b.ringDuplicate;
-      if (aRing && bRing) return sign(b.origDepth - a.origDepth);
-      if (aRing) return 1;
-      if (bRing) return -1;
-      return 0;
+      return compareRule1b(g.variant, nodeA, nodeB);
     }
     case RULE_2: {
       if (a.z === 0 || b.z === 0) return 0;

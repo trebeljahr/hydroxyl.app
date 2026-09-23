@@ -22,7 +22,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { buildMolecule } from "./builders.js";
-import { rankStereoCentre, rankSubstituentPair, cipUnits } from "./cip.js";
+import { compareRule1b, rankStereoCentre, rankSubstituentPair, cipUnits } from "./cip.js";
+import type { Rule1bNode } from "./cip.js";
 import { readMolblock } from "./molblock-read.js";
 import { bondsAt, otherEnd } from "./molecule.js";
 import { updateBond } from "./ops.js";
@@ -273,6 +274,119 @@ describe("heteroatom centres (decisions 43 and 47)", () => {
     // RDKit gives S drawn P=O and R drawn P+–O−; the IUPAC text says charges
     // are not considered. The two forms disagree, so no letter.
     expect(centreLetters(load("branch-phosphoryl"))).toEqual({ a2: "?ranking-unsupported" });
+  });
+});
+
+describe("rule 1b, the comparator no molecule pins", () => {
+  /**
+   * Replacing the whole RULE_1B branch of `keyCompare` with "tie" leaves every
+   * letter in the fixture corpus unchanged, so the rule cannot be asserted
+   * through a molecule: some earlier key or later rule always settles the
+   * comparison a letter hangs on. It is not dead, though — instrumenting it
+   * over the 109 checked-in molecules counts 1074 ring-closure pairs decided
+   * by distance in each reading, and 90 ring-against-mancude pairs decided in
+   * the Hanson reading alone. So it is pinned here, directly, as the pure
+   * comparison it is. Each test says whether the shape it covers is one the
+   * corpus reaches.
+   */
+  const atom: Rule1bNode = {
+    duplicate: false,
+    ringDuplicate: false,
+    mancudeDuplicate: false,
+    originDepth: 3,
+  };
+  const dup = (originDepth: number, kind: "ring" | "multiple" | "mancude"): Rule1bNode => ({
+    duplicate: true,
+    ringDuplicate: kind === "ring",
+    mancudeDuplicate: kind === "mancude",
+    originDepth,
+  });
+
+  it("ranks the duplicate whose original is NEARER the root higher", () => {
+    // P-92.1.3.1(b). Nearer the root is the SMALLER origin depth, so the
+    // comparison runs against the number — the sign trap this pins. Reached
+    // by the corpus, 1074 times in each reading.
+    expect(compareRule1b("iupac", dup(1, "ring"), dup(4, "ring"))).toBe(1);
+    expect(compareRule1b("iupac", dup(4, "ring"), dup(1, "ring"))).toBe(-1);
+    expect(compareRule1b("hanson", dup(1, "ring"), dup(4, "ring"))).toBe(1);
+    expect(compareRule1b("iupac", dup(2, "ring"), dup(2, "ring"))).toBe(0);
+  });
+
+  it("orders two MULTIPLE-BOND duplicates in the IUPAC reading and not in Hanson's", () => {
+    // The literal P-92 text says "duplicate atoms", not "ring-closure
+    // duplicates"; Hanson and RDKit narrow it. NOT reached by any checked-in
+    // molecule, which is exactly why it is asserted here.
+    expect(compareRule1b("iupac", dup(1, "multiple"), dup(3, "multiple"))).toBe(1);
+    expect(compareRule1b("hanson", dup(1, "multiple"), dup(3, "multiple"))).toBe(0);
+  });
+
+  it("ranks a ring-closure duplicate over anything else, in Hanson's reading only", () => {
+    // A ring duplicate keyed against a real atom is also unreached by the
+    // corpus.
+    expect(compareRule1b("hanson", dup(5, "ring"), atom)).toBe(1);
+    expect(compareRule1b("hanson", atom, dup(5, "ring"))).toBe(-1);
+    expect(compareRule1b("hanson", dup(5, "ring"), dup(1, "multiple"))).toBe(1);
+    // The IUPAC reading has no such precedence: a duplicate against a
+    // non-duplicate is simply not ordered by rule 1b.
+    expect(compareRule1b("iupac", dup(5, "ring"), atom)).toBe(0);
+    expect(compareRule1b("iupac", dup(1, "multiple"), atom)).toBe(0);
+  });
+
+  it("keeps a mancude duplicate out of every IUPAC distance order", () => {
+    // Where a mancude duplicate sits is a Kekulé artefact, so ordering on it
+    // ranked toluene's two ortho branches apart. Dropping this carve-out is
+    // the regression the test exists for.
+    expect(compareRule1b("iupac", dup(1, "mancude"), dup(4, "ring"))).toBe(0);
+    expect(compareRule1b("iupac", dup(4, "ring"), dup(1, "mancude"))).toBe(0);
+    expect(compareRule1b("iupac", dup(1, "mancude"), dup(4, "mancude"))).toBe(0);
+    // Hanson's rule does not consult the origin depth there, but its
+    // ring-closure precedence still applies — and that IS reached by the
+    // corpus, 90 times.
+    expect(compareRule1b("hanson", dup(4, "ring"), dup(1, "mancude"))).toBe(1);
+  });
+
+  it("is a tie when neither node is a duplicate, whatever their depths", () => {
+    expect(compareRule1b("iupac", atom, { ...atom, originDepth: 9 })).toBe(0);
+    expect(compareRule1b("hanson", atom, { ...atom, originDepth: 9 })).toBe(0);
+  });
+
+  it("has inputs the two readings disagree on, which is what refuses a letter", () => {
+    // `ranking-unsupported` for a rule-1b disagreement is reachable only
+    // because such inputs exist. If this ever came back empty, the refusal
+    // would be unreachable and the module header would be describing a hazard
+    // the code no longer has.
+    const shapes: Rule1bNode[] = [
+      atom,
+      dup(1, "ring"),
+      dup(4, "ring"),
+      dup(1, "multiple"),
+      dup(2, "mancude"),
+    ];
+    const disagreements = shapes.flatMap((a) =>
+      shapes.filter((b) => compareRule1b("iupac", a, b) !== compareRule1b("hanson", a, b)),
+    );
+    expect(disagreements.length).toBeGreaterThan(0);
+  });
+
+  it("is antisymmetric on every shape it can be handed", () => {
+    const shapes: Rule1bNode[] = [
+      atom,
+      dup(0, "ring"),
+      dup(1, "ring"),
+      dup(4, "ring"),
+      dup(1, "multiple"),
+      dup(4, "multiple"),
+      dup(1, "mancude"),
+      dup(4, "mancude"),
+    ];
+    for (const variant of ["iupac", "hanson"] as const) {
+      for (const a of shapes) {
+        for (const b of shapes) {
+          // Summed rather than negated: -0 is not +0 under Object.is.
+          expect(compareRule1b(variant, a, b) + compareRule1b(variant, b, a), variant).toBe(0);
+        }
+      }
+    }
   });
 });
 
