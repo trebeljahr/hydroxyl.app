@@ -223,28 +223,30 @@ describe("StatusBar — annotations not placed (decisions 62 and 66)", () => {
   });
 
   it("counts the crowded ones, and lists each as crowded", () => {
-    // Skeletal steroid at Publication: no slot on a ring junction is 15%
-    // nearer its own atom than the next (decision 63), so all four
-    // descriptors are reported; three cross lines only and are drawn.
+    // Skeletal steroid at Publication: an 8 pt "(S)" beside a fused-ring
+    // junction touches a bond wherever the ladder puts it, so all four
+    // descriptors are reported — and all four still drawn, because they
+    // cross lines rather than text.
     act(() => editorStore.getState().openDocument(descriptorDoc(steroid.molecule, "skeletal")));
     render(<StatusBar />);
     const node = unplacedNode()!;
     expect(node).not.toBeNull();
     expect(node.textContent).toBe("4 annotations not placed");
     const lines = node.getAttribute("title")!.split("\n");
-    expect(lines.filter((line) => line.endsWith(": crowded"))).toHaveLength(3);
+    expect(lines.filter((line) => line.endsWith(": crowded"))).toHaveLength(4);
     expect(lines).toContain(`${idOf("17")} (S): crowded`);
   });
 
   it("lists a dropped annotation as dropped, and keeps it out of the drawing", () => {
-    // C3's (S) would sit inside the solid wedge to O17, which is ink
-    // (decision 65), so it is reported and not drawn.
-    act(() => editorStore.getState().openDocument(descriptorDoc(steroid.molecule, "skeletal")));
+    // With the hydrogens drawn, C13's and C10's (S) can no longer keep their
+    // clearance from an "H" (decisions 58 and 64): reported, and not drawn.
+    act(() => editorStore.getState().openDocument(descriptorDoc(steroid.molecule, "explicitH")));
     render(<StatusBar />);
     const lines = unplacedNode()!.getAttribute("title")!.split("\n");
-    expect(lines).toContain(`${idOf("3")} (S): dropped`);
+    expect(lines).toContain(`${idOf("13")} (S): dropped`);
+    expect(lines).toContain(`${idOf("17")} (S): crowded`);
     const scene = buildCanvasScene(editorStore.getState().document, null);
-    expect(scene.primitives.some((p) => p.id === `atom:${idOf("3")}:descriptor`)).toBe(false);
+    expect(scene.primitives.some((p) => p.id === `atom:${idOf("13")}:descriptor`)).toBe(false);
     expect(scene.primitives.some((p) => p.id === `atom:${idOf("17")}:descriptor`)).toBe(true);
   });
 
