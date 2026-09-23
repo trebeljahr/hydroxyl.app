@@ -49,6 +49,7 @@ import {
 } from "../label/annotations.js";
 import type {
   AnnotationAtomCentre,
+  AnnotationBondSegment,
   AnnotationCircle,
   AnnotationLayout,
   AnnotationObstacleSet,
@@ -530,13 +531,24 @@ function buildStructural(
 
   // EVERY kind searches the full set (decision 34): label glyphs, bare-vertex
   // dots, derived hydrogens, every drawn line and outline, and the circles.
+  // Decision 68: every bond as drawn, so a bond annotation competes against
+  // the other bonds and not against its own two atoms.
+  const bondSegments: AnnotationBondSegment[] = [];
+  for (const [bondId, corridor] of corridors) {
+    bondSegments.push({ bondId, a: corridor.a, b: corridor.b });
+  }
   const context: AnnotationObstacleSet = {
     obstacles,
     segments: [...corridors.values(), ...drawn],
     circles: circleOutlines,
     glyphInk,
   };
-  const annotations = placeAnnotations(requests, { ...context, style, atomCentres });
+  const annotations = placeAnnotations(requests, {
+    ...context,
+    style,
+    atomCentres,
+    bondSegments,
+  });
 
   // Emitted in PLACEMENT order — priority, then source id — so the scene's
   // order is the same function of the molecule the placements are.
@@ -856,6 +868,7 @@ function annotationRequests(
       // a double bond. The ladder tries the other side next.
       const preferred: ScenePoint =
         length === 0 ? { x: 0, y: -1 } : { x: dy / length, y: -dx / length };
+      const bond = mol.bonds[bondId];
       requests.push({
         kind: "descriptor",
         source: { kind: "bond", bondId },
@@ -863,6 +876,8 @@ function annotationRequests(
         anchor: midpoint,
         preferred,
         anchorSegment: corridor,
+        // Decision 68: its own two atoms never compete with it.
+        ...(bond === undefined ? {} : { ownAtomIds: [bond.from, bond.to] }),
       });
     }
   }

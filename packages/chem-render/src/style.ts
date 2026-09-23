@@ -226,32 +226,38 @@ export const PUBLICATION_STYLE: RenderStyle = Object.freeze({
   // FIXTURE, plus the steroid skeleton and phenanthrene; the skeletal, kekule,
   // explicitH and lewis views; descriptors on and a locant on every atom.
   // Counted are annotations REPORTED unplaced (`annotationLayout().unplaced`),
-  // under every ruling this pass now carries — 45's fallback order, 55's
-  // ink-area glyph hits, 57's ink-centre proximity, 58/64's dropping, 59's
-  // label-sized ladder, 63's proximity margin and 65's filled-shape ink:
-  //   104 of 516 reported, 53 of them not drawn (decisions 58 and 64).
-  //   24 of the 28 descriptors are reported, 10 not drawn.
-  //   (0.85, the pre-decision-44 value, measures 106 and 51 on the same code:
-  //   with the ladder sized from the label, the annotation's own size barely
-  //   moves the count. SCREEN_STYLE, whose annotations are the same 0.85 of a
-  //   16 px label on a 44 px bond, measures 8 of 516 and drops none.)
+  // under every ruling this pass carries — 45's fallback order, 55's ink-area
+  // glyph hits, 57's ink-centre proximity, 58/64's dropping, 59's label-sized
+  // rungs, 63's proximity margin, 65's filled-shape ink, 67's near-first
+  // ladder and 68's bond proximity:
+  //   78 of 516 reported, 43 of them not drawn (decisions 58 and 64).
+  //   22 of the 28 descriptors are reported, 7 not drawn.
+  //   Screen, on its 44 px bond, reports 10 and drops 3, no descriptor among
+  //   them. The crowded 0.85 setting reports 104 and drops 55.
   //
-  // MOST OF THAT IS DECISION 63, NOT THIS SCALE. Requiring a slot to be 15%
-  // nearer its own atom than the next heavy one is a hard test on a 24 px
-  // bond: the ladder's first rung is already about 27 px out, so a slot that
-  // reads as its own atom's has to come from the close ladder, between the
-  // atom's own bonds, and on a fused ring that room is usually taken. All
-  // four steroid descriptors and butan-2-ol's (R) are reported at
-  // Publication; Screen, whose bond is 44 px, reports none of them.
-  // Notable, all pinned by id in annotations.test.ts:
-  //   - the steroid's C13, C17, C10 and C3 descriptors in every view. C3's is
-  //     dropped: it would sit inside the solid wedge to O17, which is ink
-  //     (decision 65). C17's crosses bond lines only and is drawn.
-  //   - butan-2-ol's C2 (R) in every view, drawn in the skeletal and kekule
-  //     ones and dropped in explicitH and Lewis, where the derived hydrogens
-  //     leave nothing a clearance away.
-  //   - chrysene's a16 and a25 locants in every view, and every locant on an
-  //     atom whose numbering neighbours sit as close as its own atom does.
+  // DECISION 67 IS WHAT MAKES THE NEAR SLOTS REACHABLE: the search starts
+  // 0.45 of a bond from the anchor (10.8 px at Publication, 19.8 at Screen)
+  // and steps outward by 0.2 of the label's cap height (2.3 px, 2.8 px),
+  // through the coarse rungs after. Before it the coarse ladder ran first and
+  // its nearest rung was already ~27 px out on a 24 px bond, where decision
+  // 63's margin refuses everything: that left 104 of 516 reported and 53
+  // dropped. Near-first recovers a quarter of them.
+  //
+  // WHAT IS LEFT IS GEOMETRY, NOT A TUNING CHOICE. An 8 pt "(S)" measures
+  // about 19.8 x 16.9 px with its clearance, and at a fused-ring junction the
+  // gap between two of the atom's own bonds at 10.8 px out is about 18 px
+  // wide. So on the steroid all four descriptors are still reported, and
+  // butan-2-ol's (R) with them — reported, and drawn where they only cross
+  // lines. Screen's 44 px bond leaves a 34 px gap for the same run and
+  // reports none of them. Notable, all pinned by id in annotations.test.ts:
+  //   - the steroid's C13, C17, C10 and C3 descriptors in every view, drawn
+  //     in skeletal and kekule; in explicitH and Lewis the derived hydrogens
+  //     leave no clearance and C13's, C10's and (in explicitH) C3's are
+  //     dropped.
+  //   - butan-2-ol's C2 (R) in every view, drawn in skeletal and kekule and
+  //     dropped once the hydrogens are drawn.
+  //   - chrysene's a16 locant, and the locants of atoms whose numbering
+  //     neighbours sit as close as their own atom does.
   stereoDescriptorScale: 0.8,
   colors: Object.freeze({ bond: "#000000", label: "#000000" }),
   coordinatePrecision: 3,

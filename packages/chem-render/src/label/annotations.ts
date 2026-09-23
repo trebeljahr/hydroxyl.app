@@ -27,9 +27,10 @@
  * means switching locants on can never move one.
  *
  * THE SEARCH IS A FIXED LADDER, NOT AN OPTIMISATION. A fixed list of
- * candidates — eight compass directions at a few coarse radii, then sixteen
- * directions stepping out finely from the atom (`candidateOrigins` says why
- * both) — and the first candidate that clears everything wins. The caller's
+ * candidates — sixteen directions stepping outward from just under half a
+ * bond out (decision 67), then eight compass directions at a few coarser
+ * radii (`candidateOrigins` says why both) — and the first candidate that
+ * clears everything wins. The caller's
  * preferred direction only RANKS the directions; it is never itself a
  * candidate. That matters twice over:
  *
@@ -88,6 +89,7 @@ import { compareIds } from "@starter/chem-core";
 import type { AtomId, BondId } from "@starter/chem-core";
 
 import type { ScenePoint, TextSpan } from "../scene/types.js";
+import { pxPerModelUnit } from "../style.js";
 import type { RenderStyle } from "../style.js";
 import {
   measurerFor,
@@ -122,8 +124,24 @@ void ANNOTATION_PRIORITY_IS_TOTAL;
 
 export const ANNOTATION_PLACEMENT = Object.freeze({
   /**
-   * The first radius tried, as a multiple of the ATOM LABEL's cap height at
-   * the style (decision 59), plus half the annotation's own width.
+   * Where the NEAR ladder starts, as a fraction of a bond (decision 67).
+   *
+   * The search begins here, in the gaps between the atom's own bonds, and
+   * steps outward. Beginning at the coarse ladder's first rung instead — a
+   * label cap height and a bit, which on the Publication bond is already
+   * further from the atom than its neighbours are — left decision 63's margin
+   * unsatisfiable: a slot that far out is about as near the next atom as its
+   * own, so at 8 pt NO descriptor on butan-2-ol or the steroid was clear.
+   * 0.45 of a bond is 10.8 px at Publication and 19.8 px at Screen: outside a
+   * one- or two-letter label, inside the ring the atom belongs to, and at
+   * most 0.45/0.55 of the way to the nearest neighbour, which clears the
+   * margin with room to spare.
+   */
+  nearStartBondFraction: 0.45,
+  /**
+   * The first radius of the COARSE ladder, as a multiple of the ATOM LABEL's
+   * cap height at the style (decision 59), plus half the annotation's own
+   * width.
    *
    * Every radius of both ladders is sized from the label, never from the
    * annotation: the room around an atom is set by its label and its bonds,
@@ -139,7 +157,7 @@ export const ANNOTATION_PLACEMENT = Object.freeze({
   /** Rungs of the coarse ladder. The close ladder stops at the last one. */
   radiusSteps: 5,
   /**
-   * The close ladder's step, as a multiple of the atom label's cap height
+   * The near ladder's step, as a multiple of the atom label's cap height
    * (decision 59): between 2 and 3 px at the shipped presets. Fine enough to find the gap
    * between two bonds at a vertex whose clear room is only a few pixels deep;
    * see `candidateOrigins`.
@@ -188,12 +206,19 @@ export interface AnnotationRequest {
    */
   readonly preferred: ScenePoint;
   /**
-   * For a bond annotation, the bond as drawn: proximity (decision 35) is
-   * measured to this segment rather than to `anchor`. An annotation beside
+   * For a bond annotation, the bond as drawn: proximity (decisions 35 and 68)
+   * is measured to this segment rather than to `anchor`. An annotation beside
    * the middle of a long bond is the bond's even when the midpoint is further
    * from it than one of the bond's own atoms is.
    */
   readonly anchorSegment?: AnnotationSegment;
+  /**
+   * The atoms at the ends of the annotated bond (decision 68). They are never
+   * competitors: an "(E)" beside its own double bond is nearest that bond's
+   * own carbons by construction, and counting them as rivals is what pushed
+   * every E/Z descriptor off the space above its bond.
+   */
+  readonly ownAtomIds?: readonly AtomId[];
 }
 
 /** A drawn segment an annotation must not lie across. */
@@ -214,6 +239,17 @@ export interface AnnotationAtomCentre {
   readonly atomId: AtomId;
   /** Scene px, y-down. */
   readonly centre: ScenePoint;
+}
+
+/**
+ * A bond as drawn, for decision 68: a BOND annotation competes against the
+ * other BONDS as well as the atoms, because "(Z)" beside a double bond is
+ * read as that bond's, and the thing that takes it away is another bond.
+ */
+export interface AnnotationBondSegment {
+  readonly bondId: BondId;
+  readonly a: ScenePoint;
+  readonly b: ScenePoint;
 }
 
 /**
@@ -257,6 +293,11 @@ export interface AnnotationObstacleSet {
 
 export interface AnnotationContext extends AnnotationObstacleSet {
   readonly style: RenderStyle;
+  /**
+   * Every bond as drawn. Only a BOND annotation is judged against these
+   * (decision 68), and never against its own; omitted, only atoms compete.
+   */
+  readonly bondSegments?: readonly AnnotationBondSegment[];
   /**
    * Every atom centre in the drawing. A candidate is clear only if its centre
    * is nearer its own anchor than any of these other than its own atom
@@ -575,7 +616,10 @@ export function placeAnnotation(
   }).capHeightPx;
   const step = labelCapPx * ANNOTATION_PLACEMENT.radiusStepCapHeights;
   const first = labelCapPx * ANNOTATION_PLACEMENT.firstRadiusCapHeights;
-  const closeStep = labelCapPx * ANNOTATION_PLACEMENT.closeStepCapHeights;
+  const nearStep = labelCapPx * ANNOTATION_PLACEMENT.closeStepCapHeights;
+  // Decision 67: the near ladder starts a fraction of a BOND out, through
+  // `pxPerModelUnit` — the one sanctioned way to ask how long a bond is in px.
+  const nearStart = pxPerModelUnit(style) * ANNOTATION_PLACEMENT.nearStartBondFraction;
   // Half the run's own width, so a wide annotation starts further out than a
   // narrow one instead of overlapping the thing it annotates.
   const reach = first + measured.advanceWidthPx / 2;
@@ -584,6 +628,7 @@ export function placeAnnotation(
   const atomCentres = context.atomCentres ?? NO_ATOMS;
   const circles = context.circles ?? NO_CIRCLES;
   const glyphInk = context.glyphInk ?? NO_BOXES;
+  const bondSegments = context.bondSegments ?? NO_BONDS;
   const at = (centre: ScenePoint): AnnotationPlacement => ({
     id,
     kind: request.kind,
@@ -601,13 +646,13 @@ export function placeAnnotation(
     clear: true,
     drawn: true,
   });
-  const centres = candidateOrigins(request, measured, reach, step, closeStep);
+  const centres = candidateOrigins(request, measured, reach, step, nearStart, nearStep);
 
   // Cheapest test first: proximity touches a few dozen points, the obstacle
   // test every glyph and line in the drawing.
   for (const centre of centres) {
     const candidate = at(centre);
-    if (!readsAsOwn(boxCentre(candidate.inkBox), request, atomCentres)) continue;
+    if (!readsAsOwn(boxCentre(candidate.inkBox), request, atomCentres, bondSegments)) continue;
     if (placed.some((box) => boxesOverlap(candidate.box, box))) continue;
     if (isClear(candidate.box, context.obstacles, context.segments, circles)) return candidate;
   }
@@ -620,10 +665,10 @@ export function placeAnnotation(
     // Counting hits walks every obstacle; a candidate already in a worse
     // class than the best so far cannot win on hits, so it is not counted.
     if (best !== undefined) {
-      const rough = fallbackScore(placement, request, context, placed, atomCentres, circles, glyphInk);
+      const rough = fallbackScore(placement, request, context, placed, atomCentres, circles, glyphInk, bondSegments);
       if (fallbackClass(rough) > fallbackClass(best.score)) continue;
     }
-    const score = fallbackScore(placement, request, context, placed, atomCentres, circles, glyphInk, {
+    const score = fallbackScore(placement, request, context, placed, atomCentres, circles, glyphInk, bondSegments, {
       countHits: true,
     });
     if (best === undefined || compareFallbacks(score, best.score) < 0) {
@@ -653,25 +698,25 @@ function onBaseline(centre: ScenePoint, box: TextRunBox): ScenePoint {
 /**
  * Every candidate CENTRE for one request, in the order they are tried.
  *
- * TWO LADDERS, THE COARSE ONE FIRST.
+ * NEAR FIRST, THEN OUTWARD (decision 67).
  *
- * 1. The original ladder: eight compass directions at `radiusSteps` rungs
- *    starting a label-cap-height-and-a-bit plus half the run's width out. It
- *    is kept FIRST, so an annotation it places clear lands where it always
- *    did for a given label size.
+ * 1. The near ladder: sixteen directions, starting `nearStartBondFraction` of
+ *    a bond from the anchor — or at the radius where the box stops covering
+ *    the anchor, whichever is further — and stepping out in
+ *    `closeStepCapHeights` label cap heights, nearest step first, up to the
+ *    coarse ladder's last rung. The room that reads as the atom's OWN is the
+ *    space between its own bonds, and only a ladder that starts there finds
+ *    it. Sixteen rather than eight directions because at a four-bond ring
+ *    junction that gap is a narrow wedge whose middle usually falls between
+ *    two of eight compass points.
  *
- * 2. The close ladder: sixteen directions, from the radius at which the box
- *    just stops covering its anchor, outward in `closeStepCapHeights` (label
- *    cap heights, decision 59) steps up
- *    to the coarse ladder's last rung, nearest step first. The coarse ladder's
- *    first rung sits a fixed number of cap heights out whatever the bond
- *    length. With a label font large against the bond (the ACS 1996 setting:
- *    a 16.7 px font on a 24 px bond) that rung lands on the NEIGHBOURING
- *    vertex, where decision 35 rightly refuses it, and every later rung is
- *    further out still. The room that reads as the atom's own is the few
- *    pixels between its bonds, and only a fine ladder that starts at the atom
- *    finds it. Nearest step first, because of two clear slots the one closer to
- *    its own atom is the one less likely to be read as another atom's.
+ * 2. The coarse ladder: eight compass directions at `radiusSteps` rungs from
+ *    a label cap height and a bit plus half the run's width out. It used to
+ *    run first, and that was the bug decision 67 fixes: its first rung sits a
+ *    fixed number of cap heights from the anchor whatever the bond length —
+ *    about 27 px on Publication's 24 px bond — so a slot on it is roughly as
+ *    far from the next atom as from its own, and decision 63's margin refuses
+ *    every one of them. Kept as the outer fallback.
  *
  * Every origin is `anchor + direction * radius`, the directions literals and
  * the radii built from style numbers and measured metrics, so the list is the
@@ -682,43 +727,54 @@ function candidateOrigins(
   measured: TextRunBox,
   reach: number,
   step: number,
-  closeStep: number,
+  nearStart: number,
+  nearStep: number,
 ): ScenePoint[] {
   const origins: ScenePoint[] = [];
   const along = (direction: ScenePoint, radius: number): ScenePoint => ({
     x: request.anchor.x + direction.x * radius,
     y: request.anchor.y + direction.y * radius,
   });
+  const outermost = reach + (ANNOTATION_PLACEMENT.radiusSteps - 1) * step;
 
+  // THE NEAR LADDER, FIRST (decision 67). Sixteen directions, from
+  // `nearStart` outward in `nearStep` steps, nearest step first.
+  if (nearStep > 0) {
+    // Half the padded box: the radius along a direction at which the box's
+    // edge reaches the anchor. Nearer than that it covers its own atom, so
+    // `nearStart` is held to at least this even on a short bond.
+    const padding = 2 * ANNOTATION_PLACEMENT.clearancePx;
+    const halfWidth = (measured.advanceWidthPx + padding) / 2;
+    const halfHeight = (measured.ascentPx + measured.descentPx + padding) / 2;
+    const near = orderedDirections(request.preferred, COMPASS_CLOSE).map((direction) => {
+      const ax = direction.x < 0 ? -direction.x : direction.x;
+      const ay = direction.y < 0 ? -direction.y : direction.y;
+      const byX = ax > 0 ? halfWidth / ax : Number.POSITIVE_INFINITY;
+      const byY = ay > 0 ? halfHeight / ay : Number.POSITIVE_INFINITY;
+      const clears = byX < byY ? byX : byY;
+      return { direction, start: clears > nearStart ? clears : nearStart };
+    });
+    for (let k = 0; ; k++) {
+      let any = false;
+      for (const { direction, start } of near) {
+        const radius = start + k * nearStep;
+        if (radius > outermost) continue;
+        any = true;
+        origins.push(along(direction, radius));
+      }
+      if (!any) break;
+    }
+  }
+
+  // THE COARSE LADDER, AFTER IT: eight directions at `radiusSteps` rungs from
+  // a label cap height and a bit plus half the run's width out. Its rungs are
+  // inside the near ladder's range, so it mostly repeats candidates already
+  // tried — but not on a direction the near ladder's sixteen do not share,
+  // and it is what an annotation with no room near its atom falls back to.
   const coarse = orderedDirections(request.preferred, COMPASS);
   for (let rung = 0; rung < ANNOTATION_PLACEMENT.radiusSteps; rung++) {
     const radius = reach + rung * step;
     for (const direction of coarse) origins.push(along(direction, radius));
-  }
-
-  const outermost = reach + (ANNOTATION_PLACEMENT.radiusSteps - 1) * step;
-  if (!(closeStep > 0)) return origins;
-  // Half the padded box: the radius along a direction at which the box's edge
-  // reaches the anchor. Anything nearer covers the atom it annotates.
-  const padding = 2 * ANNOTATION_PLACEMENT.clearancePx;
-  const halfWidth = (measured.advanceWidthPx + padding) / 2;
-  const halfHeight = (measured.ascentPx + measured.descentPx + padding) / 2;
-  const close = orderedDirections(request.preferred, COMPASS_CLOSE).map((direction) => {
-    const ax = direction.x < 0 ? -direction.x : direction.x;
-    const ay = direction.y < 0 ? -direction.y : direction.y;
-    const byX = ax > 0 ? halfWidth / ax : Number.POSITIVE_INFINITY;
-    const byY = ay > 0 ? halfHeight / ay : Number.POSITIVE_INFINITY;
-    return { direction, start: byX < byY ? byX : byY };
-  });
-  for (let k = 0; ; k++) {
-    let any = false;
-    for (const { direction, start } of close) {
-      const radius = start + k * closeStep;
-      if (radius > outermost) continue;
-      any = true;
-      origins.push(along(direction, radius));
-    }
-    if (!any) break;
   }
   return origins;
 }
@@ -750,17 +806,26 @@ function fallbackScore(
   atomCentres: readonly AnnotationAtomCentre[],
   circles: readonly AnnotationCircle[],
   glyphInk: readonly LabelBox[],
+  bondSegments: readonly AnnotationBondSegment[],
   { countHits }: { readonly countHits: boolean } = { countHits: false },
 ): FallbackScore {
   const { box, inkBox } = placement;
   // Proximity from the INK centre (decision 57), as in the clear search.
   const centre = boxCentre(inkBox);
-  const ownAtomId = request.source.kind === "atom" ? request.source.atomId : undefined;
   let nearestOther = Number.POSITIVE_INFINITY;
   for (const atom of atomCentres) {
-    if (atom.atomId === ownAtomId) continue;
+    if (isOwnAtom(request, atom.atomId)) continue;
     const d = squaredDistance(centre, atom.centre);
     if (d < nearestOther) nearestOther = d;
+  }
+  // Decision 68, as in the clear search: other bonds compete for a bond
+  // annotation, its own never does.
+  if (request.source.kind === "bond") {
+    for (const bond of bondSegments) {
+      if (bond.bondId === request.source.bondId) continue;
+      const d = squaredDistanceToSegment(centre, bond);
+      if (d < nearestOther) nearestOther = d;
+    }
   }
   let glyphHits = 0;
   let lineHits = 0;
@@ -816,6 +881,7 @@ function compareFallbacks(a: FallbackScore, b: FallbackScore): number {
 const NO_CIRCLES: readonly AnnotationCircle[] = Object.freeze([]);
 const NO_ATOMS: readonly AnnotationAtomCentre[] = Object.freeze([]);
 const NO_BOXES: readonly LabelBox[] = Object.freeze([]);
+const NO_BONDS: readonly AnnotationBondSegment[] = Object.freeze([]);
 
 /**
  * Decision 35, with decision 63's margin: is `centre` — the annotation's
@@ -832,15 +898,29 @@ function readsAsOwn(
   centre: ScenePoint,
   request: AnnotationRequest,
   atomCentres: readonly AnnotationAtomCentre[],
+  bondSegments: readonly AnnotationBondSegment[],
 ): boolean {
-  if (atomCentres.length === 0) return true;
   const own = ownDistance(centre, request);
-  const ownAtomId = request.source.kind === "atom" ? request.source.atomId : undefined;
   for (const atom of atomCentres) {
-    if (atom.atomId === ownAtomId) continue;
+    if (isOwnAtom(request, atom.atomId)) continue;
     if (!readsAsOwnAt(own, squaredDistance(centre, atom.centre))) return false;
   }
+  // Decision 68: the other BONDS compete for a bond annotation too.
+  if (request.source.kind !== "bond") return true;
+  for (const bond of bondSegments) {
+    if (bond.bondId === request.source.bondId) continue;
+    if (!readsAsOwnAt(own, squaredDistanceToSegment(centre, bond))) return false;
+  }
   return true;
+}
+
+/**
+ * Is `atomId` the annotation's own — the atom it names, or either end of the
+ * bond it names (decision 68)?
+ */
+function isOwnAtom(request: AnnotationRequest, atomId: AtomId): boolean {
+  if (request.source.kind === "atom") return request.source.atomId === atomId;
+  return request.ownAtomIds?.includes(atomId) ?? false;
 }
 
 /** Decision 63, on SQUARED distances: own <= (0.85 × other)². */
