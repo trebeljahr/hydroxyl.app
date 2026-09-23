@@ -23,7 +23,7 @@
  */
 
 import { requireElement } from "./elements.js";
-import { bondsAt, requireAtom } from "./molecule.js";
+import { bondsAt, getAtom, requireAtom } from "./molecule.js";
 import type { AtomId, Molecule } from "./types.js";
 
 /** An aromatic bond contributes 1.5, so a benzene carbon totals 3. */
@@ -362,4 +362,22 @@ export function valenceIssues(mol: Molecule): ValenceIssue[] {
     }
   }
   return issues;
+}
+
+/**
+ * An explicit hydrogen atom that is chemically an implicit one: natural
+ * isotope, uncharged, not a radical, bonded to nothing but its one neighbour.
+ *
+ * It lives here, beside the implicit count it is interchangeable with, rather
+ * than in cip.ts where it was first needed: symmetry.ts folds protium into a
+ * hydrogen count and cip.ts now reads symmetry.ts, so leaving it in cip.ts
+ * would close an import cycle between the two.
+ */
+export function isProtiumAtom(mol: Molecule, atomId: AtomId): boolean {
+  const atom = getAtom(mol, atomId);
+  if (atom === undefined || atom.element !== "H") return false;
+  if (atom.isotope !== undefined && atom.isotope !== 1) return false;
+  if (atom.charge !== 0 || atom.radicalElectrons !== 0) return false;
+  if (implicitHydrogenCount(mol, atomId) !== 0) return false;
+  return bondsAt(mol, atomId).length === 1;
 }

@@ -16,10 +16,9 @@
  * achirality.ts does.
  */
 
-import { isProtiumAtom } from "./cip.js";
 import { bondsAt, otherEnd, requireAtom } from "./molecule.js";
 import type { AtomId, Molecule } from "./types.js";
-import { implicitHydrogenCount } from "./valence.js";
+import { implicitHydrogenCount, isProtiumAtom } from "./valence.js";
 
 /** The heavy-atom graph symmetry works on. */
 export interface SymmetryGraph {

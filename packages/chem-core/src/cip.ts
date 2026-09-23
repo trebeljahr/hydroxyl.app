@@ -124,9 +124,22 @@
  * under rules 1-2 is a unit. A centre with two constitutionally identical
  * ligands is a unit only if those branches reach another unit (the
  * pseudoasymmetric C3 of a pentitol, both ring carbons of a
- * 1,4-dimethylcyclohexane). This is iterated to the greatest fixed point, as
- * RDKit's potential-stereo perception does, so two centres that make only each
- * other stereogenic both stay. Three or more identical ligands, or two
+ * 1,4-dimethylcyclohexane). This is iterated to the greatest fixed point, so
+ * two centres that make only each other stereogenic both stay.
+ *
+ * DECISION 74 breaks that circle wherever a BRIDGE has already fixed the
+ * centres: a tied centre at a bridgehead of a bridged ring system, whose tied
+ * branches share a symmetry class, is not a unit. Norbornane,
+ * bicyclo[3.3.1]nonane, 7-oxanorbornane, 1-adamantanol, amantadine and
+ * adamantane have no centres at all; memantine has the two RDKit finds, its
+ * methylated bridgeheads, whose ligands rank pairwise distinct and which the
+ * rule never touches. `heldByABridge` carries the reasoning, including why an
+ * automorphism test on its own cannot separate norbornane from
+ * 1,4-dimethylcyclohexane. This is NOT a reimplementation of RDKit's
+ * potential-stereo perception and makes no claim to agree with it in general;
+ * where the two are compared it is molecule by molecule, in the tests.
+ *
+ * Three or more identical ligands, or two
  * hydrogens or lone pairs, never make a unit. Whether such a "tied" unit is
  * stereogenic in a given configuration is decided with that configuration by
  * `rankStereoCentre`. An explicit protium atom is the same ligand as an
@@ -151,8 +164,9 @@ import { updateAtom, updateBond } from "./ops.js";
 import type { TetrahedralParity } from "./parity.js";
 import { isRingBond, LruCache, rings, ringsAtAtom, ringsAtBond, ringSize } from "./rings.js";
 import { compareIds } from "./selection.js";
+import { atomSymmetryClasses } from "./symmetry.js";
 import type { AtomId, Bond, BondId, Molecule } from "./types.js";
-import { explicitValence, implicitHydrogenCount } from "./valence.js";
+import { explicitValence, implicitHydrogenCount, isProtiumAtom } from "./valence.js";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -1552,19 +1566,6 @@ export function rankSubstituentPair(
 // ---------------------------------------------------------------------------
 
 /**
- * An explicit hydrogen atom that is chemically an implicit one: natural
- * isotope, uncharged, not a radical, bonded to nothing but its one neighbour.
- */
-export function isProtiumAtom(mol: Molecule, atomId: AtomId): boolean {
-  const atom = getAtom(mol, atomId);
-  if (atom === undefined || atom.element !== "H") return false;
-  if (atom.isotope !== undefined && atom.isotope !== 1) return false;
-  if (atom.charge !== 0 || atom.radicalElectrons !== 0) return false;
-  if (implicitHydrogenCount(mol, atomId) !== 0) return false;
-  return bondsAt(mol, atomId).length === 1;
-}
-
-/**
  * A neighbour that is aromatic, or that carries a multiple bond, conjugates
  * with the nitrogen's lone pair and flattens it. S and P neighbours are the
  * exception, as in RDKit: a sulfonyl or phosphoryl group does not conjugate.
@@ -1837,6 +1838,89 @@ interface Pending {
   readonly reaches: readonly ReadonlySet<AtomId>[];
 }
 
+/**
+ * A bridgehead of a BRIDGED ring system: two perceived rings that share two or
+ * more bonds, one of them a bond of this atom. `isBridgedBridgehead` above
+ * answers the same question for a three-coordinate nitrogen and additionally
+ * demands that EVERY bond be a ring bond, which is right there and wrong here:
+ * memantine's amine-bearing bridgehead carries an exocyclic N and is still a
+ * bridgehead.
+ *
+ * Sharing two or more bonds is what separates a BRIDGE from a FUSION. Decalin's
+ * two rings share one bond, so its ring-fusion carbons are not bridgeheads and
+ * cis- and trans-decalin stay the distinct compounds they are.
+ */
+function isBridgedRingAtom(mol: Molecule, atomId: AtomId): boolean {
+  const own = new Set(bondsAt(mol, atomId).map((bond) => bond.id));
+  const all = rings(mol);
+  const mine = ringsAtAtom(mol, atomId);
+  for (let i = 0; i < mine.length; i++) {
+    const first = new Set(all[mine[i]!]!.bondIds);
+    for (let j = i + 1; j < mine.length; j++) {
+      const shared = all[mine[j]!]!.bondIds.filter((id) => first.has(id));
+      if (shared.length >= 2 && shared.some((id) => own.has(id))) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * DECISION 74. Whether a TIED centre's identical branches are held in place by
+ * a bridge, which makes its configuration a consequence of the ring system
+ * rather than something a drawing gets to choose.
+ *
+ * WHY THE FIXED POINT ALONE IS WRONG. The iteration below keeps a tied unit
+ * whose branches reach another surviving unit, so norbornane's two bridgeheads
+ * — each tied between the two ethano bridges, each reaching the other —
+ * support one another in a circle and both survive. Norbornane has no
+ * stereoisomers at all. The same circle invented three centres in
+ * 1-adamantanol and in amantadine, four in memantine where RDKit finds two,
+ * and made `isAchiral` answer `unspecified-unit` for molecules that are
+ * plainly achiral.
+ *
+ * WHY NOT AUTOMORPHISMS ALONE. The obvious repair — drop the unit when an
+ * automorphism swaps its two tied branches — cannot work, and the reason is
+ * worth recording. Strip norbornane to its graph and it is a six-ring whose 1
+ * and 4 positions carry a third heavy neighbour; so is
+ * 1,4-dimethylcyclohexane. Both have the automorphism that swaps the two arms
+ * and fixes both bridgeheads, and in both it transposes two ligands at each,
+ * so its action on the units is the same in the two molecules. Yet cis- and
+ * trans-1,4-dimethylcyclohexane are different compounds and "cis-norbornane"
+ * is not a thing. The one difference is that norbornane's third neighbour is
+ * ONE SHARED ATOM while the cyclohexane's are two separate methyls: a bridge,
+ * which forbids the other configuration, against a substituent, which does
+ * not. So the bridge is the criterion and the automorphism is the guard.
+ *
+ * THE GUARD. The tied branches must also share a symmetry class (symmetry.ts's
+ * colour refinement), which is a necessary condition for an automorphism to
+ * exchange them. Branches that tie under CIP rules 1-2 but refine apart — they
+ * differ by a formal charge, say, which rule 1a does not see — are not
+ * exchangeable, so swapping them really does give another compound and the
+ * unit stays.
+ *
+ * WHAT THIS DOES NOT DO. It never touches a unit whose ligands rank pairwise
+ * distinct, so memantine's two methylated bridgeheads keep their letters while
+ * its amine and CH bridgeheads, both tied, go.
+ */
+function heldByABridge(
+  mol: Molecule,
+  atomId: AtomId,
+  ligands: readonly CipLigand[],
+  pairs: readonly RawPair[],
+): boolean {
+  if (!isBridgedRingAtom(mol, atomId)) return false;
+  const classes = atomSymmetryClasses(mol);
+  for (const group of tieClasses(ligands.length, pairs)) {
+    const colours = group.map((k) => {
+      const ligand = ligands[k]!;
+      return ligand.kind === "atom" ? classes.get(ligand.atomId) : undefined;
+    });
+    if (colours.some((colour) => colour === undefined)) continue;
+    if (colours.every((colour) => colour === colours[0])) return true;
+  }
+  return false;
+}
+
 function computeUnits(mol: Molecule): CipUnits {
   const context: RankContext = { units: undefined, config: undefined, mancude: mancudeTable(mol) };
   const centreRaw = new Map<AtomId, { candidate: CentreCandidate; pairs: RawPair[] }>();
@@ -1852,6 +1936,10 @@ function computeUnits(mol: Molecule): CipUnits {
     const pairs = rankCentrePairs(mol, candidate, context, CONSTITUTIONAL);
     const reaches = tieReaches(mol, atomId, candidate.ligands, pairs);
     if (reaches === undefined) continue;
+    // Decision 74: a bridge already fixes this centre, so no configuration is
+    // left for a drawing to state. Checked BEFORE the fixed point, because it
+    // is the circle in the fixed point that the bridge invalidates.
+    if (heldByABridge(mol, atomId, candidate.ligands, pairs)) continue;
     centreRaw.set(atomId, { candidate, pairs });
     pending.push({ key: `c:${atomId}`, atoms: [atomId], reaches });
   }

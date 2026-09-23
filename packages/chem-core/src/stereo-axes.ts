@@ -69,14 +69,14 @@
  * or no spiro atom.
  */
 
-import { cipTopologyFingerprint, cipUnits, isProtiumAtom, rankSubstituentPair } from "./cip.js";
+import { cipTopologyFingerprint, cipUnits, rankSubstituentPair } from "./cip.js";
 import { aromaticRings, isAromaticAtom } from "./aromatic.js";
 import { bondBetween, bondsAt, otherEnd } from "./molecule.js";
 import { isRingBond, isSpiroAtom, LruCache, rings, ringsAtAtom, ringsAtBond } from "./rings.js";
 import { compareIds } from "./selection.js";
 import { atomSymmetryClasses } from "./symmetry.js";
 import type { AtomId, BondId, Molecule } from "./types.js";
-import { implicitHydrogenCount } from "./valence.js";
+import { implicitHydrogenCount, isProtiumAtom } from "./valence.js";
 
 export type UnrepresentableStereoKind =
   | "allene-axis"

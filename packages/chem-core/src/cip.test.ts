@@ -27,6 +27,7 @@ import { readMolblock } from "./molblock-read.js";
 import { bondsAt, otherEnd } from "./molecule.js";
 import { updateBond } from "./ops.js";
 import { rings } from "./rings.js";
+import { isAchiral } from "./achirality.js";
 import { unrepresentableStereo } from "./stereo-axes.js";
 import {
   cipDescriptor,
@@ -34,6 +35,7 @@ import {
   doubleBondDescriptor,
   stereocenterAtoms,
   stereogenicBonds,
+  structuralIssues,
 } from "./stereo.js";
 import { descriptorFromConfig, stereoConfig, stereoTopology } from "./stereo-config.js";
 import type { Molecule } from "./types.js";
@@ -271,6 +273,90 @@ describe("heteroatom centres (decisions 43 and 47)", () => {
     // RDKit gives S drawn P=O and R drawn P+–O−; the IUPAC text says charges
     // are not considered. The two forms disagree, so no letter.
     expect(centreLetters(load("branch-phosphoryl"))).toEqual({ a2: "?ranking-unsupported" });
+  });
+});
+
+describe("bridged cages are not stereocentres (decision 74)", () => {
+  // The greatest-fixed-point rule keeps a tied centre whose branches reach
+  // another surviving unit, and in a bridged cage the bridgeheads reach only
+  // each other: they held one another up in a circle and every one of them was
+  // reported as a stereocentre. None of these molecules has a stereoisomer.
+  const cages = [
+    "norbornane",
+    "bicyclo-3-3-1-nonane",
+    "7-oxanorbornane",
+    "adamantane",
+    "1-adamantanol",
+    "amantadine",
+  ];
+  for (const name of cages) {
+    it(`finds no centre in ${name}, as RDKit finds none`, () => {
+      const mol = load(name);
+      expect(stereocenterAtoms(mol)).toEqual([]);
+      expect(centreLetters(mol)).toEqual({});
+      expect(stereoTopology(mol).centres).toEqual([]);
+      expect(stereoConfig(mol).centres).toEqual([]);
+    });
+  }
+
+  it("calls the symmetric cages achiral, not undetermined", () => {
+    // The phantom centres were unread units, so the achirality proof could not
+    // finish and answered `unspecified-unit` for molecules that are plainly
+    // achiral.
+    for (const name of ["1-adamantanol", "amantadine", "norbornane", "adamantane"]) {
+      expect(isAchiral(load(name)).kind, name).toBe("achiral");
+    }
+  });
+
+  it("reports a wedge in a cage as a wedge on a non-stereocentre again", () => {
+    // The pass reports and never repairs, so the wedge is still DRAWN; what
+    // changed is that there is no configuration left for it to name.
+    const mol = load("norbornane");
+    const bondId = bondsAt(mol, "a3")[0]!.id;
+    const wedged = updateBond(mol, bondId, { stereo: "wedge" });
+    expect(structuralIssues(wedged).map((issue) => issue.kind)).toContain(
+      "wedge-on-non-stereocenter",
+    );
+    expect(cipDescriptor(wedged, "a3")).toBeUndefined();
+  });
+
+  it("keeps memantine's two methylated bridgeheads, the two RDKit finds", () => {
+    // Their ligands rank pairwise distinct under rules 1-2 — three different
+    // CH2 branches — so they are not tied and the bridge rule never sees them.
+    // The amine-bearing bridgehead and the CH bridgehead ARE tied (two of
+    // their branches lead to the two methylated carbons) and go.
+    expect(stereocenterAtoms(load("memantine"))).toEqual(["a2", "a4"]);
+  });
+
+  it("still separates cis- and trans-decalin: a fusion is not a bridge", () => {
+    // Decalin's two rings share ONE bond, so its ring-fusion carbons are not
+    // bridgeheads. Were the rule written on ring membership rather than on
+    // shared bonds, cis- and trans-decalin would collapse into one compound.
+    expect(stereocenterAtoms(load("cis-decalin"))).toHaveLength(2);
+  });
+
+  it("keeps BOTH units of a 4-substituted cyclohexanone oxime or hydrazone", () => {
+    // These look like the cage case and are not. C4's two ring arms are tied,
+    // and the automorphism that swaps them also exchanges the two ring atoms
+    // the C=N is measured against, so it flips the C=N geometry: the swap is
+    // no symmetry of the molecule and both units are real. The ring is a single
+    // ring anyway, so the bridge rule never applies — this pins that it stays
+    // that way if the rule is ever widened.
+    for (const name of ["4-methylcyclohexanone-oxime", "4-methylcyclohexanone-hydrazone"]) {
+      const mol = load(name);
+      expect(stereocenterAtoms(mol), name).toHaveLength(1);
+      expect(stereogenicBonds(mol), name).toHaveLength(1);
+      expect(stereoConfig(mol).centres, name).toHaveLength(1);
+      expect(stereoConfig(mol).doubleBonds, name).toHaveLength(1);
+    }
+  });
+
+  it("leaves every tied centre that no bridge holds", () => {
+    // The regression guard for the rule's reach: a substituent is not a bridge.
+    expect(stereocenterAtoms(load("cis-1-4-dimethylcyclohexane"))).toEqual(["a2", "a5"]);
+    expect(stereocenterAtoms(load("trans-1-4-dimethylcyclohexane"))).toEqual(["a2", "a5"]);
+    expect(stereocenterAtoms(load("cis-cyclobutane-1-3-diol"))).toHaveLength(2);
+    expect(centreLetters(load("ribitol"))).toMatchObject({ a5: "s" });
   });
 });
 

@@ -49,7 +49,7 @@
  * reach it, and then says so.
  */
 
-import { isProtiumAtom } from "./cip.js";
+import { isProtiumAtom } from "./valence.js";
 import { requireBond } from "./molecule.js";
 import { stereoConfig, type CentreConfig, type DoubleBondConfig } from "./stereo-config.js";
 import { symmetryGraph } from "./symmetry.js";

@@ -150,7 +150,18 @@ describe("chem-core CIP letters against RDKit get_stereo_tags", () => {
       for (const [atomId, letter] of Object.entries(found.atoms)) {
         if (letter !== "?") expect(expected.atoms[atomId], `${name} ${atomId}`).toBe(letter);
       }
-      expect(found.bonds, name).toEqual(expected.bonds);
+      // Double bonds, on the same terms as the atoms above: every LETTER must
+      // match both ways, and chem-core may list a unit RDKit does not so long
+      // as it gives it no letter. 4-methylcyclohexanone oxime is the case that
+      // needs this — chem-core carries its C=N as an undetermined unit, RDKit
+      // perceives no stereo bond there at all. Anything chem-core LETTERS and
+      // RDKit does not still fails.
+      for (const [key, letter] of Object.entries(expected.bonds)) {
+        if (letter !== "?") expect(found.bonds[key], `${name} ${key}`).toBe(letter);
+      }
+      for (const [key, letter] of Object.entries(found.bonds)) {
+        if (letter !== "?") expect(expected.bonds[key], `${name} ${key}`).toBe(letter);
+      }
 
       // And RDKit reads chem-core's own export of the drawing the same way —
       // except where RDKit's own molfile reading is what is blind, since then
