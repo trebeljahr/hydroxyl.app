@@ -556,6 +556,14 @@ export function unmergedDropOverlap(): Molecule {
  * sheet. All atoms come before any bond, so `reverseBonds` changes bond ids
  * and neighbour order and nothing else.
  *
+ * IT IS ALSO THE EXPLICIT-H CROWDING CASE, for the same reason it is the
+ * annotation one: every ring atom is a fused or substituted vertex, so the
+ * angular gaps its bonds leave are narrow and the derived hydrogens of two
+ * adjacent carbons are fanned into the same pocket between them. Nothing in
+ * `FIXTURES` reproduces that — a chain vertex has 240 degrees of empty page
+ * and naphthalene's fused vertices carry no hydrogens at all — which is why
+ * `hydrogen-separation.test.ts` names this fixture directly.
+ *
  * NOT IN `FIXTURES`: it would add a golden per view and join the rotation and
  * hydrogen-crowding sweeps that are about other things. The contact sheet
  * gives it its own section.

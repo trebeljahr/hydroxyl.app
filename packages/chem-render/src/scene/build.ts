@@ -84,7 +84,7 @@ import type {
 } from "../representation.js";
 import { modelToPx } from "../style.js";
 import type { RenderStyle } from "../style.js";
-import { glyphInkRects, measurerFor, measureTextRun, textRunRect } from "../text/measurer.js";
+import { measurerFor, measureTextRun, textRunRect } from "../text/measurer.js";
 import { sceneBounds } from "./bounds.js";
 import type {
   CirclePrimitive,
@@ -498,12 +498,13 @@ function buildStructural(
     if (placement !== undefined) {
       obstacles.push(...placement.obstacles);
       obstacles.push(...glyphBandObstacles(placement.run, style));
-      glyphInk.push(...runGlyphInk(placement.run, style));
-      for (const dot of placement.dots) glyphInk.push(discInk(dot.centre, dot.radius));
-      for (const dot of placement.lonePairs) glyphInk.push(discInk(dot.centre, dot.radius));
+      // The placement pass already measured this label's ink — glyphs,
+      // electron dots and a detached charge alike — and the explicit-H
+      // separation search reads the same boxes. Re-measuring it here would be
+      // a second answer to the question of where a letter is.
+      glyphInk.push(...placement.inkBoxes);
       if (placement.detachedCharge !== undefined) {
         obstacles.push(...glyphBandObstacles(placement.detachedCharge, style));
-        glyphInk.push(...runGlyphInk(placement.detachedCharge, style));
       }
     } else if (style.atomDotRadiusPx > 0 && centre !== undefined) {
       // Decision 61: a bare-vertex dot stops a slot counting as clear, but it
@@ -515,7 +516,7 @@ function buildStructural(
   for (const hydrogen of hydrogens) {
     obstacles.push(...hydrogen.placement.obstacles);
     obstacles.push(...glyphBandObstacles(hydrogen.placement.run, style));
-    glyphInk.push(...runGlyphInk(hydrogen.placement.run, style));
+    glyphInk.push(...hydrogen.placement.inkBoxes);
   }
   // Decision 65: a FILLED shape is ink like a glyph — a solid wedge is a
   // black triangle, and a locant printed inside one is as unreadable as one
@@ -619,23 +620,6 @@ function glyphBandObstacles(run: PlacedTextRun, style: RenderStyle): LabelObstac
   });
 }
 
-/** One unpadded ink box per drawn glyph of a placed run (decision 55). */
-function runGlyphInk(run: PlacedTextRun, style: RenderStyle): LabelBox[] {
-  const measurer = measurerFor(style);
-  const measured = measureTextRun(
-    run.spans,
-    {
-      fontFamily: style.fontFamily,
-      fontSizePx: run.fontSizePx,
-      subscriptScale: style.subscriptScale,
-      anchor: run.anchor,
-      baseline: "alphabetic",
-    },
-    measurer,
-  );
-  return glyphInkRects(measured, run.origin, measurer, style.fontFamily);
-}
-
 /**
  * A filled polygon's ink, as boxes: `FILLED_SHAPE_SLICES` slabs across its
  * longer side, each bounding only the part of the shape inside that slab.
@@ -706,15 +690,6 @@ function filledShapeInk(points: readonly ScenePoint[]): LabelBox[] {
 }
 
 /** A dot's ink box: the square its disc fills. */
-function discInk(centre: ScenePoint, radius: number): LabelBox {
-  return {
-    minX: centre.x - radius,
-    minY: centre.y - radius,
-    maxX: centre.x + radius,
-    maxY: centre.y + radius,
-  };
-}
-
 /**
  * The fully-explicit view's derived hydrogens: a stem and an "H" apiece.
  *

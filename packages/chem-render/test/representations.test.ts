@@ -201,26 +201,38 @@ describe("the fully-explicit view", () => {
   it("pins the hydrogen crowding Publication reports", () => {
     // At the ACS 1996 setting (decision 26) the "H" glyphs are 10 pt on a
     // 14.4 pt bond, and a hydrogen on one carbon and a hydrogen on the next
-    // can fan into the same pocket: cis-2-butene's two inner hydrogens, the
-    // hydrogens beside butan-2-ol's wedge. The renderer reports that rather
-    // than moving anything, so this is not zero. It is PINNED instead: a
-    // change that makes any fixture more crowded fails here, and one that
-    // makes it less crowded has to come and lower the number. Every other
-    // fixture, the fused rings included, must stay at zero.
+    // are fanned into the same pocket: cis-2-butene's two inner hydrogens, the
+    // hydrogens beside butan-2-ol's wedge. The separation pass pulls them off
+    // each other's ink but cannot also find them a padding's worth of white,
+    // so this is not zero. It is PINNED instead: a change that makes any
+    // fixture more crowded fails here, and one that makes it less crowded has
+    // to come and lower the number.
     //
-    // Summed over the nine rotations. 78 before the minimum visible stem
-    // (`explicitHydrogenMinStemRatio`) went in; the longer stem is the 6 more.
+    // THIS COUNTS CLEAR SPACE, NOT INK, and the difference is why it is not
+    // zero now that the separation pass exists. `detectCollisions` compares
+    // the PADDED boxes, so two glyphs with a hairline of white between them
+    // are a finding here. The separation pass prefers a place with that
+    // padding and settles for one that merely keeps the glyphs apart, and
+    // only the second is guaranteed — `hydrogen-separation.test.ts` is where
+    // it is asserted. At the ACS 1996 setting (decision 26) the "H" glyphs
+    // are 10 pt on a 14.4 pt bond and `labelPaddingPx` is 1.6, so a carbon's
+    // hydrogen and the next carbon's cannot always both have their padding.
+    //
+    // Summed over the nine rotations. 78 before the separation pass, which is
+    // 72 from the original sweep plus the 6 the minimum visible stem
+    // (`explicitHydrogenMinStemRatio`) added; 58 after it. Every other
+    // fixture, the fused rings included, must stay at zero.
     const pinned: Record<string, number> = {
       "ethanol explicitH": 1,
       "ethanol lewis": 1,
       "ethanolMirrored explicitH": 1,
       "ethanolMirrored lewis": 1,
-      "butan2olWedged explicitH": 17,
-      "butan2olWedged lewis": 19,
-      "cis2Butene explicitH": 9,
-      "cis2Butene lewis": 9,
-      "wedgeOnNonStereocentre explicitH": 12,
-      "wedgeOnNonStereocentre lewis": 14,
+      "butan2olWedged explicitH": 12,
+      "butan2olWedged lewis": 14,
+      "cis2Butene explicitH": 4,
+      "cis2Butene lewis": 4,
+      "wedgeOnNonStereocentre explicitH": 9,
+      "wedgeOnNonStereocentre lewis": 11,
     };
     for (const [key, count] of crowdingReport(PUBLICATION_STYLE)) {
       expect(count, key).toBe(pinned[key] ?? 0);

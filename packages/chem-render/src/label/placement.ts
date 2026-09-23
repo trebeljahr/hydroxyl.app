@@ -34,7 +34,7 @@ import type { AtomId, ElementSymbol } from "@starter/chem-core";
 import type { ScenePoint, TextSpan } from "../scene/types.js";
 import type { RenderStyle } from "../style.js";
 import { EM_CAP_HEIGHT } from "../text/metrics.js";
-import { measureTextRun, measurerFor } from "../text/measurer.js";
+import { glyphInkRects, measureTextRun, measurerFor } from "../text/measurer.js";
 import type { MeasuredSpan } from "../text/measurer.js";
 import { labelSpans, symbolSpanIndex } from "./compose.js";
 import type { ComposedLabel, LabelSide } from "./compose.js";
@@ -133,6 +133,25 @@ export interface AtomLabelPlacement {
   readonly detachedCharge?: PlacedTextRun;
   /** Padded per-span rects and padded dot discs. A union, never one bbox. */
   readonly obstacles: readonly LabelObstacle[];
+  /**
+   * WHERE THE BLACK ACTUALLY IS: one box per drawn glyph and per electron dot,
+   * from the vendored ink table, side bearings and all (decision 55).
+   *
+   * A DIFFERENT QUESTION FROM `obstacles`, not a cheaper version of it.
+   * `obstacles` answers "where may a bond not go", and its answer is the cap
+   * band over the ADVANCE plus `style.labelPaddingPx` of deliberate white
+   * space — so two labels whose obstacles touch are correctly drawn and merely
+   * close. `inkBoxes` answers "is there a glyph here", and two of THESE
+   * meeting is a reader seeing one mark where the chemistry means two. At
+   * Publication an "H" is 12.0 px of advance around 8.9 px of ink, so the two
+   * questions differ by a third of the glyph.
+   *
+   * It is the same ink the annotation pass measures an overprint against, and
+   * `buildScene` feeds these boxes straight into `AnnotationContext.glyphInk`
+   * rather than re-measuring the run — the explicit-H separation search and
+   * the annotation ladder must not disagree about where a letter is.
+   */
+  readonly inkBoxes: readonly LabelBox[];
   /** Bounding box of `obstacles`. Debug and quick-reject only — NOT trimming. */
   readonly clearBox: LabelBox;
   /** The padded rect of the symbol span alone. Always contains `centre`. */
@@ -731,6 +750,14 @@ export function placeAtomLabel(input: AtomLabelInput): AtomLabelPlacement {
     if (measured.advanceWidthPx === 0) continue;
     spanObstacles.push({ kind: "rect", box: rect });
   }
+  // The run's ink, asked of the same measured run the obstacles came from, so
+  // the two readings cannot be of two different layouts.
+  const inkBoxes: LabelBox[] = glyphInkRects(
+    box,
+    origin,
+    measurerFor(style),
+    style.fontFamily,
+  );
 
   // ONE ALLOCATION OF THE EIGHT SLOTS, SHARED. The radical cluster picks
   // first, because an unpaired electron is a stronger claim on a direction
@@ -783,6 +810,16 @@ export function placeAtomLabel(input: AtomLabelInput): AtomLabelPlacement {
       centre: placedDot.centre,
       radius: placedDot.radius + style.labelPaddingPx,
     });
+    // A radical or lone-pair dot IS ink — unlike the bare-vertex dot, which
+    // `buildScene` deliberately keeps out of the ink set (decision 61). Its
+    // disc is squared off because every consumer here asks a rectangle
+    // question, and the bounding square is the conservative answer.
+    inkBoxes.push({
+      minX: placedDot.centre.x - placedDot.radius,
+      minY: placedDot.centre.y - placedDot.radius,
+      maxX: placedDot.centre.x + placedDot.radius,
+      maxY: placedDot.centre.y + placedDot.radius,
+    });
   }
 
   const detachedCharge =
@@ -791,6 +828,7 @@ export function placeAtomLabel(input: AtomLabelInput): AtomLabelPlacement {
       : undefined;
   if (detachedCharge !== undefined) {
     obstacles.push({ kind: "rect", box: detachedCharge.box });
+    inkBoxes.push(...detachedCharge.ink);
   }
 
   const placement: { -readonly [K in keyof AtomLabelPlacement]: AtomLabelPlacement[K] } = {
@@ -805,6 +843,7 @@ export function placeAtomLabel(input: AtomLabelInput): AtomLabelPlacement {
     dots,
     lonePairs,
     obstacles,
+    inkBoxes,
     clearBox: unionOf(obstacles),
     // Always defined: the symbol span index is in range because
     // `symbolSpanIndex` indexes the same array `labelSpans` produced.
@@ -965,7 +1004,13 @@ function placeDetachedCharge(
   taken: Set<string>,
   obstacles: readonly LabelObstacle[],
   style: RenderStyle,
-): { readonly run: PlacedTextRun; readonly box: LabelBox } | undefined {
+):
+  | {
+      readonly run: PlacedTextRun;
+      readonly box: LabelBox;
+      readonly ink: readonly LabelBox[];
+    }
+  | undefined {
   const direction = claimDirection(bondDirections, taken);
   if (direction === undefined) return undefined;
 
@@ -1007,6 +1052,11 @@ function placeDetachedCharge(
       maxX: origin.x + box.advanceWidthPx + style.labelPaddingPx,
       maxY: anchor.y + halfHeight + style.labelPaddingPx,
     },
+    // Measured, not the padded box with the padding taken back off: the box
+    // above is the charge's CLEAR SPACE, a cap band about the anchor, while
+    // its ink is the glyphs themselves — for a detached charge, a "+" or a
+    // "−" set as a superscript, which is most of an em narrower.
+    ink: glyphInkRects(box, origin, measurerFor(style), style.fontFamily),
   };
 }
 

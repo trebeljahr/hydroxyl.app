@@ -229,11 +229,17 @@ export const PUBLICATION_STYLE: RenderStyle = Object.freeze({
   // under every ruling this pass carries — 45's fallback order, 55's ink-area
   // glyph hits, 57's ink-centre proximity, 58/64's dropping, 59's label-sized
   // rungs, 63's proximity margin, 65's filled-shape ink, 67's near-first
-  // ladder and 68's bond proximity:
-  //   78 of 516 reported, 43 of them not drawn (decisions 58 and 64).
+  // ladder and 68's bond proximity, and with the explicit-H separation pass
+  // in place (`modes/explicitH.ts`):
+  //   80 of 516 reported, 40 of them not drawn (decisions 58 and 64).
   //   22 of the 28 descriptors are reported, 7 not drawn.
   //   Screen, on its 44 px bond, reports 10 and drops 3, no descriptor among
-  //   them. The crowded 0.85 setting reports 104 and drops 55.
+  //   them. The crowded 0.85 setting reports 104 and drops 56.
+  //   It was 78 and 43 before that pass: moving a derived hydrogen off
+  //   another's ink rearranges the page this ladder searches, and it comes
+  //   out ahead — three locants that were dropped are now drawn, against two
+  //   newly reported. Only explicitH and lewis move; the other two views draw
+  //   no derived hydrogens.
   //
   // DECISION 67 IS WHAT MAKES THE NEAR SLOTS REACHABLE: the search starts
   // 0.45 of a bond from the anchor (10.8 px at Publication, 19.8 at Screen)

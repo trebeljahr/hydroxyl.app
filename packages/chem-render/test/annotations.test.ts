@@ -1402,13 +1402,20 @@ describe("decision 54: Publication annotations at the 8 pt floor", () => {
     expect([...sizes]).toEqual([PUBLICATION_STYLE.fontSizePx * PUBLICATION_STYLE.stereoDescriptorScale]);
   });
 
-  it("reports what style.ts records: 78 of 516 at 0.80 (22 of 28 descriptors), 43 not drawn", () => {
+  it("reports what style.ts records: 80 of 516 at 0.80 (22 of 28 descriptors), 40 not drawn", () => {
+    // 78 and 43 before the explicit-H separation pass. Moving derived
+    // hydrogens off each other's ink rearranges the page the annotation
+    // ladder searches, and it comes out ahead: three locants that used to be
+    // DROPPED — printed nowhere, because every candidate sat on a glyph — are
+    // now drawn and merely reported. Two more are reported for the first
+    // time, which is the price. Only the explicitH and lewis views move;
+    // skeletal and kekule draw no derived hydrogens and are untouched.
     expect(counts(PUBLICATION_STYLE)).toEqual({
       total: 516,
       descriptors: 28,
-      unplaced: 78,
+      unplaced: 80,
       unplacedDescriptors: 22,
-      dropped: 43,
+      dropped: 40,
     });
     // Screen, on its 44 px bond, has room for nearly everything.
     expect(counts(SCREEN_STYLE)).toEqual({
@@ -1426,7 +1433,7 @@ describe("decision 54: Publication annotations at the 8 pt floor", () => {
       descriptors: 28,
       unplaced: 104,
       unplacedDescriptors: 22,
-      dropped: 55,
+      dropped: 56,
     });
   });
 
@@ -1466,10 +1473,11 @@ describe("decision 54: Publication annotations at the 8 pt floor", () => {
         "steroidSkeleton/explicitH/C14:locant (dropped)",
         "steroidSkeleton/explicitH/C17:descriptor",
         "steroidSkeleton/explicitH/C17:locant (dropped)",
-        "steroidSkeleton/explicitH/C19:locant",
-        "steroidSkeleton/explicitH/C1:locant (dropped)",
+        "steroidSkeleton/explicitH/C19:locant (dropped)",
+        "steroidSkeleton/explicitH/C1:locant",
         "steroidSkeleton/explicitH/C3:descriptor (dropped)",
         "steroidSkeleton/explicitH/C3:locant (dropped)",
+        "steroidSkeleton/explicitH/C5:locant",
         "steroidSkeleton/explicitH/C8:locant",
         "steroidSkeleton/explicitH/C9:locant",
         "steroidSkeleton/kekule/C10:descriptor",
@@ -1488,10 +1496,11 @@ describe("decision 54: Publication annotations at the 8 pt floor", () => {
         "steroidSkeleton/lewis/C14:locant (dropped)",
         "steroidSkeleton/lewis/C17:descriptor",
         "steroidSkeleton/lewis/C17:locant (dropped)",
-        "steroidSkeleton/lewis/C19:locant",
-        "steroidSkeleton/lewis/C1:locant (dropped)",
+        "steroidSkeleton/lewis/C19:locant (dropped)",
+        "steroidSkeleton/lewis/C1:locant",
         "steroidSkeleton/lewis/C3:descriptor",
         "steroidSkeleton/lewis/C3:locant (dropped)",
+        "steroidSkeleton/lewis/C5:locant",
         "steroidSkeleton/lewis/C8:locant",
         "steroidSkeleton/lewis/C9:locant",
         "steroidSkeleton/skeletal/C10:descriptor",
@@ -1503,14 +1512,14 @@ describe("decision 54: Publication annotations at the 8 pt floor", () => {
         "steroidSkeleton/skeletal/C3:descriptor",
         "trans2Butene/explicitH/b3:descriptor",
         "trans2Butene/lewis/b3:descriptor",
-        "unmergedDropOverlap/explicitH/a2:locant (dropped)",
-        "unmergedDropOverlap/explicitH/a3:locant (dropped)",
+        "unmergedDropOverlap/explicitH/a2:locant",
+        "unmergedDropOverlap/explicitH/a3:locant",
         "unmergedDropOverlap/explicitH/a6:locant (dropped)",
         "unmergedDropOverlap/kekule/a3:locant (dropped)",
         "unmergedDropOverlap/kekule/a6:locant",
         "unmergedDropOverlap/lewis/a2:locant (dropped)",
         "unmergedDropOverlap/lewis/a3:locant (dropped)",
-        "unmergedDropOverlap/lewis/a6:locant (dropped)",
+        "unmergedDropOverlap/lewis/a6:locant",
         "unmergedDropOverlap/skeletal/a3:locant (dropped)",
         "unmergedDropOverlap/skeletal/a6:locant",
       ].sort(),
