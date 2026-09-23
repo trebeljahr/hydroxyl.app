@@ -205,7 +205,7 @@ function descriptorDoc(molecule: Molecule, kind: "skeletal" | "explicitH"): Sket
   });
 }
 
-describe("StatusBar — annotations not placed (decisions 62 and 66)", () => {
+describe("StatusBar — annotations not shown (decisions 62, 66 and 70)", () => {
   const steroid = steroidSkeletonWithLocants();
   const idOf = (locant: string): string =>
     Object.entries(steroid.locants).find(([, text]) => text === locant)![0];
@@ -222,36 +222,51 @@ describe("StatusBar — annotations not placed (decisions 62 and 66)", () => {
     expect(unplacedNode()).toBeNull();
   });
 
-  it("counts the crowded ones, and lists each as crowded", () => {
-    // Skeletal steroid at Publication: an 8 pt "(S)" beside a fused-ring
-    // junction touches a bond wherever the ladder puts it, so all four
-    // descriptors are reported — and all four still drawn, because they
-    // cross lines rather than text.
+  it("says nothing when every reported annotation is still DRAWN (decision 70)", () => {
+    // The skeletal steroid at Publication: all four (S) are reported, and all
+    // four are on the page and legible. A count here would cry wolf on a good
+    // figure — they are only listed, as tight, once something else is missing.
     act(() => editorStore.getState().openDocument(descriptorDoc(steroid.molecule, "skeletal")));
+    render(<StatusBar />);
+    const layout = canvasAnnotatedScene(editorStore.getState().document, null).annotations;
+    expect(layout.unplaced).toHaveLength(4);
+    expect(layout.unplaced.every((u) => !u.dropped)).toBe(true);
+    const scene = buildCanvasScene(editorStore.getState().document, null);
+    for (const u of layout.unplaced) {
+      expect(scene.primitives.some((p) => p.id === u.id), u.id).toBe(true);
+    }
+    expect(unplacedNode()).toBeNull();
+  });
+
+  it("counts only what is missing from the drawing, and names it", () => {
+    // With the hydrogens drawn, C13's and C10's (S) can no longer keep their
+    // clearance from an "H" (decisions 58 and 64): those are not shown.
+    act(() => editorStore.getState().openDocument(descriptorDoc(steroid.molecule, "explicitH")));
     render(<StatusBar />);
     const node = unplacedNode()!;
     expect(node).not.toBeNull();
-    expect(node.textContent).toBe("4 annotations not placed");
-    const lines = node.getAttribute("title")!.split("\n");
-    expect(lines.filter((line) => line.endsWith(": crowded"))).toHaveLength(4);
-    expect(lines).toContain(`${idOf("17")} (S): crowded`);
-  });
-
-  it("lists a dropped annotation as dropped, and keeps it out of the drawing", () => {
-    // With the hydrogens drawn, C13's and C10's (S) can no longer keep their
-    // clearance from an "H" (decisions 58 and 64): reported, and not drawn.
-    act(() => editorStore.getState().openDocument(descriptorDoc(steroid.molecule, "explicitH")));
-    render(<StatusBar />);
-    const lines = unplacedNode()!.getAttribute("title")!.split("\n");
-    expect(lines).toContain(`${idOf("13")} (S): dropped`);
-    expect(lines).toContain(`${idOf("17")} (S): crowded`);
+    const layout = canvasAnnotatedScene(editorStore.getState().document, null).annotations;
+    const dropped = layout.unplaced.filter((u) => u.dropped);
+    expect(dropped.length).toBeGreaterThan(0);
+    expect(node.textContent).toBe(
+      `${dropped.length} ${dropped.length === 1 ? "annotation" : "annotations"} not shown`,
+    );
+    expect(node.getAttribute("data-not-shown")).toBe(String(dropped.length));
+    const title = node.getAttribute("title")!;
+    expect(title).toContain(`Not shown: ${idOf("13")} (S)`);
+    // The drawn-but-tight ones are listed, under their own heading, and are
+    // not part of the count.
+    expect(title).toContain(`Tight: ${idOf("17")} (S)`);
+    expect(node.getAttribute("data-tight")).toBe(
+      String(layout.unplaced.length - dropped.length),
+    );
     const scene = buildCanvasScene(editorStore.getState().document, null);
     expect(scene.primitives.some((p) => p.id === `atom:${idOf("13")}:descriptor`)).toBe(false);
     expect(scene.primitives.some((p) => p.id === `atom:${idOf("17")}:descriptor`)).toBe(true);
   });
 
   it("warns in amber, not in the red the valence errors use (decision 66)", () => {
-    act(() => editorStore.getState().openDocument(descriptorDoc(steroid.molecule, "skeletal")));
+    act(() => editorStore.getState().openDocument(descriptorDoc(steroid.molecule, "explicitH")));
     render(<StatusBar />);
     const className = unplacedNode()!.className;
     expect(className).toContain("amber");
@@ -269,9 +284,9 @@ describe("StatusBar — annotations not placed (decisions 62 and 66)", () => {
   });
 
   it("reports the ACTIVE panel, not the document's first one", () => {
-    // Two panels of the steroid: skeletal, where three of the four reported
-    // descriptors are still drawn, and explicit-H, where the derived
-    // hydrogens leave nothing a clearance away and three are dropped.
+    // Two panels of the steroid: skeletal, where all four descriptors are
+    // drawn and nothing is missing, and explicit-H, where the derived
+    // hydrogens leave no clearance and several are dropped.
     const skeletal = descriptorDoc(steroid.molecule, "skeletal").panels[0]!;
     const explicitH = { ...descriptorDoc(steroid.molecule, "explicitH").panels[0]!, id: "panel-explicit" };
     const doc: SketchDocument = {
@@ -283,17 +298,14 @@ describe("StatusBar — annotations not placed (decisions 62 and 66)", () => {
       editorStore.getState().setActivePanel(explicitH.id);
     });
     render(<StatusBar />);
-    const active = editorStore.getState().ui.activePanelId;
-    expect(active).toBe(explicitH.id);
-    const shown = unplacedNode()!.getAttribute("title")!.split("\n");
+    expect(editorStore.getState().ui.activePanelId).toBe(explicitH.id);
     const first = canvasAnnotatedScene(doc, skeletal.id).annotations;
     const second = canvasAnnotatedScene(doc, explicitH.id).annotations;
     // The two panels disagree, so the assertion cannot pass by accident.
-    expect(second.unplaced.filter((u) => u.dropped).length).not.toBe(
-      first.unplaced.filter((u) => u.dropped).length,
-    );
-    expect(shown.filter((line) => line.endsWith(": dropped"))).toHaveLength(
-      second.unplaced.filter((u) => u.dropped).length,
+    expect(first.unplaced.filter((u) => u.dropped)).toHaveLength(0);
+    expect(second.unplaced.filter((u) => u.dropped).length).toBeGreaterThan(0);
+    expect(unplacedNode()!.getAttribute("data-not-shown")).toBe(
+      String(second.unplaced.filter((u) => u.dropped).length),
     );
   });
 

@@ -15,10 +15,12 @@ import type { Page } from "@playwright/test";
  * deliberately is not), and the count in the status bar comes from that same
  * build rather than a second opinion.
  *
- * Butan-2-ol rather than a ring: one stereocentre and four heavy atoms, and
- * at the Publication style its "(R)" has no slot both clear of the bonds and
- * visibly nearer C2 than its neighbours (decision 63), so it is reported —
- * which is the state this spec exists to see in a browser.
+ * Butan-2-ol rather than a ring: one stereocentre and four heavy atoms. At
+ * the Publication style its "(R)" has no slot both clear of the bonds and
+ * visibly nearer C2 than its neighbours (decision 63), so the pass reports it
+ * as tight — and still draws it, which is why the status bar stays quiet
+ * (decision 70). Reveal the hydrogens and there is nowhere left that keeps
+ * the ink's clearance, so it is dropped and the bar says so.
  */
 
 const CANVAS = "[data-canvas-root]";
@@ -53,7 +55,7 @@ async function setViewFlag(page: Page, flag: string): Promise<void> {
   await page.keyboard.press("Escape");
 }
 
-test("reports the descriptor it cannot place, and drops it when it would print on text", async ({
+test("keeps quiet while the descriptor is drawn, and says so when it is not", async ({
   page,
 }) => {
   await openEditor(page);
@@ -71,19 +73,20 @@ test("reports the descriptor it cannot place, and drops it when it would print o
   await expect(page.locator(UNPLACED)).toHaveCount(0);
 
   // Publication sets the same descriptor at 8 pt on a 24 px bond. No slot is
-  // both clear of the bonds and visibly nearer C2 than its neighbours, so it
-  // is reported — and still drawn, because it crosses lines, not text.
+  // both clear of the bonds and visibly nearer C2 than its neighbours, so the
+  // pass reports it — but it is drawn, so nothing is missing and the status
+  // bar says nothing (decision 70).
   await page.locator('[data-shell="style-preset"] [data-command="view.style-publication"]').click();
   const unplaced = page.locator(UNPLACED);
-  await expect(unplaced).toHaveText("1 annotation not placed");
-  await expect(unplaced).toHaveAttribute("title", /^a\d+ \(R\): crowded$/);
   await expect(descriptor).toHaveCount(1);
+  await expect(unplaced).toHaveCount(0);
 
   // Revealing the hydrogens fills the room around C2 with "H" glyphs. The
-  // descriptor's ink can no longer keep its clearance from them, so it is
-  // dropped from the drawing and named in the report instead.
+  // descriptor's ink can no longer keep its clearance from them, so it leaves
+  // the drawing — and THAT the status bar reports, by name.
   await setViewFlag(page, "showImplicitHydrogens");
-  await expect(unplaced).toHaveText("1 annotation not placed");
-  await expect(unplaced).toHaveAttribute("title", /^a\d+ \(R\): dropped$/);
   await expect(descriptor).toHaveCount(0);
+  await expect(unplaced).toHaveText("1 annotation not shown");
+  await expect(unplaced).toHaveAttribute("data-not-shown", "1");
+  await expect(unplaced).toHaveAttribute("title", /^Not shown: a\d+ \(R\)$/);
 });

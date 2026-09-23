@@ -41,7 +41,10 @@
  * exactly what was wanted.
  *
  * The same check covers the stereo descriptors and locants a figure draws
- * (decision 60): `annotationSizeNotice` names which of them print small.
+ * (decision 60): `annotationSizeNotice` names which of them print small. Only
+ * descriptors can reach it today — nothing numbers atoms yet, so no figure
+ * draws a locant (decision 37) and that half of the check is deliberately
+ * unexercised rather than untested.
  * Publication sets them at exactly 8 pt (decision 54), so ANY scaling to fit
  * takes them under while the labels, at 10 pt, still have room.
  */

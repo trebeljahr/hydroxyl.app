@@ -63,39 +63,56 @@ function formatCharge(charge: number): string {
   return charge > 0 ? `+${String(charge)}` : String(charge);
 }
 
-/** "a9 (S): dropped" — which atom or bond, what text, and what became of it. */
+/** "a9 (S)" — which atom or bond, and what it says. */
 function unplacedLine(u: UnplacedAnnotation): string {
   const where = u.source.kind === "atom" ? u.source.atomId : u.source.bondId;
-  return `${where} ${u.text}: ${u.dropped ? "dropped" : "crowded"}`;
+  return `${where} ${u.text}`;
 }
 
 /**
- * Annotations the canvas's panel could not place (decision 62), or nothing
- * when all were placed. The list is the tooltip. "dropped": not drawn, it
- * would print on text or within a hair of it (decisions 58 and 64);
- * "crowded": drawn, but where it crosses a line or reads ambiguously. The
- * report comes from the canvas's own build — `canvasAnnotatedScene` — so it
- * describes exactly the picture on screen.
+ * What the canvas's panel left out of the drawing (decisions 62 and 70), or
+ * nothing when everything it has to say is on the page.
+ *
+ * THE COUNT IS THE MISSING ONES ONLY. An annotation the pass reports is not
+ * necessarily absent: most are DRAWN, at a slot that crosses a bond line or
+ * sits closer to a neighbour than the rule likes, and at Publication that is
+ * the normal state of a fused ring — all four of the steroid's (S) are drawn
+ * and legible there. Counting those made the bar cry wolf on a good figure.
+ * So "N annotations not shown" counts only what `dropped` leaves out
+ * (decisions 58 and 64), and the tight ones are listed under their own
+ * heading in the tooltip, where an author looking for something to nudge will
+ * find them. Both kinds stay in `AnnotationLayout.unplaced`: the layout is
+ * the tooling's report, this is the one line a chemist reads.
+ *
+ * The report comes from the canvas's own build — `canvasAnnotatedScene` — so
+ * it describes exactly the picture on screen.
  *
  * A WARNING TONE, NOT THE DESTRUCTIVE ONE (decision 66). The red beside it is
  * for valence and structural errors: the structure is wrong and the file
- * would be wrong. A crowded annotation is a crowded picture — the chemistry
- * is fine, the author may want to move something — so it reads as the export
- * dialog's own warnings do, in amber.
+ * would be wrong. A missing annotation is a crowded picture with sound
+ * chemistry, so it reads as the export dialog's warnings do, in amber.
  */
 function UnplacedAnnotations(): ReactElement | null {
   const doc = useEditorStore((state) => state.document);
   const activePanelId = useEditorStore((state) => state.ui.activePanelId);
   const { unplaced } = canvasAnnotatedScene(doc, activePanelId).annotations;
-  if (unplaced.length === 0) return null;
+  const notShown = unplaced.filter((u) => u.dropped);
+  const tight = unplaced.filter((u) => !u.dropped);
+  if (notShown.length === 0) return null;
+  const title = [
+    `Not shown: ${notShown.map(unplacedLine).join(", ")}`,
+    ...(tight.length === 0 ? [] : [`Tight: ${tight.map(unplacedLine).join(", ")}`]),
+  ].join("\n");
   return (
     <span
       data-status="annotations"
-      title={unplaced.map(unplacedLine).join("\n")}
+      data-not-shown={notShown.length}
+      data-tight={tight.length}
+      title={title}
       className="flex items-center gap-1 font-medium text-amber-700 dark:text-amber-400"
     >
       <AlertTriangleIcon className="size-3" />
-      {unplaced.length} {unplaced.length === 1 ? "annotation" : "annotations"} not placed
+      {notShown.length} {notShown.length === 1 ? "annotation" : "annotations"} not shown
     </span>
   );
 }

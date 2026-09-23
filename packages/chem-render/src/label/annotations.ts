@@ -278,7 +278,11 @@ export interface AnnotationObstacleSet {
    * against (decision 55), and what a reported annotation must not print on
    * to be drawn at all (decisions 58 and 64). Filled shapes — a solid wedge
    * above all — are ink like a glyph (decision 65); a hashed wedge and every
-   * plain line stay lines. Bare-vertex dots are not in it
+   * plain line stay lines. Decision 65 is tested through this list (the
+   * wedge's slices are in it, a hash's are not) and through a sweep that no
+   * drawn annotation comes within the clearance of any filled shape, rather
+   * than through one fixture that drops because of a wedge: no fixture does
+   * any more, and contriving one would test the ranking, not the rule. Bare-vertex dots are not in it
    * (decision 61; they stay in `obstacles`): they
    * mark where bond lines meet, and an annotation crossing them is crowded
    * the way one crossing a line is, not text printed on text.
