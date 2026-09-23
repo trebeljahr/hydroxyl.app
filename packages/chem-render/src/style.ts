@@ -264,7 +264,9 @@ export const PUBLICATION_STYLE: RenderStyle = Object.freeze({
   // ink clearance (1 px), the near-first ladder (0.45 of a bond) and the
   // bond-segment proximity were measured against each other and ruled as a
   // set. The reports above are the intended output, not a defect to tune
-  // away: at Publication all four of the steroid's (S) are DRAWN and legible,
+  // away: at Publication all four of the steroid's (S) are DRAWN and legible
+  // in the skeletal and kekule views (explicitH drops three of them and lewis
+  // two, as the view-by-view counts above record),
   // and the report is how an author finds the crowded ones. The status bar
   // counts only what is missing from the drawing (decision 70). Changing any
   // one of these numbers needs a new ruling, and re-measuring every count and

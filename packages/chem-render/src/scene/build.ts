@@ -52,7 +52,7 @@ import type {
   AnnotationBondSegment,
   AnnotationCircle,
   AnnotationLayout,
-  AnnotationObstacleSet,
+  AnnotationContext,
   AnnotationRequest,
   AnnotationSegment,
 } from "../label/annotations.js";
@@ -214,16 +214,22 @@ export function annotationLayout(
 }
 
 /**
- * The obstacles and glyph ink the annotation pass searched, for a scene with
- * something to annotate; undefined otherwise. Diagnostic, like
- * `annotationLayout`: it rebuilds the structural scene.
+ * The WHOLE context the annotation pass searched — obstacles, glyph ink, and
+ * the atom centres and bond segments the proximity rules are judged against
+ * (decisions 35, 63 and 68) — for a scene with something to annotate;
+ * undefined otherwise. Diagnostic, like `annotationLayout`: it rebuilds the
+ * structural scene.
+ *
+ * It returns the proximity inputs deliberately: a caller handed only the
+ * obstacle half cannot re-derive why a placement was clear, and one that tries
+ * measures no competing atom at all rather than failing.
  */
 export function annotationObstacles(
   mol: Molecule,
   style: RenderStyle,
   representation: Representation,
   options?: SceneBuildOptions,
-): AnnotationObstacleSet | undefined {
+): AnnotationContext | undefined {
   if (!isStructural(representation)) return undefined;
   return buildStructural(mol, style, representation, options).context;
 }
@@ -335,7 +341,7 @@ function buildStructural(
 ): {
   readonly primitives: readonly ScenePrimitive[];
   readonly annotations: AnnotationLayout;
-  readonly context?: AnnotationObstacleSet;
+  readonly context?: AnnotationContext;
 } {
   const primitives: ScenePrimitive[] = [];
 
@@ -537,18 +543,16 @@ function buildStructural(
   for (const [bondId, corridor] of corridors) {
     bondSegments.push({ bondId, a: corridor.a, b: corridor.b });
   }
-  const context: AnnotationObstacleSet = {
+  const context: AnnotationContext = {
     obstacles,
     segments: [...corridors.values(), ...drawn],
     circles: circleOutlines,
     glyphInk,
-  };
-  const annotations = placeAnnotations(requests, {
-    ...context,
     style,
     atomCentres,
     bondSegments,
-  });
+  };
+  const annotations = placeAnnotations(requests, context);
 
   // Emitted in PLACEMENT order — priority, then source id — so the scene's
   // order is the same function of the molecule the placements are.
