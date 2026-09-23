@@ -1,0 +1,151 @@
+{
+  "generated": "2026-09-17",
+  "rdkit": "@rdkit/rdkit 2025.03.4 (MinimalLib): get_mol(smiles); set_new_coords(); get_molblock(). Header line 1 is the name, line 3 the SMILES.",
+  "fixtures": [
+    {
+      "file": "r-glyceraldehyde.mol",
+      "name": "(R)-glyceraldehyde",
+      "smiles": "O=C[C@H](O)CO"
+    },
+    {
+      "file": "s-glyceraldehyde.mol",
+      "name": "(S)-glyceraldehyde",
+      "smiles": "O=C[C@@H](O)CO"
+    },
+    {
+      "file": "d-glucose-open.mol",
+      "name": "D-glucose, open chain",
+      "smiles": "O=C[C@H](O)[C@@H](O)[C@H](O)[C@H](O)CO"
+    },
+    {
+      "file": "l-glucose-open.mol",
+      "name": "L-glucose, open chain",
+      "smiles": "O=C[C@@H](O)[C@H](O)[C@@H](O)[C@@H](O)CO"
+    },
+    {
+      "file": "alpha-d-glucopyranose.mol",
+      "name": "alpha-D-glucopyranose",
+      "smiles": "OC[C@H]1O[C@H](O)[C@H](O)[C@@H](O)[C@@H]1O"
+    },
+    {
+      "file": "beta-d-glucopyranose.mol",
+      "name": "beta-D-glucopyranose",
+      "smiles": "OC[C@H]1O[C@@H](O)[C@H](O)[C@@H](O)[C@@H]1O"
+    },
+    {
+      "file": "alpha-d-mannopyranose.mol",
+      "name": "alpha-D-mannopyranose",
+      "smiles": "OC[C@H]1O[C@H](O)[C@@H](O)[C@@H](O)[C@@H]1O"
+    },
+    {
+      "file": "d-galactose-open.mol",
+      "name": "D-galactose, open chain",
+      "smiles": "O=C[C@H](O)[C@@H](O)[C@@H](O)[C@H](O)CO"
+    },
+    {
+      "file": "d-fructose-open.mol",
+      "name": "D-fructose, open chain",
+      "smiles": "OCC(=O)[C@@H](O)[C@H](O)[C@H](O)CO"
+    },
+    {
+      "file": "d-ribose-open.mol",
+      "name": "D-ribose, open chain",
+      "smiles": "O=C[C@H](O)[C@H](O)[C@H](O)CO"
+    },
+    {
+      "file": "2-deoxy-d-ribose-open.mol",
+      "name": "2-deoxy-D-ribose, open chain",
+      "smiles": "O=CC[C@H](O)[C@H](O)CO"
+    },
+    {
+      "file": "adenosine.mol",
+      "name": "adenosine",
+      "smiles": "Nc1ncnc2c1ncn2[C@@H]1O[C@H](CO)[C@@H](O)[C@H]1O"
+    },
+    {
+      "file": "alpha-l-fucopyranose.mol",
+      "name": "alpha-L-fucopyranose",
+      "smiles": "C[C@@H]1O[C@@H](O)[C@@H](O)[C@H](O)[C@@H]1O"
+    },
+    {
+      "file": "cis-2-butene.mol",
+      "name": "cis-2-butene",
+      "smiles": "C/C=C\\C"
+    },
+    {
+      "file": "trans-2-butene.mol",
+      "name": "trans-2-butene",
+      "smiles": "C/C=C/C"
+    },
+    {
+      "file": "rr-tartaric-acid.mol",
+      "name": "(R,R)-tartaric acid",
+      "smiles": "OC(=O)[C@H](O)[C@@H](O)C(=O)O"
+    },
+    {
+      "file": "meso-tartaric-acid.mol",
+      "name": "meso-tartaric acid",
+      "smiles": "OC(=O)[C@H](O)[C@H](O)C(=O)O"
+    },
+    {
+      "file": "ribaric-acid.mol",
+      "name": "ribaric acid (meso pentaric acid)",
+      "smiles": "OC(=O)[C@H](O)[C@H](O)[C@H](O)C(=O)O"
+    },
+    {
+      "file": "pentane-2r3s-diol.mol",
+      "name": "(2R,3S)-pentane-2,3-diol",
+      "smiles": "C[C@@H](O)[C@@H](O)CC"
+    },
+    {
+      "file": "cis-1-2-dimethylcyclohexane.mol",
+      "name": "cis-1,2-dimethylcyclohexane",
+      "smiles": "C[C@H]1CCCC[C@H]1C"
+    },
+    {
+      "file": "trans-1-2-dimethylcyclohexane.mol",
+      "name": "trans-1,2-dimethylcyclohexane",
+      "smiles": "C[C@H]1CCCC[C@@H]1C"
+    },
+    {
+      "file": "rr-2-3-dibromobutane.mol",
+      "name": "(2R,3R)-2,3-dibromobutane",
+      "smiles": "C[C@@H](Br)[C@H](Br)C"
+    },
+    {
+      "file": "meso-2-3-dibromobutane.mol",
+      "name": "meso-2,3-dibromobutane",
+      "smiles": "C[C@@H](Br)[C@@H](Br)C"
+    },
+    {
+      "file": "5alpha-androstane.mol",
+      "name": "5alpha-androstane",
+      "smiles": "C[C@@]12CCC[C@H]1[C@@H]3CC[C@H]4CCCC[C@@]4([C@H]3CC2)C"
+    },
+    {
+      "file": "chd-ethanol.mol",
+      "name": "(1S)-(1-2H1)ethanol",
+      "smiles": "C[C@H]([2H])O"
+    },
+    {
+      "file": "methyl-p-tolyl-sulfoxide.mol",
+      "name": "(R)-methyl p-tolyl sulfoxide",
+      "smiles": "C[S@@](=O)c1ccc(C)cc1"
+    },
+    {
+      "file": "l-cysteine.mol",
+      "name": "L-cysteine",
+      "smiles": "N[C@@H](CS)C(=O)O"
+    },
+    {
+      "file": "l-alanine.mol",
+      "name": "L-alanine",
+      "smiles": "N[C@@H](C)C(=O)O"
+    },
+    {
+      "file": "l-isoleucine.mol",
+      "name": "L-isoleucine",
+      "smiles": "CC[C@H](C)[C@H](N)C(=O)O"
+    }
+  ]
+}
