@@ -42,3 +42,5 @@ export * from "./stereo.js";
 // Coordinate-free configuration and reading conventions, built on stereo.ts's
 // CIP ranking.
 export * from "./stereo-config.js";
+// Achirality proved by an atom mapping; reads stereo-config.
+export * from "./achirality.js";
