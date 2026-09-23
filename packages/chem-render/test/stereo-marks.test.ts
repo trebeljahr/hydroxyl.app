@@ -10,7 +10,10 @@
 
 import { describe, expect, it } from "vitest";
 
-import { flipBond, setBondStereo } from "@starter/chem-core";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { flipBond, readMolblock, setBondStereo } from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
 
 import { bondAxis } from "../src/bond/geometry.js";
@@ -354,6 +357,23 @@ describe("descriptor labels", () => {
       expect(runs[0]!.id).toBe("bond:b3:descriptor");
       expect(runs[0]!.spans.map((s) => s.text).join("")).toBe(expected);
     }
+  });
+
+  it("set lowercase (r) and (s) at pseudoasymmetric centres", () => {
+    // cis-cyclobutane-1,3-diol is (1s,3s); trans would be (1r,3r). The
+    // molblock is chem-core's RDKit-generated CIP fixture.
+    const cases = JSON.parse(
+      readFileSync(
+        join(import.meta.dirname, "..", "..", "chem-core", "test", "fixtures", "cip", "cases.json"),
+        "utf8",
+      ),
+    ) as { cases: Record<string, { molblock: string }> };
+    const mol = readMolblock(cases.cases["cis-cyclobutane-1-3-diol"]!.molblock).molecule;
+    const runs = descriptorsOf(buildScene(mol, PUBLICATION_STYLE, WITH_DESCRIPTORS));
+    expect(runs.map((r) => [r.id, r.spans.map((s) => s.text).join("")])).toEqual([
+      ["atom:a2:descriptor", "(s)"],
+      ["atom:a4:descriptor", "(s)"],
+    ]);
   });
 
   it("say nothing beside a wedge that is not on a stereocentre", () => {

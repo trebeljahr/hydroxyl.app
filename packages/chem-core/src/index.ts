@@ -30,6 +30,12 @@ export * from "./lewis.js";
 export * from "./condensed.js";
 // The one lift and signed volume both stereo readers call. Imports neither.
 export * from "./parity.js";
+// CIP ranking and unit classification, shared by both stereo readers. Imports
+// neither of them.
+export * from "./cip.js";
+// Constitutional symmetry (colour refinement) and stereogenic axes and planes.
+export * from "./symmetry.js";
+export * from "./stereo-axes.js";
 // Perception LAST among the chemistry modules: it reads valence, rings and
 // aromaticity, and only stereo-config reads it.
 export * from "./stereo.js";

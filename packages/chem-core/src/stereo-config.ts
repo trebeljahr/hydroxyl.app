@@ -31,7 +31,7 @@
  *
  * ONE PARITY FUNCTION, SEVERAL READING CONVENTIONS. `readConfig` lifts the 2D
  * placement into pseudo-3D and takes the sign of one signed volume, in
- * parity.ts, which stereo.ts's `chiralityFrom` calls too (decision 28). The
+ * parity.ts, which stereo.ts calls too (decision 28). The
  * conventions differ ONLY in which ligands they lift toward the viewer and
  * which away (decision 16); the magnitude is always `PSEUDO_3D_DEPTH`.
  *
@@ -69,103 +69,81 @@
  * INVERTED parity. cis/trans survives both. A reader that sees mirrored
  * positions plus swapped marks and derives the original parity is correct.
  *
- * PHANTOM LONE-PAIR CENTRES are three-coordinate atoms whose lone pair is a
- * configurationally stable fourth ligand. It ranks lowest, below hydrogen, so
- * they are not dismissed for want of a fourth neighbour id. Exactly these,
- * decided STRUCTURALLY:
+ * WHICH UNITS EXIST, AND HOW THEY RANK, IS cip.ts's (the one classification
+ * both readers use, so stereo.ts and this module cannot disagree about which
+ * atoms are centres). In summary:
  *
- *   sulfoxide S    neutral, three neighbours, one of them =O, no hydrogen
- *   sulfonium S+   charge +1, three single bonds, no hydrogen (this includes
- *                  the charge-separated S+–O− drawing of a sulfoxide)
- *   P(III)         neutral phosphorus with three single-bonded ligands
- *   nitrogen       neutral, three single bonds, no hydrogen, NOT aromatic and
- *                  NOT conjugated, and either in a three-membered ring
- *                  (aziridine) or a BRIDGED bridgehead (decision 30)
+ *   PHANTOM LONE-PAIR CENTRES are three-coordinate atoms whose lone pair is a
+ *   configurationally stable fourth ligand, ranked lowest: sulfoxide S=O and
+ *   sulfilimine S=N (neutral, no H), selenoxide Se=O, sulfonium S+, P(III) and
+ *   As(III), and nitrogen that is neutral, three single bonds, no H, NOT
+ *   aromatic, NOT conjugated (no aromatic or multiply bonded neighbour except
+ *   S/P), and in an aziridine or at a BRIDGED bridgehead (two perceived rings
+ *   sharing two or more bonds, one of them the nitrogen's; decision 30, RDKit's
+ *   `queryIsAtomBridgehead`). Fused bridgehead N, amides, N-aryl, indolizine
+ *   and Tröger's base N are not centres (Tröger's base is a known limit). A
+ *   pinned lone-pair count is a display override and never creates a centre.
  *
- * The nitrogen rule matches RDKit 2025.03's `get_stereo_tags`, the
- * import/export oracle, so a nitrogen centre neither appears nor vanishes
- * across a round trip. Its terms, precisely:
+ *   FOUR-COORDINATE P AND S WITH A DOUBLE BOND (decisions 31 and 43):
+ *   phosphine oxides, phosphinates, phosphonates, phosphates,
+ *   phosphoramidates, P=S, P=N and the P=C ylide (one double bond, the doubly
+ *   bonded atom counts once), and sulfoximines. Their letters follow decision
+ *   47: a multiple bond at the stereogenic atom is not duplicated, as the
+ *   IUPAC 2013 text cited in cip.ts's header prescribes, so S=O and S+–O−
+ *   drawings of one sulfoxide get one letter by construction. The phosphate
+ *   diester anion's P, whose =O and O− differ only by formal charge, is listed
+ *   and gets `ranking-unsupported` (escalated).
  *
- *   BRIDGED BRIDGEHEAD  all three bonds are ring bonds, and two perceived rings
- *                       (rings.ts's symmetrised SSSR, the set RDKit uses) share
- *                       TWO OR MORE bonds, at least one of them a bond of this
- *                       nitrogen. RDKit's `queryIsAtomBridgehead` is the same
- *                       test. 1-azabicyclo[3.2.1]octane's N qualifies: its five-
- *                       and six-membered rings share the two bonds of the
- *                       one-carbon bridge. A FUSED bridgehead does not: the two
- *                       rings of 1-methylpyrrolizidine or indolizidine share
- *                       one bond, and such a nitrogen inverts.
- *   CONJUGATED          a neighbour is aromatic, or carries a double or triple
- *                       bond, unless that neighbour is S or P. This excludes
- *                       amides (a fused beta-lactam, penicillin's N4, a bridged
- *                       2-quinuclidone), enamines, N-aryl, N-nitroso and
- *                       N-cyano. A sulfonyl, sulfinyl or phosphoryl neighbour
- *                       does not conjugate in RDKit's model, and an
- *                       N-tosylaziridine keeps its centre there too.
- *   AROMATIC            a member of a perceived aromatic ring (indolizine,
- *                       imidazo[1,2-a]pyridine), which is planar.
+ *   PSEUDOASYMMETRIC CENTRES AND RING cis/trans (decision 32). A centre with
+ *   two constitutionally identical ligands whose branches contain other units
+ *   is a centre here: pentitol C3, tropine C3, and both ring carbons of cis-
+ *   and trans-1,4-dimethylcyclohexane, whose parities make the two isomers
+ *   DISTINCT configs. Following IUPAC P-92.6 example 2 and RDKit, ring
+ *   cis/trans at such centres is expressed as their pseudoasymmetric r/s
+ *   parity, not as a separate unit kind. Whether one is stereogenic in a given
+ *   configuration is decided by `descriptorFromConfig` with that config.
  *
- * EXCLUDED: plain acyclic amines, fused bridgehead amines, NH aziridines, and
- * carbanions. A QUATERNARY AMMONIUM N+ is not a phantom centre at all. It has
- * four ligands and no lone pair, and it is read as an ordinary four-ligand
- * centre. `lonePairCount` is consulted as a sanity check only. A PINNED
- * lone-pair count is a display override (types.ts) and can neither create nor
- * remove a centre.
+ *   C=N AND N=N DOUBLE BONDS (oximes, hydrazones, azo compounds), with the
+ *   nitrogen lone pair as the implicit second substituent, are cis/trans units
+ *   like C=C. An N–H imine end is not.
  *
- * FOUR-COORDINATE P AND S WITH A DOUBLE BOND are four-ligand centres
- * (decision 31): phosphine oxides, phosphonates, phosphates and
- * phosphoramidates (P with one double bond to O, S or N and three other
- * sigma ligands), and sulfoximines (S with double bonds to O and N and two
- * other ligands). The doubly bonded atom counts once. Their parity is read like
- * any four-ligand centre, and the ranking decides stereogenicity, so a sulfone
- * or a symmetric phosphate is not a centre. Their CIP letters are NOT issued
- * here: `descriptorFromConfig` reports `ranking-unsupported` for them until
- * the CIP task settles how a P=O or S=O is duplicated. A phosphorus ylide
- * (P=C) is not in the list.
+ *   AN EXPLICIT PROTIUM ATOM IS AN IMPLICIT HYDROGEN for ranking, in both
+ *   readers. Deuterium and tritium differ by mass number, so CH3–CHD–OH is a
+ *   stereocentre and CH3–CH(H)–OH is not.
  *
- * THE SAME QUESTION REACHES A SULFINYL CENTRE, but not always. A lone-pair
- * centre drawn with S=O is ranked twice: as drawn, where the duplicate S on
- * the oxygen counts, and with every double bond at the centre written
- * charge-separated (S+–O−), where it does not. The letter is issued only when
- * both orders agree. Methyl p-tolyl sulfoxide agrees (rule 1 settles O, aryl
- * C, methyl C before a duplicate is compared) and keeps its letter. Methyl
- * methanesulfinate does not: drawn S=O the oxo outranks OMe, drawn S+–O− OMe
- * outranks O−, so one molecule would get two letters, and the S=O drawing
- * reports `ranking-unsupported`. The sulfinate anion's oxygens are one ligand
- * charge-separated and it refuses too. A centre already drawn charge-separated
- * has no duplicate to disagree about and is ranked as drawn.
+ *   AXES AND PLANES that no parity or cis/trans relation expresses (allenes,
+ *   atropisomeric biaryls, spiranes, cyclophanes, helicenes) are listed in
+ *   `unrepresentable` on every topology and config (stereo-axes.ts).
  *
- * DEFERRED to cip-ranking-refusals-and-enhanced-stereo (decision 32):
- * pseudoasymmetric centres, ring cis/trans at constitutionally symmetric
- * centres (1,4-disubstituted cyclohexanes), and C=N / N=N units. Their absence
- * here is a known limit, not a statement about the chemistry.
- *
- * AN EXPLICIT PROTIUM ATOM IS AN IMPLICIT HYDROGEN for ranking. Two of them on
- * one carbon make it non-stereogenic however they are drawn. Deuterium and
- * tritium differ by mass number, so CH3–CHD–OH is a stereocentre. (stereo.ts
- * ranks an implicit H below an explicit protium atom and so reports a false
- * centre for CH3–CH(H)–OH drawn with one H explicit; that is left for the CIP
- * rewrite that owns stereo.ts.)
+ * A WAVY BOND at a centre reads `{ kind: "mixture", of: "epimers" }` under
+ * every convention (decision 39). A crossed or wavy-ended double bond stays
+ * `unspecified`.
  *
  * CACHING (decision 19), split by what each half reads:
  *
- *   TOPOLOGY means which units are stereogenic, their ligand orders, their
- *   reference atoms and their CIP rankings. It is memoised on a topology
- *   fingerprint in the two-level shape rings.ts and aromatic.ts use, so a drag
- *   reuses it. The key REFINES the ring fingerprint with element, charge,
- *   isotope, radicals, hydrogen and lone-pair pins, bond orders and aromatic
- *   flags, because the ring key alone would keep a stale stereogenic set after
- *   C→N or single→double. Positions, `stereo` and `doubleBondSide` are out.
+ *   TOPOLOGY means which units are stereogenic, their ligand orders and their
+ *   reference atoms, plus cip.ts's rule 1-2 rankings. It is memoised on
+ *   cip.ts's topology fingerprint in the two-level shape rings.ts and
+ *   aromatic.ts use, so a drag reuses it. The key REFINES the ring fingerprint
+ *   with element, charge, isotope, radicals, hydrogen and lone-pair pins, bond
+ *   orders and aromatic flags (decision 33d). Positions, `stereo` and
+ *   `doubleBondSide` are out. Rankings that need rules 3-5 depend on the
+ *   configuration, so they are computed per call and never cached here.
  *
  *   PARITY, read from positions and marks, is memoised per MOLECULE INSTANCE
  *   in a WeakMap as stereo.ts does. A parity cached on the topology key would
  *   survive the drag that reversed it.
  */
 
-import { isAromaticAtom } from "./aromatic.js";
-import { lonePairCount } from "./lewis.js";
-import { bondsAt, getAtom, otherEnd, requireAtom, requireBond } from "./molecule.js";
-import { updateAtom, updateBond } from "./ops.js";
+import {
+  cipTopologyFingerprint,
+  cipUnits,
+  rankStereoCentre,
+  type CipConfiguration,
+  type LigandRef,
+  type UndeterminedReason,
+} from "./cip.js";
+import { bondsAt, otherEnd, requireAtom, requireBond } from "./molecule.js";
 import {
   liftParity,
   type LiftOptions,
@@ -176,14 +154,8 @@ import {
   type LiftOutcome,
   type TetrahedralParity,
 } from "./parity.js";
-import { isRingBond, LruCache, rings, ringsAtAtom, ringSize } from "./rings.js";
-import { compareIds } from "./selection.js";
-import {
-  rankLigandPair,
-  stereogenicBonds,
-  type LigandPairOrder,
-  type UndeterminedReason,
-} from "./stereo.js";
+import { LruCache } from "./rings.js";
+import { unrepresentableStereo, type UnrepresentableStereoElement } from "./stereo-axes.js";
 import type { AtomId, Bond, BondId, Molecule } from "./types.js";
 import { implicitHydrogenCount } from "./valence.js";
 import type { Vec2 } from "./vec.js";
@@ -191,12 +163,6 @@ import type { Vec2 } from "./vec.js";
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
-
-/** One ligand of a centre: a real neighbour, the implicit H, or the lone pair. */
-export type LigandRef =
-  | { readonly kind: "atom"; readonly atomId: AtomId }
-  | { readonly kind: "implicitHydrogen" }
-  | { readonly kind: "lonePair" };
 
 /** A stereogenic centre's ligands, in canonical order (decision 15). */
 export interface CentreLigands {
@@ -225,6 +191,8 @@ export type ConfigUndeterminedReason = UndeterminedReason | "coplanar" | "not-co
 
 export type CentreReading =
   | { readonly kind: "specified"; readonly parity: TetrahedralParity }
+  /** A wavy bond at the centre: a mixture of both configurations here (decision 39). */
+  | { readonly kind: "mixture"; readonly of: "epimers" }
   | { readonly kind: "undetermined"; readonly reason: ConfigUndeterminedReason };
 
 export interface CentreConfig extends CentreLigands {
@@ -254,12 +222,19 @@ export interface DoubleBondConfig extends DoubleBondTopology {
 export interface StereoConfig {
   readonly centres: readonly CentreConfig[];
   readonly doubleBonds: readonly DoubleBondConfig[];
+  /**
+   * Stereogenic axes and planes this record cannot express (stereo-axes.ts).
+   * Non-empty means an empty `centres` and `doubleBonds` do NOT say the
+   * molecule has no configuration to state.
+   */
+  readonly unrepresentable: readonly UnrepresentableStereoElement[];
 }
 
 /** The position-independent half of a `StereoConfig`. */
 export interface StereoTopology {
   readonly centres: readonly CentreLigands[];
   readonly doubleBonds: readonly DoubleBondTopology[];
+  readonly unrepresentable: readonly UnrepresentableStereoElement[];
 }
 
 /** How a placement encodes depth. See the module header. */
@@ -303,6 +278,9 @@ export type ConfigRead =
 export type ConfigDescriptor =
   | { readonly kind: "R" }
   | { readonly kind: "S" }
+  | { readonly kind: "r" }
+  | { readonly kind: "s" }
+  | { readonly kind: "mixture"; readonly of: "epimers" }
   | { readonly kind: "undetermined"; readonly reason: ConfigUndeterminedReason };
 
 export type RingFaceReason =
@@ -381,378 +359,34 @@ export function parityAgainst(
 // Topology
 // ---------------------------------------------------------------------------
 
-type AtomLigand = { readonly kind: "atom"; readonly atomId: AtomId; readonly bondId: BondId };
-type Ligand = AtomLigand | { readonly kind: "implicitHydrogen" } | { readonly kind: "lonePair" };
-
-type Ranking =
-  | { readonly kind: "ranked"; readonly order: readonly LigandRef[] }
-  | { readonly kind: "undetermined"; readonly reason: UndeterminedReason };
-
 interface TopologyRecord {
   readonly topology: StereoTopology;
   readonly centresById: ReadonlyMap<AtomId, CentreLigands>;
-  /** CIP priority, highest first. Topology-only, so it lives in this cache. */
-  readonly rankings: ReadonlyMap<AtomId, Ranking>;
-}
-
-/**
- * An explicit hydrogen atom that is chemically an implicit one: natural
- * isotope, uncharged, not a radical, bonded to nothing but its one neighbour.
- */
-function isProtiumAtom(mol: Molecule, atomId: AtomId): boolean {
-  const atom = getAtom(mol, atomId);
-  if (atom === undefined || atom.element !== "H") return false;
-  if (atom.isotope !== undefined && atom.isotope !== 1) return false;
-  if (atom.charge !== 0 || atom.radicalElectrons !== 0) return false;
-  if (implicitHydrogenCount(mol, atomId) !== 0) return false;
-  return bondsAt(mol, atomId).length === 1;
-}
-
-function isHydrogenLike(mol: Molecule, ligand: Ligand): boolean {
-  if (ligand.kind === "implicitHydrogen") return true;
-  return ligand.kind === "atom" && isProtiumAtom(mol, ligand.atomId);
-}
-
-/**
- * CIP order of two ligands. The two cases stereo.ts's digraph does not know
- * about come first: the lone pair ranks below everything (atomic number 0),
- * and an explicit protium atom is the same ligand as an implicit hydrogen.
- */
-function compareLigands(
-  mol: Molecule,
-  centre: AtomId,
-  a: Ligand,
-  b: Ligand,
-): LigandPairOrder {
-  if (a.kind === "lonePair" && b.kind === "lonePair") return { kind: "identical" };
-  if (a.kind === "lonePair") return { kind: "ordered", aFirst: false };
-  if (b.kind === "lonePair") return { kind: "ordered", aFirst: true };
-
-  const aH = isHydrogenLike(mol, a);
-  const bH = isHydrogenLike(mol, b);
-  if (aH && bH) return { kind: "identical" };
-  if (aH || bH) {
-    const other = (aH ? b : a) as AtomLigand;
-    const atom = requireAtom(mol, other.atomId);
-    // A heavier element outranks hydrogen on rule 1, and deuterium or tritium
-    // outranks protium on rule 2 (mass number). Any other atomic-number-1
-    // ligand is a charged or radical hydrogen this module will not order.
-    if (atom.element === "H" && !(atom.isotope !== undefined && atom.isotope > 1)) {
-      return { kind: "undetermined", reason: "ranking-unsupported" };
-    }
-    return { kind: "ordered", aFirst: !aH };
-  }
-  return rankLigandPair(mol, centre, a as AtomLigand, b as AtomLigand);
-}
-
-/**
- * A neighbour that is aromatic, or that carries a multiple bond, conjugates
- * with the nitrogen's lone pair and flattens it. S and P neighbours are the
- * exception, as in RDKit: a sulfonyl or phosphoryl group does not conjugate.
- */
-function isConjugatedNitrogen(mol: Molecule, atomId: AtomId, bonds: readonly Bond[]): boolean {
-  for (const bond of bonds) {
-    const neighbour = otherEnd(bond, atomId);
-    if (isAromaticAtom(mol, neighbour)) return true;
-    const element = requireAtom(mol, neighbour).element;
-    if (element === "S" || element === "P") continue;
-    if (bondsAt(mol, neighbour).some((other) => other.order > 1)) return true;
-  }
-  return false;
-}
-
-function inThreeMemberedRing(mol: Molecule, atomId: AtomId): boolean {
-  return ringsAtAtom(mol, atomId).some((index) => ringSize(mol, index) === 3);
-}
-
-/**
- * RDKit's `queryIsAtomBridgehead`: every bond a ring bond, and two perceived
- * rings sharing two or more bonds, one of which is a bond of this atom. Rings
- * that share exactly one bond are FUSED, and their shared atoms are not
- * bridgeheads in this sense.
- */
-function isBridgedBridgehead(mol: Molecule, atomId: AtomId, bonds: readonly Bond[]): boolean {
-  if (!bonds.every((bond) => isRingBond(mol, bond.id))) return false;
-  const own = new Set(bonds.map((bond) => bond.id));
-  const all = rings(mol);
-  const mine = ringsAtAtom(mol, atomId);
-  for (let i = 0; i < mine.length; i++) {
-    const first = new Set(all[mine[i]!]!.bondIds);
-    for (let j = i + 1; j < mine.length; j++) {
-      const shared = all[mine[j]!]!.bondIds.filter((id) => first.has(id));
-      if (shared.length >= 2 && shared.some((id) => own.has(id))) return true;
-    }
-  }
-  return false;
-}
-
-/**
- * A four-coordinate P or S whose sigma ligands include a doubly bonded
- * heteroatom (decision 31): P with exactly one double bond, to O, S or N;
- * S with exactly two, one to O and one to N or both to O (a sulfone, which the
- * ranking then drops as two identical ligands). Neutral only.
- */
-function isMultiplyBondedFourLigandCentre(
-  mol: Molecule,
-  atomId: AtomId,
-  bonds: readonly Bond[],
-  implicitHydrogens: number,
-): boolean {
-  const atom = requireAtom(mol, atomId);
-  if (atom.charge !== 0 || atom.radicalElectrons !== 0) return false;
-  if (bonds.length + implicitHydrogens !== 4) return false;
-  if (bonds.some((bond) => bond.order !== 1 && bond.order !== 2)) return false;
-  const doubles = bonds.filter((bond) => bond.order === 2);
-  const partners = doubles.map((bond) => requireAtom(mol, otherEnd(bond, atomId)).element);
-  if (atom.element === "P") {
-    return doubles.length === 1 && ["O", "S", "N"].includes(partners[0]!);
-  }
-  if (atom.element === "S") {
-    return (
-      doubles.length === 2 &&
-      implicitHydrogens === 0 &&
-      partners.includes("O") &&
-      partners.every((element) => element === "O" || element === "N")
-    );
-  }
-  return false;
-}
-
-/**
- * The three-coordinate atoms whose lone pair is a configurationally stable
- * fourth ligand. The module header lists them and what they exclude.
- */
-function isPhantomLonePairCentre(
-  mol: Molecule,
-  atomId: AtomId,
-  bonds: readonly Bond[],
-  implicitHydrogens: number,
-): boolean {
-  const atom = requireAtom(mol, atomId);
-  if (atom.radicalElectrons !== 0) return false;
-  if (bonds.length + implicitHydrogens !== 3) return false;
-  const allSingle = bonds.every((bond) => bond.order === 1);
-  const hasHydrogen =
-    implicitHydrogens > 0 || bonds.some((bond) => isProtiumAtom(mol, otherEnd(bond, atomId)));
-
-  let structural = false;
-  if (atom.element === "S" && atom.charge === 0) {
-    const doubles = bonds.filter((bond) => bond.order === 2);
-    const singles = bonds.filter((bond) => bond.order === 1);
-    structural =
-      bonds.length === 3 &&
-      doubles.length === 1 &&
-      singles.length === 2 &&
-      requireAtom(mol, otherEnd(doubles[0]!, atomId)).element === "O" &&
-      !hasHydrogen;
-  } else if (atom.element === "S" && atom.charge === 1) {
-    structural = allSingle && !hasHydrogen;
-  } else if (atom.element === "P" && atom.charge === 0) {
-    structural = allSingle;
-  } else if (atom.element === "N" && atom.charge === 0) {
-    structural =
-      allSingle &&
-      !hasHydrogen &&
-      bonds.length === 3 &&
-      !isAromaticAtom(mol, atomId) &&
-      !isConjugatedNitrogen(mol, atomId, bonds) &&
-      (inThreeMemberedRing(mol, atomId) || isBridgedBridgehead(mol, atomId, bonds));
-  }
-  if (!structural) return false;
-
-  // A sanity check against the electron count. A pin is display-only and gets
-  // no vote; the structural test above already fixes the real count at one.
-  const pairs = lonePairCount(mol, atomId);
-  if (pairs.kind === "unknown") return false;
-  return pairs.kind === "pinned" || pairs.pairs >= 1;
-}
-
-/**
- * `mol` with every multiple bond at `centre` written as a charge-separated
- * single bond: order 1, the centre's charge raised and the partner's lowered
- * by the orders removed. Ids are untouched, so ligand records still apply.
- * Only ever used for ranking, never returned.
- */
-function chargeSeparatedAt(mol: Molecule, centre: AtomId): Molecule {
-  let out = mol;
-  for (const bond of bondsAt(mol, centre)) {
-    const shift = bond.order - 1;
-    if (shift === 0) continue;
-    const partner = otherEnd(bond, centre);
-    out = updateBond(out, bond.id, { order: 1 });
-    out = updateAtom(out, centre, { charge: requireAtom(out, centre).charge + shift });
-    out = updateAtom(out, partner, { charge: requireAtom(out, partner).charge - shift });
-  }
-  return out;
-}
-
-function sameRanking(a: Ranking | "not-stereogenic", b: Ranking | "not-stereogenic"): boolean {
-  if (a === "not-stereogenic" || b === "not-stereogenic") return a === b;
-  if (a.kind !== "ranked" || b.kind !== "ranked") return false;
-  return a.order.length === b.order.length && a.order.every((ref, i) => sameRef(ref, b.order[i]!));
-}
-
-/**
- * Pairwise ranking of a centre's ligands. Every pair is compared, so an
- * `identical` pair anywhere proves the atom non-stereogenic even when some
- * other pair could not be ordered.
- */
-function rankCentre(
-  mol: Molecule,
-  centre: AtomId,
-  ligands: readonly Ligand[],
-): Ranking | "not-stereogenic" {
-  const wins = ligands.map(() => 0);
-  let undetermined: UndeterminedReason | undefined;
-  for (let i = 0; i < ligands.length; i++) {
-    for (let j = i + 1; j < ligands.length; j++) {
-      const order = compareLigands(mol, centre, ligands[i]!, ligands[j]!);
-      if (order.kind === "identical") return "not-stereogenic";
-      if (order.kind === "undetermined") {
-        undetermined ??= order.reason;
-        continue;
-      }
-      const winner = order.aFirst ? i : j;
-      wins[winner] = wins[winner]! + 1;
-    }
-  }
-  if (undetermined !== undefined) return { kind: "undetermined", reason: undetermined };
-  const indices = [...ligands.keys()].sort((x, y) => wins[y]! - wins[x]!);
-  return {
-    kind: "ranked",
-    order: Object.freeze(
-      indices.map((index): LigandRef => {
-        const ligand = ligands[index]!;
-        return ligand.kind === "atom" ? { kind: "atom", atomId: ligand.atomId } : ligand;
-      }),
-    ),
-  };
-}
-
-/**
- * The reference atom at one end of a stereogenic double bond, or undefined when
- * that end is not stereogenic after all.
- *
- * stereo.ts ranks an implicit hydrogen below an explicit protium atom, so it
- * reports `=CH2` drawn with one hydrogen explicit as stereogenic. Such an end
- * carries two hydrogens and is dropped here.
- */
-function endReference(mol: Molecule, atomId: AtomId, doubleBondId: BondId): AtomId | undefined {
-  const others = bondsAt(mol, atomId)
-    .filter((bond) => bond.id !== doubleBondId)
-    .map((bond) => otherEnd(bond, atomId))
-    .sort(compareIds);
-  if (others.length === 0) return undefined;
-  const hydrogens =
-    implicitHydrogenCount(mol, atomId) + others.filter((id) => isProtiumAtom(mol, id)).length;
-  if (hydrogens >= 2) return undefined;
-  return others[0];
 }
 
 function computeTopology(mol: Molecule): TopologyRecord {
-  const centres: CentreLigands[] = [];
-  const rankings = new Map<AtomId, Ranking>();
-
-  for (const atomId of [...mol.atomIds].sort(compareIds)) {
-    const bonds = bondsAt(mol, atomId);
-    const implicitHydrogens = implicitHydrogenCount(mol, atomId);
-    if (implicitHydrogens > 1) continue;
-
-    let lonePair: boolean;
-    if (bonds.length + implicitHydrogens === 4 && bonds.every((bond) => bond.order === 1)) {
-      lonePair = false;
-    } else if (isMultiplyBondedFourLigandCentre(mol, atomId, bonds, implicitHydrogens)) {
-      lonePair = false;
-    } else if (isPhantomLonePairCentre(mol, atomId, bonds, implicitHydrogens)) {
-      lonePair = true;
-    } else {
-      continue;
-    }
-
-    // The neighbour id and its bond travel together in one record and are
-    // sorted once, so no second, parallel list can end up in another order.
-    const explicit: AtomLigand[] = bonds
-      .map((bond): AtomLigand => ({ kind: "atom", atomId: otherEnd(bond, atomId), bondId: bond.id }))
-      .sort((x, y) => compareIds(x.atomId, y.atomId));
-    const ligands: Ligand[] = [...explicit];
-    if (implicitHydrogens === 1) ligands.push({ kind: "implicitHydrogen" });
-    if (lonePair) ligands.push({ kind: "lonePair" });
-
-    let ranking = rankCentre(mol, atomId, ligands);
-    if (ranking === "not-stereogenic") continue;
-    // A sulfinyl letter must not depend on S=O versus S+–O− (module header).
-    if (
-      lonePair &&
-      ranking.kind === "ranked" &&
-      bonds.some((bond) => bond.order !== 1) &&
-      !sameRanking(ranking, rankCentre(chargeSeparatedAt(mol, atomId), atomId, ligands))
-    ) {
-      ranking = { kind: "undetermined", reason: "ranking-unsupported" };
-    }
-
-    centres.push(
-      Object.freeze({
-        atomId,
-        order: Object.freeze(explicit.map((ligand) => ligand.atomId)),
-        implicitHydrogen: implicitHydrogens === 1,
-        lonePair,
-      }),
-    );
-    rankings.set(atomId, ranking);
-  }
-
-  const doubleBonds: DoubleBondTopology[] = [];
-  for (const bondId of [...stereogenicBonds(mol)].sort(compareIds)) {
-    const bond = requireBond(mol, bondId);
-    const refOnFrom = endReference(mol, bond.from, bondId);
-    const refOnTo = endReference(mol, bond.to, bondId);
-    if (refOnFrom === undefined || refOnTo === undefined) continue;
-    doubleBonds.push(Object.freeze({ bondId, refOnFrom, refOnTo }));
-  }
-
+  const units = cipUnits(mol);
+  const centres: CentreLigands[] = units.centres.map((unit) =>
+    Object.freeze({
+      atomId: unit.atomId,
+      order: Object.freeze(
+        unit.ligands.flatMap((ligand) => (ligand.kind === "atom" ? [ligand.atomId] : [])),
+      ),
+      implicitHydrogen: unit.implicitHydrogen,
+      lonePair: unit.lonePair,
+    }),
+  );
+  const doubleBonds: DoubleBondTopology[] = units.doubleBonds.map((unit) =>
+    Object.freeze({ bondId: unit.bondId, refOnFrom: unit.refOnFrom, refOnTo: unit.refOnTo }),
+  );
   return {
     topology: Object.freeze({
       centres: Object.freeze(centres),
       doubleBonds: Object.freeze(doubleBonds),
+      unrepresentable: unrepresentableStereo(mol),
     }),
     centresById: new Map(centres.map((centre) => [centre.atomId, centre])),
-    rankings,
   };
-}
-
-/** NUL cannot occur in an id, so the encoding stays injective (as rings.ts). */
-const SEP = "\u0000";
-
-/** Bumped if the fingerprint contents change, so an old entry never matches. */
-const STEREO_TOPOLOGY_FINGERPRINT_VERSION = "S1";
-
-/**
- * Everything the topology half reads, and nothing it does not: a strict
- * refinement of rings.ts's key, built in one pass like `aromaticFingerprint`.
- */
-function stereoTopologyFingerprint(mol: Molecule): string {
-  const parts: string[] = [STEREO_TOPOLOGY_FINGERPRINT_VERSION];
-  for (const id of mol.atomIds) {
-    const atom = mol.atoms[id];
-    if (!atom) continue;
-    parts.push(
-      id,
-      atom.element,
-      String(atom.charge),
-      String(atom.radicalElectrons),
-      atom.isotope === undefined ? "" : String(atom.isotope),
-      atom.explicitHydrogenCount === undefined ? "" : String(atom.explicitHydrogenCount),
-      atom.lonePairs === undefined ? "" : String(atom.lonePairs),
-      atom.aromatic ? "1" : "0",
-    );
-  }
-  parts.push("|");
-  for (const id of mol.bondIds) {
-    const bond = mol.bonds[id];
-    if (!bond) continue;
-    parts.push(id, bond.from, bond.to, String(bond.order), bond.aromatic ? "1" : "0");
-  }
-  return parts.join(SEP);
 }
 
 const TOPOLOGY_BY_INSTANCE = new WeakMap<Molecule, TopologyRecord>();
@@ -762,7 +396,7 @@ let topologyComputations = 0;
 function topologyRecord(mol: Molecule): TopologyRecord {
   const hit = TOPOLOGY_BY_INSTANCE.get(mol);
   if (hit) return hit;
-  const key = stereoTopologyFingerprint(mol);
+  const key = cipTopologyFingerprint(mol);
   const shared = TOPOLOGY_BY_FINGERPRINT.get(key);
   if (shared) {
     TOPOLOGY_BY_INSTANCE.set(mol, shared);
@@ -1007,7 +641,7 @@ function readCentre(
   // A wavy bond is the author declining to state a configuration, under every
   // convention. It is checked after the placement test so a refusal still
   // names every off-axis centre.
-  if (hasWavyAt(ctx.mol, centre.atomId)) return { kind: "undetermined", reason: "unspecified" };
+  if (hasWavyAt(ctx.mol, centre.atomId)) return { kind: "mixture", of: "epimers" };
   if (lift.kind !== "points") return lift;
   // Fischer and Haworth points are unit directions built from the convention,
   // so the floor applies at the depth constant's own scale.
@@ -1086,6 +720,7 @@ function computeRead(ctx: ReadContext, convention: DepthConvention): ConfigRead 
     config: Object.freeze({
       centres: Object.freeze(centres),
       doubleBonds: Object.freeze(doubleBonds),
+      unrepresentable: topology.unrepresentable,
     }),
   });
 }
@@ -1140,9 +775,48 @@ export function stereoConfig(mol: Molecule): StereoConfig {
 // ---------------------------------------------------------------------------
 
 /**
- * R or S for `centre`, from its parity and the CIP ranking stereo.ts computes,
- * with the lone pair lowest and an explicit protium atom equal to an implicit
- * hydrogen. Undefined when the atom is not a stereocentre of `mol`.
+ * The configuration a `StereoConfig` states, in the form cip.ts's rules 3-5
+ * read. A mixture reads as `unspecified` there: the ranking of a centre that
+ * depends on a wavy unit is not known.
+ */
+export function cipConfiguration(config: StereoConfig): CipConfiguration {
+  const centres = new Map(config.centres.map((c) => [c.atomId, c]));
+  const bonds = new Map(config.doubleBonds.map((b) => [b.bondId, b]));
+  return {
+    centre(atomId) {
+      const c = centres.get(atomId);
+      if (c === undefined) return undefined;
+      if (c.reading.kind === "specified") {
+        return { kind: "specified", order: ligandRefs(c), parity: c.reading.parity };
+      }
+      if (c.reading.kind === "mixture") return { kind: "undetermined", reason: "unspecified" };
+      return { kind: "undetermined", reason: cipReason(c.reading.reason) };
+    },
+    doubleBond(bondId) {
+      const b = bonds.get(bondId);
+      if (b === undefined) return undefined;
+      if (b.reading.kind === "specified") {
+        return { kind: "specified", refOnFrom: b.refOnFrom, refOnTo: b.refOnTo, relation: b.reading.relation };
+      }
+      return { kind: "undetermined", reason: cipReason(b.reading.reason) };
+    },
+  };
+}
+
+/** `coplanar` and `not-covered` both mean "no reading" to the ranking. */
+function cipReason(reason: ConfigUndeterminedReason): UndeterminedReason {
+  return reason === "coplanar" || reason === "not-covered" ? "no-stereo-bond" : reason;
+}
+
+/**
+ * The CIP descriptor for `centre`: R or S, lowercase r or s at a
+ * pseudoasymmetric centre, or the mixture a wavy bond states. Undefined when
+ * the atom is not a stereocentre of `mol`, or when `config` shows that a
+ * centre whose stereogenicity rides on other units is not stereogenic here.
+ *
+ * `config` supplies the other units' configurations that rules 3-5 need (the
+ * branches of a pseudoasymmetric centre). A centre that needs them and gets no
+ * `config` is `ranking-unsupported`; pass the config `centre` came from.
  *
  * Throws when `centre` lists different ligands from `mol`'s own topology: a
  * config from another molecule would otherwise be ranked against the wrong
@@ -1151,6 +825,7 @@ export function stereoConfig(mol: Molecule): StereoConfig {
 export function descriptorFromConfig(
   mol: Molecule,
   centre: CentreConfig,
+  config?: StereoConfig,
 ): ConfigDescriptor | undefined {
   const record = topologyRecord(mol);
   const own = record.centresById.get(centre.atomId);
@@ -1163,21 +838,17 @@ export function descriptorFromConfig(
   ) {
     throw new Error(`Centre ${centre.atomId} does not match this molecule's ligands`);
   }
-  if (centre.reading.kind === "undetermined") {
-    return { kind: "undetermined", reason: centre.reading.reason };
-  }
-  // A four-coordinate P=O, P=S, P=N or sulfoximine centre (decision 31). Its
-  // parity is real, but whether its double bond is duplicated or read as a
-  // charge-separated single bond decides the letter, and that is the CIP task's
-  // ruling to make, not a default to slip in here.
-  if (!centre.lonePair && bondsAt(mol, centre.atomId).some((bond) => bond.order !== 1)) {
-    return { kind: "undetermined", reason: "ranking-unsupported" };
-  }
-  const ranking = record.rankings.get(centre.atomId);
-  if (ranking === undefined) return undefined;
-  if (ranking.kind === "undetermined") return { kind: "undetermined", reason: ranking.reason };
+  const ranking = rankStereoCentre(
+    mol,
+    centre.atomId,
+    config === undefined ? undefined : cipConfiguration(config),
+  );
+  if (ranking === undefined || ranking.kind === "not-stereogenic") return undefined;
+  if (ranking.kind === "undetermined") return ranking;
+  if (centre.reading.kind !== "specified") return centre.reading;
   const parity = parityAgainst(centre, ranking.order);
   if (parity === undefined) return undefined;
+  if (ranking.pseudoasymmetric) return parity < 0 ? { kind: "r" } : { kind: "s" };
   return parity < 0 ? { kind: "R" } : { kind: "S" };
 }
 

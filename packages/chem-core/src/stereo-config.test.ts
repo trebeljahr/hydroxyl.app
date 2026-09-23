@@ -770,13 +770,12 @@ describe("phantom lone-pair centres", () => {
     expect(stereoTopology(dmso).centres).toEqual([]);
   });
 
-  it("issues no sulfinyl letter that depends on drawing S=O rather than S+–O−", () => {
+  it("gives a sulfinate one letter whether drawn S=O or S+–O− (decision 47)", () => {
     // Methyl methanesulfinate CS(=O)OC: Me north on a wedge, O lower left,
-    // OMe lower right. Drawn S=O, the duplicate S on =O ranks it above OMe;
-    // drawn S+–O−, OMe ranks above O−. Same geometry, same parity, opposite
-    // letters, so the double-bonded drawing refuses until the CIP task rules
-    // on duplication. The charge-separated drawing has no duplicate to
-    // disagree about and reads R, as RDKit get_stereo_tags gives for both.
+    // OMe lower right. A multiple bond at the stereogenic atom is not
+    // duplicated (IUPAC 2013 P-93.2.4 and the P-93.3.4.1 sulfinate figure,
+    // cited in cip.ts), so OMe ranks above =O in both drawings, and both read
+    // R, as RDKit get_stereo_tags gives for both.
     function sulfinate(ester: boolean, chargeSeparated: boolean) {
       return buildMolecule((b) => {
         const s = b.atom("S", ORIGIN, chargeSeparated ? { charge: 1 } : {}); // a1
@@ -792,7 +791,8 @@ describe("phantom lone-pair centres", () => {
     const doubledConfig = stereoConfig(doubled);
     expect(centre(doubledConfig, "a1").lonePair).toBe(true);
     expect(centre(doubledConfig, "a1").reading).toEqual({ kind: "specified", parity: 1 });
-    expect(letter(doubled, doubledConfig, "a1")).toBe("ranking-unsupported");
+    expect(letter(doubled, doubledConfig, "a1")).toBe("R");
+    expect(cipLetter(doubled, "a1")).toBe("R");
 
     const separated = sulfinate(true, true);
     const separatedConfig = stereoConfig(separated);
@@ -995,7 +995,7 @@ describe("phantom lone-pair centres", () => {
     expect(nitrogenCentre(amine, 2)).toBeUndefined();
   });
 
-  it("lists four-coordinate P=X and sulfoximine centres, without issuing a letter (decision 31)", () => {
+  it("lists four-coordinate P=X and sulfoximine centres, with letters (decisions 31, 43 and 47)", () => {
     // Ethylmethylpropylphosphine oxide CCP(=O)(C)CCC drawn as a cross: O
     // north, Et east, Me west on a wedge, Pr south on a hash.
     const oxide = buildMolecule((b) => {
@@ -1018,8 +1018,10 @@ describe("phantom lone-pair centres", () => {
     const flipped = flipAtoms(oxide, oxide.atomIds, verticalMirror(ORIGIN));
     expect(parities(stereoConfig(flipped))).toEqual(parities(config));
     expect(parities(stereoConfig(mirrorPositionsOnly(oxide)))).toEqual(invert(parities(config)));
-    // Whether P=O is duplicated decides the letter; that is the CIP task's call.
-    expect(letter(oxide, config, "a1")).toBe("ranking-unsupported");
+    // P=O at the centre is not duplicated (decision 47, IUPAC P-93.2.3): O >
+    // propyl > ethyl > methyl. RDKit get_stereo_tags reads this drawing R.
+    expect(letter(oxide, config, "a1")).toBe("R");
+    expect(cipLetter(oxide, "a1")).toBe("R");
 
     const hetero = (mol: Molecule) =>
       stereoTopology(mol)
@@ -1033,9 +1035,8 @@ describe("phantom lone-pair centres", () => {
     // Sulfoximine CS(=O)(=N)CC, and ethyl methyl sulfone.
     expect(hetero(graph("CSONCC", [[0, 1], [1, 2, 2], [1, 3, 2], [1, 4], [4, 5]]))).toEqual(["a2"]);
     expect(hetero(graph("CSOOCC", [[0, 1], [1, 2, 2], [1, 3, 2], [1, 4], [4, 5]]))).toEqual([]);
-    // Known limit, not a chemistry claim: a phosphorus ylide is outside
-    // decision 31's list, although RDKit flags one.
-    expect(hetero(graph("CCPCCCCC", [[0, 1], [1, 2], [2, 3, 2], [2, 4], [2, 5], [5, 6], [6, 7]]))).toEqual([]);
+    // A phosphorus ylide P=C is a centre (decision 43), as RDKit flags one.
+    expect(hetero(graph("CCPCCCCC", [[0, 1], [1, 2], [2, 3, 2], [2, 4], [2, 5], [5, 6], [6, 7]]))).toEqual(["a3"]);
   });
 
   it("does not let a display lone-pair pin create or remove a centre", () => {
@@ -1358,6 +1359,20 @@ describe("split cache", () => {
   });
 });
 
+describe("wavy bonds (decision 39)", () => {
+  it("reads a wavy bond at a centre as a mixture of epimers, distinct from no stereo bond", () => {
+    const wavy = setBondStereo(butan2olWedged(), "b7", "wavy");
+    const config = stereoConfig(wavy);
+    expect(centre(config, "a2").reading).toEqual({ kind: "mixture", of: "epimers" });
+    expect(descriptorFromConfig(wavy, centre(config, "a2"), config)).toEqual({ kind: "mixture", of: "epimers" });
+    const flat = setBondStereo(butan2olWedged(), "b7", "none");
+    expect(centre(stereoConfig(flat), "a2").reading).toEqual({ kind: "undetermined", reason: "no-stereo-bond" });
+    // The same statement under a reading convention that ignores wedges.
+    const read = readConfig({ mol: wavy }, { kind: "pseudo3d", depth: {} });
+    expect(read.kind === "read" && read.config.centres[0]?.reading).toEqual({ kind: "mixture", of: "epimers" });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Package hygiene
 // ---------------------------------------------------------------------------
@@ -1387,10 +1402,33 @@ describe("chem-core exports", () => {
     const duplicates = [...owners].filter(([, files]) => files.length > 1);
     expect(duplicates).toEqual([]);
     expect(owners.get("readConfig")).toEqual(["stereo-config.ts"]);
+    // The CIP split: ranking and classification in cip.ts, axes and planes in
+    // stereo-axes.ts. `LigandRef` moved to cip.ts and must not be redeclared
+    // by stereo-config. (achirality.ts names its own exports in its own test.)
+    expect(owners.get("LigandRef")).toEqual(["cip.ts"]);
+    expect(owners.get("rankStereoCentre")).toEqual(["cip.ts"]);
+    expect(owners.get("unrepresentableStereo")).toEqual(["stereo-axes.ts"]);
+    expect(owners.get("atomSymmetryClasses")).toEqual(["symmetry.ts"]);
+    expect(owners.get("StereoDescriptor")).toEqual(["stereo.ts"]);
 
     const index = readFileSync(join(srcDir, "index.ts"), "utf8");
     for (const file of modules) {
       expect(index).toContain(`"./${file.replace(/\.ts$/, ".js")}"`);
+    }
+  });
+
+  it("keeps parity.ts's liftParity the only 2D-to-tetrahedral lift", () => {
+    // The two readers call it; the ranking, symmetry and axis modules never
+    // read a coordinate at all, so they cannot hide a lift. achirality.ts
+    // makes the same promise in its own test.
+    for (const file of ["stereo.ts", "stereo-config.ts"]) {
+      const text = readFileSync(join(srcDir, file), "utf8");
+      expect(text, file).toMatch(/import \{[^}]*\bliftParity\b[^}]*\} from "\.\/parity\.js"/);
+    }
+    for (const file of ["cip.ts", "symmetry.ts", "stereo-axes.ts"]) {
+      const text = readFileSync(join(srcDir, file), "utf8");
+      expect(text, file).not.toMatch(/\.pos\b/);
+      expect(text, file).not.toMatch(/liftParity|pointsParity/);
     }
   });
 

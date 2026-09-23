@@ -366,12 +366,15 @@ describe("cipDescriptor", () => {
     expect(kindOf(a)).not.toBe(kindOf(b));
   });
 
-  it("refuses a centre whose configuration the drawing declines to state", () => {
+  it("reads a wavy bond at a centre as a mixture of epimers, not as an undrawn wedge (decision 39)", () => {
     const wavy = setBondStereo(butan2olWedged(), "b7", "wavy");
-    expect(cipDescriptor(wavy, "a2")).toEqual({
-      kind: "undetermined",
-      reason: "unspecified",
-    });
+    expect(cipDescriptor(wavy, "a2")).toEqual({ kind: "mixture", of: "epimers" });
+    // Still a stereocentre, and distinct from "no stereo bond drawn".
+    expect(stereocenterAtoms(wavy)).toContain("a2");
+    const flat = setBondStereo(butan2olWedged(), "b7", "none");
+    expect(cipDescriptor(flat, "a2")).toEqual({ kind: "undetermined", reason: "no-stereo-bond" });
+    // A mixture renders no letter: the wavy bond is the statement.
+    expect(descriptorText(cipDescriptor(wavy, "a2"))).toBeUndefined();
   });
 
   it("refuses a centre whose marks contradict each other", () => {
@@ -465,7 +468,16 @@ describe("cipDescriptor", () => {
     // `structuralIssues` then silently accepts a wedge drawn on it. At a cap
     // of ten spheres all fourteen of these carbons came back as truncated
     // stereocentres.
-    expect(stereocenterAtoms(fusedAcene(2))).toEqual([]);
+    //
+    // Decalin's two fusion carbons ARE stereogenic: cis- and trans-decalin are
+    // different compounds. Each sees two constitutionally identical ring
+    // branches, so the pair is pseudoasymmetric, and RDKit labels a wedged
+    // cis-decalin (4as,8as). Unwedged, both are undetermined, never dropped.
+    const decalin = fusedAcene(2);
+    expect(stereocenterAtoms(decalin)).toHaveLength(2);
+    for (const id of stereocenterAtoms(decalin)) {
+      expect(cipDescriptor(decalin, id)).toEqual({ kind: "undetermined", reason: "no-stereo-bond" });
+    }
 
     const mol = fusedAcene(3);
     const centres = stereocenterAtoms(mol);
@@ -480,10 +492,10 @@ describe("cipDescriptor", () => {
     }
   });
 
-  it("refuses rather than guesses when only an isotope separates two branches", () => {
-    // 2-(13-C)-propan-2-ol: the two methyls differ by mass number alone. That
-    // is CIP rule 2, which this module can detect but not order, so the honest
-    // answer is `ranking-unsupported` — not a letter, and not "identical".
+  it("orders two branches that differ only by an isotope, by rule 2", () => {
+    // 1-(13-C)-propan-2-ol: the two methyls differ by mass number alone. Rule
+    // 2 ranks 13C (mass number 13) above natural C (standard weight 12.011).
+    // RDKit get_stereo_tags reads this very drawing, written as a molblock, S.
     const mol = buildMolecule((b) => {
       const c1 = b.atom("C", ORIGIN, { isotope: 13 });
       const c2Pos = step(ORIGIN, 30);
@@ -493,10 +505,19 @@ describe("cipDescriptor", () => {
       b.bond(c2, b.atom("O", step(c2Pos, 90)), 1, "wedge");
       b.bond(c2, c3, 1);
     });
-    expect(cipDescriptor(mol, "a2")).toEqual({
-      kind: "undetermined",
-      reason: "ranking-unsupported",
+    expect(cipDescriptor(mol, "a2")).toEqual({ kind: "S" });
+
+    // A label within 0.5 of the standard weight is not ordered against an
+    // unlabelled atom: 12C against C is refused, not guessed.
+    const twelve = buildMolecule((b) => {
+      const c1 = b.atom("C", ORIGIN, { isotope: 12 });
+      const c2Pos = step(ORIGIN, 30);
+      const c2 = b.atom("C", c2Pos);
+      b.bond(c1, c2, 1);
+      b.bond(c2, b.atom("O", step(c2Pos, 90)), 1, "wedge");
+      b.bond(c2, b.atom("C", step(c2Pos, -30)), 1);
     });
+    expect(cipDescriptor(twelve, "a2")).toEqual({ kind: "undetermined", reason: "ranking-unsupported" });
   });
 });
 
