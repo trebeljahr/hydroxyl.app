@@ -22,11 +22,11 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { buildMolecule } from "./builders.js";
-import { compareRule1b, rankStereoCentre, rankSubstituentPair, cipUnits } from "./cip.js";
-import type { Rule1bNode } from "./cip.js";
+import { auxiliaryRank, compareRule1b, rankStereoCentre, rankSubstituentPair, cipUnits } from "./cip.js";
+import type { CipAuxiliaryDescriptor, Rule1bNode } from "./cip.js";
 import { readMolblock } from "./molblock-read.js";
 import { bondsAt, otherEnd } from "./molecule.js";
-import { updateBond } from "./ops.js";
+import { updateAtom, updateBond } from "./ops.js";
 import { rings } from "./rings.js";
 import { isAchiral } from "./achirality.js";
 import { unrepresentableStereo } from "./stereo-axes.js";
@@ -387,6 +387,190 @@ describe("rule 1b, the comparator no molecule pins", () => {
         }
       }
     }
+  });
+});
+
+describe("the refusals the header names are reached, not just described (decision 76)", () => {
+  /**
+   * A refusal nothing reaches is a promise nobody has checked. Each test here
+   * drives one NAMED refusal of the module header to its reason. The header
+   * says which of cip.ts's `ranking-unsupported` / `ranking-truncated` returns
+   * are part of that contract and which are internal guards that no input
+   * found so far reaches.
+   */
+  it("refuses a mancude mean it could not compute: cyclopentadienide", () => {
+    // The anion's carbanion sits outside the perfect matching, so no Kekulé
+    // structure gives its neighbours' duplicates a mean atomic number. IUPAC
+    // counts the anion's electron pair; this build does not, and says so.
+    const mol = load("cyclopentadienide-carbinol");
+    expect(centreLetters(mol)).toEqual({ a2: "?ranking-unsupported" });
+  });
+
+  it("refuses two branches that differ only in formal charge", () => {
+    // Charge is not a CIP criterion, so =O against O- is neither ordered nor
+    // identical. This is the phosphate diester anion's P.
+    expect(centreLetters(load("phosphate-diester-anion"))).toEqual({ a3: "?ranking-unsupported" });
+  });
+
+  it("truncates rather than approximating when a cap bites", () => {
+    const mol = load("butyl-propyl-carbinol");
+    for (const limits of [{ maxSpheres: 2 }, { maxBranchNodes: 10 }]) {
+      expect(rankSubstituentPair(mol, "a5", "a4", "a8", limits), JSON.stringify(limits)).toEqual({
+        kind: "undetermined",
+        reason: "ranking-truncated",
+      });
+    }
+  });
+
+  it("refuses a ranking that needs a configuration nobody handed it", () => {
+    // rankStereoCentre without a configuration cannot run rules 3 to 5, so a
+    // centre that ties under rules 1-2 has no letter rather than a guess.
+    expect(rankStereoCentre(load("ribitol"), "a5")).toEqual({
+      kind: "undetermined",
+      reason: "ranking-unsupported",
+    });
+  });
+
+  it("refuses a hypervalent branch whose ranking depends on how it was drawn", () => {
+    expect(centreLetters(load("branch-phosphoryl"))).toEqual({ a2: "?ranking-unsupported" });
+  });
+
+  it("refuses an isotope label too close to the standard weight to order", () => {
+    // 127-iodine against unlabelled iodine differ by less than 0.5, so rule 2
+    // does not order them. 125-iodine, three units away, does get a letter.
+    const mol = load("iodo-125");
+    expect(centreLetters(mol)).toEqual({ a2: "R" });
+    const labelled = mol.atomIds.find((id) => mol.atoms[id]!.isotope === 125)!;
+    const blunted = updateAtom(mol, labelled, { isotope: 127 });
+    expect(centreLetters(blunted)).toEqual({ a2: "?ranking-unsupported" });
+  });
+});
+
+describe("rules 4a and 4c, the ordinals no molecule pins (decision 75)", () => {
+  // Deleting either rule leaves every letter in the corpus unchanged: they
+  // need a node whose branches tie through rule 4b and then differ only in
+  // whether they carry a descriptor, or only in its case. No fixture reaches
+  // that, and 160 enumerated heptitols and nonitols do not either. So the
+  // ordinals are asserted directly, as compareRule1b is.
+  const ALL: CipAuxiliaryDescriptor[] = ["R", "S", "r", "s", "E", "Z", "none"];
+
+  it("rule 4a puts a chirality descriptor over a pseudoasymmetric or E/Z one, and both over none", () => {
+    for (const upper of ["R", "S"] as const) {
+      for (const lower of ["r", "s", "E", "Z"] as const) {
+        expect(auxiliaryRank("4a", upper), `${upper} over ${lower}`).toBeGreaterThan(
+          auxiliaryRank("4a", lower),
+        );
+        expect(auxiliaryRank("4a", lower), `${lower} over none`).toBeGreaterThan(
+          auxiliaryRank("4a", "none"),
+        );
+      }
+    }
+    // R against S, and r against s, are ties HERE: rule 4a only says which
+    // KIND of descriptor a node carries. Ranking them apart at 4a would let
+    // rule 4a decide what rules 4c and 5 exist to decide.
+    expect(auxiliaryRank("4a", "R")).toBe(auxiliaryRank("4a", "S"));
+    expect(auxiliaryRank("4a", "r")).toBe(auxiliaryRank("4a", "s"));
+    expect(auxiliaryRank("4a", "E")).toBe(auxiliaryRank("4a", "Z"));
+  });
+
+  it("rule 4c puts r over s, and is blind to everything else", () => {
+    expect(auxiliaryRank("4c", "r")).toBeGreaterThan(auxiliaryRank("4c", "s"));
+    // The UPPERCASE pair is rule 5's, not 4c's. A 4c that also ordered R over
+    // S would letter a pseudoasymmetric centre from the wrong rule.
+    expect(auxiliaryRank("4c", "R")).toBe(auxiliaryRank("4c", "S"));
+    for (const aux of ["R", "S", "E", "Z", "none"] as const) {
+      expect(auxiliaryRank("4c", aux), aux).toBeLessThan(auxiliaryRank("4c", "s"));
+    }
+  });
+
+  it("rule 3 puts Z over E, and rule 5 puts R over S, each blind to the other's pair", () => {
+    expect(auxiliaryRank("3", "Z")).toBeGreaterThan(auxiliaryRank("3", "E"));
+    expect(auxiliaryRank("3", "R")).toBe(auxiliaryRank("3", "S"));
+    expect(auxiliaryRank("5", "R")).toBeGreaterThan(auxiliaryRank("5", "S"));
+    expect(auxiliaryRank("5", "r")).toBe(auxiliaryRank("5", "s"));
+    expect(auxiliaryRank("5", "Z")).toBe(auxiliaryRank("5", "E"));
+  });
+
+  it("gives every rule a total order over every descriptor", () => {
+    for (const rule of ["3", "4a", "4c", "5"] as const) {
+      for (const aux of ALL) {
+        expect(Number.isInteger(auxiliaryRank(rule, aux)), `${rule} ${aux}`).toBe(true);
+      }
+      // Each rule must actually separate something, or it is not a rule.
+      const values = new Set(ALL.map((aux) => auxiliaryRank(rule, aux)));
+      expect(values.size, rule).toBeGreaterThan(1);
+    }
+  });
+});
+
+describe("every bound is pinned by a case its value decides (decision 75)", () => {
+  /**
+   * A cap nothing discriminates is a cap that can be deleted. The shipped
+   * values are far past anything a figure contains — 23 spheres needed against
+   * 64, 230 nodes against 20000 — so reaching them from a drawing takes a
+   * pathological cage that ranks in seconds, which is a bad fixture and a worse
+   * thing to run on every commit. Each cap is therefore an argument with the
+   * shipped value as its default, exactly as `isAchiral`'s `maxSearchNodes`
+   * already is, and each test below lowers ONE cap over an ordinary molecule
+   * and shows the answer change. Raising that cap to infinity restores the
+   * unbounded answer, which is what makes the test discriminating.
+   */
+  it("MAX_SPHERES: a comparison that needs sphere 3 is truncated at 2", () => {
+    // Butyl against propyl on one carbinol: identical until the butyl's fourth
+    // carbon, so the answer depends on being allowed to look that far.
+    const mol = load("butyl-propyl-carbinol");
+    expect(rankSubstituentPair(mol, "a5", "a4", "a8")).toEqual({ kind: "ordered", aFirst: true });
+    expect(rankSubstituentPair(mol, "a5", "a4", "a8", { maxSpheres: 3 })).toEqual({
+      kind: "ordered",
+      aFirst: true,
+    });
+    expect(rankSubstituentPair(mol, "a5", "a4", "a8", { maxSpheres: 2 })).toEqual({
+      kind: "undetermined",
+      reason: "ranking-truncated",
+    });
+    // Unbounded gives the shipped answer: the cap is not what decides it.
+    expect(rankSubstituentPair(mol, "a5", "a4", "a8", { maxSpheres: 1e9 })).toEqual({
+      kind: "ordered",
+      aFirst: true,
+    });
+  });
+
+  it("MAX_BRANCH_NODES: the same comparison is truncated on a ten-node budget", () => {
+    const mol = load("butyl-propyl-carbinol");
+    expect(rankSubstituentPair(mol, "a5", "a4", "a8", { maxBranchNodes: 10 })).toEqual({
+      kind: "undetermined",
+      reason: "ranking-truncated",
+    });
+    expect(rankSubstituentPair(mol, "a5", "a4", "a8", { maxBranchNodes: 1e9 })).toEqual({
+      kind: "ordered",
+      aFirst: true,
+    });
+  });
+
+  it("MAX_KEKULE_STRUCTURES: pyridyl duplicates go fuzzy on an exhausted budget", () => {
+    // 2-pyridyl against 3-pyridyl is decided by the MEAN atomic number of the
+    // duplicates over every Kekulé structure. With no structures enumerated
+    // the means are unknown, and an unknown mean is refused, never guessed.
+    const mol = load("bis-pyridyl-carbinol");
+    expect(rankSubstituentPair(mol, "a2", "a4", "a10")).toEqual({ kind: "ordered", aFirst: true });
+    expect(rankSubstituentPair(mol, "a2", "a4", "a10", { maxKekuleStructures: 0 })).toEqual({
+      kind: "undetermined",
+      reason: "ranking-unsupported",
+    });
+    expect(rankSubstituentPair(mol, "a2", "a4", "a10", { maxKekuleStructures: 1e9 })).toEqual({
+      kind: "ordered",
+      aFirst: true,
+    });
+  });
+
+  it("the automorphism cap: cubane is achiral, and says so instead past a cap of 3", () => {
+    // achirality.test.ts owns this one; repeated here so decision 75's four
+    // bounds read as one list.
+    expect(isAchiral(load("cubane")).kind).toBe("achiral");
+    expect(isAchiral(load("cubane"), { maxSearchNodes: 3 })).toEqual({
+      kind: "undetermined",
+      reason: "search-truncated",
+    });
   });
 });
 

@@ -149,7 +149,7 @@
  * 1,4-dimethylcyclohexane). This is iterated to the greatest fixed point, so
  * two centres that make only each other stereogenic both stay.
  *
- * DECISION 74 breaks that circle wherever a BRIDGE has already fixed the
+ * DECISION 74, ruled, breaks that circle wherever a BRIDGE has already fixed the
  * centres: a tied centre at a bridgehead of a bridged ring system, whose tied
  * branches share a symmetry class, is not a unit. Norbornane,
  * bicyclo[3.3.1]nonane, 7-oxanorbornane, 1-adamantanol, amantadine and
@@ -206,6 +206,27 @@ import { explicitValence, implicitHydrogenCount, isProtiumAtom } from "./valence
  *   `ambiguous-geometry`  the marks contradict each other or collapse.
  *   `ranking-truncated`   the comparison hit `MAX_SPHERES` or the node cap.
  *   `ranking-unsupported` the comparison needs something cip.ts refuses.
+ *
+ * WHAT IS CONTRACT AND WHAT IS A GUARD (decision 76). A refusal nothing
+ * reaches is a promise nobody has checked, so the list above is exactly the
+ * refusals cip.test.ts drives to their reason, and the causes named in this
+ * header that are covered there are: an unknown mancude mean
+ * (cyclopentadienide), a difference in formal charge alone (the phosphate
+ * diester anion), a hypervalent branch whose two drawings disagree, an isotope
+ * label within 0.5 of the standard weight, a ranking asked for without the
+ * configuration rules 3 to 5 need, and each of the three caps.
+ *
+ * The module's other `UNSUPPORTED` and `TRUNCATED` returns are INTERNAL
+ * GUARDS, not contract: an auxiliary descriptor asked of a node with no unit
+ * behind it, a re-rooted comparison handed a ligand list of the wrong length,
+ * a reference descriptor that disagrees with the branch it was taken from,
+ * rule 1b reached inside a nested comparison, and a rule 3-5 key reached
+ * through a node's parent side. They keep the auxiliary assignment finite and
+ * independent of evaluation order, and each returns a refusal rather than a
+ * letter if it ever fires — but no input found so far reaches them, and none
+ * is claimed as behaviour a caller can rely on. Instrumenting every one of the
+ * 35 sites over the whole suite reaches 9. Do not describe a guard as a
+ * refusal in this header without a test that reaches it.
  */
 export type UndeterminedReason =
   | "no-stereo-bond"
@@ -342,6 +363,26 @@ const MAX_BRANCH_NODES = 20000;
 /** Kekulé structures enumerated per aromatic system before giving up. */
 const MAX_KEKULE_STRUCTURES = 2000;
 
+/**
+ * The three caps, overridable so each can be PINNED by a test.
+ *
+ * Decision 75 asks for a case whose result changes when a cap alone is
+ * disabled, and the honest bounds are far past anything a figure contains:
+ * the deepest molecule measured needs 23 spheres against 64, and the largest
+ * single comparison 230 nodes against 20000. Reaching them from a drawing
+ * needs a pathological cage that takes seconds to rank, which is a bad thing
+ * to check in and a worse thing to run on every commit. So the caps are
+ * arguments with the shipped values as defaults, exactly as
+ * `isAchiral`'s `maxSearchNodes` already is, and a test lowers one over an
+ * ordinary molecule. Raising a cap to infinity then changes that test's
+ * result, which is what "pinned" means.
+ */
+export interface CipLimits {
+  readonly maxSpheres?: number;
+  readonly maxBranchNodes?: number;
+  readonly maxKekuleStructures?: number;
+}
+
 const TRUNCATED = 2;
 const UNSUPPORTED = 3;
 const NO_STEREO_BOND = 4;
@@ -471,6 +512,8 @@ interface RankContext {
    * which of them the Kekulé form happened to double-bond to it.
    */
   readonly rootDuplicates?: boolean;
+  /** Overridden caps; absent means the shipped ones. */
+  readonly limits?: CipLimits;
 }
 
 interface Digraph {
@@ -483,6 +526,8 @@ interface Digraph {
   readonly mancude: ReadonlyMap<AtomId, number | "fuzzy">;
   readonly rootLonePair: boolean;
   readonly rootDuplicates: boolean;
+  readonly maxSpheres: number;
+  readonly maxBranchNodes: number;
   nextId: number;
   nodes: number;
   exhausted: boolean;
@@ -504,6 +549,8 @@ function newDigraph(
     mancude: context.mancude,
     rootLonePair,
     rootDuplicates: context.rootDuplicates === true,
+    maxSpheres: context.limits?.maxSpheres ?? MAX_SPHERES,
+    maxBranchNodes: context.limits?.maxBranchNodes ?? MAX_BRANCH_NODES,
     nextId: 0,
     nodes: 0,
     exhausted: false,
@@ -513,7 +560,7 @@ function newDigraph(
 
 function nextNodeId(g: Digraph): number {
   g.nodes++;
-  if (g.nodes > MAX_BRANCH_NODES) g.exhausted = true;
+  if (g.nodes > g.maxBranchNodes) g.exhausted = true;
   return g.nextId++;
 }
 
@@ -752,22 +799,63 @@ export function compareRule1b(
   return 0;
 }
 
+/** An auxiliary descriptor carried by a digraph node, or `"none"`. */
+export type CipAuxiliaryDescriptor = "R" | "S" | "r" | "s" | "E" | "Z" | "none";
+
+/**
+ * The ordinal that rules 3, 4a, 4c and 5 rank an auxiliary descriptor by:
+ * higher outranks, and equal is a tie for that rule to pass on.
+ *
+ *   `"3"`   seqCis before seqTrans (P-92.5.1): Z over E.
+ *   `"4a"`  a chirality descriptor over a pseudoasymmetry or double-bond one,
+ *           and either over a node that has none (P-92.5.2).
+ *   `"4c"`  r over s (P-92.5.2), the LOWERCASE pair, which is why it cannot be
+ *           folded into rule 5.
+ *   `"5"`   R before S (P-92.5.3), the rule that makes a centre
+ *           pseudoasymmetric when it is the only thing left.
+ *
+ * EXPORTED TO BE PINNED (decision 75). Rules 4a and 4c could each be deleted
+ * with every molecule in the corpus still lettered the same: they need a node
+ * whose two branches tie through rule 4b and then differ only in whether they
+ * carry a descriptor, or only in its case, and no fixture here reaches that.
+ * A comparator that no test can distinguish from "tie" is a comparator that
+ * can be silently broken, so the ordinals are asserted directly, as
+ * `compareRule1b` is.
+ */
+export function auxiliaryRank(rule: "3" | "4a" | "4c" | "5", aux: CipAuxiliaryDescriptor): number {
+  switch (rule) {
+    case "3":
+      return aux === "Z" ? 2 : aux === "E" ? 1 : 0;
+    case "4a":
+      if (aux === "R" || aux === "S") return 2;
+      if (aux === "r" || aux === "s" || aux === "E" || aux === "Z") return 1;
+      return 0;
+    case "4c":
+      return aux === "r" ? 2 : aux === "s" ? 1 : 0;
+    case "5":
+      return aux === "R" ? 2 : aux === "S" ? 1 : 0;
+  }
+}
+
+/** `Aux` also carries the undecided codes, which rank as "no descriptor". */
+function ordinal(rule: "3" | "4a" | "4c" | "5", aux: Aux): number {
+  return typeof aux === "number" ? 0 : auxiliaryRank(rule, aux);
+}
+
 function ord3(aux: Aux): number {
-  return aux === "Z" ? 2 : aux === "E" ? 1 : 0;
+  return ordinal("3", aux);
 }
 
 function ord4a(aux: Aux): number {
-  if (aux === "R" || aux === "S") return 2;
-  if (aux === "r" || aux === "s" || aux === "E" || aux === "Z") return 1;
-  return 0;
+  return ordinal("4a", aux);
 }
 
 function ord4c(aux: Aux): number {
-  return aux === "r" ? 2 : aux === "s" ? 1 : 0;
+  return ordinal("4c", aux);
 }
 
 function ord5(aux: Aux): number {
-  return aux === "R" ? 2 : aux === "S" ? 1 : 0;
+  return ordinal("5", aux);
 }
 
 type Reference = "R" | "S" | "none";
@@ -856,7 +944,7 @@ function compareAtLevel(
   let frontierB: Dir[] = [b];
   let sphere = 0;
   while (frontierA.length > 0) {
-    if (sphere >= MAX_SPHERES) {
+    if (sphere >= g.maxSpheres) {
       // The cap has only bitten if something was left to look at.
       for (const [node, from] of [...frontierA, ...frontierB]) {
         if (neighbours(g, node, from).length > 0) return TRUNCATED;
@@ -962,7 +1050,7 @@ function referenceOf(g: Digraph, dir: Dir): Reference | Undecided {
   };
   let frontier: Entry[] = [{ dir, rank: [] }];
   for (let sphere = 0; frontier.length > 0; sphere++) {
-    if (sphere >= MAX_SPHERES) return TRUNCATED;
+    if (sphere >= g.maxSpheres) return TRUNCATED;
     const chiral: { rank: readonly number[]; aux: "R" | "S" }[] = [];
     for (const entry of frontier) {
       if (!isDown(entry.dir)) return UNSUPPORTED;
@@ -1237,8 +1325,11 @@ const MANCUDE_CACHE = new WeakMap<Molecule, ReadonlyMap<AtomId, number | "fuzzy"
  * For each atom carrying an aromatic double bond, the mean atomic number of
  * its double-bond partner over every Kekulé structure of its aromatic system.
  */
-function mancudeTable(mol: Molecule): ReadonlyMap<AtomId, number | "fuzzy"> {
-  const hit = MANCUDE_CACHE.get(mol);
+function mancudeTable(mol: Molecule, maxStructures = MAX_KEKULE_STRUCTURES): ReadonlyMap<AtomId, number | "fuzzy"> {
+  // Only the shipped budget is cached: a test that lowers it must not be
+  // handed, or leave behind, a table computed under a different one.
+  const cacheable = maxStructures === MAX_KEKULE_STRUCTURES;
+  const hit = cacheable ? MANCUDE_CACHE.get(mol) : undefined;
   if (hit !== undefined) return hit;
   const out = new Map<AtomId, number | "fuzzy">();
   const seen = new Set<AtomId>();
@@ -1296,7 +1387,7 @@ function mancudeTable(mol: Molecule): ReadonlyMap<AtomId, number | "fuzzy"> {
       while (index < order.length && mate.has(order[index]!)) index++;
       if (index === order.length) {
         structures++;
-        if (structures > MAX_KEKULE_STRUCTURES) {
+        if (structures > maxStructures) {
           overflow = true;
           return;
         }
@@ -1319,7 +1410,7 @@ function mancudeTable(mol: Molecule): ReadonlyMap<AtomId, number | "fuzzy"> {
       out.set(id, overflow || structures === 0 ? "fuzzy" : sums.get(id)! / structures);
     }
   }
-  MANCUDE_CACHE.set(mol, out);
+  if (cacheable) MANCUDE_CACHE.set(mol, out);
   return out;
 }
 
@@ -1485,6 +1576,7 @@ export function rankStereoCentre(
   mol: Molecule,
   atomId: AtomId,
   config?: CipConfiguration,
+  limits?: CipLimits,
 ): CipCentreRanking | undefined {
   const units = cipUnits(mol);
   const unit = units.centreById.get(atomId);
@@ -1495,7 +1587,12 @@ export function rankStereoCentre(
   }
   if (constitution.kind === "undetermined") return constitution;
   if (config === undefined) return { kind: "undetermined", reason: "ranking-unsupported" };
-  const context: RankContext = { units, config, mancude: mancudeTable(mol) };
+  const context: RankContext = {
+    units,
+    config,
+    mancude: mancudeTable(mol, limits?.maxKekuleStructures),
+    ...(limits === undefined ? {} : { limits }),
+  };
   const pairs = rankCentrePairs(mol, unit, context, ALL_RULES);
   if (pairs.some((pair) => pair.cmp === 0)) return { kind: "not-stereogenic" };
   const undecided = pairs.find((pair) => isUndecided(pair.cmp));
@@ -1614,12 +1711,14 @@ export function rankSubstituentPair(
   centre: AtomId,
   a: AtomId,
   b: AtomId,
+  limits?: CipLimits,
 ): CipPairOrder {
   const context: RankContext = {
     units: undefined,
     config: undefined,
-    mancude: mancudeTable(mol),
+    mancude: mancudeTable(mol, limits?.maxKekuleStructures),
     rootDuplicates: true,
+    ...(limits === undefined ? {} : { limits }),
   };
   const build = (g: Digraph): (Ligand | undefined)[] => {
     const root = atomNode(g, centre, undefined, undefined, 0);
