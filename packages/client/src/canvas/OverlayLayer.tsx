@@ -109,14 +109,24 @@ const SELECTED_BOND_WIDTH_PX = 12;
  * button is still down rather than discover it when nothing happens on
  * release.
  *
- * The valence badge is amber rather than red so that a structure which is
- * merely over-valent — a legitimate intermediate state while sketching — does
- * not read as an error the editor is refusing to accept.
+ * The issue badge takes its colour from the issue's SEVERITY (decision 77),
+ * not from the fact that it is a badge: red for a drawing that states
+ * something wrong, amber for sound chemistry this build cannot express. Both
+ * are reports and neither is a refusal — the gesture colours above are the
+ * only place the overlay says "no".
  */
 const ACCEPT_COLOR = "#16a34a";
 const REFUSE_COLOR = "#dc2626";
 const GHOST_COLOR = "#2563eb";
-const BADGE_COLOR = "#d97706";
+const BADGE_COLOR = "#dc2626";
+/**
+ * A WARNING badge is not the error badge (decision 77). An allene's atom
+ * carries a mark because this build cannot state its configuration, not
+ * because the drawing is wrong, and a badge in the error colour says the
+ * opposite. Amber, as the status bar's notice and the export dialog's
+ * warnings are.
+ */
+const BADGE_WARNING_COLOR = "#d97706";
 const FOCUS_COLOR = "#7c3aed";
 /** Clear of the selection ring so both are legible on the same atom. */
 const FOCUS_RING_PAD_PX = 5;
@@ -351,10 +361,11 @@ function valenceBadge(
       key={`issue:${at}:${issue.atomId}`}
       data-overlay="valence-issue"
       data-overlay-target={issue.atomId}
+      data-overlay-severity={issue.severity}
       cx={centre.x + reach + BADGE_OFFSET_PX * 0.5}
       cy={centre.y - reach - BADGE_OFFSET_PX * 0.5}
       r={BADGE_RADIUS_PX}
-      fill={BADGE_COLOR}
+      fill={issue.severity === "error" ? BADGE_COLOR : BADGE_WARNING_COLOR}
       stroke="#ffffff"
       strokeWidth={1.5}
     >

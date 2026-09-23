@@ -331,6 +331,30 @@ describe("OverlayLayer — gesture marks", () => {
     expect(badge.querySelector("title")?.textContent).toContain("at most 4");
   });
 
+  it("colours a warning badge differently from an error badge (decision 77)", () => {
+    // A correctly drawn allene carries a badge because this build cannot
+    // state its configuration, not because the drawing is wrong. In the error
+    // colour that badge says the opposite of what is true.
+    const container = renderGesture({
+      issues: [
+        { atomId: "a1", severity: "error", message: "C has 5 bonds but allows at most 4" },
+        {
+          atomId: "a2",
+          severity: "warning",
+          message: "contains a stereogenic axis or plane this build cannot express",
+        },
+      ],
+    });
+    const badges = [...container.querySelectorAll('[data-overlay="valence-issue"]')];
+    expect(badges).toHaveLength(2);
+    const bySeverity = new Map(
+      badges.map((b) => [b.getAttribute("data-overlay-severity"), b.getAttribute("fill")]),
+    );
+    expect(bySeverity.get("error")).toBe("#dc2626");
+    expect(bySeverity.get("warning")).toBe("#d97706");
+    expect(bySeverity.get("error")).not.toBe(bySeverity.get("warning"));
+  });
+
   it("badges two issues on one atom rather than dropping the second", () => {
     // An atom can carry a valence error and a structural one at once — a wedge
     // on an over-valent carbon is one edit away — and the two arrive as one

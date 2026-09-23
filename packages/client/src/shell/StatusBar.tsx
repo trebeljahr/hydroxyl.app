@@ -44,12 +44,13 @@
 import type { ReactElement } from "react";
 import { AlertTriangleIcon } from "lucide-react";
 
+import type { ValenceIssue } from "@starter/chem-core";
 import type { UnplacedAnnotation } from "@starter/chem-render";
 
 import { canvasAnnotatedScene } from "@/canvas/scene-bridge";
 import { commandById } from "@/editor/commands/registry";
 import { useSaveState } from "@/persistence/save-state";
-import { moleculeIssues, moleculeMass } from "@/editor/derived";
+import { moleculeErrors, moleculeMass, moleculeWarnings } from "@/editor/derived";
 import { cn } from "@/lib/utils";
 import { editorStore, useEditorStore } from "@/state";
 
@@ -113,6 +114,40 @@ function UnplacedAnnotations(): ReactElement | null {
     >
       <AlertTriangleIcon className="size-3" />
       {notShown.length} {notShown.length === 1 ? "annotation" : "annotations"} not shown
+    </span>
+  );
+}
+
+/**
+ * Chemistry this build cannot fully express, in the ANNOTATION NOTICE'S TONE
+ * (decisions 66 and 77), never in the error colour.
+ *
+ * An allene, an atropisomeric biaryl, a spirane, a cyclophane and a helicene
+ * are all drawn correctly and are all chiral in a way no descriptor here can
+ * state. Counted beside the valence errors, as they used to be, a correct
+ * BINAP read as "1 valence issue" in red, which tells a chemist to go and fix
+ * a structure that has nothing wrong with it. The wording says what is true
+ * instead: the editor cannot express part of this, not that the author drew
+ * it badly. Amber, like the export dialog's warnings and the unplaced
+ * annotations beside it.
+ */
+function StructureWarnings({
+  warnings,
+}: {
+  readonly warnings: readonly ValenceIssue[];
+}): ReactElement | null {
+  if (warnings.length === 0) return null;
+  return (
+    <span
+      data-status="structure-warnings"
+      data-warning-count={warnings.length}
+      title={warnings.map((issue) => issue.message).join("\n")}
+      className="flex items-center gap-1 font-medium text-amber-700 dark:text-amber-400"
+    >
+      <AlertTriangleIcon className="size-3" />
+      {warnings.length === 1
+        ? "1 feature not expressible"
+        : `${warnings.length} features not expressible`}
     </span>
   );
 }
@@ -190,7 +225,8 @@ export function StatusBar(): ReactElement {
   const buffer = useEditorStore((state) => state.ui.elementInputBuffer);
 
   const mass = moleculeMass(doc.molecule);
-  const issues = moleculeIssues(doc.molecule);
+  const errors = moleculeErrors(doc.molecule);
+  const warnings = moleculeWarnings(doc.molecule);
 
   return (
     <footer
@@ -221,11 +257,19 @@ export function StatusBar(): ReactElement {
 
       <span
         data-status="issues"
-        className={issues.length > 0 ? "text-destructive flex items-center gap-1" : ""}
+        data-issue-count={errors.length}
+        title={
+          errors.length === 0
+            ? "No valence or wedge errors in this structure"
+            : errors.map((issue) => issue.message).join("\n")
+        }
+        className={errors.length > 0 ? "text-destructive flex items-center gap-1" : ""}
       >
-        {issues.length > 0 ? <AlertTriangleIcon className="size-3" /> : null}
-        {issues.length} valence {issues.length === 1 ? "issue" : "issues"}
+        {errors.length > 0 ? <AlertTriangleIcon className="size-3" /> : null}
+        {errors.length} chemistry {errors.length === 1 ? "error" : "errors"}
       </span>
+
+      <StructureWarnings warnings={warnings} />
 
       <UnplacedAnnotations />
 

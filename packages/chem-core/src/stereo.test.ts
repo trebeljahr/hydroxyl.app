@@ -611,7 +611,11 @@ describe("structuralIssues", () => {
     expect(issues[0]!.kind).toBe("wedge-on-non-stereocenter");
     expect(issues[0]!.atomId).toBe("a2");
     expect(issues[0]!.bondId).toBe("b6");
-    expect(issues[0]!.severity).toBe("warning");
+    // AN ERROR since decision 77: the wedge names a configuration the
+    // structure does not have, so the file would say what the author did not
+    // draw. The axis report below is the warning — sound chemistry this build
+    // cannot express — and the two are counted separately in the status bar.
+    expect(issues[0]!.severity).toBe("error");
   });
 
   it("reports a wedge whose narrow end is at the wrong atom", () => {

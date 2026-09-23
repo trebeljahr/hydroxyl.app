@@ -46,9 +46,9 @@ describe("StatusBar — what the drawing is", () => {
     expect(statusText("formula")).toBe("C₆H₆");
   });
 
-  it("reports zero valence issues for benzene and flags a pentavalent carbon", () => {
+  it("reports zero chemistry errors for benzene and flags a pentavalent carbon", () => {
     render(<StatusBar />);
-    expect(statusText("issues")).toContain("0 valence issues");
+    expect(statusText("issues")).toContain("0 chemistry errors");
 
     // Five bonds on one carbon: the drawing error the badge exists for.
     const overloaded = buildMolecule((b) => {
@@ -65,7 +65,54 @@ describe("StatusBar — what the drawing is", () => {
           createDocument({ molecule: overloaded, now: DOC.metadata.createdAt }),
         );
     });
-    expect(statusText("issues")).toContain("1 valence issue");
+    expect(statusText("issues")).toContain("1 chemistry error");
+  });
+
+  it("counts an unexpressible feature as an AMBER notice, never as a red error", () => {
+    // Decision 77. A correctly drawn allene is chiral in a way no descriptor
+    // in this build can state, and the bar used to say "1 valence issue" in
+    // red about a structure with nothing wrong with it. Penta-2,3-diene:
+    // chem-core reports a stereogenic axis and no valence problem at all.
+    // Penta-2,3-diene, CH3-CH=C=CH-CH3: the axis is graph-only, so the
+    // coordinates here are just somewhere to put the atoms.
+    const allene = buildMolecule((b) => {
+      const c1 = b.atom("C", { x: 0, y: 0 });
+      const c2 = b.atom("C", { x: 1, y: 0 });
+      const c3 = b.atom("C", { x: 2, y: 0 });
+      const c4 = b.atom("C", { x: 3, y: 0 });
+      const c5 = b.atom("C", { x: 4, y: 0 });
+      b.bond(c1, c2, 1);
+      b.bond(c2, c3, 2);
+      b.bond(c3, c4, 2);
+      b.bond(c4, c5, 1);
+    });
+    act(() => {
+      editorStore
+        .getState()
+        .openDocument(createDocument({ molecule: allene, now: DOC.metadata.createdAt }));
+    });
+    render(<StatusBar />);
+
+    // The red counter says zero, in as many words.
+    expect(statusText("issues")).toContain("0 chemistry errors");
+    expect(document.querySelector('[data-status="issues"]')?.className ?? "").not.toContain(
+      "text-destructive",
+    );
+
+    // And the amber one says what is actually true, with the reason on hover.
+    const notice = document.querySelector('[data-status="structure-warnings"]');
+    expect(notice).not.toBeNull();
+    expect(notice!.textContent).toBe("1 feature not expressible");
+    expect(notice!.getAttribute("data-warning-count")).toBe("1");
+    expect(notice!.className).toContain("amber");
+    expect(notice!.getAttribute("title") ?? "").toContain(
+      "contains a stereogenic axis or plane this build cannot express",
+    );
+  });
+
+  it("says nothing about unexpressible features when there are none", () => {
+    render(<StatusBar />);
+    expect(document.querySelector('[data-status="structure-warnings"]')).toBeNull();
   });
 
   it("renders an undefined exact mass as an em dash, never as an average weight", () => {

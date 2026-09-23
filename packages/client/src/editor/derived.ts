@@ -61,3 +61,26 @@ export function moleculeIssues(mol: Molecule): readonly ValenceIssue[] {
   issueCache.set(mol, computed);
   return computed;
 }
+
+/**
+ * The same walk, split by severity (decision 77).
+ *
+ * WHY THE SPLIT EXISTS. Concatenated and counted, a correctly drawn allene or
+ * BINAP read as "1 valence issue" in red: the structure is right, the file
+ * would be right, and the editor was calling it an error because the only
+ * counter there was a red one. An ERROR here means the drawing states
+ * something wrong — an over-valent atom, a wedge on a non-stereocentre, a
+ * wedge drawn backwards — and a WARNING means the drawing is sound and this
+ * build cannot express part of it. Those are different sentences to a chemist
+ * and they get different colours and different wording.
+ *
+ * Both read the one cached array, so splitting costs no extra walk.
+ */
+export function moleculeErrors(mol: Molecule): readonly ValenceIssue[] {
+  return moleculeIssues(mol).filter((issue) => issue.severity === "error");
+}
+
+/** Sound chemistry this build cannot fully express. Never red. */
+export function moleculeWarnings(mol: Molecule): readonly ValenceIssue[] {
+  return moleculeIssues(mol).filter((issue) => issue.severity !== "error");
+}

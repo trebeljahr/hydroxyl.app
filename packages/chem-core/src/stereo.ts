@@ -414,7 +414,13 @@ export function structuralIssues(mol: Molecule): readonly StructuralIssue[] {
     const backwards = isStereocenter(mol, bond.to);
     issues.push({
       atomId: backwards ? bond.to : bond.from,
-      severity: "warning",
+      // AN ERROR, not a warning (decision 77). A wedge that names no
+      // configuration, or that names it at the wrong end, makes the exported
+      // file say something the author did not draw — the same kind of wrong
+      // as an over-valent carbon. The axis warning below is different: that
+      // drawing is CORRECT and this build simply cannot state its
+      // configuration, so it must not be counted in red beside these.
+      severity: "error",
       kind: backwards ? "wedge-drawn-backwards" : "wedge-on-non-stereocenter",
       bondId,
       message: backwards
