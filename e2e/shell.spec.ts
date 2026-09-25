@@ -149,7 +149,7 @@ test("the ring tool can place benzene, not only cyclohexane", async ({ page }) =
 
   // And neither ring is over-valent, which a wrongly kekulised one would be.
   await expect(page.locator('[data-status="issues"]')).toContainText(
-    "0 valence issues",
+    "0 chemistry errors",
   );
 });
 
@@ -250,7 +250,7 @@ test("shortcuts are inert while the command palette has focus", async ({ page })
   await expect(page.locator("[data-palette-command]").first()).toBeHidden();
 });
 
-test("the status bar reports the formula, the masses and the valence issues", async ({
+test("the status bar reports the formula, the masses and the chemistry errors", async ({
   page,
 }) => {
   await openEditor(page);
@@ -259,7 +259,7 @@ test("the status bar reports the formula, the masses and the valence issues", as
   await expect(page.locator('[data-status="weight"]')).toContainText("MW 78");
   await expect(page.locator('[data-status="exact-mass"]')).toContainText("Exact 78");
   await expect(page.locator('[data-status="issues"]')).toContainText(
-    "0 valence issues",
+    "0 chemistry errors",
   );
 
   // Draw a fifth and sixth bond onto one ring carbon and the bar says so.
@@ -270,7 +270,7 @@ test("the status bar reports the formula, the masses and the valence issues", as
   await page.mouse.click(atom.x, atom.y);
 
   await expect(page.locator('[data-status="issues"]')).toContainText(
-    "1 valence issue",
+    "1 chemistry error",
   );
 });
 
