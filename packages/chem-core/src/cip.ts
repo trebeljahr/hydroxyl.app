@@ -87,18 +87,27 @@
  *   mancude duplicate takes part in no distance order: where it sits is a
  *   Kekulé artefact, and ordering on it ranked toluene's two ortho branches
  *   apart.
- *     PINNED AS A COMPARATOR, NOT AS A LETTER. `compareRule1b` is exported and
- *     unit-tested, because no molecule pins it: replacing the whole rule with
- *     "tie" leaves every letter in the fixture corpus unchanged. It is not
- *     dead code — over the 109 checked-in molecules it decides 1074
- *     ring-closure pairs by distance in each reading, and 90
- *     ring-against-mancude pairs in the Hanson reading alone — but some
- *     earlier key or later rule always settles the comparison a letter hangs
- *     on, so a molecule-level test cannot tell a correct rule 1b from a
- *     missing one. Two shapes are not reached by that corpus at all: the
+ *     PINNED AS A COMPARATOR, NOT AS A LETTER, AND THAT IS THE BEST AVAILABLE
+ *     (decision 75). No input changes its answer when this rule returns "tie".
+ *     The rule is not dead — instrumented over the 109 checked-in molecules it
+ *     returns non-zero 2238 times — but every one of those firings ORDERS A
+ *     NODE'S CHILDREN, and the deciding comparison is then settled by an
+ *     earlier key or a later rule that reaches the same conclusion. Searched
+ *     for a counterexample and did not find one: the whole fixture corpus,
+ *     160 enumerated heptitols and nonitols, and about 170 constructed cage,
+ *     ring, alkene and fused-aromatic candidates all letter identically with
+ *     rule 1b disabled, and `rankSubstituentPair` reports no pair anywhere
+ *     decided by it.
+ *
+ *     So the rule is defended two ways instead. `compareRule1b` is exported
+ *     and unit-tested, including the two shapes the corpus never reaches — the
  *     IUPAC distance order between two MULTIPLE-BOND duplicates, and the
- *     Hanson rank of a ring-closure duplicate over a plain atom. The unit
- *     test covers both, and says which are which.
+ *     Hanson rank of a ring-closure duplicate over a plain atom — and the
+ *     dispatch is a TABLE (`CONSTITUTIONAL_KEYS`), so the rule cannot be
+ *     quietly dropped from the ranking either: removing its entry fails 52
+ *     tests. What remains undetectable is only a rule 1b that runs and answers
+ *     wrongly in the one direction no molecule consults. That is stated here
+ *     rather than papered over with a test that would pass either way.
  *
  *   RULE 2, mass number (P-92.3: "81Br > Br > 79Br"). An unlabelled atom ranks
  *   at its standard atomic weight, a labelled one at its mass number, and 1H
@@ -285,6 +294,17 @@ export type CipCentreRanking =
       readonly order: readonly LigandRef[];
       /** Rule 5 decided the ranking: the descriptor is lowercase r or s. */
       readonly pseudoasymmetric: boolean;
+      /**
+       * The DEEPEST rule that had to run to separate any pair of ligands here
+       * (decision 75). Rules 1b, 4a and 4c can each be deleted outright with
+       * every letter in the fixture corpus unchanged, because where they fire
+       * a later rule reaches the same conclusion — so no assertion about a
+       * LETTER distinguishes a working rule from a missing one, and the rule
+       * that answered has to be observable instead. It also answers the
+       * question a chemist asks of a ranking they did not expect: which rule
+       * decided this?
+       */
+      readonly decidedBy: CipRuleName;
     }
   | { readonly kind: "not-stereogenic" }
   | { readonly kind: "undetermined"; readonly reason: UndeterminedReason };
@@ -300,7 +320,12 @@ export type CipDoubleBondRanking =
  * identical and their branches reach other units: only a configuration decides.
  */
 export type CipConstitution =
-  | { readonly kind: "ranked"; readonly order: readonly LigandRef[] }
+  | {
+      readonly kind: "ranked";
+      readonly order: readonly LigandRef[];
+      /** The deepest RULE LEVEL that had to run; see `CipCentreRanking`. */
+      readonly decidedBy: number;
+    }
   | { readonly kind: "tied" }
   | { readonly kind: "undetermined"; readonly reason: UndeterminedReason };
 
@@ -335,8 +360,24 @@ export interface CipUnits {
   readonly doubleBondById: ReadonlyMap<BondId, CipDoubleBondUnit>;
 }
 
+/** The Sequence Rule that decided a comparison. */
+export type CipRuleName = "1a" | "1b" | "2" | "charge" | "3" | "4a" | "4b" | "4c" | "5";
+
 export type CipPairOrder =
-  | { readonly kind: "ordered"; readonly aFirst: boolean }
+  | {
+      readonly kind: "ordered";
+      readonly aFirst: boolean;
+      /**
+       * WHICH RULE SETTLED IT (decision 75). Without this the dispatch arms of
+       * rules 1b, 4a and 4c are invisible: every letter in the corpus survives
+       * deleting any of them, because a later rule reaches the same conclusion,
+       * so no assertion about a LETTER can tell a working rule from a missing
+       * one. The rule that answered is the thing to assert, and it is worth
+       * exporting anyway — "why does this outrank that" is the question a
+       * chemist asks of a ranking they did not expect.
+       */
+      readonly decidedBy: CipRuleName;
+    }
   | { readonly kind: "identical" }
   | { readonly kind: "undetermined"; readonly reason: UndeterminedReason };
 
@@ -382,6 +423,21 @@ export interface CipLimits {
   readonly maxBranchNodes?: number;
   readonly maxKekuleStructures?: number;
 }
+
+/**
+ * The SHIPPED caps, exported so that raising one silently fails a test.
+ *
+ * The tests that show a cap biting all pass a lowered cap explicitly, which
+ * proves the mechanism and says nothing about the number actually in force.
+ * These are the numbers in force: `newDigraph` and `mancudeTable` read them
+ * here and nowhere else, so this object is the single place a default can
+ * change, and cip.test.ts asserts all three.
+ */
+export const CIP_LIMIT_DEFAULTS: Required<CipLimits> = Object.freeze({
+  maxSpheres: MAX_SPHERES,
+  maxBranchNodes: MAX_BRANCH_NODES,
+  maxKekuleStructures: MAX_KEKULE_STRUCTURES,
+});
 
 const TRUNCATED = 2;
 const UNSUPPORTED = 3;
@@ -439,6 +495,21 @@ const RULE_5 = 8;
 
 const CONSTITUTIONAL = CHARGE;
 const ALL_RULES = RULE_5;
+
+/** `comparePair`'s level, as the rule a chemist would name. */
+const RULE_NAMES: readonly CipRuleName[] = ["1a", "1b", "2", "charge", "3", "4a", "4b", "4c", "5"];
+
+function ruleName(level: number): CipRuleName {
+  return RULE_NAMES[level] ?? "1a";
+}
+
+/** The levels `auxiliaryRank` answers for; rule 4b is not an ordinal. */
+const ORDINAL_RULES: Readonly<Record<number, "3" | "4a" | "4c" | "5">> = {
+  [RULE_3]: "3",
+  [RULE_4A]: "4a",
+  [RULE_4C]: "4c",
+  [RULE_5]: "5",
+};
 
 // ---------------------------------------------------------------------------
 // The digraph
@@ -549,8 +620,8 @@ function newDigraph(
     mancude: context.mancude,
     rootLonePair,
     rootDuplicates: context.rootDuplicates === true,
-    maxSpheres: context.limits?.maxSpheres ?? MAX_SPHERES,
-    maxBranchNodes: context.limits?.maxBranchNodes ?? MAX_BRANCH_NODES,
+    maxSpheres: context.limits?.maxSpheres ?? CIP_LIMIT_DEFAULTS.maxSpheres,
+    maxBranchNodes: context.limits?.maxBranchNodes ?? CIP_LIMIT_DEFAULTS.maxBranchNodes,
     nextId: 0,
     nodes: 0,
     exhausted: false,
@@ -842,23 +913,51 @@ function ordinal(rule: "3" | "4a" | "4c" | "5", aux: Aux): number {
   return typeof aux === "number" ? 0 : auxiliaryRank(rule, aux);
 }
 
-function ord3(aux: Aux): number {
-  return ordinal("3", aux);
-}
-
-function ord4a(aux: Aux): number {
-  return ordinal("4a", aux);
-}
-
-function ord4c(aux: Aux): number {
-  return ordinal("4c", aux);
-}
-
-function ord5(aux: Aux): number {
-  return ordinal("5", aux);
-}
-
 type Reference = "R" | "S" | "none";
+
+/**
+ * The CONSTITUTIONAL keys, one exported comparator per rule, in a table.
+ *
+ * A TABLE RATHER THAN A SWITCH, and that is the point (decision 75). As four
+ * `case` arms, rule 1b could be deleted from the dispatch with all 834 tests
+ * green: no molecule in the fixture corpus, nor in roughly three hundred
+ * constructed candidates, is DECIDED by rule 1b — where it fires it is
+ * ordering a node's children, and a later rule reaches the same conclusion —
+ * so no assertion about a letter could tell the arm was gone. An entry in
+ * this table is not a statement that can be deleted quietly: remove it and
+ * the level falls through to the auxiliary branch, which has no ordinal for
+ * it and refuses, and the suite goes red. Break the comparator instead and
+ * its own unit tests go red. There is no third way to disable a rule here.
+ */
+const CONSTITUTIONAL_KEYS: Readonly<Record<number, (g: Digraph, a: DNode, b: DNode) => Cmp>> = {
+  [RULE_1A]: (_g, a, b) => {
+    if (a.fuzzy || b.fuzzy) return UNSUPPORTED;
+    return sign(a.z - b.z);
+  },
+  [RULE_1B]: (g, a, b) => {
+    const nodeA = rule1bNode(a);
+    const nodeB = rule1bNode(b);
+    if (!nodeA.duplicate && !nodeB.duplicate) return 0;
+    // Both variants are computed from here on, so the caller must know that
+    // this key could tell them apart.
+    g.dupAt1b = true;
+    return compareRule1b(g.variant, nodeA, nodeB);
+  },
+  [RULE_2]: (_g, a, b) => {
+    if (a.z === 0 || b.z === 0) return 0;
+    const aDupLabel = a.kind === "duplicate" && a.labelled;
+    const bDupLabel = b.kind === "duplicate" && b.labelled;
+    if (aDupLabel || bDupLabel) {
+      return aDupLabel && bDupLabel && a.mass === b.mass ? 0 : UNSUPPORTED;
+    }
+    if (!a.labelled && !b.labelled) return 0;
+    const diff = a.mass - b.mass;
+    if (a.labelled && b.labelled) return sign(diff);
+    if (Math.abs(diff) < 0.5) return UNSUPPORTED;
+    return sign(diff);
+  },
+  [CHARGE]: (_g, a, b) => (a.charge === b.charge ? 0 : UNSUPPORTED),
+};
 
 function keyCompare(
   g: Digraph,
@@ -870,57 +969,33 @@ function keyCompare(
 ): Cmp {
   const a = x[0];
   const b = y[0];
-  switch (level) {
-    case RULE_1A:
-      if (a.fuzzy || b.fuzzy) return UNSUPPORTED;
-      return sign(a.z - b.z);
-    case RULE_1B: {
-      const nodeA = rule1bNode(a);
-      const nodeB = rule1bNode(b);
-      if (!nodeA.duplicate && !nodeB.duplicate) return 0;
-      // Both variants are computed from here on, so the caller must know that
-      // this key could tell them apart.
-      g.dupAt1b = true;
-      return compareRule1b(g.variant, nodeA, nodeB);
-    }
-    case RULE_2: {
-      if (a.z === 0 || b.z === 0) return 0;
-      const aDupLabel = a.kind === "duplicate" && a.labelled;
-      const bDupLabel = b.kind === "duplicate" && b.labelled;
-      if (aDupLabel || bDupLabel) {
-        return aDupLabel && bDupLabel && a.mass === b.mass ? 0 : UNSUPPORTED;
-      }
-      if (!a.labelled && !b.labelled) return 0;
-      const diff = a.mass - b.mass;
-      if (a.labelled && b.labelled) return sign(diff);
-      if (Math.abs(diff) < 0.5) return UNSUPPORTED;
-      return sign(diff);
-    }
-    case CHARGE:
-      return a.charge === b.charge ? 0 : UNSUPPORTED;
-    default: {
-      if (!isDown(x) || !isDown(y)) return UNSUPPORTED;
-      const auxA = auxOf(g, a);
-      if (typeof auxA === "number") return auxA;
-      const auxB = auxOf(g, b);
-      if (typeof auxB === "number") return auxB;
-      switch (level) {
-        case RULE_3:
-          return sign(ord3(auxA) - ord3(auxB));
-        case RULE_4A:
-          return sign(ord4a(auxA) - ord4a(auxB));
-        case RULE_4B: {
-          const keyA = auxA === "R" || auxA === "S" ? (auxA === refX ? 2 : 1) : 0;
-          const keyB = auxB === "R" || auxB === "S" ? (auxB === refY ? 2 : 1) : 0;
-          return sign(keyA - keyB);
-        }
-        case RULE_4C:
-          return sign(ord4c(auxA) - ord4c(auxB));
-        default:
-          return sign(ord5(auxA) - ord5(auxB));
-      }
-    }
+  const constitutional = CONSTITUTIONAL_KEYS[level];
+  if (constitutional !== undefined) return constitutional(g, a, b);
+
+  if (!isDown(x) || !isDown(y)) return UNSUPPORTED;
+  const auxA = auxOf(g, a);
+  if (typeof auxA === "number") return auxA;
+  const auxB = auxOf(g, b);
+  if (typeof auxB === "number") return auxB;
+  if (level === RULE_4B) {
+    // The only auxiliary rule that is not an ordinal: it ranks a descriptor by
+    // whether it MATCHES the reference its own branch was read against, so it
+    // needs both references and cannot be a table entry.
+    const keyA = auxA === "R" || auxA === "S" ? (auxA === refX ? 2 : 1) : 0;
+    const keyB = auxB === "R" || auxB === "S" ? (auxB === refY ? 2 : 1) : 0;
+    return sign(keyA - keyB);
   }
+  // ONE ARM FOR RULES 3, 4a, 4c AND 5, not four, for the same reason the
+  // table above exists: each used to be its own `case` calling its own
+  // one-line `ordN` wrapper, and rules 4a and 4c could each be deleted from
+  // that switch with every test green. There is nothing left here to delete
+  // that is not `auxiliaryRank`, which cip.test.ts asserts directly.
+  const rule = ORDINAL_RULES[level];
+  // An internal guard: every other level is handled above and `top` never
+  // exceeds rule 5, so no level reaches here without an ordinal. A refusal
+  // rather than a wrong ordinal if one ever does.
+  if (rule === undefined) return UNSUPPORTED;
+  return sign(ordinal(rule, auxA) - ordinal(rule, auxB));
 }
 
 // ---------------------------------------------------------------------------
@@ -1325,10 +1400,13 @@ const MANCUDE_CACHE = new WeakMap<Molecule, ReadonlyMap<AtomId, number | "fuzzy"
  * For each atom carrying an aromatic double bond, the mean atomic number of
  * its double-bond partner over every Kekulé structure of its aromatic system.
  */
-function mancudeTable(mol: Molecule, maxStructures = MAX_KEKULE_STRUCTURES): ReadonlyMap<AtomId, number | "fuzzy"> {
+function mancudeTable(
+  mol: Molecule,
+  maxStructures = CIP_LIMIT_DEFAULTS.maxKekuleStructures,
+): ReadonlyMap<AtomId, number | "fuzzy"> {
   // Only the shipped budget is cached: a test that lowers it must not be
   // handed, or leave behind, a table computed under a different one.
-  const cacheable = maxStructures === MAX_KEKULE_STRUCTURES;
+  const cacheable = maxStructures === CIP_LIMIT_DEFAULTS.maxKekuleStructures;
   const hit = cacheable ? MANCUDE_CACHE.get(mol) : undefined;
   if (hit !== undefined) return hit;
   const out = new Map<AtomId, number | "fuzzy">();
@@ -1467,7 +1545,12 @@ interface RawPair {
   readonly j: number;
   readonly cmp: Cmp;
   readonly rule5: boolean;
+  /** The rule level that produced `cmp`; `NO_RULE` when nothing had to run. */
+  readonly level: number;
 }
+
+/** `RawPair.level` when the answer came from the shape of the ligand list. */
+const NO_RULE = -1;
 
 /**
  * Every requested pair of ligands, ranked in each drawing form and rule-1b
@@ -1492,13 +1575,21 @@ function rankPairs(
       const results = pairs.map(([i, j]): RawPair => {
         const a = ligands[i];
         const b = ligands[j];
-        if (a === undefined || b === undefined) return { i, j, cmp: UNSUPPORTED, rule5: false };
+        if (a === undefined || b === undefined)
+          return { i, j, cmp: UNSUPPORTED, rule5: false, level: NO_RULE };
         if (a.dir === undefined || b.dir === undefined) {
-          if (a.dir === undefined && b.dir === undefined) return { i, j, cmp: 0, rule5: false };
-          return { i, j, cmp: a.dir === undefined ? -1 : 1, rule5: false };
+          if (a.dir === undefined && b.dir === undefined)
+            return { i, j, cmp: 0, rule5: false, level: NO_RULE };
+          return { i, j, cmp: a.dir === undefined ? -1 : 1, rule5: false, level: NO_RULE };
         }
         const result = comparePair(g, a.dir, b.dir, top, true);
-        return { i, j, cmp: result.cmp, rule5: result.level === RULE_5 && !isUndecided(result.cmp) };
+        return {
+          i,
+          j,
+          cmp: result.cmp,
+          rule5: result.level === RULE_5 && !isUndecided(result.cmp),
+          level: result.cmp === 0 ? NO_RULE : result.level,
+        };
       });
       merged = merged === undefined ? results : merged.map((m, k) => mergePair(m, results[k]!));
       // The IUPAC variant can only differ where a duplicate reached rule 1b.
@@ -1512,7 +1603,7 @@ function mergePair(a: RawPair, b: RawPair): RawPair {
   if (a.cmp === b.cmp && a.rule5 === b.rule5) return a;
   if (isUndecided(a.cmp)) return a;
   if (isUndecided(b.cmp)) return b;
-  return { ...a, cmp: UNSUPPORTED, rule5: false };
+  return { ...a, cmp: UNSUPPORTED, rule5: false, level: NO_RULE };
 }
 
 const PAIRS_OF_FOUR: readonly (readonly [number, number])[] = [
@@ -1583,7 +1674,14 @@ export function rankStereoCentre(
   if (unit === undefined) return undefined;
   const constitution = unit.constitution;
   if (constitution.kind === "ranked") {
-    return { kind: "ranked", order: constitution.order, pseudoasymmetric: false };
+    // Settled by rules 1-2 alone, at unit classification: there was nothing
+    // for the configuration to add.
+    return {
+      kind: "ranked",
+      order: constitution.order,
+      pseudoasymmetric: false,
+      decidedBy: ruleName(constitution.decidedBy),
+    };
   }
   if (constitution.kind === "undetermined") return constitution;
   if (config === undefined) return { kind: "undetermined", reason: "ranking-unsupported" };
@@ -1605,6 +1703,7 @@ export function rankStereoCentre(
     kind: "ranked",
     order: orderFromPairs(unit.ligands, pairs),
     pseudoasymmetric: rule5 === 1,
+    decidedBy: ruleName(Math.max(NO_RULE, ...pairs.map((pair) => pair.level))),
   };
 }
 
@@ -1732,7 +1831,7 @@ export function rankSubstituentPair(
   if (pair === undefined) return { kind: "undetermined", reason: "ranking-unsupported" };
   if (isUndecided(pair.cmp)) return { kind: "undetermined", reason: reasonOf(pair.cmp) };
   if (pair.cmp === 0) return { kind: "identical" };
-  return { kind: "ordered", aFirst: pair.cmp > 0 };
+  return { kind: "ordered", aFirst: pair.cmp > 0, decidedBy: ruleName(pair.level) };
 }
 
 // ---------------------------------------------------------------------------
@@ -2180,7 +2279,11 @@ function computeUnits(mol: Molecule): CipUnits {
     else if (undecided !== undefined) {
       constitution = { kind: "undetermined", reason: reasonOf(undecided.cmp as Undecided) };
     } else {
-      constitution = { kind: "ranked", order: Object.freeze(orderFromPairs(candidate.ligands, pairs)) };
+      constitution = {
+        kind: "ranked",
+        order: Object.freeze(orderFromPairs(candidate.ligands, pairs)),
+        decidedBy: Math.max(NO_RULE, ...pairs.map((pair) => pair.level)),
+      };
     }
     centres.push(
       Object.freeze({

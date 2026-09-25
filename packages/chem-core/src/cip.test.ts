@@ -22,7 +22,14 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { buildMolecule } from "./builders.js";
-import { auxiliaryRank, compareRule1b, rankStereoCentre, rankSubstituentPair, cipUnits } from "./cip.js";
+import {
+  auxiliaryRank,
+  CIP_LIMIT_DEFAULTS,
+  compareRule1b,
+  rankStereoCentre,
+  rankSubstituentPair,
+  cipUnits,
+} from "./cip.js";
 import type { CipAuxiliaryDescriptor, Rule1bNode } from "./cip.js";
 import { readMolblock } from "./molblock-read.js";
 import { bondsAt, otherEnd } from "./molecule.js";
@@ -38,7 +45,12 @@ import {
   stereogenicBonds,
   structuralIssues,
 } from "./stereo.js";
-import { descriptorFromConfig, stereoConfig, stereoTopology } from "./stereo-config.js";
+import {
+  cipConfiguration,
+  descriptorFromConfig,
+  stereoConfig,
+  stereoTopology,
+} from "./stereo-config.js";
 import type { Molecule } from "./types.js";
 import { DEG, fromPolar, ORIGIN, type Vec2 } from "./vec.js";
 
@@ -53,6 +65,12 @@ function load(name: string): Molecule {
   const entry = CASES.cases[name];
   if (entry === undefined) throw new Error(`no fixture ${name}`);
   return readMolblock(entry.molblock).molecule;
+}
+
+const PROJECTION = join(dirname(fileURLToPath(import.meta.url)), "..", "test", "fixtures", "projection");
+
+function projection(file: string): Molecule {
+  return readMolblock(readFileSync(join(PROJECTION, file), "utf8")).molecule;
 }
 
 function show(descriptor: { readonly kind: string; readonly reason?: string } | undefined): string {
@@ -519,10 +537,11 @@ describe("every bound is pinned by a case its value decides (decision 75)", () =
     // Butyl against propyl on one carbinol: identical until the butyl's fourth
     // carbon, so the answer depends on being allowed to look that far.
     const mol = load("butyl-propyl-carbinol");
-    expect(rankSubstituentPair(mol, "a5", "a4", "a8")).toEqual({ kind: "ordered", aFirst: true });
+    expect(rankSubstituentPair(mol, "a5", "a4", "a8")).toEqual({ kind: "ordered", aFirst: true, decidedBy: "1a" });
     expect(rankSubstituentPair(mol, "a5", "a4", "a8", { maxSpheres: 3 })).toEqual({
       kind: "ordered",
       aFirst: true,
+      decidedBy: "1a",
     });
     expect(rankSubstituentPair(mol, "a5", "a4", "a8", { maxSpheres: 2 })).toEqual({
       kind: "undetermined",
@@ -532,6 +551,7 @@ describe("every bound is pinned by a case its value decides (decision 75)", () =
     expect(rankSubstituentPair(mol, "a5", "a4", "a8", { maxSpheres: 1e9 })).toEqual({
       kind: "ordered",
       aFirst: true,
+      decidedBy: "1a",
     });
   });
 
@@ -544,6 +564,7 @@ describe("every bound is pinned by a case its value decides (decision 75)", () =
     expect(rankSubstituentPair(mol, "a5", "a4", "a8", { maxBranchNodes: 1e9 })).toEqual({
       kind: "ordered",
       aFirst: true,
+      decidedBy: "1a",
     });
   });
 
@@ -552,7 +573,7 @@ describe("every bound is pinned by a case its value decides (decision 75)", () =
     // duplicates over every Kekulé structure. With no structures enumerated
     // the means are unknown, and an unknown mean is refused, never guessed.
     const mol = load("bis-pyridyl-carbinol");
-    expect(rankSubstituentPair(mol, "a2", "a4", "a10")).toEqual({ kind: "ordered", aFirst: true });
+    expect(rankSubstituentPair(mol, "a2", "a4", "a10")).toEqual({ kind: "ordered", aFirst: true, decidedBy: "1a" });
     expect(rankSubstituentPair(mol, "a2", "a4", "a10", { maxKekuleStructures: 0 })).toEqual({
       kind: "undetermined",
       reason: "ranking-unsupported",
@@ -560,7 +581,51 @@ describe("every bound is pinned by a case its value decides (decision 75)", () =
     expect(rankSubstituentPair(mol, "a2", "a4", "a10", { maxKekuleStructures: 1e9 })).toEqual({
       kind: "ordered",
       aFirst: true,
+      decidedBy: "1a",
     });
+  });
+
+  it("pins the SHIPPED defaults, not just the mechanism", () => {
+    // Every cap test above passes a lowered cap explicitly, which proves the
+    // cap works and says nothing about the number actually in force. Raising
+    // MAX_BRANCH_NODES to a billion used to leave all 832 tests green. These
+    // are the numbers the ranking runs with when nobody passes any.
+    expect(CIP_LIMIT_DEFAULTS).toEqual({
+      maxSpheres: 64,
+      maxBranchNodes: 20000,
+      maxKekuleStructures: 2000,
+    });
+    // And they are the ones actually used: passing the defaults explicitly is
+    // indistinguishable from passing nothing, while passing one less is not.
+    const mol = load("butyl-propyl-carbinol");
+    const shipped = rankSubstituentPair(mol, "a5", "a4", "a8");
+    expect(rankSubstituentPair(mol, "a5", "a4", "a8", CIP_LIMIT_DEFAULTS)).toEqual(shipped);
+    expect(
+      rankSubstituentPair(mol, "a5", "a4", "a8", { maxSpheres: 2 }),
+    ).not.toEqual(shipped);
+  });
+
+  it("names the rule that decided each ranking, so a rule cannot vanish unseen", () => {
+    // decision 75. Deleting rule 1b, 4a or 4c changes no LETTER anywhere in
+    // the corpus — a later rule reaches the same conclusion — so the letter
+    // cannot tell a working rule from a missing one. The rule that answered
+    // can. Each of these centres is decided at a different depth, and each
+    // fails if its rule stops running.
+    const cases: [string, string, string][] = [
+      ["5alpha-androstane.mol", "a2", "1a"],
+      ["chd-ethanol.mol", "a2", "2"],
+      ["rule3-allylic", "a4", "3"],
+      ["myo-inositol", "a2", "4b"],
+      ["ribitol", "a5", "5"],
+    ];
+    for (const [name, atomId, rule] of cases) {
+      const mol = name.endsWith(".mol") ? projection(name) : load(name);
+      const ranking = rankStereoCentre(mol, atomId, cipConfiguration(stereoConfig(mol)));
+      expect(ranking?.kind, `${name} ${atomId}`).toBe("ranked");
+      expect(ranking?.kind === "ranked" ? ranking.decidedBy : undefined, `${name} ${atomId}`).toBe(
+        rule,
+      );
+    }
   });
 
   it("the automorphism cap: cubane is achiral, and says so instead past a cap of 3", () => {
