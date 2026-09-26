@@ -23,13 +23,15 @@
  * this test green. So the tree is also re-rendered on its own afterwards, 50
  * times, which is what makes every render body in the shell observable.
  *
- * The console counters are here for the same reason. The crash report in
- * manual notes 3 is a NODE heap, not a browser one, and the dev server's own
- * heap is fed by what the browser console produces — Next resolves an original
- * stack frame through Turbopack for every error it is sent. A render that
- * logged once per frame would therefore be a memory bug in a process this
- * repo's code never runs in, which is exactly the kind that is invisible until
- * it is fatal.
+ * The console counters are here for a related reason, and the reason is a
+ * SUSPICION rather than a measurement — said plainly because the rest of this
+ * file is measured. The crash report in manual notes 3 is a NODE heap, not a
+ * browser one, and `next dev` resolves reported errors back to original source
+ * through the bundler; a render that logged once per frame could therefore be
+ * a memory bug in a process this repo's code never runs in. Nobody has
+ * profiled `next dev` to confirm that. The counters are worth their line
+ * regardless: a render body that logs per frame is a defect in the browser
+ * too.
  */
 
 import { describe, expect, it, vi } from "vitest";

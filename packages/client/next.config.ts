@@ -10,7 +10,9 @@ const nextConfig: NextConfig = {
   // checkout, picks the parent repo and resolves node_modules there.
   //
   // THE ROOT IS ALSO THE WATCH SCOPE, which is worth knowing before blaming
-  // the app for a `pnpm dev` that eats memory. Counted in the main checkout:
+  // the app for a `pnpm dev` that eats memory. Counted in the main checkout on
+  // 2026-09-27, and a snapshot rather than a constant — the figure tracks how
+  // many agent worktrees happen to be live, and was ~1% higher a day later:
   // 134,002 files under this root, of which 98,954 — 74% — live in
   // `.claude/worktrees/`, i.e. sibling checkouts of this same repo, each with
   // its own node_modules and .next. Nothing under `packages/` changed during

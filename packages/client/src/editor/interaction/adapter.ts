@@ -256,17 +256,22 @@ export function performBatch(commands: readonly InteractionCommand[]): boolean {
  * dragging a ring across a zero-length bond and the unconditional
  * `console.error` this replaces produced one entry, one stack and one uncaught
  * error report per frame, for as long as the button was held. In the browser
- * that is a console nobody can read; in `next dev` it is worse, because the
- * dev server resolves an ORIGINAL stack frame through Turbopack for every
- * error the page reports and caches what it reads to do it. A pointer-rate
- * error stream is therefore a memory cost in a process this app's code never
- * runs in — the class of thing the crash report in manual notes 3 is about.
+ * that is a console nobody can read, which is reason enough on its own.
+ *
+ * A SECOND REASON IS SUSPECTED AND UNMEASURED, and is recorded as suspicion.
+ * `next dev` resolves reported errors back to original source through the
+ * bundler, so a pointer-rate error stream may be a memory cost in the DEV
+ * process — the shape the crash report in manual notes 3 describes. Nobody has
+ * run `next dev` under a profiler to confirm that, so it is not the
+ * justification for this code; it is a hypothesis this code happens to be
+ * robust against.
  *
  * REPEATS ARE COUNTED, NOT DISCARDED. Logging occurrences 1, 2, 4, 8, 16 … of
- * an unchanged message bounds the output at O(log n) lines while still saying
- * how bad it got, and a different message always logs immediately. Nothing is
- * lost for the person drawing either way: the status bar shows the refusal in
- * full, every time, which is where the message was always meant to be read.
+ * an unchanged message bounds a burst of n at floor(log2 n) + 1 lines while
+ * still saying how bad it got, and a different message always logs
+ * immediately. Nothing is lost for the person drawing either way: the status
+ * bar shows the refusal in full, every time, which is where the message was
+ * always meant to be read.
  *
  * A RUN IS A BURST, NOT A LIFETIME, and the distinction is the whole of
  * `FAILURE_BURST_MS`. Counting every occurrence of a message since the tab
@@ -274,14 +279,18 @@ export function performBatch(commands: readonly InteractionCommand[]): boolean {
  * an hour of successful work, so the next single refusal is occurrence 41,
  * which is not a power of two, and the console says NOTHING about the one
  * refusal that is actually news. The same counter also made the text lie —
- * "(2 times in a row)" for two failures a minute apart. Only frames of one
- * held gesture arrive within the window, so the suppression that matters is
- * untouched: sixty frames of a refused drag are still six lines.
+ * "(2 times in a row)" for two failures a minute apart.
  *
- * The bound is therefore per burst rather than per session: a gesture held for
- * ten seconds costs about ten bursts of six lines instead of six hundred. That
- * is a bound set by the clock instead of by the pointer rate, which is the
- * property the dev server's per-error stack resolution needs.
+ * WHAT THE WINDOW DOES NOT DO IS BOUND A LONG GESTURE, and an earlier draft of
+ * this comment claimed it did. A refused drag refuses every frame, so
+ * consecutive occurrences are milliseconds apart and never cross the window: a
+ * gesture held for ten seconds at 60 fps is ONE burst of ~600 occurrences,
+ * logged at 1, 2, 4 … 512, i.e. ten lines — not ten bursts of six. The bound
+ * is logarithmic in the pointer rate, not set by the clock. The window's job
+ * is the other one: it decides where a burst ENDS, so the count describes one
+ * gesture rather than the session, and the next refusal after the hand stops
+ * is occurrence 1 and logs at once. `transaction-safety.test.ts` pins both the
+ * long-burst figure and the reset.
  */
 /** How long after the last occurrence an identical message still belongs to
  *  the same burst. A refused drag refuses every pointer frame, i.e. every few

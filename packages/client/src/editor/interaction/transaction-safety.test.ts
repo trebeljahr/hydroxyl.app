@@ -165,8 +165,10 @@ describe("performBatch", () => {
 /**
  * A REFUSED GESTURE REFUSES ONCE PER POINTER FRAME, and a batch runs per
  * pointer event. Unbounded logging of an unchanging failure is a console
- * nobody can read — and, under `next dev`, a stack resolved and cached by the
- * dev server for every single line. See `reportGestureFailure`.
+ * nobody can read. (It is ALSO suspected to feed the dev server's heap,
+ * because `next dev` resolves reported errors back through the bundler — but
+ * nobody has measured that, so it is not what these tests are for. See
+ * `reportGestureFailure`.)
  */
 describe("repeated gesture failures", () => {
   it("logs the first, then only powers of two, and always a new message", () => {
@@ -191,6 +193,33 @@ describe("repeated gesture failures", () => {
     };
     performBatch([{ kind: "beginTransaction", label: "Add ring" }, other]);
     expect(logged.mock.calls).toHaveLength(7);
+  });
+
+  // THE FIGURE THE COMMENT BESIDE THE CODE GETS WRONG IF NOBODY PINS IT. A
+  // held drag refuses every frame, so consecutive occurrences are ~16 ms apart
+  // and NEVER cross FAILURE_BURST_MS: ten seconds of refusal is one burst of
+  // ~600, not ten bursts of sixty. The bound is therefore logarithmic in the
+  // pointer rate — floor(log2 600) + 1 = 10 lines — and not, as an earlier
+  // draft of that comment claimed, a per-second cost set by the clock.
+  it("bounds a ten-second refused drag at ten lines, as one burst", () => {
+    const logged = vi.mocked(console.error);
+    logged.mockClear();
+
+    const FRAMES = 600;
+    for (let i = 0; i < FRAMES; i += 1) {
+      // A 60 fps pointer stream, advanced through the same fake clock
+      // `reportGestureFailure` reads with `Date.now()`.
+      vi.setSystemTime(new Date(Date.now() + 16));
+      performBatch([{ kind: "beginTransaction", label: "Add ring" }, throwingEdit]);
+    }
+
+    // 1, 2, 4, 8, 16, 32, 64, 128, 256, 512 — the powers of two up to 600.
+    expect(logged.mock.calls).toHaveLength(10);
+    expect(logged.mock.calls.at(-1)?.[0]).toBe(
+      "Editing gesture failed and was rolled back (512 times in a row)",
+    );
+    // And the person saw every single one of them.
+    expect(editorStore.getState().ui.statusMessage).toBe(BOOM);
   });
 
   // A RUN THAT NEVER RESET WOULD LIE IN THE TEXT. The counter used to be
