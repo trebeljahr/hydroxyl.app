@@ -16,7 +16,16 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import { STARTUP_DOCUMENT_ID } from "./store";
+import { benzene } from "@starter/chem-core";
+import { createDocument } from "@starter/shared";
+
+import { claimStartupDocument, createEditorStore, STARTUP_DOCUMENT_ID } from "./store";
+
+/** A placeholder exactly as the singleton is constructed with one, without
+ *  reaching for the singleton itself. */
+function startupDocumentFrom() {
+  return createDocument({ id: STARTUP_DOCUMENT_ID, now: "1970-01-01T00:00:00.000Z" });
+}
 
 async function freshStartupDocument() {
   vi.resetModules();
@@ -41,10 +50,6 @@ describe("the startup document", () => {
     const doc = await freshStartupDocument();
 
     expect(doc.id).toBe(STARTUP_DOCUMENT_ID);
-    // Emptiness is what makes the fixed id safe: `/editor` opens the benzene
-    // fixture — with a freshly minted id — whenever the store holds an empty
-    // molecule and the URL names no document, so nothing is ever SAVED under
-    // the shared id.
     expect(doc.molecule.atomIds).toHaveLength(0);
   });
 
@@ -55,5 +60,76 @@ describe("the startup document", () => {
     // two sketches collide in IndexedDB. Only the placeholder is fixed.
     expect(fixtureDocument().id).not.toBe(fixtureDocument().id);
     expect(fixtureDocument().id).not.toBe(STARTUP_DOCUMENT_ID);
+  });
+});
+
+/**
+ * WHAT MAKES THE SHARED ID SAFE, now that it is known not to be safe on its
+ * own.
+ *
+ * The fixed id is the same string in every visitor's browser. A document
+ * stored under it belongs to nobody: `/editor?doc=doc_startup` names a
+ * different sketch on every machine, and `/editor`'s effect skips the read
+ * entirely when the store already holds that id, so the stored sketch is
+ * replaced by an empty canvas without a word.
+ *
+ * It was reachable, and measured so against the built app: opening the benzene
+ * fixture is an undoable entry, one Ctrl+Z puts the placeholder back, twelve
+ * atoms drawn on it were autosaved under `doc_startup`, and reopening that
+ * recents card showed nothing. `claimStartupDocument` closes it by making the
+ * id a rendering constant that never outlives hydration.
+ */
+describe("claiming the startup document", () => {
+  it("mints an id of this tab's own, once", () => {
+    const store = createEditorStore({ document: startupDocumentFrom() });
+
+    expect(claimStartupDocument(store)).toBe(true);
+    const claimed = store.getState().document;
+    expect(claimed.id).not.toBe(STARTUP_DOCUMENT_ID);
+
+    // Idempotent: StrictMode mounts the effect twice and a Fast Refresh
+    // re-runs it, and neither may mint over the document already open.
+    expect(claimStartupDocument(store)).toBe(false);
+    expect(store.getState().document.id).toBe(claimed.id);
+  });
+
+  it("refuses to touch a document a page has opened", () => {
+    const opened = createDocument({ molecule: benzene(), title: "Real work" });
+    const store = createEditorStore({ document: opened });
+
+    expect(claimStartupDocument(store)).toBe(false);
+    expect(store.getState().document).toBe(opened);
+  });
+
+  it("carries the placeholder's content and re-dates it", () => {
+    const store = createEditorStore({ document: startupDocumentFrom() });
+    const before = store.getState().document;
+
+    claimStartupDocument(store);
+    const after = store.getState().document;
+
+    expect(after.molecule).toBe(before.molecule);
+    expect(after.panels).toEqual(before.panels);
+    expect(after.metadata.title).toBe(before.metadata.title);
+    // The epoch is the prerender's stand-in for "no honest creation time".
+    // Once the document is this tab's own it has one, and a 1970 card in the
+    // recents grid is a bug the chemist can see.
+    expect(after.metadata.createdAt).not.toBe(before.metadata.createdAt);
+    expect(Date.parse(after.metadata.createdAt)).toBeGreaterThan(0);
+  });
+
+  it("leaves nothing to undo back into", () => {
+    const store = createEditorStore({ document: startupDocumentFrom() });
+    claimStartupDocument(store);
+    const claimed = store.getState().document;
+
+    // The trap this whole test file is about: `openDocument` is undoable, so
+    // whatever the store held before it is one Ctrl+Z away. Nothing may put
+    // the reserved id back on the canvas.
+    store.getState().openDocument(createDocument({ molecule: benzene() }), "Open Benzene");
+    store.getState().undo();
+
+    expect(store.getState().document.id).toBe(claimed.id);
+    expect(store.getState().document.id).not.toBe(STARTUP_DOCUMENT_ID);
   });
 });

@@ -614,3 +614,68 @@ test("Mod+S saves and says so", async ({ page }) => {
   await expect(page.locator('[data-status="message"]')).toContainText(/Saved/);
   await waitForSaved(page);
 });
+
+// ---------------------------------------------------------------------------
+// The startup placeholder
+// ---------------------------------------------------------------------------
+
+/**
+ * THE ID THE PRERENDER RENDERS MUST NOT BECOME A DOCUMENT IDENTITY.
+ *
+ * `/editor` is prerendered, so the store's startup document carries a FIXED id
+ * (`doc_startup`) for the server and the browser to agree on — see
+ * `state/store.ts`. That string is the same in every visitor's browser, so a
+ * record stored under it belongs to nobody, and `/editor`'s own effect skips
+ * the storage read whenever the store already holds the id the URL names,
+ * which for that id is always.
+ *
+ * The placeholder is REACHABLE, which is what made this a data-loss bug rather
+ * than a curiosity: opening the benzene fixture is an undoable entry, so one
+ * Ctrl+Z puts the placeholder back on the canvas and the next stroke autosaves
+ * it. Measured before the fix: twelve atoms drawn that way were stored under
+ * `doc_startup`, and reopening the recents card they made showed an empty
+ * canvas — the sketch gone, with no error anywhere.
+ */
+test("work drawn after undoing the fixture keeps an id of its own", async ({ page }) => {
+  const atoms = page.locator(`${CANVAS} [data-layer="scene"] circle[data-atom-id]`);
+
+  await page.goto("/editor");
+  await expect(atoms).toHaveCount(6);
+
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(atoms).toHaveCount(0);
+  // Whatever the prerender rendered, by the time a person can draw the tab
+  // holds a document only this tab could have minted.
+  const placeholderId = await currentDocId(page);
+  expect(placeholderId).not.toBe("doc_startup");
+
+  const box = (await page.locator(CANVAS).boundingBox())!;
+  await page.click('[data-tool="ring"]');
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.click(box.x + box.width / 2 + 60, box.y + box.height / 2);
+  const drawn = await atoms.count();
+  expect(drawn).toBeGreaterThan(0);
+  await waitForSaved(page);
+
+  await page.goto("/");
+  const card = page.locator(`[data-recents="card"][data-doc-id="${placeholderId}"]`);
+  await expect(card).toHaveCount(1);
+  await card.locator('[data-recents="open"]').click();
+
+  // The whole point: the card leads back to the atoms, not to a blank canvas.
+  await expect(atoms).toHaveCount(drawn);
+});
+
+/**
+ * The other half of the same bug. `?doc=doc_startup` matched the id every
+ * fresh store already holds, so the effect took its "already the one the URL
+ * names" branch: no read, no error, an empty canvas, and the first stroke
+ * written back over whatever was stored. It names no document now, and the
+ * route says so in the words it uses for any other missing id.
+ */
+test("?doc=doc_startup names no document, and says so", async ({ page }) => {
+  await page.goto("/editor?doc=doc_startup");
+
+  await expect(page.locator('[data-status="message"]')).toContainText(/doc_startup/);
+  await expect(page.locator(FORMULA)).toHaveText("C₆H₆");
+});

@@ -67,7 +67,7 @@ import type { SketchDocument } from "@starter/shared";
 import { fixtureDocument, stressDocument, STRESS_HEAVY_ATOMS } from "@/canvas";
 import { armCanvasCrash, CRASH_GLOBAL } from "@/canvas/crash";
 import { EditorShell } from "@/shell";
-import { editorStore } from "@/state";
+import { claimStartupDocument, editorStore } from "@/state";
 import {
   baselineEditorDocument,
   createMemoryDocumentStore,
@@ -167,6 +167,17 @@ export default function EditorPage(): ReactElement {
       // Only reachable with the parameter present — see canvas/crash.ts.
       (window as unknown as Record<string, unknown>)[CRASH_GLOBAL] = armCanvasCrash;
     }
+
+    // FIRST, AND BEFORE ANYTHING CAN PERSIST. The store is constructed with a
+    // placeholder whose id is the fixed string `doc_startup`, because the
+    // prerender and the browser have to render the same `data-doc-id` (see
+    // `STARTUP_DOCUMENT_ID`). That string is the same in every browser, so a
+    // record stored under it belongs to nobody — and the placeholder IS
+    // reachable: opening the fixture below is an undoable entry, so one
+    // Ctrl+Z lands back on it and the next stroke autosaves it. Hydration is
+    // over by the time this line runs, so the id can be minted now and
+    // everything downstream sees an ordinary document.
+    claimStartupDocument(editorStore);
 
     // Started BEFORE the document is chosen, so that an edit landing between
     // the two — a Fast Refresh, a very fast hand — is still caught. Every path
