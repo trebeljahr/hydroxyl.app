@@ -26,6 +26,13 @@
  * describes — left all 735 client tests green. `documentsRetained` and
  * `moleculesRetained` are the numbers that move.
  *
+ * AND THEY MOVE ONLY FOR A CACHE THE REGISTRY KNOWS ABOUT. Both numbers come
+ * from `@/lib/weak-cache`, which every document- or molecule-keyed cache in
+ * the app is built by; a cache written with a bare `new Map` would be outside
+ * them and this file would stay green while it held the session. That second
+ * gap is a source-level property and `src/lib/weak-cache.node.test.ts` is its
+ * guard. Neither test is the contract on its own.
+ *
  * The heap figure is still worth having, so it is measured and reported when
  * the runner was started with `--expose-gc`:
  *

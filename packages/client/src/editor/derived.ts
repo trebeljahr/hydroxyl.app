@@ -19,7 +19,9 @@
  * A `WeakMap` rather than a one-entry "last molecule" cache because undo and
  * redo alternate between two molecules, and a single slot would miss on every
  * step of a ctrl-Z/ctrl-Y sequence. Entries die with the molecules that key
- * them, which for an undone document is when history drops it.
+ * them, which for an undone document is when history drops it. Built through
+ * `@/lib/weak-cache` so they are counted: see that module for what the count
+ * proves and what it cannot.
  */
 
 import {
@@ -29,33 +31,37 @@ import {
 } from "@starter/chem-core";
 import type { MassSummary, Molecule, ValenceIssue } from "@starter/chem-core";
 
-const massCache = new WeakMap<Molecule, MassSummary>();
-const issueCache = new WeakMap<Molecule, readonly ValenceIssue[]>();
+import { keysRetained, weakCache } from "@/lib/weak-cache";
+
+const massCache = weakCache<Molecule, MassSummary>("molecule");
+const issueCache = weakCache<Molecule, readonly ValenceIssue[]>("molecule");
 
 /** What `derivedCacheStats` reports. */
 export interface DerivedCacheStats {
   /**
-   * MOLECULES these caches hold a strong reference to, and therefore keep
-   * alive. Zero, always: both are keyed weakly, so an entry dies with the
-   * molecule that keys it — which for an edited or undone document is as soon
-   * as the history drops it.
+   * MOLECULES the app's registered caches hold a strong reference to, and
+   * therefore keep alive. Zero, always: `weakCache` builds `WeakMap`s, so an
+   * entry dies with the molecule that keys it — which for an edited or undone
+   * document is as soon as the history drops it.
    *
    * Testing hook, and the only number that can tell a weakly-keyed memo from a
    * leak. `moleculeIssues(m) === moleculeIssues(m)` holds for both, so the
    * identity check a memo test reaches for first cannot see the difference.
    * `src/state/editing-session.test.ts` asserts this after a long session.
+   *
+   * IT IS NOT THIS MODULE'S NUMBER ANY MORE, and that is the repair. It used
+   * to be a fold over a hardcoded `[massCache, issueCache]`, so a third cache
+   * added ten lines below contributed nothing and the test stayed green while
+   * the cache held every molecule of the session. It now comes from the
+   * registry every `weakCache` enrols in at construction, and
+   * `src/lib/weak-cache.node.test.ts` fails on a molecule-keyed container that
+   * did not come from there.
    */
   readonly moleculesRetained: number;
 }
 
 export function derivedCacheStats(): DerivedCacheStats {
-  const caches: readonly unknown[] = [massCache, issueCache];
-  return {
-    moleculesRetained: caches.reduce<number>(
-      (total, cache) => total + (cache instanceof Map ? cache.size : 0),
-      0,
-    ),
-  };
+  return { moleculesRetained: keysRetained("molecule") };
 }
 
 /** Formula, weight, exact mass and charge. `exactMass` is `undefined` — not a

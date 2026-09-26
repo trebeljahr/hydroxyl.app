@@ -48,6 +48,8 @@ import type {
   StylePresetId,
 } from "@starter/shared";
 
+import { keysRetained, weakCache } from "@/lib/weak-cache";
+
 /**
  * Compile-time guards for the two unions the packages declare INDEPENDENTLY
  * and currently keep in agreement by hand.
@@ -222,9 +224,13 @@ function canvasCanDraw(doc: SketchDocument, panel: Panel): boolean {
  * the `SketchDocument` object for the same reason `EditorCanvas`'s memo is:
  * the store hands out a new one only when the saved document changed. A
  * `WeakMap`, like `@/editor/derived`, so undo/redo between two documents
- * keeps hitting, and an entry dies with its document.
+ * keeps hitting, and an entry dies with its document. Built through
+ * `@/lib/weak-cache` so it is counted; see that module for what the count
+ * proves and what it cannot.
  */
-const canvasSceneCache = new WeakMap<SketchDocument, Map<PanelId | null, AnnotatedScene>>();
+const canvasSceneCache = weakCache<SketchDocument, Map<PanelId | null, AnnotatedScene>>(
+  "document",
+);
 
 export function canvasAnnotatedScene(
   doc: SketchDocument,
@@ -250,8 +256,8 @@ export interface CanvasSceneCacheStats {
   /** Scenes cached for the document asked about: the memo working. */
   readonly panels: number;
   /**
-   * DOCUMENTS the cache holds a strong reference to, and therefore keeps
-   * alive. Zero, always — see `canvasSceneCacheStats`.
+   * DOCUMENTS the app's registered caches hold a strong reference to, and
+   * therefore keep alive. Zero, always — see `canvasSceneCacheStats`.
    */
   readonly documentsRetained: number;
 }
@@ -266,20 +272,23 @@ export interface CanvasSceneCacheStats {
  * whatever the container does with the older ones. The leak the crash report
  * in manual notes 3 describes lives in the OTHER dimension: a cache keyed on a
  * value that is recreated per edit retains one dead document per edit if its
- * keys are strong, and nothing about the newest document's entry says so. A
- * `WeakMap` keyed on the document retains none, which is why it is one; a
- * plain `Map` would report its whole population here and fail the test.
+ * keys are strong, and nothing about the newest document's entry says so.
  *
- * `src/state/editing-session.test.ts` is that test; nothing else should reach
- * for this.
+ * `documentsRetained` is that dimension, and it is deliberately NOT this
+ * cache's own number. It asks the `@/lib/weak-cache` registry how many
+ * documents ANY registered cache is holding, so a document-keyed cache added
+ * to another module is inside the same assertion. What no count can reach is a
+ * retainer that never registered — a module-scope array of documents, a plain
+ * object keyed by id — which is why `src/lib/weak-cache.node.test.ts` reads
+ * the source and fails on one. Take the two together or neither.
+ *
+ * `src/state/editing-session.test.ts` is the session-length test; nothing else
+ * should reach for this.
  */
 export function canvasSceneCacheStats(doc: SketchDocument): CanvasSceneCacheStats {
-  // A `WeakMap` cannot be counted from outside, which is the point: the count
-  // exists only if the container degraded to a strong one.
-  const container: unknown = canvasSceneCache;
   return {
     panels: canvasSceneCache.get(doc)?.size ?? 0,
-    documentsRetained: container instanceof Map ? container.size : 0,
+    documentsRetained: keysRetained("document"),
   };
 }
 
