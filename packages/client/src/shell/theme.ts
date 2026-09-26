@@ -105,12 +105,13 @@ export function useTheme(): {
     // Resolving the preference is a read of two external systems — storage and
     // the media query — and pushing the answer into the external store is what
     // an effect is FOR. React finds out through its subscription.
-    setTheme(
-      readStoredTheme() ??
-        (window.matchMedia("(prefers-color-scheme: dark)").matches
-          ? "dark"
-          : "light"),
-    );
+    // OPTIONAL, because a missing `matchMedia` must not take the shell down.
+    // jsdom has none, so mounting the editor in a unit test threw here before
+    // it rendered a single element — which is why nothing mounted it. The
+    // fallback is the same "light" the server snapshot reports, so a
+    // environment without the query gets the theme the markup already has.
+    const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+    setTheme(readStoredTheme() ?? (prefersDark ? "dark" : "light"));
   }, []);
 
   return { theme, toggleTheme };
