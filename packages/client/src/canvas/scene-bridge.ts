@@ -245,6 +245,21 @@ export function canvasAnnotatedScene(
   return built;
 }
 
+/**
+ * Testing hook: how many scenes are cached FOR ONE DOCUMENT, in the habit of
+ * chem-core's `ringComputations`.
+ *
+ * A `WeakMap` cannot be counted from outside, and "this cache is bounded" is
+ * the claim the file makes about a long editing session. The crash in manual
+ * notes 3 is a retention report, and a cache that grew per EDIT rather than
+ * per panel would have exactly its shape, so the claim is worth a test rather
+ * than a comment. `src/state/editing-session.test.ts` is that test; nothing
+ * else should reach for this.
+ */
+export function canvasSceneCacheSize(doc: SketchDocument): number {
+  return canvasSceneCache.get(doc)?.size ?? 0;
+}
+
 /** The scene the editor canvas shows. */
 export function buildCanvasScene(
   doc: SketchDocument,

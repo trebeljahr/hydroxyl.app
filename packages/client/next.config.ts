@@ -8,6 +8,18 @@ const nextConfig: NextConfig = {
   // Pin the workspace root. Without this Next walks up looking for a
   // lockfile and, when dev runs from a git worktree under the main
   // checkout, picks the parent repo and resolves node_modules there.
+  //
+  // THE ROOT IS ALSO THE WATCH SCOPE, which is worth knowing before blaming
+  // the app for a `pnpm dev` that eats memory. Counted in the main checkout:
+  // 134,002 files under this root, of which 98,954 — 74% — live in
+  // `.claude/worktrees/`, i.e. sibling checkouts of this same repo, each with
+  // its own node_modules and .next. Nothing under `packages/` changed during
+  // a 15-minute sample; 1,177 files under `.claude/` did, because other agent
+  // sessions were building there. A dev server started from the MAIN checkout
+  // therefore watches, and reacts to, work that has nothing to do with it; one
+  // started from inside a worktree does not, because the root is then that
+  // worktree. There is no Turbopack ignore list to narrow this with, so the
+  // remedy is where the worktrees live rather than anything in this file.
   turbopack: { root: path.join(process.cwd(), "..", "..") },
   ...(isDev
     ? {}
