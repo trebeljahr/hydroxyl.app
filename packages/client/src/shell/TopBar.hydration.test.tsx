@@ -35,6 +35,23 @@ describe("the prerendered top bar", () => {
     expect(prerender()).toContain(`data-doc-id="${STARTUP_DOCUMENT_ID}"`);
   });
 
+  /**
+   * THE SECOND `typeof`-BRANCH IN THIS FILE, and the one that has not bitten
+   * yet. `isApplePlatform()` answers `false` where there is no `navigator` and
+   * reads the real one in a browser, so any shortcut hint it formats is "Ctrl"
+   * in the prerendered HTML and "⌘" on a Mac — the same class of mismatch as
+   * the document id, in text rather than in an attribute.
+   *
+   * It is harmless today only because every call site renders inside a
+   * `TooltipContent` or the command palette's dialog, and Radix renders
+   * neither on the server. That is a fact about where a hint happens to sit,
+   * not a decision anyone recorded, so it is pinned here: a shortcut hint
+   * moved into the header proper fails this.
+   */
+  it("prerenders no keyboard shortcut, so no platform branch reaches the HTML", () => {
+    expect(prerender()).not.toMatch(/Ctrl|Shift|Alt|⌘|⇧|⌥/);
+  });
+
   it("renders the same markup twice", () => {
     // A weaker assertion than the one above and worth having anyway: it fails
     // for ANY unstable value that reaches the header — a formatted date, a
