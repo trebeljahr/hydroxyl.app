@@ -8,10 +8,20 @@
  * effect, a store subscription per render, a portal that is opened and never
  * closed, a live region that grows a node per announcement.
  *
- * Each of those shows up as a COUNT that climbs with the number of edits, so
- * that is what is asserted. Measured on this fixture: 12 window/document
- * listeners and 236 DOM nodes at mount, and the same 12 and 236 after 200
- * transactions of 5 pointer frames each.
+ * Each of those shows up as a COUNT that climbs with the work done, so that is
+ * what is asserted — as a DELTA against the count at mount, never as an
+ * absolute, which depends on the jsdom version and on what testing-library
+ * registers of its own.
+ *
+ * THE WORK IS DONE TWICE, IN TWO SHAPES, because edits and renders do not
+ * reach the same code. Driving 200 transactions re-renders whatever subscribes
+ * to the document — the canvas and the status bar — and leaves every other
+ * render body untouched: `TopBar` selects a title and an id that do not change
+ * all session, and `EditorShell` selects nothing at all. A `window.addEvent-
+ * Listener` in either one is registered once, at mount, and lands in the
+ * baseline rather than in the growth. Measured: that mutation in `TopBar` left
+ * this test green. So the tree is also re-rendered on its own afterwards, 50
+ * times, which is what makes every render body in the shell observable.
  *
  * The console counters are here for the same reason. The crash report in
  * manual notes 3 is a NODE heap, not a browser one, and the dev server's own
@@ -34,20 +44,9 @@ import { editorStore } from "@/state";
 import { EditorShell } from "./EditorShell";
 
 const EDITS = 200;
-
-/** jsdom has no `matchMedia`, and `useTheme`'s mount effect reads it. */
-function stubMatchMedia(): void {
-  window.matchMedia = ((query: string) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addEventListener: () => undefined,
-    removeEventListener: () => undefined,
-    addListener: () => undefined,
-    removeListener: () => undefined,
-    dispatchEvent: () => false,
-  })) as unknown as typeof window.matchMedia;
-}
+/** Enough re-renders that one listener per render is unmissable, and cheap:
+ *  the fixture is six atoms. */
+const RERENDERS = 50;
 
 /** Net window+document listeners registered since the counter was installed.
  *  Negative after an unmount that removes listeners added before it. */
@@ -99,7 +98,10 @@ function drive(edits: number): void {
 
 describe("the mounted shell", () => {
   it("registers no listeners, nodes or console output per edit", () => {
-    stubMatchMedia();
+    // NO `matchMedia` STUB, deliberately. jsdom has none, and `useTheme`'s
+    // mount effect used to read it unguarded — so mounting the shell threw
+    // before it rendered anything, which is why no unit test had ever mounted
+    // it. Removing the stub is what keeps that guard honest.
     const errors: unknown[] = [];
     const warnings: unknown[] = [];
     vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => {
@@ -121,6 +123,23 @@ describe("the mounted shell", () => {
     drive(EDITS);
 
     expect(live()).toBe(listenersAtMount);
+
+    // DRIVING EDITS ONLY COVERS WHAT RE-RENDERS PER EDIT, which is the canvas
+    // and the status bar. `TopBar`'s selectors return the same title and id all
+    // session and `EditorShell` subscribes to nothing, so a listener in either
+    // render body would be registered once, at mount, and counted into the
+    // baseline — invisible. Re-rendering the whole tree is what makes the
+    // render bodies of components the edits do not touch observable, and it is
+    // what a parent state change does in the running app anyway.
+    const beforeRerenders = live();
+    const nodesBeforeRerenders = document.querySelectorAll("*").length;
+    for (let i = 0; i < RERENDERS; i += 1) {
+      act(() => {
+        view.rerender(<EditorShell />);
+      });
+    }
+    expect(live()).toBe(beforeRerenders);
+    expect(document.querySelectorAll("*").length).toBe(nodesBeforeRerenders);
     // Within one node of the mount count: the status bar's text changes as the
     // document does, and a React text node can be split or merged. What is
     // ruled out is growth proportional to the edits.
