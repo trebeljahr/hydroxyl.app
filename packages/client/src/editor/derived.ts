@@ -32,6 +32,32 @@ import type { MassSummary, Molecule, ValenceIssue } from "@starter/chem-core";
 const massCache = new WeakMap<Molecule, MassSummary>();
 const issueCache = new WeakMap<Molecule, readonly ValenceIssue[]>();
 
+/** What `derivedCacheStats` reports. */
+export interface DerivedCacheStats {
+  /**
+   * MOLECULES these caches hold a strong reference to, and therefore keep
+   * alive. Zero, always: both are keyed weakly, so an entry dies with the
+   * molecule that keys it — which for an edited or undone document is as soon
+   * as the history drops it.
+   *
+   * Testing hook, and the only number that can tell a weakly-keyed memo from a
+   * leak. `moleculeIssues(m) === moleculeIssues(m)` holds for both, so the
+   * identity check a memo test reaches for first cannot see the difference.
+   * `src/state/editing-session.test.ts` asserts this after a long session.
+   */
+  readonly moleculesRetained: number;
+}
+
+export function derivedCacheStats(): DerivedCacheStats {
+  const caches: readonly unknown[] = [massCache, issueCache];
+  return {
+    moleculesRetained: caches.reduce<number>(
+      (total, cache) => total + (cache instanceof Map ? cache.size : 0),
+      0,
+    ),
+  };
+}
+
 /** Formula, weight, exact mass and charge. `exactMass` is `undefined` — not a
  *  substituted average weight — when an element has no verified monoisotopic
  *  value; that is chem-core's contract and the status bar renders it as an

@@ -15,8 +15,16 @@
  * of them fails deterministically:
  *
  *   - the undo history, which snapshots a document per edit;
- *   - the per-document scene cache, which memoises a built scene per panel;
- *   - the derived-chemistry cache, which memoises per Molecule.
+ *   - the DOCUMENTS the per-document scene cache keeps alive;
+ *   - the MOLECULES the derived-chemistry caches keep alive.
+ *
+ * THE COUNTS THAT MATTER ARE THE RETAINED ONES, and the distinction was paid
+ * for. An earlier version of this file counted only the scenes cached for the
+ * NEWEST document and checked that a memo returned the same array twice. Both
+ * hold for a cache that has kept every document of the session, so turning the
+ * two `WeakMap`s into plain `Map`s — the exact regression the crash report
+ * describes — left all 735 client tests green. `documentsRetained` and
+ * `moleculesRetained` are the numbers that move.
  *
  * The heap figure is still worth having, so it is measured and reported when
  * the runner was started with `--expose-gc`:
@@ -36,8 +44,8 @@ import { setAtomPositions } from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
 
 import { fixtureDocument } from "@/canvas/fixture";
-import { buildCanvasScene, canvasSceneCacheSize } from "@/canvas/scene-bridge";
-import { moleculeIssues, moleculeMass } from "@/editor/derived";
+import { buildCanvasScene, canvasSceneCacheStats } from "@/canvas/scene-bridge";
+import { derivedCacheStats, moleculeIssues, moleculeMass } from "@/editor/derived";
 
 import { DEFAULT_HISTORY_LIMIT } from "./history";
 import { createEditorStore } from "./store";
@@ -84,16 +92,21 @@ describe("a long editing session", () => {
     expect(past.length).toBe(DEFAULT_HISTORY_LIMIT);
   });
 
-  it("caches one scene per panel per document, not one per edit", () => {
+  it("caches one scene per panel per document, and retains no document", () => {
     const store = createEditorStore({ document: fixtureDocument("2024-01-01T00:00:00.000Z") });
     drive(store, EDITS);
 
     const doc = store.getState().document;
+    const stats = canvasSceneCacheStats(doc);
     // Every panel the canvas was ever asked for, plus the `null` "whatever the
-    // canvas defaults to" key. Keyed on the DOCUMENT, which the store replaces
-    // on every edit, so the entries for the 499 documents before this one are
-    // unreachable and collectable.
-    expect(canvasSceneCacheSize(doc)).toBeLessThanOrEqual(doc.panels.length + 1);
+    // canvas defaults to" key.
+    expect(stats.panels).toBeLessThanOrEqual(doc.panels.length + 1);
+    // AND THIS IS THE ONE THAT WOULD CATCH THE CRASH. The bound above counts
+    // the newest document's entries and is satisfied whatever became of the
+    // 499 before it; a cache keyed strongly on a value the store replaces per
+    // edit keeps every one of them, along with every molecule, scene and issue
+    // list hanging off them.
+    expect(stats.documentsRetained).toBe(0);
 
     // The memo still works — a second read of the same document costs nothing.
     const first = buildCanvasScene(doc, store.getState().ui.activePanelId);
@@ -106,23 +119,23 @@ describe("a long editing session", () => {
     drive(store, EDITS);
 
     const mol = store.getState().document.molecule;
-    // A `WeakMap` hit returns the very same array; a keyed-by-value cache
-    // would too, so the assertion that matters is the one above about the
-    // history — this one pins that the memo is still ON THE INSTANCE, which is
-    // what makes its entries die with the molecules the history drops.
+    // A `WeakMap` hit returns the very same array — and so would a cache keyed
+    // by value that never dropped anything, which is why the retention count
+    // is asserted beside it. 500 transactions of 5 frames mint thousands of
+    // molecules; a strongly-keyed memo would still be holding all of them.
     expect(moleculeIssues(mol)).toBe(moleculeIssues(mol));
     expect(moleculeMass(mol)).toBe(moleculeMass(mol));
+    expect(derivedCacheStats().moleculesRetained).toBe(0);
   });
 
-  it("does not grow the heap once the history cap is reached", () => {
-    const gc = (globalThis as { gc?: () => void }).gc;
-    if (gc === undefined) {
-      // Reported rather than silently skipped: a heap figure is only honest
-      // after a forced collection, and the counts above are the load-bearing
-      // assertions in any case.
-      expect(gc).toBeUndefined();
-      return;
-    }
+  // SKIPPED, NOT PASSED, without `--expose-gc`. A heap figure is only honest
+  // after a forced collection, so without one this test has nothing to say; a
+  // body that asserted its own inability to run would report a green test for
+  // a measurement nobody took.
+  it.runIf(typeof (globalThis as { gc?: () => void }).gc === "function")(
+    "does not grow the heap once the history cap is reached",
+    () => {
+    const gc = (globalThis as { gc?: () => void }).gc!;
     const store = createEditorStore({ document: fixtureDocument("2024-01-01T00:00:00.000Z") });
 
     drive(store, DEFAULT_HISTORY_LIMIT * 2);
@@ -139,5 +152,6 @@ describe("a long editing session", () => {
     // cap, three times as many further edits must not cost another whole
     // session's worth of memory.
     expect(later).toBeLessThan(settled * 2 + 16 * 1024 * 1024);
-  });
+    },
+  );
 });

@@ -245,19 +245,42 @@ export function canvasAnnotatedScene(
   return built;
 }
 
+/** What `canvasSceneCacheStats` reports. */
+export interface CanvasSceneCacheStats {
+  /** Scenes cached for the document asked about: the memo working. */
+  readonly panels: number;
+  /**
+   * DOCUMENTS the cache holds a strong reference to, and therefore keeps
+   * alive. Zero, always — see `canvasSceneCacheStats`.
+   */
+  readonly documentsRetained: number;
+}
+
 /**
- * Testing hook: how many scenes are cached FOR ONE DOCUMENT, in the habit of
- * chem-core's `ringComputations`.
+ * Testing hook: what this cache retains, in the habit of chem-core's
+ * `ringComputations`.
  *
- * A `WeakMap` cannot be counted from outside, and "this cache is bounded" is
- * the claim the file makes about a long editing session. The crash in manual
- * notes 3 is a retention report, and a cache that grew per EDIT rather than
- * per panel would have exactly its shape, so the claim is worth a test rather
- * than a comment. `src/state/editing-session.test.ts` is that test; nothing
- * else should reach for this.
+ * TWO NUMBERS, BECAUSE THE FIRST ONE ALONE PROVES NOTHING. `panels` counts the
+ * entries for ONE document and is bounded by construction — the store replaces
+ * the document on every edit, so the newest one has at most a scene per panel
+ * whatever the container does with the older ones. The leak the crash report
+ * in manual notes 3 describes lives in the OTHER dimension: a cache keyed on a
+ * value that is recreated per edit retains one dead document per edit if its
+ * keys are strong, and nothing about the newest document's entry says so. A
+ * `WeakMap` keyed on the document retains none, which is why it is one; a
+ * plain `Map` would report its whole population here and fail the test.
+ *
+ * `src/state/editing-session.test.ts` is that test; nothing else should reach
+ * for this.
  */
-export function canvasSceneCacheSize(doc: SketchDocument): number {
-  return canvasSceneCache.get(doc)?.size ?? 0;
+export function canvasSceneCacheStats(doc: SketchDocument): CanvasSceneCacheStats {
+  // A `WeakMap` cannot be counted from outside, which is the point: the count
+  // exists only if the container degraded to a strong one.
+  const container: unknown = canvasSceneCache;
+  return {
+    panels: canvasSceneCache.get(doc)?.size ?? 0,
+    documentsRetained: container instanceof Map ? container.size : 0,
+  };
 }
 
 /** The scene the editor canvas shows. */
