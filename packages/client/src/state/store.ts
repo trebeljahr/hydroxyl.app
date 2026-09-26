@@ -80,6 +80,49 @@ export function createEditorStore(init: EditorStoreInit = {}): EditorStore {
 }
 
 /**
+ * The identity of the document the singleton store holds BEFORE a page has
+ * opened one.
+ *
+ * ── THIS CONSTANT IS A HYDRATION FIX, NOT TIDINESS ─────────────────────────
+ *
+ * `createDocument()` mints its id from `Date.now()` and `Math.random()`, and
+ * `TopBar` renders `state.document.id` into `data-doc-id`. The store below is
+ * a module singleton, so it is constructed ONCE PER MODULE INSTANCE — and
+ * there are always two: the prerender's and the browser's. Each minted its own
+ * id, so the two never agreed and every load of `/editor` reported
+ *
+ *     + data-doc-id="doc_mue9v6v1_1_hnb6s68v"
+ *     - data-doc-id="doc_mue9v6pk_1_pts6ksvh"
+ *
+ * — React's own first two bullets ("a server/client branch", "variable input
+ * such as Date.now() or Math.random()") in one attribute. It is NOT a dev-only
+ * symptom: `/editor` is prerendered, so the id in the shipped HTML is whatever
+ * `next build` happened to mint, frozen at build time, and every visitor's
+ * browser disagrees with it. React does not patch a mismatched attribute up,
+ * so the served DOM keeps the build's id until something re-renders.
+ *
+ * A FIXED IDENTITY IS THE FIX, and it is sound because this document is a
+ * placeholder no page keeps: `/editor`'s mount effect either loads the
+ * document `?doc=` names or opens the benzene fixture, which mints its own id
+ * AFTER hydration, where minting is free. Nothing saves the placeholder — its
+ * molecule is empty, autosave baselines whatever the effect opened, and the
+ * journal only writes what autosave reports pending — so the shared id cannot
+ * reach storage or collide between two tabs.
+ *
+ * The epoch timestamp is deliberate rather than arbitrary: a placeholder that
+ * is not meant to reach the recents grid should not sort itself to the top of
+ * it if it ever did.
+ */
+export const STARTUP_DOCUMENT_ID = "doc_startup";
+const STARTUP_DOCUMENT_TIME = "1970-01-01T00:00:00.000Z";
+
+/** The placeholder document the singleton opens with. Deterministic, and the
+ *  reason is `STARTUP_DOCUMENT_ID`'s. */
+export function startupDocument(): SketchDocument {
+  return createDocument({ id: STARTUP_DOCUMENT_ID, now: STARTUP_DOCUMENT_TIME });
+}
+
+/**
  * The application's store.
  *
  * A module singleton is safe HERE and would not be in a typical Next app: this
@@ -87,8 +130,12 @@ export function createEditorStore(init: EditorStoreInit = {}): EditorStore {
  * is instantiated once per browser tab and never once per request. If server
  * rendering ever arrives, this must move into a React provider — a
  * module-level store on the server is shared between users.
+ *
+ * It is not, however, instantiated only once per tab: the PRERENDER evaluates
+ * this module too, which is why the document it opens with has a fixed
+ * identity rather than a minted one.
  */
-export const editorStore: EditorStore = createEditorStore();
+export const editorStore: EditorStore = createEditorStore({ document: startupDocument() });
 
 /**
  * React binding for the singleton. `selector` is required: subscribing to the

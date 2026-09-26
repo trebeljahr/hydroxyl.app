@@ -531,3 +531,26 @@ test("undo and redo run from the top bar and from the keyboard, as one entry eac
   await page.click('[data-command="edit.redo"]');
   expect(await atomCount(page)).toBe(grown);
 });
+
+/**
+ * THE SERVED HTML MUST NOT CARRY A MINTED DOCUMENT ID.
+ *
+ * `/editor` is prerendered, so `TopBar`'s `data-doc-id` is written once by
+ * `next build` and read by every visitor's browser. While the startup document
+ * minted its id from `Date.now()` and `Math.random()` the two could not agree,
+ * and React reported the attribute hydration mismatch recorded in manual
+ * notes 3 — an error it explicitly does not patch up.
+ *
+ * Asserted against the RESPONSE BODY rather than against the live DOM: by the
+ * time the page has mounted, the editor has opened a real document and the
+ * attribute is legitimately a minted id. What is under test is the byte
+ * sequence the build emitted.
+ */
+test("the prerendered editor names the fixed startup document", async ({ page }) => {
+  const response = await page.request.get("/editor");
+  expect(response.ok()).toBe(true);
+  const html = await response.text();
+
+  const match = /data-shell="top-bar"[^>]*data-doc-id="([^"]*)"/.exec(html);
+  expect(match?.[1]).toBe("doc_startup");
+});
