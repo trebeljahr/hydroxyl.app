@@ -267,14 +267,40 @@ export function performBatch(commands: readonly InteractionCommand[]): boolean {
  * how bad it got, and a different message always logs immediately. Nothing is
  * lost for the person drawing either way: the status bar shows the refusal in
  * full, every time, which is where the message was always meant to be read.
+ *
+ * A RUN IS A BURST, NOT A LIFETIME, and the distinction is the whole of
+ * `FAILURE_BURST_MS`. Counting every occurrence of a message since the tab
+ * opened sounds equivalent and is not: the counter would still read 40 after
+ * an hour of successful work, so the next single refusal is occurrence 41,
+ * which is not a power of two, and the console says NOTHING about the one
+ * refusal that is actually news. The same counter also made the text lie —
+ * "(2 times in a row)" for two failures a minute apart. Only frames of one
+ * held gesture arrive within the window, so the suppression that matters is
+ * untouched: sixty frames of a refused drag are still six lines.
+ *
+ * The bound is therefore per burst rather than per session: a gesture held for
+ * ten seconds costs about ten bursts of six lines instead of six hundred. That
+ * is a bound set by the clock instead of by the pointer rate, which is the
+ * property the dev server's per-error stack resolution needs.
  */
+/** How long after the last occurrence an identical message still belongs to
+ *  the same burst. A refused drag refuses every pointer frame, i.e. every few
+ *  milliseconds; a second of quiet means the hand stopped. */
+const FAILURE_BURST_MS = 1000;
+
 let lastFailure: string | null = null;
-/** How many times in a row `lastFailure` has been seen, counting from 1. */
+/** When `lastFailure` was last seen, as `Date.now()`. */
+let lastFailureAt = 0;
+/** How many times in a row — within one burst — `lastFailure` has been seen,
+ *  counting from 1. */
 let failureRun = 0;
 
 function reportGestureFailure(message: string, error: unknown): void {
-  failureRun = message === lastFailure ? failureRun + 1 : 1;
+  const now = Date.now();
+  const sameBurst = message === lastFailure && now - lastFailureAt < FAILURE_BURST_MS;
+  failureRun = sameBurst ? failureRun + 1 : 1;
   lastFailure = message;
+  lastFailureAt = now;
   // Powers of two only: `n & (n - 1)` is zero exactly then. Sixty identical
   // refusals — a one-second drag — become six lines, at occurrences 1, 2, 4,
   // 8, 16 and 32.
@@ -291,6 +317,7 @@ function reportGestureFailure(message: string, error: unknown): void {
  *  would otherwise inherit the previous test's run. */
 export function resetGestureFailureLog(): void {
   lastFailure = null;
+  lastFailureAt = 0;
   failureRun = 0;
 }
 

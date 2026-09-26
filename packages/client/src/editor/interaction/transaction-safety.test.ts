@@ -36,6 +36,7 @@ import type { InteractionCommand } from "./facts";
 const BOOM = "chem-core refused this geometry";
 
 beforeEach(() => {
+  vi.useFakeTimers();
   resetGestureFailureLog();
   editorStore.getState().abortTransaction();
   editorStore
@@ -51,6 +52,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -189,5 +191,39 @@ describe("repeated gesture failures", () => {
     };
     performBatch([{ kind: "beginTransaction", label: "Add ring" }, other]);
     expect(logged.mock.calls).toHaveLength(7);
+  });
+
+  // A RUN THAT NEVER RESET WOULD LIE IN THE TEXT. The counter used to be
+  // per-session, so two refusals a minute apart read "(2 times in a row)" —
+  // and the run it carried was what silenced the case below.
+  it("starts a new run when the same refusal comes back much later", () => {
+    const logged = vi.mocked(console.error);
+    logged.mockClear();
+
+    performBatch([{ kind: "beginTransaction", label: "Add ring" }, throwingEdit]);
+    vi.setSystemTime(new Date(Date.now() + 60_000));
+    performBatch([{ kind: "beginTransaction", label: "Add ring" }, throwingEdit]);
+
+    expect(logged.mock.calls.map((call) => call[0])).toEqual([
+      "Editing gesture failed and was rolled back",
+      "Editing gesture failed and was rolled back",
+    ]);
+  });
+
+  // THE CASE THE SUPPRESSION MUST NOT SWALLOW. After a 40-frame drag the
+  // per-session counter sat at 40, so an isolated refusal an hour later was
+  // occurrence 41 — not a power of two — and produced no output at all. One
+  // refusal on its own is the one worth reading.
+  it("logs an isolated refusal that follows a long refused drag", () => {
+    const logged = vi.mocked(console.error);
+    for (let i = 0; i < 40; i += 1) {
+      performBatch([{ kind: "beginTransaction", label: "Add ring" }, throwingEdit]);
+    }
+    logged.mockClear();
+
+    vi.setSystemTime(new Date(Date.now() + 3_600_000));
+    performBatch([{ kind: "beginTransaction", label: "Add ring" }, throwingEdit]);
+
+    expect(logged.mock.calls).toHaveLength(1);
   });
 });
