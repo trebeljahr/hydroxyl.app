@@ -30,12 +30,13 @@ import { createDocument } from "@starter/shared";
 import { editorStore } from "@/state";
 import { guardedOps } from "@/state/chem-guard";
 
-import { performBatch } from "./adapter";
+import { performBatch, resetGestureFailureLog } from "./adapter";
 import type { InteractionCommand } from "./facts";
 
 const BOOM = "chem-core refused this geometry";
 
 beforeEach(() => {
+  resetGestureFailureLog();
   editorStore.getState().abortTransaction();
   editorStore
     .getState()
@@ -156,5 +157,37 @@ describe("performBatch", () => {
     expect(ok).toBe(true);
     expect(editorStore.getState().document.molecule.atomIds).toHaveLength(5);
     expect(editorStore.getState().history.transaction).toBeNull();
+  });
+});
+
+/**
+ * A REFUSED GESTURE REFUSES ONCE PER POINTER FRAME, and a batch runs per
+ * pointer event. Unbounded logging of an unchanging failure is a console
+ * nobody can read — and, under `next dev`, a stack resolved and cached by the
+ * dev server for every single line. See `reportGestureFailure`.
+ */
+describe("repeated gesture failures", () => {
+  it("logs the first, then only powers of two, and always a new message", () => {
+    const logged = vi.mocked(console.error);
+    logged.mockClear();
+
+    for (let i = 0; i < 60; i += 1) {
+      performBatch([{ kind: "beginTransaction", label: "Add ring" }, throwingEdit]);
+    }
+
+    // Occurrences 1, 2, 4, 8, 16, 32 of sixty identical refusals.
+    expect(logged.mock.calls).toHaveLength(6);
+    // Every one of them still reached the person, in full.
+    expect(editorStore.getState().ui.statusMessage).toBe(BOOM);
+
+    const other: InteractionCommand = {
+      kind: "edit",
+      label: "Add ring",
+      edit: () => {
+        throw new Error("a different refusal");
+      },
+    };
+    performBatch([{ kind: "beginTransaction", label: "Add ring" }, other]);
+    expect(logged.mock.calls).toHaveLength(7);
   });
 });

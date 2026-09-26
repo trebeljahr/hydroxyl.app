@@ -238,14 +238,60 @@ export function performBatch(commands: readonly InteractionCommand[]): boolean {
   } catch (error) {
     const store = editorStore.getState();
     store.abortTransaction();
-    store.setStatusMessage(
+    const message =
       error instanceof Error && error.message.length > 0
         ? error.message
-        : "That edit could not be applied",
-    );
-    console.error("Editing gesture failed and was rolled back", error);
+        : "That edit could not be applied";
+    store.setStatusMessage(message);
+    reportGestureFailure(message, error);
     return false;
   }
+}
+
+/**
+ * The same failure, over and over, is ONE thing worth knowing — and a batch
+ * runs per pointer event.
+ *
+ * A gesture that chem-core refuses refuses it on every frame of the drag: keep
+ * dragging a ring across a zero-length bond and the unconditional
+ * `console.error` this replaces produced one entry, one stack and one uncaught
+ * error report per frame, for as long as the button was held. In the browser
+ * that is a console nobody can read; in `next dev` it is worse, because the
+ * dev server resolves an ORIGINAL stack frame through Turbopack for every
+ * error the page reports and caches what it reads to do it. A pointer-rate
+ * error stream is therefore a memory cost in a process this app's code never
+ * runs in — the class of thing the crash report in manual notes 3 is about.
+ *
+ * REPEATS ARE COUNTED, NOT DISCARDED. Logging occurrences 1, 2, 4, 8, 16 … of
+ * an unchanged message bounds the output at O(log n) lines while still saying
+ * how bad it got, and a different message always logs immediately. Nothing is
+ * lost for the person drawing either way: the status bar shows the refusal in
+ * full, every time, which is where the message was always meant to be read.
+ */
+let lastFailure: string | null = null;
+/** How many times in a row `lastFailure` has been seen, counting from 1. */
+let failureRun = 0;
+
+function reportGestureFailure(message: string, error: unknown): void {
+  failureRun = message === lastFailure ? failureRun + 1 : 1;
+  lastFailure = message;
+  // Powers of two only: `n & (n - 1)` is zero exactly then. Sixty identical
+  // refusals — a one-second drag — become six lines, at occurrences 1, 2, 4,
+  // 8, 16 and 32.
+  if ((failureRun & (failureRun - 1)) !== 0) return;
+  console.error(
+    failureRun === 1
+      ? "Editing gesture failed and was rolled back"
+      : `Editing gesture failed and was rolled back (${failureRun} times in a row)`,
+    error,
+  );
+}
+
+/** Forget the suppression state. For tests, which assert on call counts and
+ *  would otherwise inherit the previous test's run. */
+export function resetGestureFailureLog(): void {
+  lastFailure = null;
+  failureRun = 0;
 }
 
 function currentContext(): InteractionContext {
