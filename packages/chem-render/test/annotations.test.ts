@@ -145,9 +145,12 @@ function request(
 ): AnnotationRequest {
   return {
     kind,
-    source: id.startsWith("b")
-      ? { kind: "bond", bondId: id }
-      : { kind: "atom", atomId: id },
+    source:
+      id === "structure"
+        ? { kind: "structure" }
+        : id.startsWith("b")
+          ? { kind: "bond", bondId: id }
+          : { kind: "atom", atomId: id },
     text,
     anchor,
     preferred: { x: 0, y: -1 },
@@ -197,8 +200,65 @@ describe("decision 17: who gets a contested slot", () => {
     }
   });
 
-  it("ranks all four kinds by the fixed table, for every arrival order", () => {
-    expect(ANNOTATION_PRIORITY).toEqual(["descriptor", "alphaBeta", "locant", "torsion"]);
+  /**
+   * The table decisions 40 and 88 added two rows to — and the reason this test
+   * changed rather than the ruling.
+   *
+   * The four kinds that ship in committed goldens keep their RELATIVE order,
+   * which is what decision 17 pinned and what those goldens depend on; the two
+   * stereo kinds sit in the descriptor band, below the letter and above
+   * everything else (see the module header for why they do not share one
+   * index). Both halves are asserted, so a later row inserted in the middle of
+   * the original four is still a failure.
+   */
+  it("keeps the shipped four in order and puts the stereo band under the letter", () => {
+    expect(ANNOTATION_PRIORITY).toEqual([
+      "descriptor",
+      "stereoGroup",
+      "stereoPrefix",
+      "alphaBeta",
+      "locant",
+      "torsion",
+    ]);
+    const shipped = ["descriptor", "alphaBeta", "locant", "torsion"];
+    expect(ANNOTATION_PRIORITY.filter((kind) => shipped.includes(kind))).toEqual(shipped);
+    // The band is contiguous and starts at the descriptor: nothing else can
+    // come between an "(R)" and the "and1" that says which collection it is in.
+    expect(ANNOTATION_PRIORITY.slice(0, 3)).toEqual([
+      "descriptor",
+      "stereoGroup",
+      "stereoPrefix",
+    ]);
+  });
+
+  /**
+   * The two stereo rows, sorted rather than placed.
+   *
+   * The exhaustive placement test below stays at the four kinds it was written
+   * for: permutations grow as the factorial and each one runs the whole ladder,
+   * so six kinds would be thirty times the work for the same claim. The
+   * comparator is what decides the order, and it is exercised here; the three
+   * stereo kinds actually CONTESTING one slot is pinned in stereo-groups.test.ts.
+   */
+  it("sorts the two stereo kinds into the descriptor band, from any arrival order", () => {
+    const requests = [
+      request("torsion", "b7"),
+      request("locant", "a1"),
+      request("alphaBeta", "a1"),
+      request("stereoPrefix", "structure"),
+      request("stereoGroup", "a1"),
+      request("descriptor", "a1"),
+    ];
+    const table = [...ANNOTATION_PRIORITY];
+    for (let rotation = 0; rotation < requests.length; rotation++) {
+      const order = [...requests.slice(rotation), ...requests.slice(0, rotation)];
+      for (const arrival of [order, [...order].reverse()]) {
+        expect([...arrival].sort(compareAnnotationRequests).map((r) => r.kind)).toEqual(table);
+      }
+    }
+  });
+
+  it("ranks all four shipped kinds by the fixed table, for every arrival order", () => {
     const slots = successiveSlots(4);
     // alphaBeta and torsion have no producer yet; synthetic requests are the
     // only way to prove the pass already ranks them.

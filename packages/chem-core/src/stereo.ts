@@ -91,7 +91,8 @@ import {
 import { bondsAt, getBond, requireAtom, requireBond } from "./molecule.js";
 import { liftParity, type LiftLigand, type LiftOutcome } from "./parity.js";
 import { unrepresentableStereo } from "./stereo-axes.js";
-import type { AtomId, BondId, Bond, Molecule } from "./types.js";
+import { stereoGroupsOf } from "./stereo-groups.js";
+import type { AtomId, BondId, Bond, Molecule, StereoGroup } from "./types.js";
 
 export type StereoDescriptor =
   | { readonly kind: "R" }
@@ -330,6 +331,104 @@ export function stereocenterAtoms(mol: Molecule): readonly AtomId[] {
 
 export function isStereocenter(mol: Molecule, atomId: AtomId): boolean {
   return cipDescriptor(mol, atomId) !== undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Enhanced stereochemistry: what the groups cover
+// ---------------------------------------------------------------------------
+
+/**
+ * What a molecule's ABS/AND/OR groups say about it AS A WHOLE (decision 40).
+ *
+ * THE QUESTION LIVES HERE, not in chem-render. Deciding whether every
+ * stereocentre sits in one AND group is perception plus record, and a renderer
+ * that answered it itself would own a second definition of "stereocentre" —
+ * which is the same mistake as a renderer formatting a group's number from its
+ * array position (decision 92). chem-render asks and draws.
+ *
+ * FOUR OUTCOMES, AND `unresolved` IS THE ONE THAT MATTERS. An empty statement
+ * reads as "this molecule is achiral" to everything downstream, so a molecule
+ * whose groups name no stereocentre at all must not come back as
+ * `whole`/`rac-`: with no stereocentres, "every stereocentre is in one AND
+ * group" is vacuously true and the figure would claim a racemate on a structure
+ * that has no configuration to racemise. That case is named instead.
+ */
+export type StereoGroupCoverage =
+  /**
+   * No group at all: nothing was said about configuration (decision 91). Not
+   * the same as every centre being in an ABS group, which is an assertion.
+   */
+  | { readonly kind: "none" }
+  /**
+   * Every stereocentre is in ONE group, and that group is `and` or `or`.
+   * `prefix` is the text a figure prints above the structure (decision 88), and
+   * while it applies the per-centre tags are omitted (decision 40).
+   *
+   * The text is HERE for the reason `stereoGroupTag` is in stereo-groups.ts: a
+   * renderer free to spell it would be free to spell it differently in the
+   * status bar and in an exported figure.
+   */
+  | {
+      readonly kind: "whole";
+      readonly group: StereoGroup;
+      readonly prefix: "rac-" | "rel-";
+    }
+  /**
+   * Groups name stereocentres, but no single AND or OR group holds all of them
+   * — several groups, or one ABS group. Each grouped centre carries its own tag.
+   */
+  | { readonly kind: "perCentre"; readonly groups: readonly StereoGroup[] }
+  /**
+   * Groups exist and not one atom they name is a stereocentre: a collection
+   * imported onto atoms this build does not perceive as stereogenic, or onto a
+   * centre a later edit flattened. Reported rather than passed off as either
+   * "nothing said" or "racemate".
+   */
+  | { readonly kind: "unresolved"; readonly groups: readonly StereoGroup[] };
+
+/**
+ * Decision 40's question: does the molecule read `rac-`, `rel-`, or per centre?
+ *
+ * A group MAY name atoms that are not stereocentres — an imported file is
+ * entitled to, and an edit can flatten a centre without touching the collection
+ * — so coverage is judged over the stereocentres a group actually holds. Only
+ * the groups that hold at least one are considered, and exactly one of them
+ * holding every stereocentre is what earns a prefix.
+ *
+ * `stereocenterAtoms` is the set, deliberately: it INCLUDES centres whose
+ * descriptor is undetermined, so a racemate drawn with no wedges at all still
+ * reads `rac-` rather than losing its prefix for want of a letter.
+ */
+export function stereoGroupCoverage(mol: Molecule): StereoGroupCoverage {
+  const groups = stereoGroupsOf(mol);
+  if (groups.length === 0) return { kind: "none" };
+
+  const centres = new Set<AtomId>(stereocenterAtoms(mol));
+  const holding: StereoGroup[] = [];
+  let held = 0;
+  for (const group of groups) {
+    const inside = group.atomIds.filter((atomId) => centres.has(atomId)).length;
+    if (inside === 0) continue;
+    holding.push(group);
+    held += inside;
+  }
+  // T14's case, named: the statement exists but resolves to nothing. The
+  // figure still tags the grouped atoms — membership is what the document says
+  // — but it must not print a prefix about centres it cannot find.
+  if (holding.length === 0) return { kind: "unresolved", groups };
+
+  const only = holding[0];
+  if (
+    holding.length === 1 &&
+    only !== undefined &&
+    only.kind !== "abs" &&
+    // An atom is in at most one group, so counting is enough to prove the one
+    // group holds every centre; no second membership walk.
+    held === centres.size
+  ) {
+    return { kind: "whole", group: only, prefix: only.kind === "and" ? "rac-" : "rel-" };
+  }
+  return { kind: "perCentre", groups: holding };
 }
 
 // ---------------------------------------------------------------------------

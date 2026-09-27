@@ -20,11 +20,14 @@ import {
   descriptorText,
   doubleBondDescriptor,
   stereocenterAtoms,
+  stereoGroupCoverage,
   stereogenicBonds,
   structuralIssues,
 } from "./stereo.js";
 import type { StereoDescriptor } from "./stereo.js";
+import { ABS_STEREO_GROUP_INDEX, withStereoGroups } from "./stereo-groups.js";
 import { flipAtoms, verticalMirror } from "./transform.js";
+import type { AtomId, Molecule } from "./types.js";
 import { DEG, fromPolar, ORIGIN } from "./vec.js";
 import type { Vec2 } from "./vec.js";
 
@@ -742,5 +745,114 @@ describe("the shared lift (decisions 28 and 29)", () => {
         reason: "ambiguous-geometry",
       });
     }
+  });
+});
+
+/**
+ * Decision 40's coverage question, on threo/erythro 3-chlorobutan-2-ol
+ * (`CC(O)C(C)Cl`).
+ *
+ * Two adjacent stereocentres is the smallest structure where "one AND group
+ * holding both" (a racemate) and "two AND groups, one each" (a mixture of
+ * diastereomers) are different compounds — so it is the only fixture that can
+ * tell `rac-` from a per-centre answer.
+ */
+describe("decision 40: what the groups say about the whole molecule", () => {
+  function chlorobutanol(): { readonly mol: Molecule; readonly c2: AtomId; readonly c3: AtomId } {
+    let c2: AtomId = "";
+    let c3: AtomId = "";
+    const mol = buildMolecule((b) => {
+      const c1 = b.atom("C", ORIGIN);
+      const c2Pos = step(ORIGIN, 30);
+      c2 = b.atom("C", c2Pos);
+      const o = b.atom("O", step(c2Pos, 90));
+      const c3Pos = step(c2Pos, -30);
+      c3 = b.atom("C", c3Pos);
+      const c4 = b.atom("C", step(c3Pos, 30));
+      const cl = b.atom("Cl", step(c3Pos, -90));
+      b.bond(c1, c2, 1);
+      b.bond(c2, o, 1, "wedge");
+      b.bond(c2, c3, 1);
+      b.bond(c3, c4, 1);
+      b.bond(c3, cl, 1, "hash");
+    });
+    return { mol, c2, c3 };
+  }
+
+  it("says nothing when the molecule says nothing (decision 91)", () => {
+    const { mol } = chlorobutanol();
+    expect(stereocenterAtoms(mol)).toHaveLength(2);
+    expect(stereoGroupCoverage(mol)).toEqual({ kind: "none" });
+  });
+
+  it("reads rac- when ONE and group holds every stereocentre", () => {
+    const { mol, c2, c3 } = chlorobutanol();
+    const racemate = withStereoGroups(mol, [{ kind: "and", index: 1, atomIds: [c2, c3] }]);
+    const coverage = stereoGroupCoverage(racemate);
+    expect(coverage.kind).toBe("whole");
+    expect(coverage).toMatchObject({ prefix: "rac-", group: { kind: "and", index: 1 } });
+  });
+
+  it("reads rel- when ONE or group holds every stereocentre", () => {
+    const { mol, c2, c3 } = chlorobutanol();
+    const relative = withStereoGroups(mol, [{ kind: "or", index: 2, atomIds: [c2, c3] }]);
+    expect(stereoGroupCoverage(relative)).toMatchObject({ kind: "whole", prefix: "rel-" });
+  });
+
+  it("falls to per-centre for TWO and groups: a diastereomer mixture is not a racemate", () => {
+    const { mol, c2, c3 } = chlorobutanol();
+    const mixture = withStereoGroups(mol, [
+      { kind: "and", index: 1, atomIds: [c2] },
+      { kind: "and", index: 2, atomIds: [c3] },
+    ]);
+    const coverage = stereoGroupCoverage(mixture);
+    expect(coverage.kind).toBe("perCentre");
+    expect(coverage).toMatchObject({ groups: [{ index: 1 }, { index: 2 }] });
+  });
+
+  it("falls to per-centre when one and group holds only ONE of the two centres", () => {
+    const { mol, c2 } = chlorobutanol();
+    const half = withStereoGroups(mol, [{ kind: "and", index: 1, atomIds: [c2] }]);
+    expect(stereoGroupCoverage(half).kind).toBe("perCentre");
+  });
+
+  it("never reads a prefix off an abs group, whatever it covers (decision 40)", () => {
+    const { mol, c2, c3 } = chlorobutanol();
+    const absolute = withStereoGroups(mol, [
+      { kind: "abs", index: ABS_STEREO_GROUP_INDEX, atomIds: [c2, c3] },
+    ]);
+    expect(stereoGroupCoverage(absolute).kind).toBe("perCentre");
+  });
+
+  it("names the case where a group resolves to no stereocentre at all (T14)", () => {
+    const { mol } = chlorobutanol();
+    // a1 is the terminal methyl: a legal collection member in a file, and not
+    // a stereocentre. Vacuously "every stereocentre is in one AND group" would
+    // print rac- on a structure whose centres the group never mentions.
+    const stray = withStereoGroups(mol, [{ kind: "and", index: 1, atomIds: ["a1"] }]);
+    const coverage = stereoGroupCoverage(stray);
+    expect(coverage.kind).toBe("unresolved");
+    expect(coverage).toMatchObject({ groups: [{ kind: "and", index: 1, atomIds: ["a1"] }] });
+  });
+
+  it("still reads rac- when the racemate is drawn FLAT, with no wedge to letter", () => {
+    const { mol, c2, c3 } = chlorobutanol();
+    // `stereocenterAtoms` includes centres whose descriptor is undetermined, so
+    // erasing the marks must not cost the molecule its prefix.
+    const flat = mol.bondIds.reduce((m, bondId) => setBondStereo(m, bondId, "none"), mol);
+    expect(cipDescriptor(flat, c2)).toEqual({ kind: "undetermined", reason: "no-stereo-bond" });
+    expect(stereoGroupCoverage(withStereoGroups(flat, [
+      { kind: "and", index: 1, atomIds: [c2, c3] },
+    ]))).toMatchObject({ kind: "whole", prefix: "rac-" });
+  });
+
+  it("ignores a group that names extra atoms beside the centres it covers", () => {
+    const { mol, c2, c3 } = chlorobutanol();
+    // A file may put a non-stereogenic atom in a collection. The prefix is
+    // about the centres, so an extra member does not take it away.
+    const padded = withStereoGroups(mol, [
+      { kind: "and", index: 1, atomIds: [c2, c3, "a1"] },
+    ]);
+    expect(stereoGroupCoverage(padded)).toMatchObject({ kind: "whole", prefix: "rac-" });
   });
 });

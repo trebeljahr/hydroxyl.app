@@ -1,6 +1,7 @@
 /**
- * Where every small annotation goes: stereo descriptors, alpha/beta labels,
- * locants and torsion labels — ONE pass, ONE search.
+ * Where every small annotation goes: stereo descriptors, enhanced-stereo group
+ * tags, the rac-/rel- prefix, alpha/beta labels, locants and torsion labels —
+ * ONE pass, ONE search.
  *
  * An annotation is the opposite of an atom label. The label has to sit ON its
  * atom and the bonds get out of its way; an annotation has to find the space
@@ -18,10 +19,20 @@
  * obstacle for every annotation placed after it.
  *
  * WHO GETS A CONTESTED SLOT is decision 17, a fixed priority table:
- * descriptor > alphaBeta > locant > torsion. The requests are SORTED by that
+ * descriptor > stereoGroup > stereoPrefix > alphaBeta > locant > torsion. The
+ * requests are SORTED by that
  * table before anything is placed, so the higher-priority annotation claims
  * its slot first and the loser takes its next candidate — whatever order the
- * caller listed them in. Within one kind, ties break by source id in
+ * caller listed them in.
+ *
+ * THE THREE STEREO KINDS SIT IN ONE BAND, which is what decisions 40 and 88
+ * mean by "at descriptor priority": all three outrank every other kind, and
+ * inside the band the letter wins. An `(R)` displaced by the `and1` beside it
+ * would be the wrong trade — the letter is the configuration and the tag is
+ * which collection states it — and two kinds sharing one table index would
+ * leave the choice between them to `compareAnnotationRequests`'s text
+ * tiebreak, which is to say to the alphabet. The band order is therefore
+ * explicit. Within one kind, ties break by source id in
  * chem-core's `compareIds` order (`a9` before `a10`), never by iteration
  * order. Descriptors already ship in committed goldens; putting them first
  * means switching locants on can never move one.
@@ -47,7 +58,16 @@
  * centre of its measured INK box (decision 57) must lie at most
  * `ownDistanceRatio` of the way (decision 63) to the nearest other heavy atom
  * from its own anchor — the atom centre, or
- * for a bond annotation the bond segment — than any other atom centre. Room
+ * for a bond annotation the bond segment — than any other atom centre.
+ *
+ * "OWN" HAS THREE CASES, and decision 88 added the third. An atom
+ * annotation's own is its atom; a bond annotation's own is the drawn bond
+ * segment, and its two end atoms never compete (decision 68); the rac-/rel-
+ * prefix's own is THE WHOLE STRUCTURE — `anchorBox`, the drawing's ink
+ * bounding box — and no atom competes with it, because there is only one
+ * structure on the page for it to be read as belonging to. Proximity
+ * therefore never refuses a prefix slot; the obstacles still do, which is what
+ * keeps it off the ink it is set above. Room
  * alone is not enough. The outer rungs of the ladder reach far enough to sit
  * beside a NEIGHBOUR, and a clear "(S)" or "17" there is read as the
  * neighbour's: a correct number on the wrong atom, which no overlap check
@@ -101,7 +121,15 @@ import type { TextRunBox } from "../text/measurer.js";
 import { freeDirection } from "./placement.js";
 import type { LabelBox, LabelObstacle } from "./placement.js";
 
-export type AnnotationKind = "descriptor" | "alphaBeta" | "locant" | "torsion";
+export type AnnotationKind =
+  | "descriptor"
+  /** Decision 40's per-centre enhanced-stereo tag: `abs`, `and1`, `or1`. */
+  | "stereoGroup"
+  /** Decision 88's `rac-` / `rel-`, above the whole structure's ink. */
+  | "stereoPrefix"
+  | "alphaBeta"
+  | "locant"
+  | "torsion";
 
 /**
  * Decision 17: the index IS the priority, highest first.
@@ -112,6 +140,10 @@ export type AnnotationKind = "descriptor" | "alphaBeta" | "locant" | "torsion";
  */
 export const ANNOTATION_PRIORITY = [
   "descriptor",
+  // The stereo band, below the letter and above everything else: see the
+  // module header for why the three do not share one index.
+  "stereoGroup",
+  "stereoPrefix",
   "alphaBeta",
   "locant",
   "torsion",
@@ -192,7 +224,15 @@ export const ANNOTATION_PLACEMENT = Object.freeze({
 
 export type AnnotationSource =
   | { readonly kind: "atom"; readonly atomId: AtomId }
-  | { readonly kind: "bond"; readonly bondId: BondId };
+  | { readonly kind: "bond"; readonly bondId: BondId }
+  /**
+   * The whole drawing, for decision 88's prefix. It belongs to no atom and no
+   * bond: a `rac-` above a structure is a statement about every centre in it
+   * at once, and filing it under the topmost atom would make that atom's pick
+   * target swell to enclose it — the same trap the phantom hydrogen's own
+   * `SceneSource` arm exists to avoid.
+   */
+  | { readonly kind: "structure" };
 
 export interface AnnotationRequest {
   readonly kind: AnnotationKind;
@@ -219,6 +259,18 @@ export interface AnnotationRequest {
    * every E/Z descriptor off the space above its bond.
    */
   readonly ownAtomIds?: readonly AtomId[];
+  /**
+   * For a STRUCTURE annotation, the drawing's own ink bounding box
+   * (`structureInkBounds`): proximity (decision 88's third own case) is
+   * measured to this rectangle rather than to `anchor`.
+   *
+   * Optional for the same reason `ownAtomIds` is — the field follows the
+   * source kind and the precedent is decision 68's — and a structure request
+   * that omits it is judged from its anchor point, which is the top of that
+   * very box. It is never set on an atom or bond request; if it were, it would
+   * take precedence over `anchorSegment`.
+   */
+  readonly anchorBox?: LabelBox;
 }
 
 /** A drawn segment an annotation must not lie across. */
@@ -393,17 +445,137 @@ export const EMPTY_ANNOTATION_LAYOUT: AnnotationLayout = Object.freeze({
 });
 
 /**
- * `atom:a2:descriptor`, `atom:a2:locant`, `atom:a2:alphaBeta`,
- * `bond:b3:torsion`.
+ * `atom:a2:descriptor`, `atom:a2:locant`, `atom:a2:stereoGroup`,
+ * `bond:b3:torsion`, `structure:stereoPrefix`.
  *
  * Derived from the kind and the source, never from a counter, so one
  * annotation keeps its id across an edit elsewhere in the molecule. The
  * descriptor spelling is the one the committed goldens already carry.
+ *
+ * The structure's id carries no middle field because there is nothing to name:
+ * one drawing, one prefix. `structure:` rather than a bare `stereoPrefix`
+ * keeps every annotation id three-part-or-two-part on the same `source:kind`
+ * shape, which is what `figure.ts` matches on with `endsWith(":" + kind)`.
  */
 export function annotationId(kind: AnnotationKind, source: AnnotationSource): string {
-  return source.kind === "atom"
-    ? `atom:${source.atomId}:${kind}`
-    : `bond:${source.bondId}:${kind}`;
+  switch (source.kind) {
+    case "atom":
+      return `atom:${source.atomId}:${kind}`;
+    case "bond":
+      return `bond:${source.bondId}:${kind}`;
+    case "structure":
+      return `structure:${kind}`;
+  }
+}
+
+/** A filled disc of ink: a bare-vertex dot (decision 61). */
+export interface AnnotationDisc {
+  readonly centre: ScenePoint;
+  readonly radius: number;
+}
+
+/**
+ * The drawing's own ink, for decision 88's anchor box — EVERY field unpadded.
+ *
+ * Deliberately not `AnnotationContext`, although the caller has one: the
+ * `obstacles` list is clearance boxes, and a label's disc there is already
+ * grown by `labelPaddingPx`, so an ink box unioned out of it would sit a
+ * padding wider than the ink on every side and the prefix would float. The
+ * caller hands over the measured ink instead, which is the same set the
+ * proximity and drop rules are judged on (decisions 55, 57 and 64).
+ */
+export interface StructureInk {
+  /** Measured glyph, electron-dot and filled-shape ink (decision 65). */
+  readonly glyphInk?: readonly LabelBox[];
+  /** Every stroked line as drawn, inked at its own half width. */
+  readonly segments?: readonly AnnotationSegment[];
+  /** Aromatic circles, at their outer edge. */
+  readonly circles?: readonly AnnotationCircle[];
+  /**
+   * Filled dots that are NOT in `glyphInk`: the bare-vertex dot, which decision
+   * 61 keeps out of the ink set for the drop rule but which is ink a figure's
+   * prefix has to clear all the same.
+   */
+  readonly dots?: readonly AnnotationDisc[];
+}
+
+/**
+ * The bounding box of everything the STRUCTURE drew, or undefined when it drew
+ * nothing measurable.
+ *
+ * Decision 88's anchor. Annotations are not in it, deliberately: the box is
+ * what the prefix is a statement ABOUT, and growing it to include the tags and
+ * letters already placed would move the prefix every time one of them found a
+ * different slot. Their boxes are obstacles instead, through `context.placed`,
+ * so the prefix still steps around them.
+ */
+export function structureInkBounds(ink: StructureInk): LabelBox | undefined {
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  const add = (x0: number, y0: number, x1: number, y1: number): void => {
+    if (x0 < minX) minX = x0;
+    if (y0 < minY) minY = y0;
+    if (x1 > maxX) maxX = x1;
+    if (y1 > maxY) maxY = y1;
+  };
+  for (const box of ink.glyphInk ?? NO_BOXES) add(box.minX, box.minY, box.maxX, box.maxY);
+  for (const segment of ink.segments ?? NO_SEGMENTS) {
+    const half = segment.halfWidth ?? 0;
+    const { a, b } = segment;
+    add(
+      (a.x < b.x ? a.x : b.x) - half,
+      (a.y < b.y ? a.y : b.y) - half,
+      (a.x > b.x ? a.x : b.x) + half,
+      (a.y > b.y ? a.y : b.y) + half,
+    );
+  }
+  for (const circle of ink.circles ?? NO_CIRCLES) {
+    const reach = circle.radius + circle.halfWidth;
+    add(
+      circle.centre.x - reach,
+      circle.centre.y - reach,
+      circle.centre.x + reach,
+      circle.centre.y + reach,
+    );
+  }
+  for (const dot of ink.dots ?? NO_DISCS) {
+    add(
+      dot.centre.x - dot.radius,
+      dot.centre.y - dot.radius,
+      dot.centre.x + dot.radius,
+      dot.centre.y + dot.radius,
+    );
+  }
+  if (!(minX <= maxX && minY <= maxY)) return undefined;
+  return { minX, minY, maxX, maxY };
+}
+
+/**
+ * Decision 88's request: the `rac-` / `rel-` prefix, above the structure's ink.
+ *
+ * ABOVE AND OFFSET, through the one ladder rather than a second rule. The
+ * anchor sits on the TOP EDGE of the ink box, at its horizontal middle, and the
+ * preferred direction is north — so the near ladder's first rung, which starts
+ * `nearStartBondFraction` of a bond from the anchor or at the radius where the
+ * run's own box stops covering it, whichever is further, is exactly the offset
+ * from the ink. Nothing here knows a font size or a bond length; the ladder
+ * owns both, which is what keeps the prefix's offset the same measure as every
+ * other annotation's.
+ *
+ * A structure request and only a structure request carries `anchorBox`, so the
+ * prefix is judged against the whole drawing (decision 88's third own case).
+ */
+export function structurePrefixRequest(text: string, ink: LabelBox): AnnotationRequest {
+  return {
+    kind: "stereoPrefix",
+    source: { kind: "structure" },
+    text,
+    anchor: { x: (ink.minX + ink.maxX) / 2, y: ink.minY },
+    preferred: { x: 0, y: -1 },
+    anchorBox: ink,
+  };
 }
 
 /**
@@ -419,8 +591,20 @@ export function annotationFontSizePx(kind: AnnotationKind, style: RenderStyle): 
   return style.fontSizePx * style.stereoDescriptorScale;
 }
 
+/**
+ * The id the same-kind tiebreak sorts on. The structure has none — there is
+ * only ever one of it — and the empty string is what `compareIds` orders it
+ * by, which is stable and puts it first among anything of its own kind.
+ */
 function sourceId(source: AnnotationSource): string {
-  return source.kind === "atom" ? source.atomId : source.bondId;
+  switch (source.kind) {
+    case "atom":
+      return source.atomId;
+    case "bond":
+      return source.bondId;
+    case "structure":
+      return "";
+  }
 }
 
 /**
@@ -431,6 +615,19 @@ function sourceId(source: AnnotationSource): string {
  * sorted list — and with it every placement — does not depend on the order
  * the requests arrived in.
  */
+/**
+ * A total, fixed order over the source kinds, for the tiebreak below.
+ *
+ * A `Record` rather than a conditional, so a fourth source kind is a compile
+ * error here instead of a silent tie that makes the sort depend on arrival
+ * order. Atom first is the order the pass already had.
+ */
+const SOURCE_KIND_RANK: Record<AnnotationSource["kind"], number> = {
+  atom: 0,
+  bond: 1,
+  structure: 2,
+};
+
 export function compareAnnotationRequests(
   a: AnnotationRequest,
   b: AnnotationRequest,
@@ -440,7 +637,9 @@ export function compareAnnotationRequests(
   if (priority !== 0) return priority;
   const byId = compareIds(sourceId(a.source), sourceId(b.source));
   if (byId !== 0) return byId;
-  if (a.source.kind !== b.source.kind) return a.source.kind === "atom" ? -1 : 1;
+  if (a.source.kind !== b.source.kind) {
+    return SOURCE_KIND_RANK[a.source.kind] - SOURCE_KIND_RANK[b.source.kind];
+  }
   if (a.text === b.text) return 0;
   return a.text < b.text ? -1 : 1;
 }
@@ -883,6 +1082,8 @@ function compareFallbacks(a: FallbackScore, b: FallbackScore): number {
 }
 
 const NO_CIRCLES: readonly AnnotationCircle[] = Object.freeze([]);
+const NO_SEGMENTS: readonly AnnotationSegment[] = Object.freeze([]);
+const NO_DISCS: readonly AnnotationDisc[] = Object.freeze([]);
 const NO_ATOMS: readonly AnnotationAtomCentre[] = Object.freeze([]);
 const NO_BOXES: readonly LabelBox[] = Object.freeze([]);
 const NO_BONDS: readonly AnnotationBondSegment[] = Object.freeze([]);
@@ -919,12 +1120,24 @@ function readsAsOwn(
 }
 
 /**
- * Is `atomId` the annotation's own — the atom it names, or either end of the
- * bond it names (decision 68)?
+ * Is `atomId` the annotation's own — the atom it names, either end of the bond
+ * it names (decision 68), or any atom at all when the annotation is the whole
+ * STRUCTURE's (decision 88)?
+ *
+ * The structure case makes the proximity test vacuous for the prefix, and that
+ * is the ruling rather than a shortcut: `rac-` set above a drawing cannot be
+ * misread as belonging to a different structure, because there is no other
+ * structure in the panel. What keeps it off the ink is the obstacle test.
  */
 function isOwnAtom(request: AnnotationRequest, atomId: AtomId): boolean {
-  if (request.source.kind === "atom") return request.source.atomId === atomId;
-  return request.ownAtomIds?.includes(atomId) ?? false;
+  switch (request.source.kind) {
+    case "atom":
+      return request.source.atomId === atomId;
+    case "bond":
+      return request.ownAtomIds?.includes(atomId) ?? false;
+    case "structure":
+      return true;
+  }
 }
 
 /** Decision 63, on SQUARED distances: own <= (0.85 × other)². */
@@ -939,11 +1152,22 @@ function boxCentre(box: LabelBox): ScenePoint {
   return { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 };
 }
 
-/** Squared distance to the request's own anchor: its segment if it has one. */
+/**
+ * Squared distance to the request's own anchor: its ink box if it has one
+ * (decision 88), else its segment (decision 68), else the anchor point.
+ */
 function ownDistance(centre: ScenePoint, request: AnnotationRequest): number {
+  if (request.anchorBox !== undefined) return squaredDistanceToBox(centre, request.anchorBox);
   return request.anchorSegment === undefined
     ? squaredDistance(centre, request.anchor)
     : squaredDistanceToSegment(centre, request.anchorSegment);
+}
+
+/** Squared distance from a point to a rectangle; zero inside it. */
+function squaredDistanceToBox(p: ScenePoint, box: LabelBox): number {
+  const dx = p.x < box.minX ? box.minX - p.x : p.x > box.maxX ? p.x - box.maxX : 0;
+  const dy = p.y < box.minY ? box.minY - p.y : p.y > box.maxY ? p.y - box.maxY : 0;
+  return dx * dx + dy * dy;
 }
 
 function squaredDistance(p: ScenePoint, q: ScenePoint): number {

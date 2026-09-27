@@ -20,6 +20,9 @@ import {
   getAtom,
   neighborIds,
   ringAt,
+  stereoGroupAt,
+  stereoGroupCoverage,
+  stereoGroupTag,
 } from "@starter/chem-core";
 import type { FormulaPart } from "@starter/chem-core";
 import type { AtomId, BondId, Molecule } from "@starter/chem-core";
@@ -46,15 +49,19 @@ import {
   canonicalFreeDirection,
   EMPTY_ANNOTATION_LAYOUT,
   placeAnnotations,
+  structureInkBounds,
+  structurePrefixRequest,
 } from "../label/annotations.js";
 import type {
   AnnotationAtomCentre,
   AnnotationBondSegment,
   AnnotationCircle,
+  AnnotationDisc,
   AnnotationLayout,
   AnnotationContext,
   AnnotationRequest,
   AnnotationSegment,
+  AnnotationSource,
 } from "../label/annotations.js";
 import {
   composeAtomLabel,
@@ -94,6 +101,7 @@ import type {
   RenderScene,
   ScenePoint,
   ScenePrimitive,
+  SceneSource,
   TextRunPrimitive,
   TextSpan,
 } from "./types.js";
@@ -479,8 +487,16 @@ function buildStructural(
   const hydrogens = phantomHydrogens(mol, style, representation, placements);
   pushHydrogenPrimitives(primitives, style, hydrogens, centres, placements, drawn);
 
-  const requests = annotationRequests(mol, representation, centres, corridors, options);
-  if (requests.length === 0) {
+  const { requests, prefixText } = annotationRequests(
+    mol,
+    representation,
+    centres,
+    corridors,
+    options,
+  );
+  // The prefix alone is enough to go on: a racemate drawn with no wedges has no
+  // letter to place and still has to say `rac-`.
+  if (requests.length === 0 && prefixText === undefined) {
     return { primitives, annotations: EMPTY_ANNOTATION_LAYOUT };
   }
 
@@ -490,6 +506,12 @@ function buildStructural(
   // against, and what decides whether it is drawn at all. `obstacles` are
   // clearance boxes and name one glyph several times.
   const glyphInk: LabelBox[] = [];
+  // Decision 88's ink box needs the bare-vertex dots, which decision 61
+  // deliberately keeps out of `glyphInk`: benzene skeletal draws no glyph at
+  // all, so without them its prefix would be measured off the bond lines alone.
+  // Their own list, because the discs in `obstacles` are grown by the label
+  // padding and an ink box unioned out of those would float.
+  const vertexDots: AnnotationDisc[] = [];
   const atomCentres: AnnotationAtomCentre[] = [];
   for (const atomId of mol.atomIds) {
     const centre = centres.get(atomId);
@@ -511,6 +533,7 @@ function buildStructural(
       // is not glyph ink — crossing one is "crowded", never a drop — while
       // radical and lone-pair dots above are glyph ink.
       obstacles.push({ kind: "disc", centre, radius: style.atomDotRadiusPx });
+      vertexDots.push({ centre, radius: style.atomDotRadiusPx });
     }
   }
   for (const hydrogen of hydrogens) {
@@ -553,7 +576,24 @@ function buildStructural(
     atomCentres,
     bondSegments,
   };
-  const annotations = placeAnnotations(requests, context);
+
+  // Decision 88: the prefix is anchored to the STRUCTURE's ink, so it is built
+  // last, once every glyph, line and circle has been measured. An ink box of
+  // undefined means the structure drew nothing measurable — an atom-less
+  // molecule, or a style with no dot and no label — and there is nothing for a
+  // prefix to sit above.
+  const ink =
+    prefixText === undefined
+      ? undefined
+      : structureInkBounds({ ...context, dots: vertexDots });
+  const placementRequests =
+    prefixText === undefined || ink === undefined
+      ? requests
+      : [...requests, structurePrefixRequest(prefixText, ink)];
+  if (placementRequests.length === 0) {
+    return { primitives, annotations: EMPTY_ANNOTATION_LAYOUT, context };
+  }
+  const annotations = placeAnnotations(placementRequests, context);
 
   // Emitted in PLACEMENT order — priority, then source id — so the scene's
   // order is the same function of the molecule the placements are.
@@ -562,7 +602,7 @@ function buildStructural(
     if (!placed.drawn) continue;
     const run: TextRunPrimitive = {
       id: placed.id,
-      source: placed.source,
+      source: sceneSourceOf(placed.source),
       type: "textRun",
       origin: placed.origin,
       spans: [{ text: placed.text }],
@@ -577,6 +617,33 @@ function buildStructural(
   }
 
   return { primitives, annotations, context };
+}
+
+/**
+ * An annotation's source as the scene names it.
+ *
+ * The atom and bond arms pass straight through, so a click on an "(R)" still
+ * picks the atom it belongs to. The STRUCTURE arm becomes `decoration`, which
+ * is the arm `SceneSource` already has for a primitive that belongs to no model
+ * entity — and hit-testing ignores it, which is right: there is nothing for a
+ * click on `rac-` to select that selecting the whole molecule would not do
+ * better through a menu.
+ *
+ * NOT a new `SceneSource` arm, deliberately. A fifth arm would be a compile
+ * error in the SVG serialiser, the canvas layer and every exhaustive switch
+ * downstream, all of which would have to answer "what does clicking this
+ * select?" — a question decision 88 does not ask and this task has no ruling
+ * for.
+ */
+function sceneSourceOf(source: AnnotationSource): SceneSource {
+  switch (source.kind) {
+    case "atom":
+      return { kind: "atom", atomId: source.atomId };
+    case "bond":
+      return { kind: "bond", bondId: source.bondId };
+    case "structure":
+      return { kind: "decoration" };
+  }
 }
 
 /**
@@ -781,6 +848,23 @@ function pushHydrogenPrimitives(
  * an atom that no longer exists is silently not drawn; and an atom with no
  * locant gets nothing — no fallback to its id or its index.
  *
+ * ENHANCED STEREO IS ONE QUESTION ASKED ONCE (decisions 40 and 88).
+ * `stereoGroupCoverage` in chem-core answers whether the molecule reads `rac-`,
+ * `rel-`, or per centre; nothing here decides which atoms are stereocentres or
+ * what a group is called. When a prefix applies the per-centre tags are
+ * OMITTED — the prefix already says the same thing about every one of them, and
+ * a figure that printed both would say it twice.
+ *
+ * THE TAG FOLLOWS MEMBERSHIP, NOT PERCEPTION. Every atom in a group gets one,
+ * including an atom this build does not read as stereogenic. A collection is
+ * something the document (or an imported file) STATES, and dropping its tag
+ * because the wedge beside it was erased would lose the statement silently;
+ * `stereoGroupCoverage` reports that case as `unresolved` and the tags are what
+ * makes it visible.
+ *
+ * BOTH ARE GATED ON `showStereoDescriptors` (decision 40) — they are
+ * stereochemistry, and the flag is the one switch a figure has for it.
+ *
  * alphaBeta and torsion have no producer yet; the pass accepts them.
  */
 function annotationRequests(
@@ -789,11 +873,24 @@ function annotationRequests(
   centres: ReadonlyMap<AtomId, ScenePoint>,
   corridors: ReadonlyMap<BondId, AnnotationSegment>,
   options: SceneBuildOptions | undefined,
-): AnnotationRequest[] {
+): {
+  readonly requests: AnnotationRequest[];
+  /**
+   * Decision 88's `rac-` / `rel-`, or undefined. Not a request yet: it is
+   * anchored to the drawing's ink box, which is only known once everything else
+   * has been measured.
+   */
+  readonly prefixText?: string;
+} {
   const requests: AnnotationRequest[] = [];
   const descriptors = representation.flags.showStereoDescriptors;
   const locants = representation.flags.showLocants ? options?.locants : undefined;
-  if (!descriptors && locants === undefined) return requests;
+  if (!descriptors && locants === undefined) return { requests };
+  // A molecule with no groups asks nothing new of the pass — no coverage query,
+  // no tag, no prefix — which is what keeps every committed golden byte-
+  // identical (decision 71).
+  const coverage = descriptors ? stereoGroupCoverage(mol) : { kind: "none" as const };
+  const prefixText = coverage.kind === "whole" ? coverage.prefix : undefined;
 
   for (const atomId of mol.atomIds) {
     const centre = centres.get(atomId);
@@ -810,6 +907,23 @@ function annotationRequests(
           kind: "descriptor",
           source,
           text,
+          anchor: centre,
+          preferred: preferredDirection(),
+        });
+      }
+    }
+
+    // Decision 40: the tag, unless the molecule-wide prefix already said it.
+    if (descriptors && prefixText === undefined) {
+      const group = stereoGroupAt(mol, atomId);
+      if (group !== undefined) {
+        requests.push({
+          kind: "stereoGroup",
+          source,
+          // `stereoGroupTag` formats the STORED index (decision 92). Spelling
+          // it here would let a figure number a group by its array position,
+          // which is the renumbering bug that decision exists to prevent.
+          text: stereoGroupTag(group),
           anchor: centre,
           preferred: preferredDirection(),
         });
@@ -861,7 +975,7 @@ function annotationRequests(
     }
   }
 
-  return requests;
+  return prefixText === undefined ? { requests } : { requests, prefixText };
 }
 
 /**

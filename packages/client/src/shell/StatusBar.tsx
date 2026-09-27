@@ -74,10 +74,23 @@ function formatCharge(charge: number): string {
   return charge > 0 ? `+${String(charge)}` : String(charge);
 }
 
-/** "a9 (S)" — which atom or bond, and what it says. */
+/**
+ * "a9 (S)" — which atom or bond, and what it says.
+ *
+ * Decision 88's rac-/rel- prefix belongs to no atom and no bond, so it names
+ * the whole structure instead. A `switch` rather than a pair of ternaries: a
+ * further source kind is then a compile error here, not a line reading
+ * "undefined rac-".
+ */
 function unplacedLine(u: UnplacedAnnotation): string {
-  const where = u.source.kind === "atom" ? u.source.atomId : u.source.bondId;
-  return `${where} ${u.text}`;
+  switch (u.source.kind) {
+    case "atom":
+      return `${u.source.atomId} ${u.text}`;
+    case "bond":
+      return `${u.source.bondId} ${u.text}`;
+    case "structure":
+      return `structure ${u.text}`;
+  }
 }
 
 /**
