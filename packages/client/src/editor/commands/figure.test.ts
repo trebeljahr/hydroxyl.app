@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildMolecule } from "@starter/chem-core";
-import { benzylAlcoholAbbreviated, ethanol } from "@starter/chem-render";
+import { buildMolecule, withStereoGroups } from "@starter/chem-core";
+import { benzylAlcoholAbbreviated, butan2olWedged, ethanol } from "@starter/chem-render";
 import { createDocument, createPanel, defaultPanelsFor } from "@starter/shared";
 
 import { createEditorStore, type EditorStore } from "@/state";
@@ -18,6 +18,7 @@ vi.mock("@/lib/export/png", () => ({
 }));
 
 import { copyFigure, copyMolblock } from "./figure";
+import { molblockVersionNotice } from "@/lib/rdkit/translate";
 
 const NOW = "2024-01-01T00:00:00.000Z";
 
@@ -148,6 +149,38 @@ describe("Copy as molfile", () => {
     const text = await (await writes[0]![0]!.parts["text/plain"]!).text();
     expect(text).toContain("V2000");
     expect(text).toContain("M  END");
+  });
+
+  it("says V2000 was the default by saying nothing about the generation", async () => {
+    await copyMolblock(store);
+    // Ethanol states no group, so `molblockVersionNotice` is null and the status
+    // line is the bare one. That is what keeps the notice meaningful when it does
+    // appear.
+    expect(molblockVersionNotice(store.getState().document.molecule)).toBeNull();
+    expect(store.getState().ui.statusMessage).toBe("Copied the structure as a molfile");
+  });
+
+  it("repeats decision 49's generation sentence in the status line", async () => {
+    // The copy may be made from the palette, with no dialog on screen, so the
+    // line that says the copy happened is the ONLY place a V3000 switch is
+    // stated. Deleting this note left the whole client suite green: the dialog
+    // owns the sentence and is tested, and nothing checked that this caller
+    // repeats it.
+    const racemate = withStereoGroups(butan2olWedged(), [
+      { kind: "and", index: 1, atomIds: ["a2"] },
+    ]);
+    store = editor(racemate);
+    await copyMolblock(store);
+    const text = await (await writes[0]![0]!.parts["text/plain"]!).text();
+    expect(text).toContain("V3000");
+    expect(text).toContain("MDLV30/STERAC1");
+    // Read from `translate.ts`, the sentence's one owner, so the assertion cannot
+    // freeze a second wording here.
+    const note = molblockVersionNotice(racemate)!;
+    expect(note).toContain("V3000");
+    expect(store.getState().ui.statusMessage).toBe(
+      `Copied the structure as a molfile. ${note}`,
+    );
   });
 
   it("surfaces MolblockLabelError with the atom, and selects it (decision 8)", async () => {

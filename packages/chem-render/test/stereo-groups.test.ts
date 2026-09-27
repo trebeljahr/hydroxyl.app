@@ -251,6 +251,35 @@ describe("decision 40: a grouped centre carries its collection's tag", () => {
       );
     }
   });
+
+  it("draws nothing new with LOCANTS on and stereo descriptors off", () => {
+    // The configuration that tells a real gate from an accident of the pass's
+    // early return: `annotationRequests` returns early only when the locants are
+    // off TOO, so with them on the `showStereoDescriptors` guard on the coverage
+    // query is the only thing keeping a tag and a prefix off a figure whose one
+    // stereochemistry switch is off. Dropping that guard left every committed
+    // golden byte-identical and every other assertion green.
+    const { mol, c2, c3 } = chlorobutanol();
+    const racemate = withStereoGroups(mol, [{ kind: "and", index: 1, atomIds: [c2, c3] }]);
+    const locants = Object.fromEntries(mol.atomIds.map((id, i) => [id, `${i + 1}`]));
+    const locantsOnly = representation("skeletal", {
+      showStereoDescriptors: false,
+      showLocants: true,
+    });
+    for (const style of STYLES) {
+      const { scene, annotations } = buildAnnotatedScene(racemate, style, locantsOnly, { locants });
+      // The locants really are drawn, or this proves nothing about the gate.
+      expect(placementsOfKind(annotations, "locant").length).toBeGreaterThan(0);
+      expect(placementsOfKind(annotations, "stereoGroup")).toEqual([]);
+      expect(placementsOfKind(annotations, "stereoPrefix")).toEqual([]);
+      expect(annotationRuns(scene, ":stereoGroup")).toEqual([]);
+      expect(annotationRuns(scene, ":stereoPrefix")).toEqual([]);
+      // And the numbered figure is the same bytes as the ungrouped molecule's.
+      expect(serializeScene(scene)).toBe(
+        serializeScene(buildAnnotatedScene(mol, style, locantsOnly, { locants }).scene),
+      );
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -490,6 +519,38 @@ describe("decision 88: rac- and rel- above the structure", () => {
     expect(layout.unplaced[0]!.reason).toBe("printsOnText");
     expect(layout.unplaced[0]!.id).toBe("structure:stereoPrefix");
     expect(layout.unplaced[0]!.source).toEqual({ kind: "structure" });
+  });
+
+  it("still tags a SECOND collection the prefix does not speak for", () => {
+    // The one case where the figure and the file disagreed about how many
+    // statements exist. `and1` over both centres earns `rac-`; `or1` over C1, a
+    // methyl this build reads as no centre at all, does not disturb that — so
+    // coverage is `whole` and suppressing every tag drew a figure saying ONE
+    // thing while the file carried both `MDLV30/STERAC1` and `MDLV30/STEREL1`.
+    // Decision 40's "the tags are then omitted" is about the centres the prefix
+    // covers, and T14 says a collection resolving to no centre must stay visible.
+    const { mol, c2, c3 } = chlorobutanol();
+    const both = withStereoGroups(mol, [
+      { kind: "and", index: 1, atomIds: [c2, c3] },
+      { kind: "or", index: 1, atomIds: ["a1" as AtomId] },
+    ]);
+    for (const style of STYLES) {
+      const layout = annotationLayout(both, style, DESCRIPTORS);
+      expect(placementsOfKind(layout, "stereoPrefix").map((p) => p.text)).toEqual(["rac-"]);
+      // Exactly one tag, on the atom the prefix says nothing about.
+      const tags = placementsOfKind(layout, "stereoGroup");
+      expect(tags.map((p) => p.text)).toEqual(["or1"]);
+      expect(tags[0]!.source).toEqual({ kind: "atom", atomId: "a1" });
+    }
+    // And the covered centres still lose their tags to the prefix, including a
+    // non-centre inside the prefix's OWN group — the prefix names that group, so
+    // repeating its tag would say it twice.
+    const padded = withStereoGroups(mol, [
+      { kind: "and", index: 1, atomIds: [c2, c3, "a1" as AtomId] },
+    ]);
+    const paddedLayout = annotationLayout(padded, PUBLICATION_STYLE, DESCRIPTORS);
+    expect(placementsOfKind(paddedLayout, "stereoPrefix").map((p) => p.text)).toEqual(["rac-"]);
+    expect(placementsOfKind(paddedLayout, "stereoGroup")).toEqual([]);
   });
 
   it("loses to the letter and to the tag when they contest one slot", () => {

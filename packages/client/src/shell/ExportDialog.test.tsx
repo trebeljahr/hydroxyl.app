@@ -8,11 +8,11 @@ import { act, render } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { butan2olWedged } from "@starter/chem-render";
-import { withStereoGroups } from "@starter/chem-core";
+import { bonds, setBondStereo, withStereoGroups } from "@starter/chem-core";
 import { createDocument, createPanel } from "@starter/shared";
 import type { SketchDocument } from "@starter/shared";
 
-import { molblockVersionNotice } from "@/lib/rdkit/translate";
+import { molblockVersionNotice, wedgelessStereoGroupNotice } from "@/lib/rdkit/translate";
 import { editorStore } from "@/state";
 
 import { ExportDialog } from "./ExportDialog";
@@ -118,6 +118,53 @@ describe("ExportDialog molfile generation notice (decision 49)", () => {
   it("is silent for a structure that states no group, where V2000 is still the default", () => {
     // A notice on every export would be noise on the ordinary case, and would
     // train the reader to ignore the one that matters.
+    openDialog(descriptorDoc(true), 60);
+    expect(notice()).toBeNull();
+  });
+});
+
+describe("ExportDialog wedgeless stereo group notice (decision 95)", () => {
+  const notice = (): HTMLElement | null =>
+    document.querySelector<HTMLElement>('[data-shell="wedgeless-stereo-group"]');
+
+  it("names the grouped atoms an RDKit reader will drop, and still exports", () => {
+    // A flat skeleton marked racemic is an ordinary scheme drawing, so the mark is
+    // not refused (decision 95) — but RDKit builds its collection out of the atoms
+    // carrying a chiral tag, and this one has none. The dialog says what will be
+    // lost and names the atoms, since the drop is per atom.
+    const doc = descriptorDoc(true);
+    const flat = bonds(doc.molecule).reduce(
+      (mol, bond) => setBondStereo(mol, bond.id, "none"),
+      doc.molecule,
+    );
+    const molecule = withStereoGroups(flat, [{ kind: "and", index: 1, atomIds: ["a2"] }]);
+    openDialog({ ...doc, molecule }, 60);
+    const shown = notice();
+    expect(shown).not.toBeNull();
+    // The sentence has one owner, as decision 49's does.
+    expect(shown!.textContent).toBe(wedgelessStereoGroupNotice(molecule));
+    expect(shown!.textContent).toContain("a2");
+    // Informing, not refusing.
+    for (const command of ["figure.export-svg", "figure.copy-molblock"]) {
+      const button = document.querySelector<HTMLButtonElement>(`[data-command="${command}"]`);
+      expect(button, command).not.toBeNull();
+      expect(button!.disabled, command).toBe(false);
+    }
+  });
+
+  it("is silent when every grouped atom carries a wedge", () => {
+    // butan-2-ol as drawn: its centre has the wedge, so RDKit keeps the
+    // collection and there is nothing to warn about. A notice on every grouped
+    // export would train the reader to ignore this one.
+    const doc = descriptorDoc(true);
+    const molecule = withStereoGroups(doc.molecule, [{ kind: "and", index: 1, atomIds: ["a2"] }]);
+    openDialog({ ...doc, molecule }, 60);
+    expect(notice()).toBeNull();
+    // And the generation notice is still there, so the two are independent.
+    expect(document.querySelector('[data-shell="molfile-version"]')).not.toBeNull();
+  });
+
+  it("is silent for a structure that states no group at all", () => {
     openDialog(descriptorDoc(true), 60);
     expect(notice()).toBeNull();
   });

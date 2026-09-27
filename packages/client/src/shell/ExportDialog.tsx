@@ -47,7 +47,7 @@ import { JOURNAL_WIDTHS_CM } from "@starter/chem-render";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { STYLE_PRESET_TITLES } from "@/canvas/scene-bridge";
 import { commandById } from "@/editor/commands/registry";
-import { molblockVersionNotice } from "@/lib/rdkit/translate";
+import { molblockVersionNotice, wedgelessStereoGroupNotice } from "@/lib/rdkit/translate";
 import {
   CUSTOM_WIDTH_RANGE_CM,
   annotationSizeNotice,
@@ -126,6 +126,11 @@ export function ExportDialog(): ReactElement {
   // handing the file to old instrument software needs to know it is not V2000.
   // The sentence is `translate.ts`'s, so it cannot disagree with the bytes.
   const molfileNotice = molblockVersionNotice(doc.molecule);
+  // Decision 95: the collection this app writes is correct, and an RDKit-based
+  // reader will still drop the grouped atoms that carry no wedge. Named here,
+  // beside the generation sentence, because both are about what the molfile will
+  // mean to the next program rather than about how the figure looks.
+  const wedgelessNotice = wedgelessStereoGroupNotice(doc.molecule);
   const exportPreset = settings.style === "canvas" ? doc.stylePreset : "publication";
 
   return (
@@ -364,6 +369,15 @@ export function ExportDialog(): ReactElement {
             className="text-muted-foreground mt-2 text-xs"
           >
             {molfileNotice}
+          </p>
+        )}
+        {wedgelessNotice === null ? null : (
+          <p
+            data-shell="wedgeless-stereo-group"
+            role="status"
+            className="text-muted-foreground mt-2 text-xs"
+          >
+            {wedgelessNotice}
           </p>
         )}
         {/* The status bar sits under the dialog's overlay, so what the last

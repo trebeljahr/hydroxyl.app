@@ -25,6 +25,7 @@ import {
   requireBond,
   stereoGroupTag,
   stereoGroupsOf,
+  wedgelessStereoGroupAtoms,
   writeMolblock,
   type AtomId,
   type MolblockVersion,
@@ -111,6 +112,41 @@ export function molblockVersionNotice(mol: Molecule): string | null {
 }
 
 /**
+ * DECISION 95's KNOWN LIMIT, as the sentence the export dialog shows — or `null`
+ * when it does not apply.
+ *
+ * WHY IT IS A WARNING AND NOT A REFUSAL. A flat skeleton marked racemic is a
+ * normal thing to draw for a scheme, and this app states it correctly: the model
+ * holds the collection, the V3000 writer emits it, chem-core reads it back
+ * whole. RDKit builds a collection out of the atoms carrying a chiral tag
+ * instead, and a molfile atom only gets one from a wedge or hash starting at it
+ * — so an RDKit-based tool downstream drops exactly those grouped atoms that
+ * carry no mark. Refusing the mark was rejected; inventing a wedge would state a
+ * configuration the author did not draw. So the file goes out and the dialog
+ * says what will be lost.
+ *
+ * IT NAMES THE ATOMS, because the drop is per atom and not all-or-nothing:
+ * `wedgelessStereoGroupAtoms` is chem-core's answer and this only writes it into
+ * a sentence. The atoms are also worth SELECTING on the canvas, which is the
+ * caller's business — see decision 8's `refuseLabelled` for the same pattern.
+ *
+ * It disappears on its own the day RDKit reads a collection off the collection
+ * block: the atom list comes back empty and so does this.
+ */
+export function wedgelessStereoGroupNotice(mol: Molecule): string | null {
+  const atomIds = wedgelessStereoGroupAtoms(mol);
+  if (atomIds.length === 0) return null;
+  const noun = atomIds.length === 1 ? "atom" : "atoms";
+  const verb = atomIds.length === 1 ? "carries" : "carry";
+  return (
+    `${atomIds.length} grouped ${noun} (${atomIds.join(", ")}) ${verb} no wedge ` +
+    `or hash. The collection is written correctly, but tools built on RDKit drop ` +
+    `a grouped atom whose configuration nothing draws, so they will read ` +
+    `${atomIds.length === 1 ? "that atom" : "those atoms"} as ungrouped.`
+  );
+}
+
+/**
  * Warnings that mean the molecule is NOT the file: atoms or bonds actually
  * disappeared. An import carrying one of these is a failure, not a caveat —
  * a dummy atom or an R-group silently vanishing is how a scaffold becomes a
@@ -135,6 +171,12 @@ const CHANGED_WARNINGS: ReadonlySet<MolblockWarning["kind"]> = new Set([
   "unsupported-bond-type",
   "unsupported-bond-stereo",
   "three-dimensional",
+  // A collection that came back smaller than the file declares. Nothing
+  // disappeared from the graph, so it is not lossy — but the stereochemical
+  // statement is a different one, and measured on a real 18-centre racemate the
+  // coverage fell from `rac-` to per-centre tags. That is a banner, not a
+  // footnote.
+  "collection-count-mismatch",
 ]);
 
 /** A bad x or y defaults the coordinate to 0, stacking an atom on the origin. */

@@ -23,7 +23,8 @@
  * means every centre, not every atom. `stereocenterAtoms` is the set,
  * deliberately the same one decision 40's coverage query uses — it includes a
  * centre whose descriptor is undetermined, so a racemate drawn with no wedges
- * at all can still be marked.
+ * at all can still be marked. (Decision 95's limit rides on that: such a mark is
+ * stored and written correctly, and an RDKit-based reader will drop it.)
  *
  * CLEARING IS ALLOWED WHERE MARKING IS NOT. An imported file may put a
  * collection on atoms this build does not perceive as stereogenic (chem-core
@@ -32,6 +33,18 @@
  * unremovable from the editor — the same trap decision 56 fixed for a display
  * flag no control could switch off. So "Clear" is enabled when the selection
  * holds a stereocentre OR an atom that is in a group.
+ *
+ * DECISION 96 SETTLES THAT WIDTH AND PAYS FOR IT IN THE STATUS LINE. Clear stays
+ * wide, and the message names how many collections went and on which atoms,
+ * because a rubber band over a whole structure removes collections the author
+ * was not thinking about. One undo puts them back; a confirmation dialog was
+ * rejected, because this editor does not put a modal in front of an undoable
+ * edit.
+ *
+ * A WEDGELESS GROUP IS A DIFFERENT MATTER, and not this file's (decision 95): a
+ * centre may be marked with no wedge on it, the mark is stored and written
+ * correctly, and it is an RDKit-based reader downstream that drops it. The export
+ * dialog says so, from `wedgelessStereoGroupNotice`.
  */
 
 import {
@@ -131,6 +144,39 @@ function selectedGrouped(state: EditorState): readonly AtomId[] {
   const mol = state.document.molecule;
   if (stereoGroupsOf(mol).length === 0) return [];
   return state.selection.atomIds.filter((id) => stereoGroupAt(mol, id) !== undefined);
+}
+
+/**
+ * What "Clear" reports, decision 96: how many COLLECTIONS it touched, which
+ * ones, and which atoms.
+ *
+ * The count is of collections and not of atoms because that is what the command
+ * costs: staying wide is necessary (an imported collection on atoms this build
+ * does not perceive as stereogenic has to stay removable — the decision 56
+ * trap), and the price is that a rubber band over a whole structure clears
+ * collections the author was not thinking about. Naming them is what makes that
+ * visible; one undo puts them back, which is why a confirmation dialog was
+ * rejected.
+ *
+ * The tags are the spelling the figure prints (`and1`, `or1`, `abs`) and the
+ * atoms are in selection order, so the sentence can be matched against the
+ * drawing without translating. Named atoms rather than a count alone: "2
+ * collections" says nothing about WHICH part of a large selection lost them.
+ */
+function clearedMessage(mol: Molecule, cleared: readonly AtomId[]): string {
+  const tags: string[] = [];
+  for (const atomId of cleared) {
+    const group = stereoGroupAt(mol, atomId);
+    if (group === undefined) continue;
+    const tag = stereoGroupTag(group);
+    if (!tags.includes(tag)) tags.push(tag);
+  }
+  const groupNoun = tags.length === 1 ? "stereo group" : "stereo groups";
+  const atomNoun = cleared.length === 1 ? "atom" : "atoms";
+  return (
+    `Cleared ${tags.length} ${groupNoun} (${tags.join(", ")}) ` +
+    `from ${cleared.length} ${atomNoun}: ${cleared.join(", ")}`
+  );
 }
 
 export function canMarkStereoGroup(state: EditorState): boolean {
@@ -255,7 +301,9 @@ export function clearStereoGroup(store: EditorStore): void {
     state.setStatusMessage(NOTHING_WAS_GROUPED_MESSAGE);
     return;
   }
+  // Built from the molecule BEFORE the edit: the tags exist only there, since the
+  // whole point of the edit is that they are gone afterwards.
+  const message = clearedMessage(mol, cleared);
   state.applyMoleculeEdit(CLEAR_STEREO_GROUP_TITLE, () => next);
-  const noun = cleared.length === 1 ? "atom" : "atoms";
-  state.setStatusMessage(`Cleared the stereo group on ${cleared.length} ${noun}`);
+  state.setStatusMessage(message);
 }

@@ -2,16 +2,24 @@ import { createRequire } from "node:module";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import {
+  bonds,
   readMolblock,
+  setBondStereo,
   stereoGroupCoverage,
   stereoGroupsOf,
   stereocenterAtoms,
+  wedgelessStereoGroupAtoms,
   withStereoGroups,
 } from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
 
 import type { JSMolLike, RDKitModuleLike } from "./ops";
-import { moleculeToMolblock, molblockVersionFor, molblockVersionNotice } from "./translate";
+import {
+  moleculeToMolblock,
+  molblockVersionFor,
+  molblockVersionNotice,
+  wedgelessStereoGroupNotice,
+} from "./translate";
 
 /**
  * Enhanced stereo groups across the real wasm, both directions.
@@ -35,9 +43,14 @@ import { moleculeToMolblock, molblockVersionFor, molblockVersionNotice } from ".
  * RDKit understood. `get_json` is RDKit's own commonchem dump and it carries
  * `stereoGroups` as structured data: `{"type":"and","id":0,"atoms":[1,3]}`.
  *
- * ITS INDICES ARE ZERO-BASED, and its `id` is a zero-based counter PER KIND, so
- * `STERAC1` reads back as `id: 0`. An `abs` entry carries no `id` at all. Both
- * are RDKit's conventions, measured, not assumed — see `rdkitGroups`.
+ * ITS INDICES ARE ZERO-BASED. Its `id` CARRIES NO INFORMATION: measured on
+ * RDKit's own output for `C[C@H](O)[C@@H](C)[C@H](O)C |&1:1,&2:3,o1:5|`, which it
+ * writes as `STERAC1`, `STERAC2` and `STEREL1`, every entry comes back `id: 0` —
+ * so it distinguishes neither the group number nor one group from another, and no
+ * assertion may be built on it (`rdkitGroups` drops it for that reason). An `abs`
+ * entry carries no `id` at all. The group NUMBER survives only in the molblock
+ * text, which is why the `MDLV30/...` lines are asserted separately below.
+ * Measured, not assumed, as everything in this file is.
  *
  * WHAT IS DELIBERATELY NOT HERE: the SMILES-level round trip, because of the
  * canonicalisation above, and any assertion on CIP letters, which is
@@ -197,6 +210,65 @@ describe("RDKit reads this app's V3000 stereo groups", () => {
     expect(group?.kind).toBe("and");
     expect(group?.rows).toHaveLength(18);
     expect(group?.rows).toEqual(Array.from({ length: 18 }, (_, i) => 2 + i * 2));
+  });
+
+  it("re-proves decision 95: RDKit drops a grouped atom that carries no mark", () => {
+    // THE KNOWN LIMIT, measured every run rather than trusted — the
+    // `RDKIT_MOLFILE_STEREO_BLIND` precedent. Every other fixture in this file
+    // comes from an RDKit SMILES carrying `@`/`@@`, so every grouped atom always
+    // has a chiral tag and none of them can see this; the wedgeless case has to
+    // be built deliberately.
+    //
+    // A flat skeleton marked racemic is an ordinary scheme drawing, so refusing
+    // the mark was rejected (decision 95). This app states it correctly at every
+    // layer and RDKit still will not read it back.
+    const drawn = readMolblock(rdkitMolblock(RACEMATE_SMILES)).molecule;
+    const flat = bonds(drawn).reduce((mol, bond) => setBondStereo(mol, bond.id, "none"), drawn);
+    expect(bonds(flat).filter((bond) => bond.stereo !== "none")).toEqual([]);
+    // Still two stereocentres: `stereocenterAtoms` includes a centre whose
+    // descriptor is undetermined, which is what lets a flat racemate be marked.
+    expect(stereocenterAtoms(flat)).toEqual(["a2", "a4"]);
+    const racemate = withStereoGroups(flat, [{ kind: "and", index: 1, atomIds: ["a2", "a4"] }]);
+    expect(stereoGroupCoverage(racemate)).toMatchObject({ kind: "whole", prefix: "rac-" });
+
+    const ours = exported(racemate);
+    // The file is RIGHT: the collection is there, and chem-core reads it back
+    // whole. Nothing here is a defect in this app.
+    expect(ours).toContain("MDLV30/STERAC1 ATOMS=(2 2 4)");
+    expect(stereoGroupsOf(readMolblock(ours).molecule)).toEqual([
+      { kind: "and", index: 1, atomIds: ["a2", "a4"] },
+    ]);
+    // And RDKit reports NO collection at all. When a future RDKit reads the
+    // collection block this fails, and the limit — and its warning — come out.
+    expect(rdkitGroups(ours)).toEqual([]);
+
+    // The dialog's sentence names exactly the atoms that will be lost.
+    expect(wedgelessStereoGroupAtoms(racemate)).toEqual(["a2", "a4"]);
+    const notice = wedgelessStereoGroupNotice(racemate);
+    expect(notice).toContain("a2, a4");
+    expect(notice).toContain("RDKit");
+    // The same molecule with its wedges intact earns no warning, and RDKit keeps
+    // the collection — so the sentence tracks the drawing and not the feature.
+    expect(wedgelessStereoGroupNotice(withStereoGroups(drawn, [
+      { kind: "and", index: 1, atomIds: ["a2", "a4"] },
+    ]))).toBeNull();
+  });
+
+  it("drops only the grouped atoms that carry no mark, not the whole collection", () => {
+    // PER ATOM, which is why the warning names atoms rather than saying the
+    // collection is unreliable: with one of the two centres still wedged RDKit
+    // keeps that one and silently shrinks the group.
+    const drawn = readMolblock(rdkitMolblock(RACEMATE_SMILES)).molecule;
+    const keep = bonds(drawn).find((bond) => bond.stereo !== "none" && bond.from === "a2");
+    expect(keep).toBeDefined();
+    const half = bonds(drawn).reduce(
+      (mol, bond) => (bond.id === keep?.id ? mol : setBondStereo(mol, bond.id, "none")),
+      drawn,
+    );
+    const racemate = withStereoGroups(half, [{ kind: "and", index: 1, atomIds: ["a2", "a4"] }]);
+    expect(wedgelessStereoGroupAtoms(racemate)).toEqual(["a4"]);
+    expect(wedgelessStereoGroupNotice(racemate)).toContain("a4");
+    expect(rdkitGroups(exported(racemate))).toEqual([{ kind: "and", rows: [2] }]);
   });
 
   it("writes V2000 with no collection when the molecule states no group, and says so", () => {

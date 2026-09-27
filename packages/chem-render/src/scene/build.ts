@@ -495,7 +495,11 @@ function buildStructural(
     options,
   );
   // The prefix alone is enough to go on: a racemate drawn with no wedges has no
-  // letter to place and still has to say `rac-`.
+  // letter to place and still has to say `rac-`. (Decision 95's known limit is
+  // about the FILE, not the figure: such a molecule draws `rac-` here and writes
+  // its COLLECTION line correctly, and it is an RDKit-based reader downstream
+  // that drops the collection back off it — `wedgelessStereoGroupAtoms` in
+  // chem-core is what the export dialog warns from.)
   if (requests.length === 0 && prefixText === undefined) {
     return { primitives, annotations: EMPTY_ANNOTATION_LAYOUT };
   }
@@ -851,9 +855,20 @@ function pushHydrogenPrimitives(
  * ENHANCED STEREO IS ONE QUESTION ASKED ONCE (decisions 40 and 88).
  * `stereoGroupCoverage` in chem-core answers whether the molecule reads `rac-`,
  * `rel-`, or per centre; nothing here decides which atoms are stereocentres or
- * what a group is called. When a prefix applies the per-centre tags are
- * OMITTED — the prefix already says the same thing about every one of them, and
- * a figure that printed both would say it twice.
+ * what a group is called. When a prefix applies the per-centre tags OF THE GROUP
+ * IT SPEAKS FOR are omitted — the prefix already says the same thing about every
+ * one of them, and a figure that printed both would say it twice.
+ *
+ * A GROUP THE PREFIX DOES NOT SPEAK FOR STILL GETS ITS TAGS. Coverage earns a
+ * prefix by one AND/OR group holding every STEREOCENTRE, which a second
+ * collection over atoms this build reads as non-stereogenic does not disturb:
+ * `and1 = {C2, C3}` plus `or1 = {C1}` is `rac-`, and suppressing every tag drew
+ * a figure saying ONE thing while the file carried `MDLV30/STERAC1` and
+ * `MDLV30/STEREL1` — the only case where the figure and the file disagreed about
+ * how many statements exist. Decision 40's "the tags are then omitted" is about
+ * the centres the prefix covers; T14's rule is that a collection resolving to no
+ * centre must still be visible rather than silently dropped, and the two are only
+ * both true if the suppression is scoped to the prefix's own group.
  *
  * THE TAG FOLLOWS MEMBERSHIP, NOT PERCEPTION. Every atom in a group gets one,
  * including an atom this build does not read as stereogenic. A collection is
@@ -889,8 +904,20 @@ function annotationRequests(
   // A molecule with no groups asks nothing new of the pass — no coverage query,
   // no tag, no prefix — which is what keeps every committed golden byte-
   // identical (decision 71).
+  //
+  // THE `descriptors ?` IS A REAL GATE, not an accident of the early return
+  // above: that return only fires when the locants are off TOO, so locants on
+  // with stereo descriptors off is the configuration where dropping this guard
+  // would tag and prefix a figure whose one stereochemistry switch is off
+  // (decision 40).
   const coverage = descriptors ? stereoGroupCoverage(mol) : { kind: "none" as const };
   const prefixText = coverage.kind === "whole" ? coverage.prefix : undefined;
+  // The group the prefix speaks for, by kind and stored index — the ONE group
+  // whose tags it replaces. Compared by identity is not enough: `coverage`
+  // returns the stored object today, and a future coverage query that rebuilt it
+  // would silently start tagging the covered centres again.
+  const spokenFor =
+    coverage.kind === "whole" ? `${coverage.group.kind}:${String(coverage.group.index)}` : undefined;
 
   for (const atomId of mol.atomIds) {
     const centre = centres.get(atomId);
@@ -913,10 +940,11 @@ function annotationRequests(
       }
     }
 
-    // Decision 40: the tag, unless the molecule-wide prefix already said it.
-    if (descriptors && prefixText === undefined) {
+    // Decision 40: the tag, unless the molecule-wide prefix already said it
+    // about this atom's own group.
+    if (descriptors) {
       const group = stereoGroupAt(mol, atomId);
-      if (group !== undefined) {
+      if (group !== undefined && `${group.kind}:${String(group.index)}` !== spokenFor) {
         requests.push({
           kind: "stereoGroup",
           source,

@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { benzene, buildMolecule, vec } from "@starter/chem-core";
+import { benzene, buildMolecule, vec, withStereoGroups } from "@starter/chem-core";
+import type { Molecule } from "@starter/chem-core";
 import { createDocument } from "@starter/shared";
 
 import { createMemoryDocumentStore, type MemoryDocumentStore } from "@/persistence/memory-store";
@@ -8,7 +9,9 @@ import { setDocumentStore } from "@/persistence/documents";
 import { recordFor } from "@/persistence/record";
 import { createEditorStore, type EditorStore } from "@/state";
 
-import { applyImport } from "./file";
+import { molblockVersionNotice } from "@/lib/rdkit/translate";
+
+import { applyImport, exportCurrent } from "./file";
 
 /** Ethanol: three heavy atoms, so a document swap is visible by count alone. */
 function ethanol() {
@@ -97,5 +100,73 @@ describe("importing a document that is already in storage", () => {
     const fromFile = createDocument({ molecule: benzene(), now: "2024-01-01T00:00:00.000Z" });
     await applyImport(editor, [fromFile], []);
     expect(store.counts.get).toBe(0);
+  });
+});
+
+/**
+ * Decision 49's OTHER status line. `exportCurrent` had no test at all, so
+ * deleting its generation note left the client suite green — and a DOWNLOADED
+ * file that quietly changed generation is exactly the case decision 49 names: an
+ * old reader rejects it for no visible reason.
+ *
+ * The real serialisation runs; only the browser's download plumbing is stubbed,
+ * so the bytes asserted are the bytes `exportDocument` would have written.
+ */
+describe("exporting the current document says which molfile generation it wrote", () => {
+  let downloads: string[];
+
+  beforeEach(() => {
+    downloads = [];
+    // jsdom has no blob URLs. Capturing the Blob here is also how the written
+    // text is read back.
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL: (blob: Blob) => {
+        void blob.text().then((text) => downloads.push(text));
+        return "blob:stub";
+      },
+      revokeObjectURL: () => undefined,
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  async function exported(molecule: Molecule): Promise<string> {
+    const store = createEditorStore({
+      document: createDocument({ molecule, title: "sketch", now: "2024-01-01T00:00:00.000Z" }),
+      viewportSize: { width: 800, height: 600 },
+    });
+    await exportCurrent(store, "mol");
+    // Let the Blob.text() microtask land before the bytes are read.
+    await Promise.resolve();
+    await Promise.resolve();
+    return store.getState().ui.statusMessage ?? "";
+  }
+
+  it("adds the sentence for a grouped structure and omits it otherwise", async () => {
+    const plain = ethanol();
+    expect(molblockVersionNotice(plain)).toBeNull();
+    expect(await exported(plain)).toBe("Exported “sketch”");
+    expect(downloads.join("")).toContain("V2000");
+
+    downloads = [];
+    const chiral = buildMolecule((b) => {
+      const c1 = b.atom("C", vec(0, 0));
+      const c2 = b.atom("C", vec(1, 0.6));
+      const o = b.atom("O", vec(1, 2));
+      const c3 = b.atom("C", vec(2, 0));
+      b.bond(c1, c2);
+      b.bond(c2, o, 1, "wedge");
+      b.bond(c2, c3);
+    });
+    const racemate = withStereoGroups(chiral, [{ kind: "and", index: 1, atomIds: ["a2"] }]);
+    const note = molblockVersionNotice(racemate)!;
+    expect(note).toContain("V3000");
+    expect(await exported(racemate)).toBe(`Exported “sketch”. ${note}`);
+    // And the file really did change generation, so the sentence is not decorative.
+    expect(downloads.join("")).toContain("V3000");
+    expect(downloads.join("")).toContain("MDLV30/STERAC1");
   });
 });

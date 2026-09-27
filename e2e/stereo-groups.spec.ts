@@ -122,10 +122,12 @@ test("marks a racemate, says rac- on the figure, and exports V3000", async ({ pa
   await page.keyboard.press("Escape");
 
   // And clearing the group takes both away again, which is what makes the
-  // switch reversible rather than a one-way door.
+  // switch reversible rather than a one-way door. Decision 96: Clear stays wide,
+  // so the line names how many collections went and on which atoms — a rubber
+  // band over a whole structure is exactly this gesture.
   await runFromPalette(page, "structure.stereo-group-clear");
   await expect(page.locator(`${STATUS_BAR} ${MESSAGE}`)).toHaveText(
-    "Cleared the stereo group on 2 atoms",
+    "Cleared 1 stereo group (and1) from 2 atoms: a2, a4",
   );
   await expect(page.locator(PREFIX)).toHaveCount(0);
 
