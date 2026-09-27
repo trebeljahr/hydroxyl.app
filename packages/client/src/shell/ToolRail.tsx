@@ -235,9 +235,22 @@ function pickerEntryClasses({
   if (disabled) {
     // Deliberately no hover pair: an entry that lights up under the cursor and
     // then refuses the click is worse than one that never lights up.
+    //
+    // THE GROUND IS `bg-popover` AND NOT `bg-muted`, WHICH IS WHY IT LOOKS LIKE
+    // THE IDLE GROUND. `text-muted-foreground` on `bg-muted` measures 4.35:1 in
+    // light mode (hsl 45.1% ink on hsl 96.1% ground), under the 4.5:1 floor the
+    // e2e holds every other state to; on `bg-popover` the same ink measures
+    // 4.74:1. WCAG 1.4.3 would exempt an inactive control from the floor
+    // altogether, but "the one state we let fall below the bar is the one no
+    // test can reach" is how a bar stops meaning anything. It also lands the
+    // disabled entry on exactly the ink-and-ground pair this app already uses
+    // for a genuinely disabled control — the `showLocants` label in
+    // `RepresentationSwitcher` — so "refused" reads the same wherever it
+    // appears. The ground is still NAMED rather than inherited, which is the
+    // property that matters here.
     return cn(
       PICKER_ENTRY_BASE,
-      "bg-muted text-muted-foreground cursor-not-allowed",
+      "bg-popover text-muted-foreground cursor-not-allowed",
     );
   }
   if (active) {
@@ -250,20 +263,32 @@ function pickerEntryClasses({
 }
 
 /**
- * Whether an option's COMMAND will accept the click, asked of the registry the
- * way the palette asks it — the same idiom as `flagAvailability` in
- * `RepresentationSwitcher`.
+ * Whether an option's COMMAND is refusing the click, asked of the registry the
+ * way the palette asks it.
+ *
+ * IT SUBSCRIBES RATHER THAN READING `editorStore.getState()` IMPERATIVELY, and
+ * that is the whole point of it being a hook. The first version read the store
+ * during render, outside any subscription, while each popover subscribes to one
+ * `toolOptions` slice and nothing else. A command whose `enabled` depended on
+ * the document or the selection would therefore have painted its entry from
+ * whatever the store held when the armed option last changed, and gone stale
+ * until something else remounted the popover — which is the opposite of what
+ * wiring the branch to the registry was supposed to buy. Selecting the boolean
+ * and not the state keeps the subscription narrow: the entry re-renders when
+ * the ANSWER flips, not when the store moves.
  *
  * EVERY OPTION COMMAND IS `enabled: always` TODAY, so this greys nothing out in
- * the shipped rail. The branch exists so that the first option command with a
- * real precondition greys its own entry out rather than offering a click that
- * silently does nothing, and it is wired here rather than left for later so the
- * disabled state cannot be invented twice. `OptionButton` is exported so the
- * component test can drive that branch directly — while the registry says yes
- * to everything, that is the only way to reach it.
+ * the shipped rail; the value is a constant and the subscription never fires.
+ * The branch exists so the first option command with a real precondition greys
+ * its own entry out rather than offering a click that silently does nothing.
+ * `OptionButton` is exported, and takes an explicit `disabled` override, so the
+ * component test can drive the branch directly — while the registry says yes to
+ * everything, that is the only way to reach it.
  */
-function optionDisabled(commandId: string): boolean {
-  return !commandById(commandId).enabled(editorStore.getState());
+function useOptionRefused(commandId: string | undefined): boolean {
+  return useEditorStore((state) =>
+    commandId === undefined ? false : !commandById(commandId).enabled(state),
+  );
 }
 
 export function OptionButton({
@@ -271,6 +296,7 @@ export function OptionButton({
   label,
   testId,
   elementSymbol,
+  commandId,
   disabled = false,
   className,
   onSelect,
@@ -292,22 +318,40 @@ export function OptionButton({
   readonly testId?: string;
   /** The element grid's own hook, so a symbol stays findable by symbol. */
   readonly elementSymbol?: string;
+  /**
+   * The command this entry runs, so the entry can ask the registry whether the
+   * click would be accepted. Omitted only by the test, which passes `disabled`
+   * directly.
+   */
+  readonly commandId?: string;
+  /**
+   * Forces the disabled state on regardless of what the registry says. The
+   * registry says yes to every option today, so this is how the test reaches
+   * the branch; it can never turn a refused entry back on.
+   */
   readonly disabled?: boolean;
   /**
-   * LAYOUT ONLY. The state colours above are not overridable per call site,
-   * which is what keeps the four states identical across four popovers.
+   * LAYOUT ONLY — and enforced, not merely asked for. `cn` is
+   * `twMerge(clsx(...))`, so whichever colour comes LAST wins and deletes the
+   * other; composing `className` BEFORE the state colours is what makes a
+   * colour passed here inert instead of silently replacing the entry's ground
+   * and ink. Layout still resolves the other way (the element grid's
+   * `text-center gap-0` beats the base `text-left gap-2`) because those are
+   * different twMerge groups from the colour roles. Pinned by a test.
    */
   readonly className?: string;
   readonly onSelect: () => void;
   readonly children: ReactNode;
 }): ReactElement {
+  const refused = useOptionRefused(commandId);
+  const isDisabled = disabled || refused;
   return (
     <button
       type="button"
       aria-pressed={active}
       aria-label={label}
       title={label}
-      disabled={disabled}
+      disabled={isDisabled}
       {...(testId === undefined ? {} : { "data-option": testId })}
       {...(elementSymbol === undefined ? {} : { "data-element": elementSymbol })}
       onClick={() => {
@@ -315,13 +359,13 @@ export function OptionButton({
         // still reaches React's onClick — and the store must not learn about a
         // choice the entry is refusing. Same reasoning as the view-flag
         // checkboxes in `RepresentationSwitcher`.
-        if (disabled) return;
+        if (isDisabled) return;
         onSelect();
       }}
       className={cn(
         "flex items-center gap-2 px-2 py-1 text-left text-xs",
-        pickerEntryClasses({ active, disabled }),
         className,
+        pickerEntryClasses({ active, disabled: isDisabled }),
       )}
     >
       {children}
@@ -343,7 +387,7 @@ function BondOptions(): ReactElement {
               <OptionButton
                 key={value}
                 active={order === value}
-                disabled={optionDisabled(`bond.order.${value}`)}
+                commandId={`bond.order.${value}`}
                 testId={`order-${String(value)}`}
                 label={`Bond order ${String(value)}`}
                 onSelect={() => {
@@ -369,7 +413,7 @@ function BondOptions(): ReactElement {
               <OptionButton
                 key={value}
                 active={stereo === value}
-                disabled={optionDisabled(`bond.stereo.${value}`)}
+                commandId={`bond.stereo.${value}`}
                 testId={`stereo-${value}`}
                 label={STEREO_LABELS[value]}
                 onSelect={() => {
@@ -406,7 +450,7 @@ function RingOptions(): ReactElement {
           <OptionButton
             key={name}
             active={current === name}
-            disabled={optionDisabled(`ring.${name}`)}
+            commandId={`ring.${name}`}
             testId={`ring-${name}`}
             label={name}
             onSelect={() => {
@@ -449,7 +493,7 @@ function ElementOptions(): ReactElement {
         <OptionButton
           key={element}
           active={current === element}
-          disabled={optionDisabled(`element.${element}`)}
+          commandId={`element.${element}`}
           elementSymbol={element}
           testId={`element-${element}`}
           // "Carbon (C)", not "C". The symbol stays on screen; the name is for
@@ -477,7 +521,7 @@ function ChainOptions(): ReactElement {
           <OptionButton
             key={n}
             active={length === n}
-            disabled={optionDisabled(`chain.length.${String(n)}`)}
+            commandId={`chain.length.${String(n)}`}
             testId={`chain-${String(n)}`}
             label={`${String(n)} atoms`}
             className="justify-center gap-0"

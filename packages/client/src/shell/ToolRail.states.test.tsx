@@ -196,10 +196,21 @@ describe("picker entry states", () => {
     expect(entry).toBeDisabled();
 
     const { ground, ink } = declaredColours(entry);
-    expect(ground).toContain("bg-muted");
+    // `bg-popover` and not `bg-muted`: the pair the muted ink sits on decides
+    // whether the refusal is still readable, and `text-muted-foreground` on
+    // `bg-muted` measures 4.35:1 in light mode against 4.74:1 on `bg-popover`.
+    // What this assertion is really holding is that the ground is NAMED — the
+    // property the whole file is about — and that it is the same ground the
+    // app's other genuinely disabled control uses.
+    expect(ground).toContain("bg-popover");
+    expect(ground).not.toContain("bg-muted");
     expect(ink).toContain("text-muted-foreground");
     expect(ground).not.toContain("bg-primary");
     expect(ink).not.toContain("text-primary-foreground");
+    // Sharing the ground with idle is fine; sharing the INK would make
+    // "refused" and "available" the same picture, which is the sibling of the
+    // bug this file guards.
+    expect(ink).not.toContain("text-popover-foreground");
     expect(entry.getAttribute("class")).toContain("cursor-not-allowed");
 
     // No hover pair: an entry that lights up and then refuses the click is
@@ -208,6 +219,59 @@ describe("picker entry states", () => {
 
     fireEvent.click(entry);
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("refuses to let a call site's className replace a state's ground or ink", () => {
+    // `className` is documented as layout-only, and tailwind-merge makes that a
+    // real restriction rather than a request ONLY because the state colours are
+    // composed last: whichever colour comes last wins and DELETES the other, so
+    // with the previous order a caller passing `bg-red-500` removed `bg-popover`
+    // from the output entirely and the entry was back to naming no ground. One
+    // definition of the four states is the property every other test in this
+    // file leans on, so it is worth a test of its own.
+    render(
+      <OptionButton
+        active={false}
+        label="6 atoms"
+        testId="chain-6"
+        className="bg-red-500 text-white justify-center gap-0"
+        onSelect={() => undefined}
+      >
+        <span className="font-mono">6</span>
+      </OptionButton>,
+    );
+    const entry = screen.getByRole("button", { name: "6 atoms" });
+    const { ground, ink } = declaredColours(entry);
+    expect(ground).toContain("bg-popover");
+    expect(ink).toContain("text-popover-foreground");
+    const classes = entry.getAttribute("class") ?? "";
+    expect(classes).not.toContain("bg-red-500");
+    expect(classes).not.toContain("text-white");
+    // Layout still resolves the other way, which is why the element grid can
+    // centre its cells: `justify-*` and `gap-*` are different twMerge groups
+    // from the colour roles, so overriding them is unaffected.
+    expect(classes).toContain("justify-center");
+    expect(classes).toContain("gap-0");
+    expect(classes).not.toContain("gap-2");
+  });
+
+  it("asks the REGISTRY whether each entry's command accepts the click", () => {
+    // The disabled branch is wired to `command.enabled`, so a command id that
+    // does not exist has to blow up at render rather than quietly resolving to
+    // "enabled". `commandById` throws on an unknown id, and every entry in
+    // every popover passes one, so opening all four popovers is what proves the
+    // thirty ids are the registry's real ids — and, with them, that the branch
+    // is reading something rather than hard-coded false.
+    for (const label of PICKERS) {
+      openPicker(label);
+      for (const entry of entries()) {
+        // Every option command is `enabled: always` today, so nothing the rail
+        // shows is refused. The assertion is that the answer came from the
+        // registry, not that it was interesting.
+        expect(entry, entry.getAttribute("data-option") ?? "?").not.toBeDisabled();
+      }
+      cleanup();
+    }
   });
 
   it("names every element button for a screen reader, not just for the eye", () => {

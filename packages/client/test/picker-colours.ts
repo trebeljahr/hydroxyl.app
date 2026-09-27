@@ -21,9 +21,19 @@
 
 /** The theme's ink roles, as `globals.css` defines them. `text-xs` and
  *  `text-left` share the prefix and are not colours, so the set is named
- *  rather than matched loosely. */
+ *  rather than matched loosely.
+ *
+ *  `text-current` IS DELIBERATELY ABSENT. It resolves to `color: currentColor`,
+ *  i.e. it explicitly inherits the ancestor's ink — which is the very condition
+ *  these tests exist to forbid. Accepting it would let a future edit swap
+ *  `text-popover-foreground` for `text-current` on a picker entry, reintroduce
+ *  the reported bug, and keep every test green (the Chromium contrast check
+ *  would not catch it either, because `text-current` inside a popover computes
+ *  to the popover's foreground and still measures healthy). The one
+ *  `text-current` in the changed code is the ring "arene" badge, a child span
+ *  `declaredColours` is never asked about. */
 const INK =
-  /^text-(foreground|popover-foreground|primary-foreground|accent-foreground|secondary-foreground|muted-foreground|card-foreground|current)$/;
+  /^text-(foreground|popover-foreground|primary-foreground|accent-foreground|secondary-foreground|muted-foreground|card-foreground)$/;
 
 /** The theme's ground roles. */
 const GROUND = /^bg-(background|popover|primary|accent|secondary|muted|card)$/;
@@ -61,10 +71,17 @@ export function variantColours(el: Element, prefix: string): DeclaredColours {
   };
 }
 
+/** The theme's ring roles. A ring WIDTH with no ring COLOUR is the same defect
+ *  in miniature — an outline visible only because something above it happened
+ *  to set `--tw-ring-color` — so the colour is matched as its own class and the
+ *  width token is excluded from that match. The first version of this helper
+ *  tested `startsWith("focus-visible:ring-")`, which `focus-visible:ring-2`
+ *  satisfies by itself, so the colour half could never fail. */
+const RING = /^focus-visible:ring-(ring|primary|accent|foreground)$/;
+
 export function hasFocusRing(el: Element): boolean {
   const classes = classesOf(el);
   return (
-    classes.includes("focus-visible:ring-2") &&
-    classes.some((c) => c.startsWith("focus-visible:ring-"))
+    classes.includes("focus-visible:ring-2") && classes.some((c) => RING.test(c))
   );
 }

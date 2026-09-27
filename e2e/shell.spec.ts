@@ -671,11 +671,83 @@ async function paintsOwnGround(page: Page, selector: string): Promise<boolean> {
   }, selector);
 }
 
-test("every picker entry paints its own colours, and 'usable' never looks disabled", async ({
-  page,
-}) => {
-  await openEditor(page);
+/**
+ * Freeze the colour transitions before measuring.
+ *
+ * Every control this test reads now carries `transition-colors`, so a reading
+ * taken in the frame after the theme class lands returns an INTERPOLATED colour
+ * — a light-mode grey part-way to its dark-mode value — and the contrast number
+ * is then about an animation frame rather than about the state. Removing the
+ * interpolation cannot hide a wrong resting colour: it only stops the browser
+ * spending frames on the way there.
+ */
+async function freezeColourTransitions(page: Page): Promise<void> {
+  await page.addStyleTag({
+    content: "*, *::before, *::after { transition: none !important; }",
+  });
+}
 
+/**
+ * BOTH SCHEMES, because the report was about both and a light-only check would
+ * leave the darker half of the claim resting on one person's screenshot. With no
+ * stored preference, `shell/theme.ts` falls back to `prefers-color-scheme`, so
+ * Playwright's `colorScheme` is what drives the app here — and the run asserts
+ * the class actually landed, or a "dark" run would be a second light run
+ * quietly pinning nothing.
+ */
+for (const scheme of ["light", "dark"] as const) {
+  test.describe(`picker colours, ${scheme} theme`, () => {
+    test.use({ colorScheme: scheme });
+
+    test("every picker entry paints its own colours, and 'usable' never looks disabled", async ({
+      page,
+    }) => {
+      await openEditor(page);
+      await expect
+        .poll(() =>
+          page.evaluate(() => document.documentElement.classList.contains("dark")),
+        )
+        .toBe(scheme === "dark");
+      await freezeColourTransitions(page);
+      await runPickerColourChecks(page, scheme);
+    });
+  });
+}
+
+/**
+ * The entry's own ground, on the right side of the theme.
+ *
+ * A 4.5:1 ratio says nothing about WHICH way round the entry is painted, so
+ * without this the dark run could be a second light run in a dark shell —
+ * popover entries still painting white on black text — and would pass. The
+ * theme's two grounds are hsl 100% and hsl 3.9%, so the bar is generous.
+ */
+function expectGroundMatchesScheme(
+  painted: PaintedText,
+  scheme: "light" | "dark",
+  what: string,
+): void {
+  const [r = 0, g = 0, b = 0] = /rgba?\(([^)]+)\)/
+    .exec(painted.background)?.[1]
+    ?.split(",")
+    .map((part) => Number(part.trim())) ?? [];
+  const brightness = (r + g + b) / 3;
+  if (scheme === "dark") {
+    expect(brightness, `${what} ground ${painted.background} is not a dark ground`).toBeLessThan(
+      96,
+    );
+  } else {
+    expect(
+      brightness,
+      `${what} ground ${painted.background} is not a light ground`,
+    ).toBeGreaterThan(160);
+  }
+}
+
+async function runPickerColourChecks(
+  page: Page,
+  scheme: "light" | "dark",
+): Promise<void> {
   // ── 1. The chain picker: the numbers, and the entries carrying them ───────
   await page.click('[aria-label="Chain options"]');
   await expect(page.locator('[data-option="chain-6"]')).toBeVisible();
@@ -703,6 +775,7 @@ test("every picker entry paints its own colours, and 'usable' never looks disabl
     expect(painted.text.trim(), option).not.toBe("");
     expect(painted.contrast, `${option} at ${painted.colour} on ${painted.background}`)
       .toBeGreaterThanOrEqual(4.5);
+    expectGroundMatchesScheme(painted, scheme, option);
   }
 
   // The selected entry is legible too — the bug made it the ONLY legible one,
@@ -726,6 +799,7 @@ test("every picker entry paints its own colours, and 'usable' never looks disabl
     const painted = await paintedText(page, selector);
     expect(painted.contrast, `${symbol} at ${painted.colour} on ${painted.background}`)
       .toBeGreaterThanOrEqual(4.5);
+    expectGroundMatchesScheme(painted, scheme, symbol);
   }
   await page.keyboard.press("Escape");
 
@@ -752,4 +826,4 @@ test("every picker entry paints its own colours, and 'usable' never looks disabl
   // The measured collision, now impossible: a working control and a refused one
   // cannot be the same colour.
   expect(usable.colour).not.toBe(disabledLabel);
-});
+}
