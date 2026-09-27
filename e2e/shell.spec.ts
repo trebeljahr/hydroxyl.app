@@ -554,3 +554,37 @@ test("the prerendered editor names the fixed startup document", async ({ page })
   const match = /data-shell="top-bar"[^>]*data-doc-id="([^"]*)"/.exec(html);
   expect(match?.[1]).toBe("doc_startup");
 });
+
+/**
+ * AND THE BROWSER MUST AGREE WITH IT.
+ *
+ * The test above reads the emitted bytes; this one watches what React says
+ * about them. A hydration mismatch is reported through `console.error` and
+ * nowhere else — the page still renders, the attribute is silently left at the
+ * server's value, and nothing fails — so the only way to notice it is to
+ * listen.
+ *
+ * The filter is deliberately narrow. Asserting an EMPTY console would make
+ * this test fail for any unrelated warning the app or a dependency emits,
+ * which is how console assertions become a test everyone deletes.
+ */
+test("/editor hydrates without React reporting a mismatch", async ({ page }) => {
+  const hydration: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() !== "error") return;
+    const text = message.text();
+    if (/hydrat/i.test(text) || /server rendered HTML didn't match/i.test(text)) {
+      hydration.push(text);
+    }
+  });
+  page.on("pageerror", (error) => {
+    if (/hydrat/i.test(error.message)) hydration.push(error.message);
+  });
+
+  await page.goto("/editor");
+  // Waited for, so the assertion is about a page that has actually hydrated:
+  // the canvas only draws once the mount effect has opened the fixture.
+  await expect(page.locator(`${CANVAS} [data-layer="scene"] circle[data-atom-id]`)).toHaveCount(6);
+
+  expect(hydration).toEqual([]);
+});
