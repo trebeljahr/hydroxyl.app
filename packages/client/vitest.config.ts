@@ -31,7 +31,12 @@ export default defineConfig({
           // into the next assertion.
           globals: true,
           include: ["src/**/*.test.{ts,tsx}", "test/**/*.test.{ts,tsx}"],
-          exclude: [...configDefaults.exclude, "src/state/**", "src/**/*.node.test.ts"],
+          exclude: [
+            ...configDefaults.exclude,
+            "src/state/**",
+            "src/**/*.node.test.ts",
+            "src/**/*.leak.test.ts",
+          ],
           setupFiles: ["./test/setup.ts"],
         },
       },
@@ -41,6 +46,41 @@ export default defineConfig({
           name: "node",
           environment: "node",
           include: ["src/state/**/*.test.ts"],
+          // The retention harness lives here too but needs `--expose-gc`, so
+          // it belongs to the `leak` project above. Without this exclusion it
+          // would be collected twice and pass vacuously in the run that has no
+          // collector.
+          exclude: [...configDefaults.exclude, "src/**/*.leak.test.ts"],
+        },
+      },
+      {
+        resolve: { alias },
+        test: {
+          // *.leak.test.ts: the retention harness, and the ONLY project that
+          // runs with a forced collector.
+          //
+          // Decision 86: a leak is diagnosed here rather than by profiling a
+          // dev server. `WeakRef.deref()` after a FORCED collection is the one
+          // observation that can tell a weakly keyed memo from a cache that
+          // has kept every document of the session — a size bound cannot,
+          // because the newest document has at most one entry either way.
+          //
+          // The collector is turned on by the test file itself, through
+          // `v8.setFlagsFromString("--expose-gc")`, rather than by an
+          // `execArgv` here: measured against vitest 4.1.6, a project-level
+          // `poolOptions.forks.execArgv` is REPLACED by the runner's own
+          // argument list and never reaches the child, so the flag arrived
+          // nowhere and the harness skipped itself. Doing it in-process also
+          // means `pnpm test` needs no special invocation to get a real
+          // measurement.
+          //
+          // Its own project all the same: forks, so the isolate whose heap is
+          // measured runs nothing else, and a separate name so a run that
+          // wants only this can ask for it.
+          name: "leak",
+          environment: "node",
+          include: ["src/**/*.leak.test.ts"],
+          pool: "forks",
         },
       },
       {
