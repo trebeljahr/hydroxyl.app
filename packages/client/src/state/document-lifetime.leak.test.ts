@@ -129,10 +129,13 @@ async function collect(): Promise<void> {
  * A sink that keeps nothing. Every candidate retainer in the persistence path
  * must be the loop's own, not the test's.
  */
-function countingSink(): { readonly sink: (doc: SketchDocument) => Promise<StoreResult<void>>; writes: number } {
+function countingSink(): { readonly sink: () => Promise<StoreResult<void>>; writes: number } {
   const state = {
     writes: 0,
-    sink: (_doc: SketchDocument): Promise<StoreResult<void>> => {
+    // Takes no argument on purpose: a `SaveSink` may ignore its document, and
+    // naming a parameter here would be a reference this file holds to the very
+    // thing it is asking the collector about.
+    sink: (): Promise<StoreResult<void>> => {
       state.writes += 1;
       return Promise.resolve(storeOk(undefined));
     },
