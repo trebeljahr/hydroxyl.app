@@ -81,6 +81,7 @@ describe("no RDKit at module scope", () => {
       "fidelity.node.test.ts",
       "inchi.node.test.ts",
       "stereo-centres.node.test.ts",
+      "stereo-groups.node.test.ts",
     ]);
   });
 });

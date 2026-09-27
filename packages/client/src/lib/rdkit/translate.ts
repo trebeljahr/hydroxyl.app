@@ -1,6 +1,8 @@
 /**
  * The ONLY translation layer between the model and RDKit: chem-core's pure
- * V2000 codec, wrapped so the caller gets a result instead of an exception.
+ * molfile codec, wrapped so the caller gets a result instead of an exception —
+ * and, since decision 49, the one place that decides WHICH molfile generation
+ * the app writes. See `molblockVersionFor`.
  *
  * RDKit never sees a chem-core type and chem-core never sees a JSMol. Text is
  * the whole interface. That is what lets this file — and the fidelity harness
@@ -15,13 +17,17 @@ import {
   kekulizeWithReport,
   MolblockLabelError,
   MolblockParseError,
+  MolblockStereoGroupError,
   MOLFILE_BOND_LENGTH,
   netCharge,
   readMolblock,
   requireAtom,
   requireBond,
+  stereoGroupTag,
+  stereoGroupsOf,
   writeMolblock,
   type AtomId,
+  type MolblockVersion,
   type Molecule,
   type MolblockWarning,
 } from "@starter/chem-core";
@@ -54,8 +60,55 @@ export const COORDINATE_SCALE = MOLFILE_BOND_LENGTH;
 /**
  * V2000 counts fields are three characters wide. Checked here so the caller
  * gets a typed `too-large` rather than having to pattern-match a message.
+ *
+ * ONLY A V2000 LIMIT. V3000 states its counts in a `M  V30 COUNTS` line with no
+ * column width at all, so a molecule that goes out as V3000 (see
+ * `molblockVersionFor`) is not measured against this at all — measuring it would
+ * refuse a large structure for a reason that does not apply to the file being
+ * written.
  */
 const MAX_V2000_COUNT = 999;
+
+/**
+ * DECISION 49: the app picks the generation, and it picks V3000 exactly when the
+ * molecule carries stereo groups.
+ *
+ * chem-core deliberately has no `"auto"` — the codec refuses V2000 for a grouped
+ * molecule with a named error and leaves the policy to whoever can explain it.
+ * This is that policy, in one function, so the export dialog's sentence and the
+ * bytes written are the same decision rather than two that can drift.
+ *
+ * V2000 stays the default for everything else because it is what every other
+ * program reads without argument, including old instrument software that has
+ * never been given a V3000 file.
+ */
+export function molblockVersionFor(mol: Molecule): MolblockVersion {
+  return stereoGroupsOf(mol).length > 0 ? "V3000" : "V2000";
+}
+
+/**
+ * What the export dialog says when the generation was not the default, or `null`
+ * when it was.
+ *
+ * ONE SENTENCE, ONE OWNER. The dialog shows it before anything is written, the
+ * status line repeats it after a copy or a download, and both read it from here
+ * — a second wording would let the dialog promise one thing and the file do
+ * another, which is precisely what decision 25's refusal exists to prevent.
+ *
+ * It names the groups with `stereoGroupTag`, the same spelling the figure prints
+ * beside the centres (`and1`, `or1`, `abs`), so the reader can match the
+ * sentence to the drawing without translating.
+ */
+export function molblockVersionNotice(mol: Molecule): string | null {
+  const groups = stereoGroupsOf(mol);
+  if (groups.length === 0) return null;
+  const tags = groups.map(stereoGroupTag).join(", ");
+  return (
+    `Written as a V3000 molfile: this structure states stereo groups ` +
+    `(${tags}), and V2000 has no field for them — written as V2000 it would ` +
+    `name a single enantiomer.`
+  );
+}
 
 /**
  * Warnings that mean the molecule is NOT the file: atoms or bonds actually
@@ -107,7 +160,7 @@ export function worstSeverity(
 /**
  * Model -> molblock, ready to hand to RDKit.
  *
- * Three things happen here that a naive `writeMolblock` call would miss.
+ * Four things happen here that a naive `writeMolblock` call would miss.
  *
  * KEKULE FIRST, AND ENFORCED. Aromatic flags would go out as V2000 bond type
  * 4, and a type-4 record is a request that the reader kekulize it — which
@@ -130,9 +183,19 @@ export function worstSeverity(
  * atom a query atom and sets NO hydrogen count, so benzene arrives as C6 and
  * ethanol as C2O, silently, with an empty log buffer. See
  * `HydrogenAssertion` in chem-core for the measurement.
+ *
+ * THE GENERATION, from the molecule (decision 49). A molecule carrying stereo
+ * groups goes out as V3000 because V2000 cannot say `&1`, and everything else
+ * goes out as V2000 because that is what every reader takes. Verified against
+ * the real wasm in `stereo-groups.node.test.ts`: RDKit reads this writer's
+ * V3000 back with the collections intact, across a continued COLLECTION line.
  */
 export function moleculeToMolblock(mol: Molecule, title = ""): ChemIoResult<string> {
-  if (mol.atomIds.length > MAX_V2000_COUNT || mol.bondIds.length > MAX_V2000_COUNT) {
+  const version = molblockVersionFor(mol);
+  if (
+    version === "V2000" &&
+    (mol.atomIds.length > MAX_V2000_COUNT || mol.bondIds.length > MAX_V2000_COUNT)
+  ) {
     return fail({
       kind: "too-large",
       message:
@@ -159,6 +222,10 @@ export function moleculeToMolblock(mol: Molecule, title = ""): ChemIoResult<stri
       title,
       coordinateScale: COORDINATE_SCALE,
       hydrogenAssertion: "valence",
+      // Decision 49, and the reason `MolblockStereoGroupError` is unreachable
+      // from here: the version is chosen from the molecule, so V2000 is only
+      // ever asked for when there is nothing V2000 cannot say.
+      version,
     });
     return ok(text, CLEAN_REPORT);
   } catch (error) {
@@ -166,6 +233,14 @@ export function moleculeToMolblock(mol: Molecule, title = ""): ChemIoResult<stri
       // Decision 8: never caught and ignored. The UI needs the ids so it can
       // offer to expand or strip the abbreviations.
       return fail({ kind: "labelled-atoms", message: error.message, atomIds: error.atomIds });
+    }
+    if (error instanceof MolblockStereoGroupError) {
+      // Not reachable through `molblockVersionFor`, and mapped anyway rather
+      // than falling into the generic branch: if some later caller does reach
+      // it, the sentence the codec wrote is the one worth showing, and it is
+      // the one thing that says the file was NOT written rather than written
+      // wrongly.
+      return fail({ kind: "unrepresentable", message: error.message });
     }
     return fail({ kind: "unrepresentable", message: describeError(error) });
   }

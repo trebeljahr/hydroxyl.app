@@ -29,6 +29,12 @@
  * warning of its own: its 5.2 pt labels are under decision 51's 8 pt minimum,
  * so the label-size warning names the size and points back to Publication.
  *
+ * MOLFILE GENERATION (decision 49). The structure clipboard writes V2000, the
+ * generation every other program takes — except for a structure that states
+ * stereo groups, which only V3000 can express. That switch is automatic and the
+ * dialog states it in a sentence, because a file that silently changed
+ * generation is a file an old reader rejects for no visible reason.
+ *
  * Every button runs a registry command synchronously inside its click, which
  * is what keeps the clipboard and the save picker inside the user gesture.
  */
@@ -41,6 +47,7 @@ import { JOURNAL_WIDTHS_CM } from "@starter/chem-render";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { STYLE_PRESET_TITLES } from "@/canvas/scene-bridge";
 import { commandById } from "@/editor/commands/registry";
+import { molblockVersionNotice } from "@/lib/rdkit/translate";
 import {
   CUSTOM_WIDTH_RANGE_CM,
   annotationSizeNotice,
@@ -114,6 +121,11 @@ export function ExportDialog(): ReactElement {
     prepared?.ok === true ? annotationSizeNotice(prepared.value, settings) : null;
   const canExport = prepared?.ok === true;
   const styleNotice = figureStyleNotice(doc, settings);
+  // Decision 49: the app picks V3000 whenever the structure states stereo
+  // groups, and SAYS SO here — before the button is pressed, since a chemist
+  // handing the file to old instrument software needs to know it is not V2000.
+  // The sentence is `translate.ts`'s, so it cannot disagree with the bytes.
+  const molfileNotice = molblockVersionNotice(doc.molecule);
   const exportPreset = settings.style === "canvas" ? doc.stylePreset : "publication";
 
   return (
@@ -344,6 +356,16 @@ export function ExportDialog(): ReactElement {
             Copy molfile
           </button>
         </div>
+        {molfileNotice === null ? null : (
+          <p
+            data-shell="molfile-version"
+            data-molfile-version="V3000"
+            role="status"
+            className="text-muted-foreground mt-2 text-xs"
+          >
+            {molfileNotice}
+          </p>
+        )}
         {/* The status bar sits under the dialog's overlay, so what the last
             button did — or why it refused — is repeated here. */}
         <p data-shell="export-status" role="status" className="text-muted-foreground mt-3 min-h-4 text-xs">

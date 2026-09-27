@@ -33,7 +33,7 @@ import type { PreparedFigure } from "@/lib/export/figure";
 import { textBlob, writeClipboardParts } from "@/lib/export/clipboard";
 import { canvasCanHold, rasterizeSvg } from "@/lib/export/png";
 import { writeBlobFile } from "@/lib/io/file-system";
-import { moleculeToMolblock } from "@/lib/rdkit/translate";
+import { moleculeToMolblock, molblockVersionNotice } from "@/lib/rdkit/translate";
 import type { EditorStore } from "@/state";
 
 function report(store: EditorStore, message: string): void {
@@ -155,10 +155,20 @@ export async function copyMolblock(store: EditorStore): Promise<void> {
     refuseLabelled(store, written.error.message, written.error.atomIds);
     return;
   }
+  // Decision 49: the generation was chosen from the molecule, so the line that
+  // says the copy happened says which generation it was. The dialog shows the
+  // same sentence before the click; it is repeated because the copy may have
+  // been made from the palette, with no dialog on screen.
+  const versionNote = molblockVersionNotice(doc.molecule);
   const { done } = writeClipboardParts({ "text/plain": Promise.resolve(textBlob(written.value)) });
   try {
     await done;
-    report(store, "Copied the structure as a molfile");
+    report(
+      store,
+      versionNote === null
+        ? "Copied the structure as a molfile"
+        : `Copied the structure as a molfile. ${versionNote}`,
+    );
   } catch (error) {
     report(store, `The molfile could not be copied: ${describe(error)}`);
   }

@@ -8,9 +8,11 @@ import { act, render } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { butan2olWedged } from "@starter/chem-render";
+import { withStereoGroups } from "@starter/chem-core";
 import { createDocument, createPanel } from "@starter/shared";
 import type { SketchDocument } from "@starter/shared";
 
+import { molblockVersionNotice } from "@/lib/rdkit/translate";
 import { editorStore } from "@/state";
 
 import { ExportDialog } from "./ExportDialog";
@@ -86,5 +88,37 @@ describe("ExportDialog annotation size warning (decision 60)", () => {
     openDialog(descriptorDoc(true), 60);
     expect(document.querySelector('[data-shell="figure-fit"]')).not.toBeNull();
     expect(warning()).toBeNull();
+  });
+});
+
+describe("ExportDialog molfile generation notice (decision 49)", () => {
+  /** butan-2-ol with its one centre marked racemic — the `rac-` case. */
+  function racemateDoc(): SketchDocument {
+    const doc = descriptorDoc(true);
+    return {
+      ...doc,
+      molecule: withStereoGroups(doc.molecule, [{ kind: "and", index: 1, atomIds: ["a2"] }]),
+    };
+  }
+
+  const notice = (): HTMLElement | null =>
+    document.querySelector<HTMLElement>('[data-shell="molfile-version"]');
+
+  it("says V3000 was chosen, and names the group the way the figure prints it", () => {
+    openDialog(racemateDoc(), 60);
+    const shown = notice();
+    expect(shown).not.toBeNull();
+    expect(shown!.getAttribute("data-molfile-version")).toBe("V3000");
+    // The sentence is `translate.ts`'s, so the dialog cannot promise one
+    // generation while the bytes carry another.
+    expect(shown!.textContent).toBe(molblockVersionNotice(racemateDoc().molecule));
+    expect(shown!.textContent).toContain("(and1)");
+  });
+
+  it("is silent for a structure that states no group, where V2000 is still the default", () => {
+    // A notice on every export would be noise on the ordinary case, and would
+    // train the reader to ignore the one that matters.
+    openDialog(descriptorDoc(true), 60);
+    expect(notice()).toBeNull();
   });
 });

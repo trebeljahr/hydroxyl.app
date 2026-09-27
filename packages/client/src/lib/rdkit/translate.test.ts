@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { benzene, buildMolecule, elementCounts, netCharge, vec } from "@starter/chem-core";
+import {
+  benzene,
+  buildMolecule,
+  elementCounts,
+  MolblockStereoGroupError,
+  netCharge,
+  vec,
+  withStereoGroups,
+  writeMolblock,
+} from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
 
 import {
@@ -9,7 +18,24 @@ import {
   maxCoordinateDelta,
   moleculeToMolblock,
   molblockToMolecule,
+  molblockVersionFor,
+  molblockVersionNotice,
 } from "./translate";
+
+/** Butan-2-ol with a wedge to the OH: one real stereocentre, and it is `a2`. */
+function butan2ol(): Molecule {
+  return buildMolecule((b) => {
+    const c1 = b.atom("C", vec(0, 0));
+    const c2 = b.atom("C", vec(1, 0.6));
+    const o = b.atom("O", vec(1, 2));
+    const c3 = b.atom("C", vec(2, 0));
+    const c4 = b.atom("C", vec(3, 0.6));
+    b.bond(c1, c2);
+    b.bond(c2, o, 1, "wedge");
+    b.bond(c2, c3);
+    b.bond(c3, c4);
+  });
+}
 
 /** (CH3)2SO2 — hypervalent sulfur, two S=O, no formal charges. */
 function dimethylSulfone(): Molecule {
@@ -145,6 +171,77 @@ describe("moleculeToMolblock", () => {
     expect(elementCounts(read.value.molecule)).toEqual({ C: 6, H: 6 });
     expect(maxCoordinateDelta(benzene(), read.value.molecule)).toBeLessThan(1e-4);
     expect(COORDINATE_SCALE).toBe(1.5);
+  });
+});
+
+/**
+ * Decision 49: the APP picks the generation, chem-core only obeys. These are the
+ * policy's own tests; `stereo-groups.node.test.ts` checks the real wasm reads
+ * what the policy produced.
+ */
+describe("molblockVersionFor and its notice (decision 49)", () => {
+  /** Butan-2-ol with its one centre in an AND group. */
+  function racemate(): Molecule {
+    return withStereoGroups(butan2ol(), [{ kind: "and", index: 1, atomIds: ["a2"] }]);
+  }
+
+  it("is V2000 with no group and V3000 with one", () => {
+    expect(molblockVersionFor(butan2ol())).toBe("V2000");
+    expect(molblockVersionFor(racemate())).toBe("V3000");
+  });
+
+  it("writes the COLLECTION block, and only for the grouped molecule", () => {
+    const plain = moleculeToMolblock(butan2ol());
+    expect(plain.ok).toBe(true);
+    if (!plain.ok) return;
+    expect(plain.value).toContain("V2000");
+    expect(plain.value).not.toContain("COLLECTION");
+
+    const grouped = moleculeToMolblock(racemate());
+    expect(grouped.ok).toBe(true);
+    if (!grouped.ok) return;
+    expect(grouped.value).toContain("V3000");
+    expect(grouped.value).toContain("MDLV30/STERAC1 ATOMS=(1 2)");
+  });
+
+  it("is silent about the generation unless it changed", () => {
+    expect(molblockVersionNotice(butan2ol())).toBeNull();
+    const notice = molblockVersionNotice(racemate());
+    expect(notice).not.toBeNull();
+    // Names the group the way the FIGURE prints it (decision 40's tag), so the
+    // sentence and the drawing need no translating between them.
+    expect(notice).toContain("(and1)");
+    expect(notice).toContain("V3000");
+  });
+
+  it("measures the three-character counts fields only against V2000", () => {
+    // The gate is a V2000 limit and nothing else: V3000 states its counts in
+    // `M  V30 COUNTS` with no column width at all, so applying it to a molecule
+    // that goes out as V3000 would refuse a large structure for a reason that
+    // does not apply to the file being written.
+    const wide = buildMolecule((b) => {
+      for (let i = 0; i < 1000; i++) b.atom("C", vec(i * 0.1, 0));
+    });
+    const refused = moleculeToMolblock(wide);
+    expect(refused.ok).toBe(false);
+    if (refused.ok) return;
+    expect(refused.error.kind).toBe("too-large");
+
+    const grouped = moleculeToMolblock(
+      withStereoGroups(wide, [{ kind: "abs", index: 1, atomIds: ["a1"] }]),
+    );
+    expect(grouped.ok).toBe(true);
+    if (!grouped.ok) return;
+    expect(grouped.value).toContain("M  V30 COUNTS 1000 0 0 0");
+  });
+
+  it("maps chem-core's named V2000 refusal rather than flattening it", () => {
+    // Unreachable through `molblockVersionFor`, which is the point of decision
+    // 49 — but decision 25's refusal is still the only thing that says the file
+    // was NOT written rather than written wrongly, so it keeps its sentence.
+    expect(() => writeMolblock(racemate(), { version: "V2000" })).toThrow(
+      MolblockStereoGroupError,
+    );
   });
 });
 

@@ -12,6 +12,7 @@
 import { createDocument, type SketchDocument } from "@starter/shared";
 
 import { exportDocument, type ExportFormat } from "@/lib/io/save";
+import { molblockVersionNotice } from "@/lib/rdkit/translate";
 import { openText, type OpenTextOptions } from "@/lib/io/open";
 import { pickTextFiles } from "@/lib/io/file-system";
 import { copyOf, documentStore, saveDocument } from "@/persistence/documents";
@@ -45,7 +46,17 @@ export async function exportCurrent(
   const doc = store.getState().document;
   const outcome = await exportDocument(doc, format);
   if (outcome.ok) {
-    store.getState().setStatusMessage(`Exported “${doc.metadata.title}”`);
+    // Decision 49's switch is silent in the file itself — a V3000 molblock looks
+    // like a molblock — so the line that says the export happened is where a
+    // downloaded one says which generation it is.
+    const note = format === "mol" ? molblockVersionNotice(doc.molecule) : null;
+    store
+      .getState()
+      .setStatusMessage(
+        note === null
+          ? `Exported “${doc.metadata.title}”`
+          : `Exported “${doc.metadata.title}”. ${note}`,
+      );
     return;
   }
   // A dismissed picker is not a failure and gets no message: the user closed

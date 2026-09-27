@@ -41,7 +41,7 @@ import type {
   Vec2,
 } from "@starter/chem-core";
 import { COMMON_ORGANIC_ELEMENTS } from "@starter/chem-core";
-import { DISPLAY_FLAG_KEYS, VIEW_KINDS } from "@starter/shared";
+import { DISPLAY_FLAG_KEYS, STEREO_GROUP_KIND_VALUES, VIEW_KINDS } from "@starter/shared";
 import { VIEW_KIND_TITLES, panelLetter, representationAvailability } from "@starter/chem-render";
 import type { DisplayFlagKey } from "@starter/shared";
 
@@ -75,6 +75,17 @@ import {
   openFromDisk,
   saveNow,
 } from "./file";
+import {
+  CLEAR_STEREO_GROUP_KEYWORDS,
+  CLEAR_STEREO_GROUP_TITLE,
+  NOTHING_TO_CLEAR_REASON,
+  NO_STEREOCENTER_REASON,
+  STEREO_GROUP_COMMANDS,
+  canClearStereoGroup,
+  canMarkStereoGroup,
+  clearStereoGroup,
+  markStereoGroup,
+} from "./stereo-groups";
 
 export type CommandGroup =
   | "file"
@@ -848,6 +859,46 @@ const STRUCTURE_COMMANDS: readonly Command[] = [
       state.applyMoleculeEdit("Flip bond", (mol) =>
         bondIds.reduce((m, id) => guardedOps.flipBond(m, id), mol),
       );
+    },
+  },
+  // Enhanced stereochemistry, decision 89: one minimal set, three marks and a
+  // clear. Palette-only on purpose — every free letter is worth more to a tool
+  // or an element than to a command a figure needs once, and a shortcut here
+  // would have to be taken from one of them.
+  //
+  // Generated from `STEREO_GROUP_KIND_VALUES`, the shared package's one list of
+  // the kinds, so a fourth kind cannot arrive with no way to create it. The
+  // titles and keywords come from the table in `./stereo-groups`, which is
+  // `Record`-total over the same union.
+  ...STEREO_GROUP_KIND_VALUES.map(
+    (kind): Command => ({
+      id: `structure.stereo-group-${kind}`,
+      title: STEREO_GROUP_COMMANDS[kind].title,
+      keywords: [...STEREO_GROUP_COMMANDS[kind].keywords],
+      group: "structure",
+      enabled: canMarkStereoGroup,
+      // Decision 37: "this atom is a stereocentre" is a perception, not
+      // something the canvas draws, so a greyed-out row has to say why.
+      disabledReason: (state) =>
+        canMarkStereoGroup(state) ? undefined : NO_STEREOCENTER_REASON,
+      run: (store) => {
+        markStereoGroup(store, kind);
+      },
+    }),
+  ),
+  {
+    id: "structure.stereo-group-clear",
+    title: CLEAR_STEREO_GROUP_TITLE,
+    keywords: [...CLEAR_STEREO_GROUP_KEYWORDS],
+    group: "structure",
+    // Wider than the three above: a group imported onto atoms this build does
+    // not perceive as stereogenic must still be removable. See the module
+    // header in `./stereo-groups`.
+    enabled: canClearStereoGroup,
+    disabledReason: (state) =>
+      canClearStereoGroup(state) ? undefined : NOTHING_TO_CLEAR_REASON,
+    run: (store) => {
+      clearStereoGroup(store);
     },
   },
 ];

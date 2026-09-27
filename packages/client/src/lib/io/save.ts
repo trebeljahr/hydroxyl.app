@@ -18,7 +18,11 @@
  * `moleculeToMolblock`, not `writeMolblock` directly: the wrapper kekulises
  * first and enforces `hydrogenAssertion: "valence"`, and a file written with
  * the CTfile `hhh` query field arrives at RDKit as a query molecule with no
- * hydrogens — benzene as C6, silently, with an empty log.
+ * hydrogens — benzene as C6, silently, with an empty log. It also picks the
+ * GENERATION (decision 49): V2000, except for a structure that states stereo
+ * groups, which goes out as V3000 because V2000 cannot say `&1` and writing it
+ * anyway would name a single enantiomer. The command that started the export
+ * repeats that in its status line, from the wrapper's own sentence.
  */
 
 import { encodeDocument } from "@starter/shared";

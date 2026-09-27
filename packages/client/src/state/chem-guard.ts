@@ -56,6 +56,7 @@ import {
   translateAtoms as coreTranslateAtoms,
   updateAtom as coreUpdateAtom,
   updateBond as coreUpdateBond,
+  withStereoGroups as coreWithStereoGroups,
   type InsertedFragment,
   type Molecule,
   type Vec2,
@@ -149,6 +150,16 @@ export const guardedOps = {
   /** Swaps `from`/`to`, which INVERTS a wedge — the narrow end is at `from`,
    *  never at whichever id sorts first. */
   flipBond: guard("flipBond", coreFlipBond),
+
+  /**
+   * The ABS/AND/OR statement, written by decision 89's selection commands.
+   *
+   * Guarded like the rest although it touches no id: it calls `requireAtom` for
+   * every id in every group and rebuilds the molecule around a new field, so a
+   * draft reaching it would validate the group against proxy reads and hand back
+   * a molecule assembled out of them.
+   */
+  withStereoGroups: guard("withStereoGroups", coreWithStereoGroups),
 
   /**
    * The drawing ops the pointer state machine commits through.
