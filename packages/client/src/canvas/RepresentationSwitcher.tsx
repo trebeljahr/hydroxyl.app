@@ -105,11 +105,43 @@ export function RepresentationSwitcher(): ReactElement {
             title={blocked ? availability.message : VIEW_KIND_TITLES[kind]}
             onClick={() => editorStore.getState().setActivePanel(panel.id)}
             className={cn(
-              "flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-xs",
+              "flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-xs transition-colors",
               "focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-2",
-              onCanvas ? "bg-accent text-accent-foreground font-medium" : "hover:bg-accent",
-              (blocked || !isStructuralViewKind(kind)) && "text-muted-foreground",
-              blocked && "line-through",
+              // ── ONE GREY MEANT TWO THINGS, AND THAT WAS THE BUG ──────────
+              //
+              // `text-muted-foreground` used to be applied for `blocked ||
+              // !isStructuralViewKind(kind)`, so a "(b) Sum formula" button —
+              // fully clickable, with nothing refusing it — painted the very
+              // same rgb(115,115,115) in light mode as the genuinely disabled
+              // locants label in the popover below. A strip whose usable entries
+              // wear the disabled colour reads as all-disabled-except-the-
+              // selected-one, which is the picture behind the "broken, the CSS
+              // is not loading" report.
+              //
+              // THE TREATMENT PICKED: the muted ink is reserved for UNAVAILABLE,
+              // where it keeps the companions it already had — a line-through
+              // and a `title` carrying `availability.message`. A non-structural
+              // view is NOT unavailable: clicking it makes it the active panel,
+              // and the strip's notice then says why the canvas keeps the
+              // structure. So it paints at full contrast like any other usable
+              // entry. Which panel is text and which is structural is said by
+              // its NAME ("Sum formula" is plainly not a drawing) and by that
+              // notice — never by dimming a control that works.
+              //
+              // Every branch names a ground AND an ink, the idle one included: a
+              // state defined by the absence of a class is a state that vanishes
+              // the moment the cascade hiccups.
+              //
+              // A BLOCKED PANEL IS STILL NOT `disabled`. Its click is the way to
+              // read the refusal, so taking the click away would hide the only
+              // explanation. `blocked` is tested first all the same: if a
+              // blocked panel ever did reach the canvas, "unavailable" is the
+              // more important of the two things to say.
+              blocked
+                ? "bg-background text-muted-foreground line-through hover:bg-accent hover:text-muted-foreground"
+                : onCanvas
+                  ? "bg-accent text-accent-foreground font-medium"
+                  : "bg-background text-foreground hover:bg-accent hover:text-accent-foreground",
             )}
           >
             <span className="font-mono">({panelLetter(index)})</span>
@@ -137,7 +169,10 @@ export function RepresentationSwitcher(): ReactElement {
             <button
               type="button"
               data-shell="view-options"
-              className="hover:bg-accent focus-visible:ring-ring flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-xs focus-visible:outline-none focus-visible:ring-2"
+              // Its own ground and ink, for the same reason the panel buttons
+              // now have them: `hover:bg-accent` alone left the resting state
+              // to whatever the strip happened to be inheriting.
+              className="bg-background text-foreground hover:bg-accent hover:text-accent-foreground focus-visible:ring-ring flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2"
             >
               <SlidersHorizontalIcon className="size-3.5" />
               View options
@@ -155,7 +190,14 @@ export function RepresentationSwitcher(): ReactElement {
                     key={key}
                     className={cn(
                       "flex flex-wrap items-center gap-x-2 text-xs",
-                      !enabled && "text-muted-foreground",
+                      // BOTH branches named, not just the disabled one. A live
+                      // label used to carry no colour at all and was legible
+                      // only by inheriting from `PopoverContent`; the disabled
+                      // one was the only label stating an ink, so a half-applied
+                      // cascade left the greyed-out rows as the readable ones.
+                      enabled
+                        ? "text-popover-foreground"
+                        : "text-muted-foreground cursor-not-allowed",
                     )}
                     title={reason}
                   >
@@ -164,6 +206,7 @@ export function RepresentationSwitcher(): ReactElement {
                       data-view-flag={key}
                       checked={shown.representation.display[key]}
                       disabled={!enabled}
+                      className="focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-2 disabled:cursor-not-allowed"
                       onChange={(event) => {
                         // `disabled` alone is not a guarantee: a synthetic or
                         // scripted click still reaches React's onChange. The

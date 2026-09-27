@@ -588,3 +588,168 @@ test("/editor hydrates without React reporting a mismatch", async ({ page }) => 
 
   expect(hydration).toEqual([]);
 });
+
+/**
+ * THE PICKERS' COLOURS, AS CHROMIUM ACTUALLY COMPUTES THEM.
+ *
+ * The component tests pin which classes each state declares; jsdom runs no
+ * cascade, so only a real browser can say what those classes resolve to. Both
+ * halves of the reported defect are measurable here and nowhere else:
+ *
+ *  1. AN IDLE ENTRY MUST PAINT ITSELF. Every entry — not only the selected one
+ *     — has to come out with an opaque background and text that contrasts with
+ *     it, which is what makes "the pickers are weirdly transparent except the
+ *     selected entry, and the chain numbers do not show" a state the markup can
+ *     no longer produce on its own.
+ *  2. "UNAVAILABLE" MUST NOT LOOK LIKE "USABLE". The "(b) Sum formula" button
+ *     used to paint the same rgb(115,115,115) as the genuinely disabled locants
+ *     label, so a working control wore the disabled colour.
+ *
+ * The threshold is WCAG AA for normal text, 4.5:1, computed from the resolved
+ * rgb of the element and of the ground it is painted on.
+ */
+
+interface PaintedText {
+  readonly colour: string;
+  readonly background: string;
+  readonly contrast: number;
+  readonly text: string;
+}
+
+/**
+ * The resolved ink, the first opaque ground behind it, and the ratio between
+ * them. Walking up for the ground is what makes the measurement honest: an
+ * entry that declares no background of its own reports its ancestor's, and the
+ * ratio then says nothing about the entry.
+ */
+async function paintedText(page: Page, selector: string): Promise<PaintedText> {
+  return page.evaluate((sel) => {
+    const node = document.querySelector(sel);
+    if (node === null) throw new Error(`nothing matches ${sel}`);
+    const parse = (value: string): readonly number[] => {
+      const parts = /rgba?\(([^)]+)\)/.exec(value)?.[1]?.split(",") ?? [];
+      return parts.map((p) => Number(p.trim()));
+    };
+    const opaque = (value: string): boolean => {
+      const rgba = parse(value);
+      return rgba.length >= 3 && (rgba[3] ?? 1) > 0.99;
+    };
+    let ground = "rgb(255, 255, 255)";
+    for (let el: Element | null = node; el !== null; el = el.parentElement) {
+      const value = getComputedStyle(el).backgroundColor;
+      if (opaque(value)) {
+        ground = value;
+        break;
+      }
+    }
+    const colour = getComputedStyle(node).color;
+    const luminance = (value: string): number => {
+      const [r = 0, g = 0, b = 0] = parse(value);
+      const channel = (c: number): number => {
+        const s = c / 255;
+        return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+      };
+      return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+    };
+    const a = luminance(colour);
+    const b = luminance(ground);
+    const contrast = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    return { colour, background: ground, contrast, text: node.textContent ?? "" };
+  }, selector);
+}
+
+/** Whether the element paints an opaque background of its OWN, rather than
+ *  borrowing the popover's. */
+async function paintsOwnGround(page: Page, selector: string): Promise<boolean> {
+  return page.evaluate((sel) => {
+    const node = document.querySelector(sel);
+    if (node === null) throw new Error(`nothing matches ${sel}`);
+    const alpha = /rgba?\(([^)]+)\)/
+      .exec(getComputedStyle(node).backgroundColor)?.[1]
+      ?.split(",")[3];
+    return alpha === undefined ? true : Number(alpha.trim()) > 0.99;
+  }, selector);
+}
+
+test("every picker entry paints its own colours, and 'usable' never looks disabled", async ({
+  page,
+}) => {
+  await openEditor(page);
+
+  // ── 1. The chain picker: the numbers, and the entries carrying them ───────
+  await page.click('[aria-label="Chain options"]');
+  await expect(page.locator('[data-option="chain-6"]')).toBeVisible();
+
+  const armed = await page.evaluate(
+    () =>
+      document
+        .querySelector('[data-option][aria-pressed="true"]')
+        ?.getAttribute("data-option") ?? "",
+  );
+  expect(armed).toMatch(/^chain-/);
+
+  const idleChains = await page.evaluate(() =>
+    [...document.querySelectorAll('[data-option^="chain-"]')]
+      .filter((node) => node.getAttribute("aria-pressed") !== "true")
+      .map((node) => node.getAttribute("data-option") ?? ""),
+  );
+  expect(idleChains.length).toBeGreaterThan(3);
+
+  for (const option of idleChains) {
+    const selector = `[data-option="${option}"]`;
+    expect(await paintsOwnGround(page, selector), `${option} has no ground`).toBe(true);
+    const painted = await paintedText(page, selector);
+    // The number is on screen and legible against the entry's own ground.
+    expect(painted.text.trim(), option).not.toBe("");
+    expect(painted.contrast, `${option} at ${painted.colour} on ${painted.background}`)
+      .toBeGreaterThanOrEqual(4.5);
+  }
+
+  // The selected entry is legible too — the bug made it the ONLY legible one,
+  // and a fix that inverted that would be no better.
+  const selected = await paintedText(page, `[data-option="${armed}"]`);
+  expect(selected.contrast).toBeGreaterThanOrEqual(4.5);
+  await page.keyboard.press("Escape");
+
+  // ── 2. The element grid ──────────────────────────────────────────────────
+  await page.click('[aria-label="Element options"]');
+  await expect(page.locator('[data-element="C"]')).toBeVisible();
+  const idleElements = await page.evaluate(() =>
+    [...document.querySelectorAll("[data-element]")]
+      .filter((node) => node.getAttribute("aria-pressed") !== "true")
+      .map((node) => node.getAttribute("data-element") ?? ""),
+  );
+  expect(idleElements.length).toBeGreaterThan(8);
+  for (const symbol of idleElements) {
+    const selector = `[data-element="${symbol}"]`;
+    expect(await paintsOwnGround(page, selector), `${symbol} has no ground`).toBe(true);
+    const painted = await paintedText(page, selector);
+    expect(painted.contrast, `${symbol} at ${painted.colour} on ${painted.background}`)
+      .toBeGreaterThanOrEqual(4.5);
+  }
+  await page.keyboard.press("Escape");
+
+  // ── 3. Usable is not the disabled grey ───────────────────────────────────
+  //
+  // The sum-formula panel button is a TEXT view: the canvas cannot draw through
+  // it, but the click is accepted and the strip explains itself, so it is not
+  // unavailable and must not wear the unavailable colour. The locants label in
+  // the view options is genuinely disabled — the registry refuses it until
+  // something numbers the atoms — and is the reference grey.
+  const usable = await paintedText(page, '[data-switcher-panel="panel-sum-formula"]');
+  expect(usable.contrast).toBeGreaterThanOrEqual(4.5);
+
+  await page.click('[data-shell="view-options"]');
+  await expect(page.locator('[data-view-flag="showLocants"]')).toBeVisible();
+  const disabledLabel = await page.evaluate(() => {
+    const box = document.querySelector('[data-view-flag="showLocants"]');
+    if (box === null) throw new Error("no locants checkbox");
+    if (!(box as HTMLInputElement).disabled) throw new Error("locants box is not disabled");
+    const label = box.closest("label");
+    if (label === null) throw new Error("locants box has no label");
+    return getComputedStyle(label).color;
+  });
+  // The measured collision, now impossible: a working control and a refused one
+  // cannot be the same colour.
+  expect(usable.colour).not.toBe(disabledLabel);
+});

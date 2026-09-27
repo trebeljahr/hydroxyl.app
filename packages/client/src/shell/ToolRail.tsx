@@ -21,7 +21,7 @@
 import { useState } from "react";
 import type { ReactElement, ReactNode } from "react";
 import { ChevronDownIcon } from "lucide-react";
-import { RING_TEMPLATES } from "@starter/chem-core";
+import { RING_TEMPLATES, elementBySymbol } from "@starter/chem-core";
 import type { BondStereo, ElementSymbol, RingTemplateName } from "@starter/chem-core";
 import { COMMON_ORGANIC_ELEMENTS } from "@starter/chem-core";
 import { BOND_ORDER_VALUES, BOND_STEREO_VALUES } from "@starter/shared";
@@ -56,7 +56,7 @@ import {
   commandById,
   formatShortcut,
 } from "@/editor/commands/registry";
-import { TOOLS } from "@/editor/tools";
+import { TOOLS, toolDef } from "@/editor/tools";
 import type { ToolDef } from "@/editor/tools";
 import { cn } from "@/lib/utils";
 import { editorStore, useEditorStore } from "@/state";
@@ -195,14 +195,93 @@ function OptionsPopover({
   );
 }
 
-function OptionButton({
+/**
+ * THE FOUR STATES A PICKER ENTRY CAN BE IN, EACH NAMING BOTH OF ITS COLOURS.
+ *
+ * WHY AN IDLE ENTRY STATES A GROUND AND AN INK IT APPEARS NOT TO NEED. It used
+ * to state neither: the inactive branch was `hover:bg-accent
+ * hover:text-accent-foreground` and nothing else, so an idle entry had no
+ * background of its own and was legible only by INHERITING
+ * `text-popover-foreground` from `PopoverContent`. The selected entry was the
+ * one entry that named both a background and a foreground. So any hiccup in the
+ * cascade — a stylesheet applied half-way, a token that failed to resolve, a
+ * stale chunk served after a deploy — erased every entry EXCEPT the selected
+ * one, which is exactly the "the pickers are weirdly transparent and the chain
+ * numbers do not show" report this function answers. An entry that names its own
+ * ground can lose only the token it names; it cannot take its siblings with it.
+ *
+ * NO STATE IS THE ABSENCE OF A CLASS. `bg-popover` on an entry inside a popover
+ * paints the colour the entry would have inherited anyway, and that is the
+ * point: the declaration IS the repair.
+ *
+ * DISABLED WINS OVER SELECTED. An armed option that has become unavailable has
+ * to read as unavailable; painting it `bg-primary` would invite a click that
+ * does nothing.
+ */
+const PICKER_ENTRY_BASE = cn(
+  "rounded transition-colors",
+  // The element grid had no focus ring at all, so a keyboard user could not see
+  // where they stood among thirteen identical cells.
+  "focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-2",
+);
+
+function pickerEntryClasses({
+  active,
+  disabled,
+}: {
+  readonly active: boolean;
+  readonly disabled: boolean;
+}): string {
+  if (disabled) {
+    // Deliberately no hover pair: an entry that lights up under the cursor and
+    // then refuses the click is worse than one that never lights up.
+    return cn(
+      PICKER_ENTRY_BASE,
+      "bg-muted text-muted-foreground cursor-not-allowed",
+    );
+  }
+  if (active) {
+    return cn(PICKER_ENTRY_BASE, "bg-primary text-primary-foreground");
+  }
+  return cn(
+    PICKER_ENTRY_BASE,
+    "bg-popover text-popover-foreground hover:bg-accent hover:text-accent-foreground",
+  );
+}
+
+/**
+ * Whether an option's COMMAND will accept the click, asked of the registry the
+ * way the palette asks it — the same idiom as `flagAvailability` in
+ * `RepresentationSwitcher`.
+ *
+ * EVERY OPTION COMMAND IS `enabled: always` TODAY, so this greys nothing out in
+ * the shipped rail. The branch exists so that the first option command with a
+ * real precondition greys its own entry out rather than offering a click that
+ * silently does nothing, and it is wired here rather than left for later so the
+ * disabled state cannot be invented twice. `OptionButton` is exported so the
+ * component test can drive that branch directly — while the registry says yes
+ * to everything, that is the only way to reach it.
+ */
+function optionDisabled(commandId: string): boolean {
+  return !commandById(commandId).enabled(editorStore.getState());
+}
+
+export function OptionButton({
   active,
   label,
   testId,
+  elementSymbol,
+  disabled = false,
+  className,
   onSelect,
   children,
 }: {
   readonly active: boolean;
+  /**
+   * Tooltip AND accessible name. Named explicitly rather than left to the
+   * entry's own text: the element grid's text is a bare symbol, which says
+   * "C" where a screen reader should say "Carbon".
+   */
   readonly label: string;
   /**
    * A stable hook for the e2e specs, keyed on the OPTION rather than on the
@@ -211,6 +290,14 @@ function OptionButton({
    * a spec matching on the label would be one copy edit away from failing.
    */
   readonly testId?: string;
+  /** The element grid's own hook, so a symbol stays findable by symbol. */
+  readonly elementSymbol?: string;
+  readonly disabled?: boolean;
+  /**
+   * LAYOUT ONLY. The state colours above are not overridable per call site,
+   * which is what keeps the four states identical across four popovers.
+   */
+  readonly className?: string;
   readonly onSelect: () => void;
   readonly children: ReactNode;
 }): ReactElement {
@@ -218,14 +305,23 @@ function OptionButton({
     <button
       type="button"
       aria-pressed={active}
+      aria-label={label}
       title={label}
+      disabled={disabled}
       {...(testId === undefined ? {} : { "data-option": testId })}
-      onClick={onSelect}
+      {...(elementSymbol === undefined ? {} : { "data-element": elementSymbol })}
+      onClick={() => {
+        // `disabled` alone is not a guarantee — a synthetic or scripted click
+        // still reaches React's onClick — and the store must not learn about a
+        // choice the entry is refusing. Same reasoning as the view-flag
+        // checkboxes in `RepresentationSwitcher`.
+        if (disabled) return;
+        onSelect();
+      }}
       className={cn(
-        "flex items-center gap-2 rounded px-2 py-1 text-left text-xs",
-        active
-          ? "bg-primary text-primary-foreground"
-          : "hover:bg-accent hover:text-accent-foreground",
+        "flex items-center gap-2 px-2 py-1 text-left text-xs",
+        pickerEntryClasses({ active, disabled }),
+        className,
       )}
     >
       {children}
@@ -247,6 +343,7 @@ function BondOptions(): ReactElement {
               <OptionButton
                 key={value}
                 active={order === value}
+                disabled={optionDisabled(`bond.order.${value}`)}
                 testId={`order-${String(value)}`}
                 label={`Bond order ${String(value)}`}
                 onSelect={() => {
@@ -272,6 +369,7 @@ function BondOptions(): ReactElement {
               <OptionButton
                 key={value}
                 active={stereo === value}
+                disabled={optionDisabled(`bond.stereo.${value}`)}
                 testId={`stereo-${value}`}
                 label={STEREO_LABELS[value]}
                 onSelect={() => {
@@ -308,6 +406,7 @@ function RingOptions(): ReactElement {
           <OptionButton
             key={name}
             active={current === name}
+            disabled={optionDisabled(`ring.${name}`)}
             testId={`ring-${name}`}
             label={name}
             onSelect={() => {
@@ -317,7 +416,11 @@ function RingOptions(): ReactElement {
             <Icon className="size-4" />
             <span className="capitalize">{name}</span>
             {RING_TEMPLATES[name].kekule ? (
-              <span className="text-muted-foreground ml-auto text-[10px] uppercase">
+              // `text-current` and not `text-muted-foreground`: the badge sits
+              // INSIDE an entry that already states its own ink, and a fixed
+              // grey on a `bg-primary` row was the one part of the selected
+              // entry that did not follow it.
+              <span className="ml-auto text-[10px] uppercase text-current opacity-70">
                 arene
               </span>
             ) : null}
@@ -328,28 +431,37 @@ function RingOptions(): ReactElement {
   );
 }
 
+/**
+ * The element grid, now an `OptionButton` grid.
+ *
+ * IT USED TO BE ITS OWN BUTTON, and paid for it three times over: thirteen
+ * buttons with no `title` and no `aria-label` (a screen reader read "C", "O",
+ * "N" and nothing else), no focus ring, and an inactive branch that declared no
+ * colour — the same fragility the popovers had. Sharing `OptionButton` is what
+ * makes "every picker entry has the same four states" a property of the code
+ * rather than a claim in a comment.
+ */
 function ElementOptions(): ReactElement {
   const current = useEditorStore((state) => state.toolOptions.element);
   return (
     <div className="grid w-48 grid-cols-4 gap-1">
       {COMMON_ORGANIC_ELEMENTS.map((element: ElementSymbol) => (
-        <button
+        <OptionButton
           key={element}
-          type="button"
-          aria-pressed={current === element}
-          data-element={element}
-          onClick={() => {
+          active={current === element}
+          disabled={optionDisabled(`element.${element}`)}
+          elementSymbol={element}
+          testId={`element-${element}`}
+          // "Carbon (C)", not "C". The symbol stays on screen; the name is for
+          // the tooltip and for anything reading the accessible name.
+          label={`${elementBySymbol(element)?.name ?? element} (${element})`}
+          onSelect={() => {
             void commandById(`element.${element}`).run(editorStore);
           }}
-          className={cn(
-            "rounded px-2 py-1 font-mono text-xs",
-            current === element
-              ? "bg-primary text-primary-foreground"
-              : "hover:bg-accent hover:text-accent-foreground",
-          )}
+          className="justify-center gap-0 text-center font-mono"
         >
           {element}
-        </button>
+        </OptionButton>
       ))}
     </div>
   );
@@ -365,8 +477,10 @@ function ChainOptions(): ReactElement {
           <OptionButton
             key={n}
             active={length === n}
+            disabled={optionDisabled(`chain.length.${String(n)}`)}
             testId={`chain-${String(n)}`}
             label={`${String(n)} atoms`}
+            className="justify-center gap-0"
             onSelect={() => {
               // Through the registry, like every other option popover on this
               // rail — chain length was the last one setting a tool option
@@ -402,6 +516,7 @@ function useToolGlyph(id: ToolId): ReactNode {
   const bondOrder = useEditorStore((state) => state.toolOptions.bondOrder);
   const bondStereo = useEditorStore((state) => state.toolOptions.bondStereo);
   const element = useEditorStore((state) => state.toolOptions.element);
+  const chainLength = useEditorStore((state) => state.toolOptions.chainLength);
 
   if (id === "ring") {
     const Icon = RING_ICONS[ringTemplate];
@@ -419,6 +534,30 @@ function useToolGlyph(id: ToolId): ReactNode {
     return (
       <span className="font-mono text-sm font-semibold leading-none">
         {element}
+      </span>
+    );
+  }
+  if (id === "chain") {
+    // THE CHAIN TOOL WAS THE ONE OPTION-CARRYING TOOL WHOSE BUTTON DID NOT SAY
+    // WHAT IT WAS ARMED WITH: a chemist who had picked 12 saw the same zig-zag
+    // as one who had picked 2, and found out by clicking. The icon STAYS —
+    // unlike an element symbol, a bare "12" beside a hexagon would read as a
+    // ring size — and the armed length rides in the corner. `toolDef` rather
+    // than a second reference to `CarbonChainIcon`, so the rail keeps drawing
+    // whatever the registry says the chain tool looks like.
+    const Icon = toolDef(id).Icon;
+    return (
+      <span className="relative flex size-5 items-center justify-center">
+        <Icon className="size-5" />
+        <span
+          data-rail-badge="chain"
+          // No colour of its own: it sits inside a button that states both of
+          // its colours in both states, so it follows the pressed button's ink
+          // instead of holding a grey that disappears on `bg-primary`.
+          className="absolute -bottom-1.5 -right-1.5 font-mono text-[9px] font-semibold leading-none"
+        >
+          {chainLength}
+        </span>
       </span>
     );
   }
