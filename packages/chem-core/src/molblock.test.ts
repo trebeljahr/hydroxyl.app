@@ -13,7 +13,7 @@ import {
 import { stereoGroupTag, stereoGroupsOf, withStereoGroups } from "./stereo-groups.js";
 import { MolblockParseError, readMolblock } from "./molblock-read.js";
 import type { Molecule } from "./types.js";
-import { flipBond } from "./ops.js";
+import { flipBond, setBondStereo } from "./ops.js";
 import { flipAtoms, verticalMirror } from "./transform.js";
 import { bondOrderSum } from "./valence.js";
 import { vec } from "./vec.js";
@@ -1395,6 +1395,36 @@ describe("V3000 writer", () => {
     expect(writeMolblock(mol)).toContain("V2000");
   });
 
+  it("leaves the counts-line chiral flag alone for a grouped molecule", () => {
+    // A DECISION, pinned so it cannot drift into a silent behaviour change: the
+    // flag means "this drawing states a configuration", one bit for the whole
+    // file, and a grouped molecule writes `chiral=1` beside its AND collection
+    // rather than pretending the bit can express enhanced stereo. The writer's
+    // comment gives the reasoning; the COLLECTION block is the statement a
+    // V3000 reader is meant to read, and chem-core's own reader ignores this
+    // field entirely.
+    const { mol, centres } = chlorobutanol();
+    const racemate = withStereoGroups(mol, [{ kind: "and", index: 1, atomIds: centres }]);
+    // `M  V30 COUNTS na nb nsg n3d chiral` — the leading V2000-shaped line in a
+    // V3000 file is all zeros by convention, so this is where the flag lives.
+    const counts = (text: string): string =>
+      text.split("\n").find((line) => line.startsWith("M  V30 COUNTS")) ?? "";
+    const written = writeMolblock(racemate, { version: "V3000" });
+    expect(counts(written)).toBe("M  V30 COUNTS 6 5 0 0 1");
+    expect(written.split("\n").filter((line) => line.includes("MDLV30"))).toEqual([
+      "M  V30 MDLV30/STERAC1 ATOMS=(2 2 4)",
+    ]);
+    // And the flag still tracks the wedges and nothing else: erase them and it
+    // is 0 with the collection unchanged.
+    const flat = mol.bondIds.reduce((m, bondId) => setBondStereo(m, bondId, "none"), mol);
+    const flatRacemate = withStereoGroups(flat, [{ kind: "and", index: 1, atomIds: centres }]);
+    const flatWritten = writeMolblock(flatRacemate, { version: "V3000" });
+    expect(counts(flatWritten)).toBe("M  V30 COUNTS 6 5 0 0 0");
+    expect(flatWritten.split("\n").filter((line) => line.includes("MDLV30"))).toEqual([
+      "M  V30 MDLV30/STERAC1 ATOMS=(2 2 4)",
+    ]);
+  });
+
   it("writes the same bytes twice (T8)", () => {
     const { mol, centres } = chlorobutanol();
     const grouped = withStereoGroups(mol, [
@@ -1580,6 +1610,51 @@ describe("V3000 round trip", () => {
     expect(back.molecule.stereoGroups?.[0]?.atomIds).toHaveLength(28);
     expect(back.warnings).toEqual([]);
     expect(writeMolblock(back.molecule, { version: "V3000" })).toBe(text);
+  });
+
+  it("reports the shortfall when a continuation was trimmed off a real group", () => {
+    // THE REALISTIC PRODUCER of a short `ATOMS=(n ...)` list is not a broken
+    // writer: deleting a trailing hyphen is what a re-wrap, a whitespace trim or
+    // a paste through a text field does. So the case is built out of this
+    // writer's own output, with the last continuation dash removed.
+    const chain = buildMolecule((b) => {
+      let previous: string | undefined;
+      for (let i = 0; i < 28; i++) {
+        const id = b.atom("C", vec(i * 0.87, i % 2 === 0 ? 0 : 0.5));
+        if (previous !== undefined) b.bond(previous, id, 1);
+        previous = id;
+      }
+    });
+    const text = writeMolblock(
+      withStereoGroups(chain, [{ kind: "and", index: 1, atomIds: chain.atomIds }]),
+      { version: "V3000" },
+    );
+    const lines = text.split("\n");
+    const dashed = lines.findIndex((line) => line.includes("MDLV30/STERAC1") && line.endsWith("-"));
+    expect(dashed).toBeGreaterThan(0);
+    const trimmed = readMolblock(
+      [...lines.slice(0, dashed), lines[dashed]!.slice(0, -1), ...lines.slice(dashed + 2)].join("\n"),
+    );
+
+    // The group came back SMALLER and the molecule still looks fine, which is
+    // the whole danger: the declared count is the only cross-check the format
+    // offers, so discarding it left this silent.
+    const group = trimmed.molecule.stereoGroups?.[0];
+    expect(group?.atomIds.length).toBeLessThan(28);
+    expect(group?.atomIds.length).toBeGreaterThan(0);
+    const mismatch = trimmed.warnings.filter((w) => w.kind === "collection-count-mismatch");
+    expect(mismatch).toHaveLength(1);
+    expect(mismatch[0]).toMatchObject({
+      kind: "collection-count-mismatch",
+      name: "MDLV30/STERAC1",
+      declared: 28,
+      found: group?.atomIds.length,
+    });
+    // It names the collection, so a reader knows WHICH group lost members —
+    // the pre-existing warning for this file named a collection called "4",
+    // which is a fragment of the orphaned continuation line and says nothing.
+    expect(mismatch[0]?.message).toContain("MDLV30/STERAC1");
+    expect(mismatch[0]?.message).toContain("28");
   });
 
   it("joins a continuation broken anywhere, including mid-number", () => {
@@ -1790,6 +1865,40 @@ describe("V3000 reader tolerance", () => {
     expect(result.molecule.stereoGroups).toHaveLength(1);
     expect(result.molecule.stereoGroups?.[0]?.atomIds).toHaveLength(2);
     expect(result.warnings).toEqual([]);
+  });
+
+  it("keeps the atoms a short ATOMS list does carry, and names both counts", () => {
+    // Tolerance rule (decision 90): the values present are kept, because
+    // dropping them would lose the group rather than repair it. RDKit refuses
+    // these same bytes outright; this reader keeps them AND says so.
+    const result = readMolblock(
+      v3000(
+        "M  V30 BEGIN COLLECTION",
+        "M  V30 MDLV30/STERAC1 ATOMS=(18 1 2)",
+        "M  V30 END COLLECTION",
+      ),
+    );
+    expect(result.molecule.stereoGroups).toEqual([
+      { kind: "and", index: 1, atomIds: ["a1", "a2"] },
+    ]);
+    expect(result.warnings.map((w) => w.kind)).toEqual(["collection-count-mismatch"]);
+    expect(result.warnings[0]).toMatchObject({ declared: 18, found: 2, name: "MDLV30/STERAC1" });
+  });
+
+  it("says nothing about a list whose count is right, or about surplus junk", () => {
+    // The count BOUNDS the list, so trailing junk inside the parentheses cannot
+    // inject members — and it is not a shortfall either, so it earns no warning
+    // from this arm.
+    for (const entry of [
+      "M  V30 MDLV30/STERAC1 ATOMS=(2 1 2)",
+      "M  V30 MDLV30/STERAC1 ATOMS=(2 1 2 99 99)",
+    ]) {
+      const result = readMolblock(
+        v3000("M  V30 BEGIN COLLECTION", entry, "M  V30 END COLLECTION"),
+      );
+      expect(result.molecule.stereoGroups?.[0]?.atomIds, entry).toEqual(["a1", "a2"]);
+      expect(result.warnings, entry).toEqual([]);
+    }
   });
 
   it("drops an unnumbered STERAC and an empty collection", () => {

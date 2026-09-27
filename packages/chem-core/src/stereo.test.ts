@@ -23,6 +23,7 @@ import {
   stereoGroupCoverage,
   stereogenicBonds,
   structuralIssues,
+  wedgelessStereoGroupAtoms,
 } from "./stereo.js";
 import type { StereoDescriptor } from "./stereo.js";
 import { ABS_STEREO_GROUP_INDEX, withStereoGroups } from "./stereo-groups.js";
@@ -854,5 +855,110 @@ describe("decision 40: what the groups say about the whole molecule", () => {
       { kind: "and", index: 1, atomIds: [c2, c3, "a1"] },
     ]);
     expect(stereoGroupCoverage(padded)).toMatchObject({ kind: "whole", prefix: "rac-" });
+  });
+
+  it("counts DISTINCT centres, so a group naming one twice cannot print rac-", () => {
+    // NOT reachable through `withStereoGroups`, which deduplicates — so the
+    // group is set on the molecule directly, which is exactly what a decoded
+    // document is before its refinement runs. Counting memberships made this
+    // molecule read `whole` / `rac-`: one grouped centre plus one UNGROUPED one,
+    // announced as a racemate when it is a mixture of diastereomers. The schema
+    // refinement rejects such a document, and this makes the false prefix
+    // impossible even if it did not.
+    const { mol, c2, c3 } = chlorobutanol();
+    expect(stereocenterAtoms(mol)).toEqual([c2, c3]);
+    const forged: Molecule = { ...mol, stereoGroups: [{ kind: "and", index: 1, atomIds: [c2, c2] }] };
+    expect(stereoGroupCoverage(forged)).toMatchObject({
+      kind: "perCentre",
+      groups: [{ kind: "and", index: 1 }],
+    });
+    // And the honest version of the same statement agrees with it, which is the
+    // point: a duplicate must say no more than the id said once.
+    expect(stereoGroupCoverage(withStereoGroups(mol, [{ kind: "and", index: 1, atomIds: [c2] }])).kind).toBe(
+      "perCentre",
+    );
+  });
+});
+
+describe("decision 95: which grouped atoms an RDKit reader will drop", () => {
+  function chlorobutanol(): { readonly mol: Molecule; readonly c2: AtomId; readonly c3: AtomId } {
+    let c2: AtomId = "";
+    let c3: AtomId = "";
+    const mol = buildMolecule((b) => {
+      const c1 = b.atom("C", ORIGIN);
+      const c2Pos = step(ORIGIN, 30);
+      c2 = b.atom("C", c2Pos);
+      const o = b.atom("O", step(c2Pos, 90));
+      const c3Pos = step(c2Pos, -30);
+      c3 = b.atom("C", c3Pos);
+      const c4 = b.atom("C", step(c3Pos, 30));
+      const cl = b.atom("Cl", step(c3Pos, -90));
+      b.bond(c1, c2, 1);
+      b.bond(c2, o, 1, "wedge");
+      b.bond(c2, c3, 1);
+      b.bond(c3, c4, 1);
+      b.bond(c3, cl, 1, "hash");
+    });
+    return { mol, c2, c3 };
+  }
+
+  it("says nothing about a molecule that states no group", () => {
+    const { mol } = chlorobutanol();
+    expect(wedgelessStereoGroupAtoms(mol)).toEqual([]);
+    const flat = mol.bondIds.reduce((m, bondId) => setBondStereo(m, bondId, "none"), mol);
+    expect(wedgelessStereoGroupAtoms(flat)).toEqual([]);
+  });
+
+  it("names every grouped centre of a racemate drawn with no wedge at all", () => {
+    const { mol, c2, c3 } = chlorobutanol();
+    const flat = mol.bondIds.reduce((m, bondId) => setBondStereo(m, bondId, "none"), mol);
+    const racemate = withStereoGroups(flat, [{ kind: "and", index: 1, atomIds: [c2, c3] }]);
+    // The molecule and the file are both right — this is the limit being
+    // reported, not a defect being repaired.
+    expect(stereoGroupCoverage(racemate)).toMatchObject({ kind: "whole", prefix: "rac-" });
+    expect(wedgelessStereoGroupAtoms(racemate)).toEqual([c2, c3]);
+  });
+
+  it("names only the centre that has no mark, not the one that has", () => {
+    // RDKit's drop is PER ATOM, measured: it keeps the grouped atoms carrying a
+    // chiral tag and drops the rest, so a warning naming the whole group would
+    // be wrong about half of it.
+    const { mol, c2, c3 } = chlorobutanol();
+    const halfFlat = mol.bondIds.reduce(
+      (m, bondId) => (m.bonds[bondId]?.stereo === "hash" ? setBondStereo(m, bondId, "none") : m),
+      mol,
+    );
+    const racemate = withStereoGroups(halfFlat, [{ kind: "and", index: 1, atomIds: [c2, c3] }]);
+    expect(wedgelessStereoGroupAtoms(racemate)).toEqual([c3]);
+  });
+
+  it("counts a mark only where its NARROW END is, which is where the tag lands", () => {
+    // The wedge on C2 written the other way round: same two atoms, same bond,
+    // and the configuration now belongs to the oxygen. RDKit gives the tag to
+    // the bond's first atom, so C2 is as bare as if nothing were drawn.
+    const { mol, c2, c3 } = chlorobutanol();
+    const wedge = mol.bondIds.find((id) => mol.bonds[id]?.stereo === "wedge")!;
+    const reversed = flipBond(mol, wedge);
+    expect(reversed.bonds[wedge]?.from).not.toBe(c2);
+    const racemate = withStereoGroups(reversed, [{ kind: "and", index: 1, atomIds: [c2, c3] }]);
+    expect(wedgelessStereoGroupAtoms(racemate)).toEqual([c2]);
+  });
+
+  it("names a wavy bond's atom: 'unknown' is not a configuration", () => {
+    const { mol, c2, c3 } = chlorobutanol();
+    const wavy = mol.bondIds.reduce(
+      (m, bondId) => (m.bonds[bondId]?.stereo === "wedge" ? setBondStereo(m, bondId, "wavy") : m),
+      mol,
+    );
+    const racemate = withStereoGroups(wavy, [{ kind: "and", index: 1, atomIds: [c2, c3] }]);
+    expect(wedgelessStereoGroupAtoms(racemate)).toEqual([c2]);
+  });
+
+  it("names a grouped atom that is no stereocentre at all", () => {
+    // An imported collection may hold one, and it is lost on the way out for
+    // exactly the same reason a wedgeless centre is.
+    const { mol, c2, c3 } = chlorobutanol();
+    const padded = withStereoGroups(mol, [{ kind: "and", index: 1, atomIds: [c2, c3, "a1"] }]);
+    expect(wedgelessStereoGroupAtoms(padded)).toEqual(["a1"]);
   });
 });

@@ -107,8 +107,13 @@ export function stereoGroupTag(group: StereoGroup): string {
  * The next free index for a new group of `kind`.
  *
  * MAX PLUS ONE, not count plus one: deleting AND group 1 must not hand the next
- * group the number an undo entry still refers to, and a gap in the numbering is
- * something a V3000 file is entitled to contain anyway.
+ * group the number an undo entry still refers to.
+ *
+ * THE GAP THAT LEAVES IS A RULING, decision 94: gaps are accepted and nothing
+ * compacts them. Compacting would contradict decision 92's premise — an index
+ * is a group's stored identity, not its position in a list — so renumbering the
+ * survivors after a delete would change what an unrelated group's `STERAC<n>`
+ * line says, and a V3000 file is entitled to a gap in any case.
  */
 export function nextStereoGroupIndex(mol: Molecule, kind: StereoGroupKind): number {
   if (kind === "abs") return ABS_STEREO_GROUP_INDEX;

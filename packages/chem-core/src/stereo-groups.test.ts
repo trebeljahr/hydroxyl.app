@@ -62,6 +62,29 @@ describe("stereo group records", () => {
     expect(stereoGroupsOf(mol)).toEqual([]);
   });
 
+  it("drops a group that names no atom, and keeps the one beside it", () => {
+    // The guard whose consequence is a LOST FILE, not a lost group: with the
+    // empty-group drop removed the molecule accepts `atomIds: []`, renders
+    // normally, and then fails to decode ("stereo group 0 is empty") because the
+    // document schema re-enforces the invariant the model stopped enforcing.
+    // Every other arm of this module's validation throws; this one is silent, so
+    // it is the one nothing pinned.
+    const { mol, c2 } = chlorobutanol();
+    expect(Object.hasOwn(withStereoGroups(mol, [{ kind: "and", index: 1, atomIds: [] }]), "stereoGroups")).toBe(
+      false,
+    );
+    // Mixed, which is the case a length check on the input would miss: the empty
+    // statement goes and the real one stays, keeping its own stored index.
+    expect(
+      stereoGroupsOf(
+        withStereoGroups(mol, [
+          { kind: "and", index: 1, atomIds: [] },
+          { kind: "or", index: 2, atomIds: [c2] },
+        ]),
+      ),
+    ).toEqual([{ kind: "or", index: 2, atomIds: [c2] }]);
+  });
+
   it("distinguishes no groups from an explicit abs group (decision 91)", () => {
     const { mol, c2, c3 } = chlorobutanol();
     const asserted = withStereoGroups(mol, [

@@ -604,6 +604,19 @@ const moleculeShapeSchema = z.object({
    * Absent is also MEANINGFUL, not merely tolerated: it says nothing was ever
    * asserted about configuration, which is different from an explicit `abs`
    * group (decision 91).
+   *
+   * THE BACKWARD DIRECTION IS A KNOWN GAP, and a heavier one than the display
+   * keys named beside `SCHEMA_VERSION`. Measured: a build whose
+   * `moleculeShapeSchema` has no `stereoGroups` key strips the field, decodes
+   * `ok: true`, and re-saves the document as a single enantiomer — no error, no
+   * warning, and no version gate can refuse it, because the version deliberately
+   * did NOT move (O1). Losing a display flag is cosmetic; losing an AND
+   * collection changes which compound the file names, and the loss happens in
+   * the OLD build, which cannot be taught anything now. Stated here rather than
+   * repaired: the repair is the v2 bump's unknown-key handling, and bumping the
+   * version to buy it would make every document this build writes unopenable by
+   * the build that is already deployed — a certain loss traded for a
+   * conditional one.
    */
   stereoGroups: z.array(stereoGroupSchema).optional(),
 });

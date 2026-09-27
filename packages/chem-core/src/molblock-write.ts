@@ -498,9 +498,30 @@ export function writeMolblock(mol: Molecule, options: MolblockWriteOptions = {})
   const rowOf = new Map<AtomId, number>();
   mol.atomIds.forEach((id, index) => rowOf.set(id, index + 1));
 
-  // The chiral flag says "the drawn stereochemistry is absolute, not a
-  // racemate". Wedges and hashes are the only way this model states
-  // configuration, so their presence is exactly the condition.
+  // The counts-line chiral flag: 1 when the drawing states a configuration at
+  // all, which for this model means a wedge or a hash somewhere.
+  //
+  // DELIBERATELY NOT REVISITED FOR STEREO GROUPS, although the model can now
+  // say "racemate" and this flag reads as "not a racemate". A wedged molecule
+  // carrying an AND collection therefore writes `chiral=1` beside
+  // `MDLV30/STERAC1`, which looks like a contradiction and is not worth
+  // resolving here, for three reasons:
+  //
+  //   - There is ONE flag for the whole file and collections are per atom. A
+  //     structure with an ABS collection on one centre and an AND collection on
+  //     another is a perfectly ordinary scheme drawing, and no single bit is
+  //     right about it. A bit that is right only for the uniform cases is worse
+  //     than a bit that means one fixed, documented thing.
+  //   - A grouped molecule only ever reaches V3000 (decision 25 refuses V2000
+  //     for it by name), and in a V3000 file the COLLECTION block is the
+  //     statement. A reader that understands collections has no reason to
+  //     consult a one-bit summary; a reader that does not cannot be rescued by
+  //     the bit either, since it will take the wedges as absolute regardless.
+  //   - The flag carries no information in practice. The spec says only "1 if
+  //     the molecule is chiral, 0 if not"; RDKit writes 0 even for a pure
+  //     single enantiomer, so its value distinguishes nothing there; and
+  //     chem-core's own reader ignores the field entirely, so nothing about the
+  //     self round-trip depends on it.
   const chiral = mol.bondIds.some((id) => {
     const stereo = requireBond(mol, id).stereo;
     return stereo === "wedge" || stereo === "hash";
@@ -764,6 +785,16 @@ function writeV3000(
     const charge = Math.trunc(atom.charge);
     // `CHG=` is the ABSOLUTE charge, so there is no legacy column to supersede
     // and no `M  CHG` line to write.
+    //
+    // NOT CLAMPED to the spec's stated range (the CTfile atom-block table gives
+    // `CHG  Atom charge  Integer  0 = none (default)  -15 to +15`), and that is
+    // a decision rather than an oversight. The V2000 `M  CHG` path has always
+    // written whatever the model holds, so clamping only here would make the two
+    // generations disagree about the same molecule; nothing is lost either way —
+    // RDKit reads `CHG=20` back as `[S+20]` and chem-core rereads 20 — and a
+    // charge that far out is a modelling mistake upstream, which a silent clamp
+    // would hide instead of surface. If a charge bound is ever wanted it belongs
+    // in the model, once, not in each writer.
     if (charge !== 0) content += ` CHG=${charge}`;
 
     const radicalElectrons = Math.trunc(atom.radicalElectrons);

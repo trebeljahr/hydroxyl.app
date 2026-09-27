@@ -397,7 +397,11 @@ export type StereoGroupCoverage =
  *
  * `stereocenterAtoms` is the set, deliberately: it INCLUDES centres whose
  * descriptor is undetermined, so a racemate drawn with no wedges at all still
- * reads `rac-` rather than losing its prefix for want of a letter.
+ * reads `rac-` rather than losing its prefix for want of a letter. KNOWN LIMIT
+ * on that case, decision 95: such a molecule reads `rac-` here and in the file,
+ * but RDKit-based tools drop the collection back off it — see
+ * `wedgelessStereoGroupAtoms` below, which is what the export dialog warns
+ * from.
  */
 export function stereoGroupCoverage(mol: Molecule): StereoGroupCoverage {
   const groups = stereoGroupsOf(mol);
@@ -405,12 +409,23 @@ export function stereoGroupCoverage(mol: Molecule): StereoGroupCoverage {
 
   const centres = new Set<AtomId>(stereocenterAtoms(mol));
   const holding: StereoGroup[] = [];
-  let held = 0;
+  // DISTINCT CENTRES, not memberships. `withStereoGroups` deduplicates, so a
+  // molecule built through it cannot name one atom twice inside a group — but a
+  // decoded document is only as good as the schema refinement that rejects one,
+  // and counting memberships made a group holding `[a2, a2]` on a molecule with
+  // two centres print `rac-`: a racemate claim about a mixture of
+  // diastereomers. A set cannot be fooled that way whatever reaches it, so the
+  // false prefix is impossible here rather than merely prevented upstream.
+  const held = new Set<AtomId>();
   for (const group of groups) {
-    const inside = group.atomIds.filter((atomId) => centres.has(atomId)).length;
+    let inside = 0;
+    for (const atomId of group.atomIds) {
+      if (!centres.has(atomId)) continue;
+      inside += 1;
+      held.add(atomId);
+    }
     if (inside === 0) continue;
     holding.push(group);
-    held += inside;
   }
   // T14's case, named: the statement exists but resolves to nothing. The
   // figure still tags the grouped atoms — membership is what the document says
@@ -422,13 +437,64 @@ export function stereoGroupCoverage(mol: Molecule): StereoGroupCoverage {
     holding.length === 1 &&
     only !== undefined &&
     only.kind !== "abs" &&
-    // An atom is in at most one group, so counting is enough to prove the one
-    // group holds every centre; no second membership walk.
-    held === centres.size
+    // One holding group, and the centres it holds are every centre there is.
+    held.size === centres.size
   ) {
     return { kind: "whole", group: only, prefix: only.kind === "and" ? "rac-" : "rel-" };
   }
   return { kind: "perCentre", groups: holding };
+}
+
+/**
+ * Decision 95's KNOWN LIMIT, as a list of atoms: the grouped atoms that an
+ * RDKit-based reader will silently drop out of their collection.
+ *
+ * WHY THIS EXISTS. A flat skeleton marked racemic is an ordinary thing to draw
+ * for a scheme, and this build states it correctly: the model holds the group,
+ * the V3000 writer emits the COLLECTION line, and chem-core reads it back
+ * whole. RDKit does not. Measured against RDKit MinimalLib 2025.03.4: it builds
+ * a collection out of the atoms that carry a CHIRAL TAG, and a molfile atom
+ * only gets one from a wedge or hash whose NARROW END is that atom — so it
+ * keeps the grouped atoms that have such a bond, drops the ones that do not,
+ * and reports NO collection at all when none of them has one. Per atom, not
+ * all-or-nothing, which is why this returns the atoms rather than a boolean:
+ * the export dialog can then name exactly what will be lost.
+ *
+ * NOT A REFUSAL, and deliberately not a repair. Refusing the mark was rejected
+ * (decision 95) and inventing a wedge would state a configuration the author
+ * did not draw. The limit is RDKit's, so it is reported where the file leaves
+ * this app and re-proved by a test every run — the `RDKIT_MOLFILE_STEREO_BLIND`
+ * precedent — and the list comes back empty the day RDKit reads a collection
+ * off the collection block.
+ *
+ * WEDGE AND HASH ONLY. `wavy` and `either` state that the configuration is
+ * unknown, which is the opposite of a chiral tag, so an atom carrying one of
+ * those is in the same position as an atom carrying nothing.
+ *
+ * Every grouped atom is considered, stereocentre or not: an imported collection
+ * is entitled to name an atom this build does not perceive as stereogenic, and
+ * that atom is lost on the way out for exactly the same reason.
+ */
+export function wedgelessStereoGroupAtoms(mol: Molecule): readonly AtomId[] {
+  const groups = stereoGroupsOf(mol);
+  if (groups.length === 0) return [];
+  const tagged = new Set<AtomId>();
+  for (const bondId of mol.bondIds) {
+    const bond = getBond(mol, bondId);
+    if (bond === undefined) continue;
+    if (bond.stereo !== "wedge" && bond.stereo !== "hash") continue;
+    tagged.add(bond.from);
+  }
+  const wedgeless: AtomId[] = [];
+  // Group order then atom order inside it, both already canonical
+  // (`withStereoGroups` sorts), so the list — and the sentence built from it —
+  // is deterministic.
+  for (const group of groups) {
+    for (const atomId of group.atomIds) {
+      if (!tagged.has(atomId)) wedgeless.push(atomId);
+    }
+  }
+  return wedgeless;
 }
 
 // ---------------------------------------------------------------------------

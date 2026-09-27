@@ -761,6 +761,23 @@ describe("stereo groups (additive, no schema bump)", () => {
     expect(messagesFor(encoded).join(" ")).toMatch(/a2 is in stereo groups/);
   });
 
+  it("rejects a group that names one atom twice", () => {
+    // The arm nothing pinned, and the one whose consequence is a WRONG LABEL
+    // rather than a rejected file: with this refinement deleted, a group holding
+    // `[a2, a2]` on a molecule with two centres decoded clean and
+    // `stereoGroupCoverage` read it as `rac-` — a racemate claim about a mixture
+    // of diastereomers. chem-core now counts distinct centres as well, so the two
+    // halves defend each other.
+    const encoded = groupedFixture();
+    molOf(encoded).stereoGroups = [{ kind: "and", index: 1, atomIds: ["a2", "a2"] }];
+    expect(messagesFor(encoded).join(" ")).toMatch(/names atom a2 twice/);
+    // And the honest single mention of the same atom is accepted, so the
+    // refinement is about the repeat and not about the id.
+    const once = groupedFixture();
+    molOf(once).stereoGroups = [{ kind: "and", index: 1, atomIds: ["a2"] }];
+    expect(safeDecodeDocument(once).ok).toBe(true);
+  });
+
   it("rejects a group naming an atom that does not exist, a prototype member included", () => {
     for (const atomId of ["a99", "toString", "__proto__", "constructor"]) {
       const encoded = groupedFixture();

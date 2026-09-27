@@ -198,6 +198,28 @@ export type MolblockWarning =
     }
   | {
       /**
+       * A collection entry whose `ATOMS=(n ...)` list declares `n` members and
+       * carries fewer. The values present are KEPT (decision 90's tolerance
+       * rule: dropping them would lose the group rather than repair it), so
+       * this warning is the whole of the report — and it has to exist, because
+       * the declared count is the one cross-check the format offers and a
+       * collection that comes back smaller leaves a molecule that still looks
+       * fine. Measured: an 18-centre racemate whose continuation dash was
+       * trimmed away — what any re-wrap, whitespace trim or paste through a
+       * text field does — came back as a 17-atom partial group and its coverage
+       * fell from `rac-` to per-centre tags, silently. RDKit refuses the same
+       * bytes outright; this reader keeps them and says so.
+       */
+      readonly kind: "collection-count-mismatch";
+      readonly message: string;
+      readonly line: number;
+      /** The collection name as the file spells it, e.g. `MDLV30/STERAC1`. */
+      readonly name: string;
+      readonly declared: number;
+      readonly found: number;
+    }
+  | {
+      /**
        * The file put one atom in two stereo collections. An atom belongs to at
        * most one — that is MDL semantics, and it is what makes a figure's
        * per-centre tag single-valued — so the LATER mention is dropped, the way
@@ -1602,15 +1624,24 @@ function keywordInt(keywords: ReadonlyMap<string, string>, key: string): number 
 }
 
 /**
- * The values inside a `KEYWORD=(N v1 v2 ... vN)` list.
+ * The values inside a `KEYWORD=(N v1 v2 ... vN)` list, WITH the count the list
+ * declared.
  *
  * `N` BOUNDS the result, exactly as it does for a V2000 `M  CHG` payload, so
  * trailing junk inside the parentheses cannot inject members. A list with fewer
  * values than it declares yields what is there — the surplus declaration is the
  * file's error, and dropping the values present would lose the group rather than
  * repair it.
+ *
+ * `declared` COMES BACK with the values rather than being checked here: this
+ * function knows nothing about what the list is for, and the caller is the one
+ * that can name the collection in a warning. Discarding it was the defect — a
+ * short list then read as a smaller group with nothing said about it.
  */
-function keywordList(keywords: ReadonlyMap<string, string>, key: string): number[] | undefined {
+function keywordList(
+  keywords: ReadonlyMap<string, string>,
+  key: string,
+): { readonly declared: number; readonly values: number[] } | undefined {
   const text = keywords.get(key);
   if (text === undefined) return undefined;
   const numbers = text.match(/-?\d+/g);
@@ -1622,7 +1653,7 @@ function keywordList(keywords: ReadonlyMap<string, string>, key: string): number
     const value = Number.parseInt(raw, 10);
     if (Number.isFinite(value)) values.push(value);
   }
-  return values;
+  return { declared, values };
 }
 
 /** `BEGIN <KEY>` / `END <KEY>`, or undefined. */
@@ -1936,8 +1967,8 @@ function readV3000Collection(
     return undefined;
   }
 
-  const rows = keywordList(v30Keywords(fields.slice(1)), "ATOMS");
-  if (rows === undefined || rows.length === 0) {
+  const list = keywordList(v30Keywords(fields.slice(1)), "ATOMS");
+  if (list === undefined || list.values.length === 0) {
     warnings.push({
       kind: "bad-v3000-row",
       message:
@@ -1951,5 +1982,26 @@ function readV3000Collection(
     return undefined;
   }
 
-  return { kind, index, rows, line: entry.line };
+  // The one cross-check `ATOMS=(n ...)` offers. A short list is what a lost
+  // continuation dash looks like from here (T7 inbound), and the group it
+  // yields is a DIFFERENT chemical statement — smaller, possibly no longer
+  // covering every centre — so the values are kept and the shortfall is
+  // reported rather than inferred by whoever notices the figure changed.
+  if (list.values.length < list.declared) {
+    warnings.push({
+      kind: "collection-count-mismatch",
+      message:
+        `The collection "${fields[0] ?? ""}" says it holds ${list.declared} ` +
+        `atoms and lists ${list.values.length}; the ${list.values.length} ` +
+        `present were kept. A V3000 line past 80 characters continues with a ` +
+        `trailing hyphen, so a list this short is usually a continuation that ` +
+        `was trimmed away — the group now says less than the file meant.`,
+      line: entry.line,
+      name: fields[0] ?? "",
+      declared: list.declared,
+      found: list.values.length,
+    });
+  }
+
+  return { kind, index, rows: list.values, line: entry.line };
 }
