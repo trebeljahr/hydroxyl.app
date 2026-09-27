@@ -1454,8 +1454,12 @@ describe("decision 54: Publication annotations at the 8 pt floor", () => {
     expect(PUBLICATION_STYLE.fontSizePx).toBe(50 / 3);
     const pt = (px: number): number => (px * 10) / (50 / 3);
     expect(pt(PUBLICATION_STYLE.fontSizePx * PUBLICATION_STYLE.stereoDescriptorScale)).toBeCloseTo(8, 12);
-    // One annotation size per figure: locants share the descriptor's scale.
+    // One annotation size per figure, with the one exception decision 93 argued
+    // for: locants, alpha/beta, torsion and the rac-/rel- prefix all share the
+    // descriptor's scale, and only the per-centre stereo group tag does not. The
+    // steroid states no group, so this layout carries exactly one size.
     const { molecule, locants } = steroidSkeletonWithLocants();
+    expect(molecule.stereoGroups).toBeUndefined();
     const sizes = new Set(
       annotationLayout(molecule, PUBLICATION_STYLE, ANNOTATED, { locants }).placements.map((p) => p.fontSizePx),
     );

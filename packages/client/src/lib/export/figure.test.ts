@@ -9,7 +9,7 @@ import {
   butan2olWedged,
   ethanol,
 } from "@starter/chem-render";
-import { benzene, buildMolecule, emptyMolecule, linearChain } from "@starter/chem-core";
+import { benzene, buildMolecule, emptyMolecule, linearChain, withStereoGroups } from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
 import { createDocument, createPanel, defaultPanelsFor } from "@starter/shared";
 import type { SketchDocument } from "@starter/shared";
@@ -442,6 +442,69 @@ describe("annotations below 8 pt (decision 60)", () => {
     );
     // A warning, not a refusal.
     expect(figureSvgForFile(p)).toContain("(R)");
+  });
+
+  it("names the stereo group tags, which are under 8 pt at EVERY width (decision 93)", () => {
+    // Decision 93 gave the per-centre tag its own smaller scale so it would be
+    // drawn at all, and 0.60 of Publication's 10 pt label is 6 pt — under the
+    // floor even at the natural width, where the descriptors sit at exactly 8 and
+    // the check is otherwise silent. So the ruling required this check to cover
+    // the kind and NAME it: a label the reader cannot resolve is not an
+    // improvement on one that was never drawn.
+    const doc = descriptorDoc();
+    const grouped: SketchDocument = {
+      ...doc,
+      molecule: withStereoGroups(doc.molecule, [{ kind: "abs", index: 1, atomIds: ["a2"] }]),
+    };
+    const settings = custom(60);
+    const p = prepared(grouped, settings);
+    expect(p.size.scaled).toBe(false);
+    // The tag really is drawn, or the notice would be about nothing.
+    expect(
+      p.figure.cells.some(
+        (c) =>
+          c.content.kind === "scene" &&
+          c.content.scene.primitives.some((q) => q.id.endsWith(":stereoGroup")),
+      ),
+    ).toBe(true);
+    const notice = annotationSizeNotice(p, settings)!;
+    // Descriptors are at 8 pt here, so only the tag is named.
+    expect(notice.kinds).toEqual(["stereoGroup"]);
+    expect(notice.fontSizePt).toBeCloseTo(6, 6);
+    expect(notice.summary).toBe(
+      `Stereo group tags print at ${formatPt(notice.fontSizePt)} pt, below the 8 pt minimum ACS asks for in figures.`,
+    );
+    // No width fixes it, because the scale is under the floor at full size.
+    expect(notice.advice).toBe(
+      "This style sets them under 8 pt even at full size, so no width fixes it. Choose a style with larger annotations, such as Publication.",
+    );
+    // A warning, not a refusal: the tag is in the file.
+    expect(figureSvgForFile(p)).toContain("abs");
+  });
+
+  it("names the descriptors FIRST when scaling takes both under, in band order", () => {
+    const natural = prepared(descriptorDoc(), custom(60)).size.naturalWidthCm;
+    const settings = custom(natural * 0.9);
+    const doc = descriptorDoc();
+    const grouped: SketchDocument = {
+      ...doc,
+      molecule: withStereoGroups(doc.molecule, [{ kind: "abs", index: 1, atomIds: ["a2"] }]),
+    };
+    const p = prepared(grouped, settings);
+    expect(p.size.scaled).toBe(true);
+    const notice = annotationSizeNotice(p, settings)!;
+    expect(notice.kinds).toEqual(["descriptor", "stereoGroup"]);
+    // The SMALLEST of them is the size reported, which is the TAG's 0.60 of the
+    // scaled label and not the descriptor's 0.80 — the point of naming two kinds
+    // and one number.
+    expect(notice.fontSizePt).toBeCloseTo(
+      p.size.fontSizePt * PUBLICATION_STYLE.stereoGroupTagScale,
+      9,
+    );
+    expect(notice.fontSizePt).toBeLessThan(p.size.fontSizePt * PUBLICATION_STYLE.stereoDescriptorScale);
+    expect(notice.summary).toBe(
+      `Stereo descriptors and stereo group tags print at ${formatPt(notice.fontSizePt)} pt, below the 8 pt minimum ACS asks for in figures.`,
+    );
   });
 
   it("says nothing when the figure draws no annotation, flag on or off", () => {

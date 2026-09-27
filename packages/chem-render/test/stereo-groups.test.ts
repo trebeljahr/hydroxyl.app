@@ -29,6 +29,7 @@ import {
 import type { AtomId, Molecule } from "@starter/chem-core";
 
 import {
+  annotationFontSizePx,
   placeAnnotations,
   structureInkBounds,
   structurePrefixRequest,
@@ -169,12 +170,9 @@ describe("decision 40: a grouped centre carries its collection's tag", () => {
   });
 
   it("places and draws the tag where the centre has room for it", () => {
-    // SCREEN, where butan-2-ol's C2 has room for the letter AND the tag. At
-    // Publication the annotation is 0.80 of a smaller label on a shorter bond
-    // and this very centre's "(R)" is already reported crowded before any group
-    // exists — so the tag there is legitimately dropped, which the drop test in
-    // decision 88's block covers. Asserting `drawn` at both presets would be
-    // asserting that Publication is roomier than decision 54 says it is.
+    // SCREEN, where butan-2-ol's C2 has room for the letter AND the tag.
+    // Publication is asserted separately, in decision 93's block: it needed the
+    // tag's own smaller scale before the tag was drawn there at all.
     const mol = withStereoGroups(butan2olWedged(), [
       { kind: "abs", index: ABS_STEREO_GROUP_INDEX, atomIds: [BUTANOL_C2] },
     ]);
@@ -252,6 +250,96 @@ describe("decision 40: a grouped centre carries its collection's tag", () => {
         serializeScene(buildAnnotatedScene(mol, style, PLAIN).scene),
       );
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Decision 93: the tag's own scale
+// ---------------------------------------------------------------------------
+
+describe("decision 93: a per-centre tag is set smaller than the letter beside it", () => {
+  it("carries the measured scale on both presets, under the 8 pt floor at Publication", () => {
+    expect(PUBLICATION_STYLE.stereoGroupTagScale).toBe(0.6);
+    expect(SCREEN_STYLE.stereoGroupTagScale).toBe(0.7);
+    // Smaller than the descriptor it stands beside, at both presets: that
+    // relationship is the ruling, not the two numbers on their own.
+    for (const style of STYLES) {
+      expect(style.stereoGroupTagScale).toBeLessThan(style.stereoDescriptorScale);
+    }
+    // 50/3 px is Publication's 10 pt label (decision 26), so the tag prints at
+    // exactly 6 pt — deliberately UNDER the 8 pt ACS artwork floor decision 51
+    // cites, which is why decision 93 also requires the export dialog's check to
+    // cover this kind and name it.
+    const pt = (px: number): number => (px * 10) / (50 / 3);
+    expect(pt(annotationFontSizePx("stereoGroup", PUBLICATION_STYLE))).toBeCloseTo(6, 12);
+    expect(pt(annotationFontSizePx("descriptor", PUBLICATION_STYLE))).toBeCloseTo(8, 12);
+  });
+
+  it("sizes the tag kind and only the tag kind from its own scale", () => {
+    // `annotationFontSizePx` is the one owner of every annotation's size, so the
+    // exception has to be visible here rather than at a call site.
+    for (const style of STYLES) {
+      expect(annotationFontSizePx("stereoGroup", style)).toBeCloseTo(
+        style.fontSizePx * style.stereoGroupTagScale,
+        12,
+      );
+      for (const kind of ["descriptor", "stereoPrefix", "locant", "alphaBeta", "torsion"] as const) {
+        expect(annotationFontSizePx(kind, style), kind).toBeCloseTo(
+          style.fontSizePx * style.stereoDescriptorScale,
+          12,
+        );
+      }
+    }
+  });
+
+  it("DRAWS butan-2-ol's tag at Publication, which the descriptor scale did not", () => {
+    // Decision 93's whole reason, as the measurement that produced it: with the
+    // tag sized at `stereoDescriptorScale` this tag came back `drawn: false`,
+    // `clear: false` in ALL FOUR views — decision 40's per-centre half invisible
+    // in exactly the figures that get published. The letter beside it is
+    // untouched, which is what keeps this a size change and not a priority one.
+    const mol = withStereoGroups(butan2olWedged(), [
+      { kind: "abs", index: ABS_STEREO_GROUP_INDEX, atomIds: [BUTANOL_C2] },
+    ]);
+    for (const view of ["skeletal", "kekule", "explicitH", "lewis"] as const) {
+      const rep = representation(view, { showStereoDescriptors: true });
+      const { scene, annotations } = buildAnnotatedScene(mol, PUBLICATION_STYLE, rep);
+      const tag = placementsOfKind(annotations, "stereoGroup")[0];
+      expect(tag?.text, view).toBe("abs");
+      expect(tag?.drawn, view).toBe(true);
+      expect(annotationRuns(scene, ":stereoGroup").map((run) => run.id), view).toEqual([
+        `atom:${BUTANOL_C2}:stereoGroup`,
+      ]);
+      // And it really is the smaller run in the file, not merely placed.
+      expect(annotationRuns(scene, ":stereoGroup")[0]?.fontSizePx, view).toBeCloseTo(
+        PUBLICATION_STYLE.fontSizePx * PUBLICATION_STYLE.stereoGroupTagScale,
+        12,
+      );
+    }
+  });
+
+  it("leaves every other annotation on the same figure at the descriptor size", () => {
+    // TWO sizes on a figure that has a group, and the tag is the smaller one.
+    // The descriptor and the locant beside it must not have moved: decision 71
+    // froze their geometry, and a scale change that leaked would move it.
+    const mol = withStereoGroups(butan2olWedged(), [
+      { kind: "abs", index: ABS_STEREO_GROUP_INDEX, atomIds: [BUTANOL_C2] },
+    ]);
+    const locants = Object.fromEntries(mol.atomIds.map((id, i) => [id, `${i + 1}`]));
+    const rep = representation("skeletal", { showStereoDescriptors: true, showLocants: true });
+    const layout = annotationLayout(mol, SCREEN_STYLE, rep, { locants });
+    const byKind = new Map(layout.placements.map((p) => [p.kind, p.fontSizePx]));
+    expect(byKind.get("stereoGroup")).toBeCloseTo(
+      SCREEN_STYLE.fontSizePx * SCREEN_STYLE.stereoGroupTagScale,
+      12,
+    );
+    for (const kind of ["descriptor", "locant"] as const) {
+      expect(byKind.get(kind), kind).toBeCloseTo(
+        SCREEN_STYLE.fontSizePx * SCREEN_STYLE.stereoDescriptorScale,
+        12,
+      );
+    }
+    expect(new Set(layout.placements.map((p) => p.fontSizePx)).size).toBe(2);
   });
 });
 

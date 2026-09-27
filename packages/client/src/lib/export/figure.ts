@@ -40,13 +40,15 @@
  * what would bring them back — never a refusal, since a small figure can be
  * exactly what was wanted.
  *
- * The same check covers the stereo descriptors and locants a figure draws
- * (decision 60): `annotationSizeNotice` names which of them print small. Only
- * descriptors can reach it today — nothing numbers atoms yet, so no figure
- * draws a locant (decision 37) and that half of the check is deliberately
- * unexercised rather than untested.
- * Publication sets them at exactly 8 pt (decision 54), so ANY scaling to fit
- * takes them under while the labels, at 10 pt, still have room.
+ * The same check covers the stereo descriptors, the per-centre stereo group
+ * tags and the locants a figure draws (decision 60): `annotationSizeNotice`
+ * names which of them print small. Only descriptors and tags can reach it
+ * today — nothing numbers atoms yet, so no figure draws a locant (decision 37)
+ * and that part of the check is deliberately unexercised rather than untested.
+ * Publication sets descriptors at exactly 8 pt (decision 54), so ANY scaling to
+ * fit takes them under while the labels, at 10 pt, still have room — and it sets
+ * a group tag at 6 pt (decision 93), so a tag is under the minimum at EVERY
+ * width, which is why decision 93 required this check to name the kind.
  */
 
 import { BOND_LENGTH_NORMALIZE_TOLERANCE, isEmpty } from "@starter/chem-core";
@@ -237,12 +239,24 @@ function widthAdvice(
   return remedies.length === 0 ? reach : `${reach} Try ${joinOr(remedies)}.`;
 }
 
-/** The annotation kinds decision 60 checks, in the order a notice names them. */
-export const CHECKED_ANNOTATION_KINDS = ["descriptor", "locant"] as const;
+/**
+ * The annotation kinds decision 60 checks, in the order a notice names them —
+ * `ANNOTATION_PRIORITY`'s order, so the sentence reads down the band the way the
+ * figure draws it.
+ *
+ * `stereoGroup` IS HERE BECAUSE DECISION 93 PUT IT HERE. Its own scale is below
+ * the descriptor's, so at Publication a tag prints at 6 pt — under the floor at
+ * every width, not only a scaled-down one — and a check that named only the
+ * descriptors would let a figure go out with an annotation nobody can read and
+ * nothing said about it. The `stereoPrefix` is NOT here: it is sized at the
+ * descriptor scale, so it is never small for a reason of its own.
+ */
+export const CHECKED_ANNOTATION_KINDS = ["descriptor", "stereoGroup", "locant"] as const;
 export type CheckedAnnotationKind = (typeof CHECKED_ANNOTATION_KINDS)[number];
 
 const ANNOTATION_NAMES: Readonly<Record<CheckedAnnotationKind, string>> = {
   descriptor: "Stereo descriptors",
+  stereoGroup: "Stereo group tags",
   locant: "Locants",
 };
 

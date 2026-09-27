@@ -141,13 +141,38 @@ export interface RenderStyle {
    * relationship inside one run and would drag the descriptor along with any
    * future change to how a subscript is set.
    *
-   * It sizes EVERY annotation, not only descriptors: locants, alpha/beta and
-   * torsion labels are set at the same size (`annotationFontSizePx` in
-   * label/annotations.ts), so a preset's locant size is this scale too. A
-   * figure mixing annotation sizes reads as annotations making different
-   * kinds of claim.
+   * It sizes every annotation EXCEPT the per-centre stereo group tag, which has
+   * its own `stereoGroupTagScale` below: locants, alpha/beta, torsion labels and
+   * the `rac-`/`rel-` prefix are all set at this size
+   * (`annotationFontSizePx` in label/annotations.ts), so a preset's locant size
+   * is this scale too. A figure mixing annotation sizes reads as annotations
+   * making different kinds of claim, which is why the one exception had to be
+   * argued for rather than assumed.
    */
   readonly stereoDescriptorScale: number;
+  /**
+   * Size of a per-centre stereo group tag (`abs`, `and1`, `or1`), as a fraction
+   * of `fontSizePx`. Decision 93.
+   *
+   * ITS OWN SCALE, and the second annotation size a figure may carry, for
+   * exactly the reason decision 54 gave Publication its own smaller descriptor
+   * scale: a label that is never drawn states nothing. Measured 2026-09-27 on
+   * 3-chlorobutan-2-ol (two AND groups) and butan-2-ol (one ABS group) at
+   * Publication with `stereoDescriptorScale` sizing the tag too: EVERY tag came
+   * back `drawn: false`, `clear: false` — so decision 40's per-centre half was
+   * invisible in precisely the figures that get published, while the
+   * `rac-`/`rel-` prefix placed at both presets and the tags placed at Screen.
+   *
+   * THE TAG IS THE ONE ANNOTATION THAT ARRIVES IN A CROWD. It is drawn beside a
+   * centre that already carries its own `(R)`/`(S)` and loses every contested
+   * slot to it (decision 17's band order), so it is looking for room in what is
+   * left over after the letter, the labels and the wedge. Nothing else in the
+   * band competes with a higher-priority annotation on the SAME atom, which is
+   * why one scale served every other kind.
+   *
+   * The values are measured, not chosen: see the per-preset comments.
+   */
+  readonly stereoGroupTagScale: number;
   readonly colors: RenderColors;
   /** Decimal places emitted for every coordinate. Fixed so output is byte-deterministic. */
   readonly coordinatePrecision: number;
@@ -278,6 +303,34 @@ export const PUBLICATION_STYLE: RenderStyle = Object.freeze({
   // one of these numbers needs a new ruling, and re-measuring every count and
   // id pinned in annotations.test.ts.
   stereoDescriptorScale: 0.8,
+  // DECISION 93, MEASURED 2026-09-27 on the two molecules the ruling names,
+  // 3-chlorobutan-2-ol and butan-2-ol, over all four views. At the descriptor
+  // scale (0.80, 8 pt) sizing the tag too, 4 of 20 tags were drawn and butan-
+  // 2-ol's `abs` was drawn in NO view — decision 40's per-centre half was
+  // invisible in exactly the figures that get published. At 0.60 it is 12 of
+  // 20, and butan-2-ol's `abs` is drawn in all four.
+  //
+  // 0.60 BECAUSE 0.60 OF 50/3 px IS EXACTLY 6.00 pt, the same reason decision 54
+  // took 0.80 (exactly 8 pt): a printed size a reader can name. It is also the
+  // top of the plateau. Sweeping 0.85 down to 0.35 in 0.01 steps over a wider
+  // set (those two plus the steroid, 84 tags) the count sits at 27-30 from 0.85
+  // to 0.63 and steps to 38 at 0.62, 47 at 0.61, 46 at 0.60, then wanders
+  // between 41 and 47 all the way down — so below 0.62 the number stops being a
+  // size decision and becomes which gap a shrinking box happens to fit. 0.61
+  // draws one more tag than 0.60 and is not worth an unnameable printed size.
+  //
+  // WHAT STAYS REPORTED IS DELIBERATE, the way decision 54's crowded
+  // descriptors are. 3-chlorobutan-2-ol's `and1` / `and2` in the skeletal and
+  // kekule views are still not drawn: four characters beside a letter that
+  // decision 54 already reports as crowded. The report is how an author finds
+  // them; tuning until every tag placed would mean a scale nobody can print.
+  //
+  // UNDER THE 8 pt ACS ARTWORK FLOOR, knowingly. Decision 93 requires the
+  // export dialog's after-scaling check (decisions 51 and 60) to cover the tag
+  // kind and NAME it, which `CHECKED_ANNOTATION_KINDS` in the client's
+  // export/figure.ts does: an invisible label states nothing, and a small one
+  // the dialog warns about states something.
+  stereoGroupTagScale: 0.6,
   colors: Object.freeze({ bond: "#000000", label: "#000000" }),
   coordinatePrecision: 3,
 });
@@ -311,6 +364,12 @@ export const SCREEN_STYLE: RenderStyle = Object.freeze({
   explicitHydrogenLengthRatio: 0.66,
   explicitHydrogenMinStemRatio: 0.2,
   stereoDescriptorScale: 0.85,
+  // Decision 93 at Screen, measured the same way: 0.70 of 16 px is 11.2 px, and
+  // it is the LARGEST scale that draws every tag in the measurement set — 84 of
+  // 84 at 0.70 and below, 82 at 0.71, 80 at 0.72, 77 at the descriptor scale.
+  // Larger than Publication's 0.60 because a 44 px bond has the room; measured
+  // per preset rather than shared, as decision 54's two descriptor scales are.
+  stereoGroupTagScale: 0.7,
   colors: Object.freeze({
     bond: "#1f2937",
     label: "#111827",

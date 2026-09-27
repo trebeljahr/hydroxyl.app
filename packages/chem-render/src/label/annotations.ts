@@ -581,13 +581,21 @@ export function structurePrefixRequest(text: string, ink: LabelBox): AnnotationR
 /**
  * Size of an annotation's run, px.
  *
- * Every kind shares the descriptor's scale today: all four are small print
- * set beside a structure, and a figure mixing three annotation sizes reads as
- * three different claims. One function, so a kind that needs its own size
- * gets it here and nowhere else.
+ * ONE EXCEPTION, and it is the whole reason this function takes a kind: the
+ * per-centre `stereoGroup` tag is set at `stereoGroupTagScale` (decision 93),
+ * smaller than everything else. Every other kind shares the descriptor's scale,
+ * because they are all small print set beside a structure and a figure mixing
+ * annotation sizes reads as annotations making different kinds of claim.
+ *
+ * The tag earned the exception by being the one kind that is drawn beside an
+ * annotation of HIGHER priority on the SAME atom — it loses every contested slot
+ * to its centre's own `(R)`/`(S)` — so at Publication it was placed in what was
+ * left over and, measured, almost never drawn. `style.ts` records the
+ * measurement. The two scales still come from one place, here, so a third size
+ * cannot appear anywhere else.
  */
 export function annotationFontSizePx(kind: AnnotationKind, style: RenderStyle): number {
-  void kind;
+  if (kind === "stereoGroup") return style.fontSizePx * style.stereoGroupTagScale;
   return style.fontSizePx * style.stereoDescriptorScale;
 }
 
