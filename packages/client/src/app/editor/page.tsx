@@ -67,7 +67,7 @@ import type { SketchDocument } from "@starter/shared";
 import { fixtureDocument, stressDocument, STRESS_HEAVY_ATOMS } from "@/canvas";
 import { armCanvasCrash, CRASH_GLOBAL } from "@/canvas/crash";
 import { EditorShell } from "@/shell";
-import { claimStartupDocument, editorStore } from "@/state";
+import { editorStore, STARTUP_DOCUMENT_ID } from "@/state";
 import {
   baselineEditorDocument,
   createMemoryDocumentStore,
@@ -117,10 +117,24 @@ export function documentFromSearch(search: string): SketchDocument | null {
   return stressDocument(atoms);
 }
 
-/** The saved document the URL names, if it names one. */
+/**
+ * The saved document the URL names, if it names one.
+ *
+ * THE RESERVED PLACEHOLDER ID NAMES NOTHING. `doc_startup` is a rendering
+ * constant — the id the store holds so the prerendered `data-doc-id` and the
+ * browser's agree — and it is the same string in every visitor's browser, so
+ * it is not a document identity anyone can own (decision 85, and see
+ * `@/state/startup-document`). Treating `?doc=doc_startup` as a bare `/editor`
+ * is what makes the route unable to discard or overwrite anything: the
+ * alternative is the `state.document.id === savedId` branch below matching on
+ * a FRESH store — every store already holds that id — so the page would
+ * baseline an empty canvas as if it were the named sketch and the next stroke
+ * would write over whatever an older build had left under the key.
+ */
 export function documentIdFromSearch(search: string): string | null {
   const id = new URLSearchParams(search).get("doc");
-  return id === null || id.trim() === "" ? null : id;
+  if (id === null || id.trim() === "") return null;
+  return id === STARTUP_DOCUMENT_ID ? null : id;
 }
 
 /**
@@ -168,16 +182,20 @@ export default function EditorPage(): ReactElement {
       (window as unknown as Record<string, unknown>)[CRASH_GLOBAL] = armCanvasCrash;
     }
 
-    // FIRST, AND BEFORE ANYTHING CAN PERSIST. The store is constructed with a
-    // placeholder whose id is the fixed string `doc_startup`, because the
-    // prerender and the browser have to render the same `data-doc-id` (see
-    // `STARTUP_DOCUMENT_ID`). That string is the same in every browser, so a
-    // record stored under it belongs to nobody — and the placeholder IS
-    // reachable: opening the fixture below is an undoable entry, so one
-    // Ctrl+Z lands back on it and the next stroke autosaves it. Hydration is
-    // over by the time this line runs, so the id can be minted now and
-    // everything downstream sees an ordinary document.
-    claimStartupDocument(editorStore);
+    // NOTHING CLAIMS THE STARTUP DOCUMENT HERE, and that is decision 85.
+    //
+    // The store is constructed with a placeholder whose id is the fixed string
+    // `doc_startup`, so that the prerendered `data-doc-id` and the browser's
+    // agree. An earlier repair minted a real id at this point in the mount.
+    // That kept the reserved string out of storage, but it also made the tab
+    // own a real document before the chemist had done anything: opening the
+    // fixture below is an UNDOABLE entry, so one stray Ctrl+Z lands on an
+    // empty document with a minted id and autosave writes it — an `Untitled`
+    // card in the recents grid that nobody asked for.
+    //
+    // Instead the placeholder stays ephemeral: the store mints its identity as
+    // part of the first edit, and the autosave loop refuses to write it until
+    // then. See `@/state/startup-document`.
 
     // Started BEFORE the document is chosen, so that an edit landing between
     // the two — a Fast Refresh, a very fast hand — is still caught. Every path

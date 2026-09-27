@@ -15,7 +15,7 @@
 
 import type { SketchDocument } from "@starter/shared";
 
-import type { EditorStore } from "@/state";
+import { isStartupDocument, type EditorStore } from "@/state";
 
 import { startAutosave, type AutosaveHandle, type AutosaveOptions } from "./autosave";
 import { saveDocument } from "./documents";
@@ -157,6 +157,12 @@ export function startEditorPersistence(
     // The indicator must not go on saying "Saved" across the debounce window,
     // which is exactly the window in which an edit can still be lost.
     onDirty: markUnsaved,
+    // The startup placeholder is nobody's document and must never reach
+    // storage under its reserved id — decision 85, and see
+    // `@/state/startup-document`. Refused here rather than in the sink so a
+    // refusal is silent: `sink` reports failures to the save indicator, and an
+    // untouched editor has nothing to fail at.
+    persistable: (doc) => !isStartupDocument(doc),
   });
   return session;
 }

@@ -8,7 +8,7 @@ import { createMemoryDocumentStore, type MemoryDocumentStore } from "@/persisten
 import { setDocumentStore } from "@/persistence/documents";
 import { recordFor } from "@/persistence/record";
 import { flushEditorDocument, resetEditorPersistence } from "@/persistence/session";
-import { editorStore, guardedOps } from "@/state";
+import { editorStore, guardedOps, STARTUP_DOCUMENT_ID, startupDocument } from "@/state";
 
 // The shell is the canvas, the rails and the panels — none of which decide
 // which document is open. What is under test is the page's mount effect.
@@ -23,7 +23,7 @@ vi.mock("@/persistence", async (importOriginal) => ({
   setDocumentStore: () => undefined,
 }));
 
-import EditorPage from "./page";
+import EditorPage, { documentIdFromSearch } from "./page";
 
 function ethanol() {
   return buildMolecule((b) => {
@@ -92,5 +92,108 @@ describe("/editor?doc=<id>", () => {
     expect(reread.ok && reread.value.molecule.atoms[reread.value.molecule.atomIds[0]!]?.element).toBe(
       "N",
     );
+  });
+});
+
+/**
+ * THE STARTUP DOCUMENT NEVER REACHES STORAGE (decision 85).
+ *
+ * `doc_startup` is a rendering constant, not a document identity: the store
+ * opens with it so that the prerendered `data-doc-id` and the browser's agree.
+ * It is the same string in every visitor's browser, so a record under it
+ * belongs to nobody — and it was reachable, measured against the built app.
+ * Opening the benzene fixture is an UNDOABLE entry, so one Ctrl+Z after the
+ * editor mounts put the placeholder back on the canvas, twelve atoms drawn on
+ * it were autosaved under `doc_startup`, and reopening that recents card
+ * showed an empty canvas.
+ */
+describe("the startup document", () => {
+  /** The store as a freshly-evaluated module gives it. */
+  function reopenUntouched(): void {
+    editorStore.getState().loadDocument(startupDocument());
+  }
+
+  it("writes nothing when the editor is opened and undone back to it", async () => {
+    reopenUntouched();
+    const page = visit("");
+    await waitFor(() => {
+      expect(editorStore.getState().document.id).not.toBe(STARTUP_DOCUMENT_ID);
+    });
+
+    // The stray gesture: opening the fixture is an undoable entry, so one
+    // Ctrl+Z lands back on the placeholder.
+    editorStore.getState().undo();
+    expect(editorStore.getState().document.id).toBe(STARTUP_DOCUMENT_ID);
+
+    await expect(flushEditorDocument()).resolves.toBeNull();
+    page.unmount();
+
+    const listed = await store.listMeta();
+    expect(listed.ok && listed.value.map((meta) => meta.id).sort()).toEqual(
+      [FIRST.id, SECOND.id].sort(),
+    );
+  });
+
+  it("gains an identity of its own at the first stroke, and is saved under it", async () => {
+    reopenUntouched();
+    const page = visit("");
+    await waitFor(() => {
+      expect(editorStore.getState().document.id).not.toBe(STARTUP_DOCUMENT_ID);
+    });
+    editorStore.getState().undo();
+
+    editorStore
+      .getState()
+      .applyMoleculeEdit("Draw", (m) => guardedOps.addAtom(m, { element: "C" }).molecule);
+    const minted = editorStore.getState().document.id;
+    expect(minted).not.toBe(STARTUP_DOCUMENT_ID);
+
+    const result = await flushEditorDocument();
+    expect(result?.ok).toBe(true);
+    page.unmount();
+
+    const listed = await store.listMeta();
+    expect(listed.ok && listed.value.map((meta) => meta.id).sort()).toEqual(
+      [FIRST.id, SECOND.id, minted].sort(),
+    );
+  });
+
+  it("is not a document the URL can name, so ?doc= cannot overwrite one", async () => {
+    // A record an older build left under the reserved key — the failure this
+    // decision exists for. Nothing may read it, replace it or delete it.
+    const stray = createDocument({ id: STARTUP_DOCUMENT_ID, title: "Someone's work", molecule: ethanol() });
+    await store.put(recordFor(stray));
+
+    reopenUntouched();
+    const page = visit(`?doc=${STARTUP_DOCUMENT_ID}`);
+    await waitFor(() => {
+      expect(editorStore.getState().document.id).not.toBe(STARTUP_DOCUMENT_ID);
+    });
+    // A bare `/editor`, which is what the URL amounts to: the fixture, not an
+    // empty canvas wearing the reserved id.
+    expect(editorStore.getState().document.molecule.atomIds.length).toBeGreaterThan(0);
+
+    editorStore
+      .getState()
+      .applyMoleculeEdit("Retype", (m) => guardedOps.setElement(m, m.atomIds[0]!, "N"));
+    await flushEditorDocument();
+    page.unmount();
+
+    const reread = await store.get(STARTUP_DOCUMENT_ID);
+    expect(reread.ok && reread.value.metadata.title).toBe("Someone's work");
+    expect(reread.ok && reread.value.molecule.atomIds).toHaveLength(3);
+  });
+});
+
+describe("documentIdFromSearch", () => {
+  it("reads the id the URL names", () => {
+    expect(documentIdFromSearch("?doc=doc_x")).toBe("doc_x");
+  });
+
+  it("answers null for no id, an empty id and the reserved placeholder", () => {
+    expect(documentIdFromSearch("")).toBeNull();
+    expect(documentIdFromSearch("?doc=")).toBeNull();
+    expect(documentIdFromSearch("?doc=   ")).toBeNull();
+    expect(documentIdFromSearch(`?doc=${STARTUP_DOCUMENT_ID}`)).toBeNull();
   });
 });

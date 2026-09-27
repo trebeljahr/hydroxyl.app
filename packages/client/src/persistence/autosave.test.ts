@@ -12,7 +12,7 @@ import { benzene, buildMolecule, vec } from "@starter/chem-core";
 import { createDocument } from "@starter/shared";
 import type { SketchDocument } from "@starter/shared";
 
-import { createEditorStore, guardedOps } from "@/state";
+import { createEditorStore, guardedOps, isStartupDocument, startupDocument } from "@/state";
 import type { EditorStore } from "@/state";
 
 import { startAutosave } from "./autosave";
@@ -362,5 +362,80 @@ describe("autosave", () => {
     store.getState().applyMoleculeEdit("Retype", (m) => guardedOps.setElement(m, m.atomIds[0]!, "N"));
     await tick();
     expect(sink.saved).toHaveLength(0);
+  });
+});
+
+/**
+ * THE UNTOUCHED EDITOR WRITES NOTHING (decision 85).
+ *
+ * The editor's startup document carries a reserved id — the same string in
+ * every visitor's browser, so that the prerendered `data-doc-id` and the
+ * browser's agree. A record written under it belongs to nobody, and it was
+ * reachable: opening the benzene fixture is an undoable entry, so one stray
+ * Ctrl+Z after the editor mounts puts the placeholder back on the canvas.
+ *
+ * The loop's `persistable` predicate is what makes "nothing is written" a
+ * property of the loop rather than of whichever mount effect happened to open
+ * something else. The store's own half — minting a real identity on the first
+ * edit — is pinned in `@/state/startup-document.test.ts`.
+ */
+describe("a document the loop may not write", () => {
+  function placeholderStore(): EditorStore {
+    return createEditorStore({ document: startupDocument() });
+  }
+
+  function guarded(store: EditorStore, sink: Recorder) {
+    return startAutosave(store, sink.sink, {
+      debounceMs: 10,
+      persistable: (doc) => !isStartupDocument(doc),
+      onDirty: () => {
+        dirtied += 1;
+      },
+    });
+  }
+
+  let dirtied = 0;
+  beforeEach(() => {
+    dirtied = 0;
+  });
+
+  it("is never written, however long it sits there", async () => {
+    const store = placeholderStore();
+    const sink = recorder();
+    const handle = guarded(store, sink);
+
+    // No baseline: a mount that opened nothing has nothing to baseline, which
+    // is exactly the state a stray undo leaves the editor in.
+    await tick(5000);
+    expect(sink.saved).toHaveLength(0);
+    // Nor is it "unsaved work": there is nothing to lose, so the indicator
+    // must not claim there is.
+    expect(dirtied).toBe(0);
+    handle.stop();
+  });
+
+  it("is not flushed, and is not journalled", async () => {
+    const store = placeholderStore();
+    const sink = recorder();
+    const handle = guarded(store, sink);
+
+    await expect(handle.flush()).resolves.toBeNull();
+    expect(handle.pending()).toBeNull();
+    expect(sink.saved).toHaveLength(0);
+    handle.stop();
+  });
+
+  it("starts being written the moment the store mints an identity", async () => {
+    const store = placeholderStore();
+    const sink = recorder();
+    const handle = guarded(store, sink);
+
+    store.getState().applyMoleculeEdit("Draw", () => threeAtoms());
+    await tick();
+
+    expect(sink.saved).toHaveLength(1);
+    expect(sink.saved[0]!.id).not.toBe(startupDocument().id);
+    expect(dirtied).toBeGreaterThan(0);
+    handle.stop();
   });
 });

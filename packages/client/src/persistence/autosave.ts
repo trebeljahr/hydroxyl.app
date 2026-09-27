@@ -73,6 +73,27 @@ export interface AutosaveOptions {
    * is how the indicator learns to stop claiming it.
    */
   readonly onDirty?: ((doc: SketchDocument) => void) | undefined;
+  /**
+   * "Is this document one that may be written at all?" Defaults to yes.
+   *
+   * THE ONE CALLER IS THE STARTUP PLACEHOLDER, and it is a data-loss fix
+   * rather than an optimisation. The editor's initial document carries a
+   * RESERVED id — the same string in every visitor's browser — so that the
+   * prerendered HTML and the browser agree on `data-doc-id`; a record written
+   * under it belongs to nobody and is overwritten by the next tab that starts
+   * up. Decision 85: it is ephemeral until the first edit, and the first edit
+   * mints a real id in the store. Refusing it here is what makes "an untouched
+   * editor writes nothing to IndexedDB" a property of this loop instead of an
+   * accident of whichever mount effect happened to open something else — a
+   * stray Ctrl+Z right after opening puts the placeholder back on the canvas,
+   * and there is no edit for the store to mint on.
+   *
+   * A refusal is SILENT and is not a save failure: there is nothing to lose,
+   * so the indicator must not claim there is. It is also not dirty — `onDirty`
+   * is skipped for the same reason — and `pending()` answers null, so the
+   * teardown journal has nothing to rescue either.
+   */
+  readonly persistable?: ((doc: SketchDocument) => boolean) | undefined;
 }
 
 export interface AutosaveHandle {
@@ -119,6 +140,7 @@ export function startAutosave(
   options: AutosaveOptions = {},
 ): AutosaveHandle {
   const debounceMs = options.debounceMs ?? AUTOSAVE_DEBOUNCE_MS;
+  const persistable = options.persistable ?? (() => true);
 
   let lastSaved: SketchDocument | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -200,6 +222,12 @@ export function startAutosave(
   }
 
   function react(state: ReturnType<EditorStore["getState"]>): void {
+    // FIRST OF ALL, because a document that may not be written is not unsaved
+    // work: it is a placeholder nobody has touched. See `persistable`.
+    if (!persistable(state.document)) {
+      clear();
+      return;
+    }
     // BEFORE the transaction guard, deliberately. A drag in progress is
     // unsaved work and the indicator has to say so; only the WRITE waits for
     // the boundary.
@@ -240,6 +268,8 @@ export function startAutosave(
     flush() {
       clear();
       const doc = store.getState().document;
+      // Nothing to write, and nothing to report — see `persistable`.
+      if (!persistable(doc)) return Promise.resolve(null);
       if (doc === lastSaved) {
         // Handed to storage already — but "handed" is not "stored". While that
         // write is in flight, answer with IT: the canvas error boundary prints
@@ -254,6 +284,7 @@ export function startAutosave(
       // flight has not reached storage, and a page torn down while it is in
       // flight loses it. See the field's own comment.
       const doc = store.getState().document;
+      if (!persistable(doc)) return null;
       return doc === lastConfirmed ? null : doc;
     },
     adopt(update) {

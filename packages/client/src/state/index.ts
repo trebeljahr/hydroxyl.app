@@ -14,6 +14,7 @@
 
 export * from "./chem-guard";
 export * from "./history";
+export * from "./startup-document";
 export * from "./types";
 export * from "./viewport";
 export * from "./store";

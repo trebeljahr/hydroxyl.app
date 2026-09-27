@@ -45,6 +45,7 @@ import {
 } from "@starter/shared";
 import { castDraft } from "immer";
 import { assertNotDraft } from "../chem-guard";
+import { mintStartupIdentity } from "../startup-document";
 import {
   abortTransaction as historyAbort,
   beginTransaction as historyBegin,
@@ -251,16 +252,32 @@ export function createDocumentSlice(
     const commit = (label: string, next: UndoableState): void => {
       const before = snapshot();
       if (undoableEqual(before, next)) return;
+      // THE FIRST EDIT IS WHERE THE STARTUP DOCUMENT STOPS BEING A
+      // PLACEHOLDER. Its id is a fixed string so the prerender and the browser
+      // render the same `data-doc-id`, and that string is the same in every
+      // visitor's browser — so it may never reach storage. Minting it here
+      // makes the mint part of the very edit that gives the document a reason
+      // to exist: one `set`, one undo entry, and nothing downstream ever sees
+      // the reserved id on a document worth saving. See
+      // `../startup-document`.
+      //
+      // `next`, not `before`: `openDocument` arrives with a document of its
+      // own and must keep it, while every edit path rebuilds `before.document`
+      // and carries the id along.
+      const identified: UndoableState = {
+        document: mintStartupIdentity(next.document, options.now()),
+        selection: next.selection,
+      };
       const history = historyRecord(
         get().history,
         label,
         before,
-        next,
+        identified,
         undoableEqual,
       );
       set((draft) => {
-        draft.document = castDraft(next.document);
-        draft.selection = castDraft(next.selection);
+        draft.document = castDraft(identified.document);
+        draft.selection = castDraft(identified.selection);
         draft.history = castDraft(history);
       });
     };

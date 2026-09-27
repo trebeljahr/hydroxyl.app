@@ -1,6 +1,8 @@
 /**
- * The singleton store's startup document must be IDENTICAL in every module
- * instance, because there is always more than one.
+ * The singleton store's startup document: the same in every module instance,
+ * and in storage in none of them.
+ *
+ * ── THE HYDRATION HALF ─────────────────────────────────────────────────────
  *
  * `/editor` is prerendered: `next build` evaluates `store.ts` once and bakes
  * whatever document it holds into `out/editor.html` (`TopBar` renders the id
@@ -12,25 +14,42 @@
  * `vi.resetModules()` is what makes the second instance real: it drops the
  * module registry so the next `import()` constructs a fresh store, exactly as
  * the browser does after the prerender.
+ *
+ * ── THE DATA-LOSS HALF ─────────────────────────────────────────────────────
+ *
+ * The fixed id is the same string in every visitor's browser, so a document
+ * stored under it belongs to nobody. It was reachable, and measured so against
+ * the built app: opening the benzene fixture is an undoable entry, one Ctrl+Z
+ * puts the placeholder back, twelve atoms drawn on it were autosaved under
+ * `doc_startup`, and reopening that recents card showed nothing.
+ *
+ * Decision 85: ephemeral until the first edit. The store mints a real identity
+ * as part of that edit, which is what the second half of this file pins.
  */
 
 import { describe, expect, it, vi } from "vitest";
 
-import { benzene } from "@starter/chem-core";
+import { addAtom, benzene, emptyMolecule } from "@starter/chem-core";
 import { createDocument } from "@starter/shared";
 
-import { claimStartupDocument, createEditorStore, STARTUP_DOCUMENT_ID } from "./store";
-
-/** A placeholder exactly as the singleton is constructed with one, without
- *  reaching for the singleton itself. */
-function startupDocumentFrom() {
-  return createDocument({ id: STARTUP_DOCUMENT_ID, now: "1970-01-01T00:00:00.000Z" });
-}
+import {
+  isStartupDocument,
+  mintStartupIdentity,
+  STARTUP_DOCUMENT_ID,
+  startupDocument,
+} from "./startup-document";
+import { createEditorStore } from "./store";
 
 async function freshStartupDocument() {
   vi.resetModules();
   const { editorStore } = await import("./store");
   return editorStore.getState().document;
+}
+
+/** A store opened exactly as the singleton is, without reaching for the
+ *  singleton itself. */
+function startupStore() {
+  return createEditorStore({ document: startupDocument() });
 }
 
 describe("the startup document", () => {
@@ -51,6 +70,7 @@ describe("the startup document", () => {
 
     expect(doc.id).toBe(STARTUP_DOCUMENT_ID);
     expect(doc.molecule.atomIds).toHaveLength(0);
+    expect(isStartupDocument(doc)).toBe(true);
   });
 
   it("does not freeze the ids of documents a page actually opens", async () => {
@@ -60,76 +80,110 @@ describe("the startup document", () => {
     // two sketches collide in IndexedDB. Only the placeholder is fixed.
     expect(fixtureDocument().id).not.toBe(fixtureDocument().id);
     expect(fixtureDocument().id).not.toBe(STARTUP_DOCUMENT_ID);
+    expect(isStartupDocument(fixtureDocument())).toBe(false);
   });
 });
 
-/**
- * WHAT MAKES THE SHARED ID SAFE, now that it is known not to be safe on its
- * own.
- *
- * The fixed id is the same string in every visitor's browser. A document
- * stored under it belongs to nobody: `/editor?doc=doc_startup` names a
- * different sketch on every machine, and `/editor`'s effect skips the read
- * entirely when the store already holds that id, so the stored sketch is
- * replaced by an empty canvas without a word.
- *
- * It was reachable, and measured so against the built app: opening the benzene
- * fixture is an undoable entry, one Ctrl+Z puts the placeholder back, twelve
- * atoms drawn on it were autosaved under `doc_startup`, and reopening that
- * recents card showed nothing. `claimStartupDocument` closes it by making the
- * id a rendering constant that never outlives hydration.
- */
-describe("claiming the startup document", () => {
-  it("mints an id of this tab's own, once", () => {
-    const store = createEditorStore({ document: startupDocumentFrom() });
+describe("minting the startup identity", () => {
+  it("replaces the reserved id and re-dates the document", () => {
+    const before = startupDocument();
+    const after = mintStartupIdentity(before, "2024-05-05T10:00:00.000Z");
 
-    expect(claimStartupDocument(store)).toBe(true);
-    const claimed = store.getState().document;
-    expect(claimed.id).not.toBe(STARTUP_DOCUMENT_ID);
-
-    // Idempotent: StrictMode mounts the effect twice and a Fast Refresh
-    // re-runs it, and neither may mint over the document already open.
-    expect(claimStartupDocument(store)).toBe(false);
-    expect(store.getState().document.id).toBe(claimed.id);
-  });
-
-  it("refuses to touch a document a page has opened", () => {
-    const opened = createDocument({ molecule: benzene(), title: "Real work" });
-    const store = createEditorStore({ document: opened });
-
-    expect(claimStartupDocument(store)).toBe(false);
-    expect(store.getState().document).toBe(opened);
-  });
-
-  it("carries the placeholder's content and re-dates it", () => {
-    const store = createEditorStore({ document: startupDocumentFrom() });
-    const before = store.getState().document;
-
-    claimStartupDocument(store);
-    const after = store.getState().document;
-
+    expect(after.id).not.toBe(STARTUP_DOCUMENT_ID);
+    expect(after.metadata.createdAt).toBe("2024-05-05T10:00:00.000Z");
+    expect(after.metadata.modifiedAt).toBe("2024-05-05T10:00:00.000Z");
+    // The CONTENT is carried, not rebuilt: a startup document that was not
+    // empty would otherwise be silently discarded at the mint.
     expect(after.molecule).toBe(before.molecule);
-    expect(after.panels).toEqual(before.panels);
+    expect(after.panels).toBe(before.panels);
     expect(after.metadata.title).toBe(before.metadata.title);
-    // The epoch is the prerender's stand-in for "no honest creation time".
-    // Once the document is this tab's own it has one, and a 1970 card in the
-    // recents grid is a bug the chemist can see.
-    expect(after.metadata.createdAt).not.toBe(before.metadata.createdAt);
-    expect(Date.parse(after.metadata.createdAt)).toBeGreaterThan(0);
   });
 
-  it("leaves nothing to undo back into", () => {
-    const store = createEditorStore({ document: startupDocumentFrom() });
-    claimStartupDocument(store);
-    const claimed = store.getState().document;
+  it("leaves a document that already has an identity alone", () => {
+    const opened = createDocument({ molecule: benzene(), title: "Real work" });
+    expect(mintStartupIdentity(opened, "2024-05-05T10:00:00.000Z")).toBe(opened);
+  });
 
-    // The trap this whole test file is about: `openDocument` is undoable, so
-    // whatever the store held before it is one Ctrl+Z away. Nothing may put
-    // the reserved id back on the canvas.
+  it("mints ids that differ from each other", () => {
+    const a = mintStartupIdentity(startupDocument(), "2024-05-05T10:00:00.000Z");
+    const b = mintStartupIdentity(startupDocument(), "2024-05-05T10:00:00.000Z");
+    expect(a.id).not.toBe(b.id);
+  });
+});
+
+describe("the store's first edit", () => {
+  it("mints an identity, in the same entry as the edit", () => {
+    const store = startupStore();
+    expect(store.getState().document.id).toBe(STARTUP_DOCUMENT_ID);
+
+    store.getState().applyMoleculeEdit("Add atom", (m) => addAtom(m, { element: "C", pos: { x: 0, y: 0 } }).molecule);
+
+    const edited = store.getState().document;
+    expect(edited.id).not.toBe(STARTUP_DOCUMENT_ID);
+    expect(edited.molecule.atomIds).toHaveLength(1);
+    // ONE undo entry, not two. The mint is part of the edit; a separate entry
+    // would put the reserved id one Ctrl+Z away from being the saved document
+    // again, which is the trap this whole file is about.
+    expect(store.getState().history.past).toHaveLength(1);
+  });
+
+  it("keeps the minted identity for every later edit", () => {
+    const store = startupStore();
+    store.getState().applyMoleculeEdit("Add atom", (m) => addAtom(m, { element: "C", pos: { x: 0, y: 0 } }).molecule);
+    const minted = store.getState().document.id;
+
+    store.getState().applyMoleculeEdit("Add atom", (m) => addAtom(m, { element: "O", pos: { x: 1, y: 0 } }).molecule);
+    store.getState().setDocumentTitle("Glycine");
+    store.getState().setStylePreset("publication");
+
+    expect(store.getState().document.id).toBe(minted);
+  });
+
+  it("mints on a non-molecule edit too", () => {
+    // A retitle is as much "the chemist has started" as a stroke is, and it
+    // is just as much a document worth keeping.
+    const store = startupStore();
+    store.getState().setDocumentTitle("Glycine");
+    expect(store.getState().document.id).not.toBe(STARTUP_DOCUMENT_ID);
+  });
+
+  it("does not mint for a document a page opens", () => {
+    // `openDocument` arrives with an identity of its own and must keep it:
+    // opening the benzene fixture is what a bare `/editor` does on mount, and
+    // the fixture's id is the one the recents card will carry.
+    const store = startupStore();
+    const fixture = createDocument({ molecule: benzene(), title: "Benzene" });
+    store.getState().openDocument(fixture, "Open Benzene");
+
+    expect(store.getState().document.id).toBe(fixture.id);
+  });
+
+  it("puts the placeholder back on an undo, which is the point", () => {
+    // The mount sequence that caused the data loss, end to end. Undoing the
+    // fixture the editor opened with lands back on the placeholder — and that
+    // is SAFE now, because nothing will write it: see
+    // `persistence/autosave.ts`'s `persistable`.
+    const store = startupStore();
     store.getState().openDocument(createDocument({ molecule: benzene() }), "Open Benzene");
     store.getState().undo();
 
-    expect(store.getState().document.id).toBe(claimed.id);
+    const back = store.getState().document;
+    expect(back.id).toBe(STARTUP_DOCUMENT_ID);
+    expect(isStartupDocument(back)).toBe(true);
+
+    // And the next stroke gives it an identity, so the work is not stranded.
+    store.getState().applyMoleculeEdit("Add atom", (m) => addAtom(m, { element: "N", pos: { x: 0, y: 0 } }).molecule);
     expect(store.getState().document.id).not.toBe(STARTUP_DOCUMENT_ID);
+  });
+
+  it("does not mint on an edit that changes nothing", () => {
+    const store = startupStore();
+    // chem-core returns the input when an op changes nothing, and the store
+    // records nothing for it. A mint there would give the untouched editor an
+    // identity — and a recents card — for a gesture that drew no atom.
+    store.getState().applyMoleculeEdit("No-op", (m) => m);
+    expect(store.getState().document.id).toBe(STARTUP_DOCUMENT_ID);
+    expect(store.getState().document.molecule).toEqual(emptyMolecule());
+    expect(store.getState().history.past).toHaveLength(0);
   });
 });
