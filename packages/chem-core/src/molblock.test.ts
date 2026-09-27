@@ -4,7 +4,13 @@ import { benzene, MoleculeBuilder, buildMolecule } from "./builders.js";
 import { elementCounts, molecularFormula, netCharge } from "./formula.js";
 import { hasAromaticFlags } from "./aromatic.js";
 import { requireAtom, requireBond, bonds as bondList, atoms as atomList } from "./molecule.js";
-import { MOLFILE_BOND_LENGTH, MolblockLabelError, writeMolblock } from "./molblock-write.js";
+import {
+  MOLFILE_BOND_LENGTH,
+  MolblockLabelError,
+  MolblockStereoGroupError,
+  writeMolblock,
+} from "./molblock-write.js";
+import { stereoGroupTag, stereoGroupsOf, withStereoGroups } from "./stereo-groups.js";
 import { MolblockParseError, readMolblock } from "./molblock-read.js";
 import type { Molecule } from "./types.js";
 import { flipBond } from "./ops.js";
@@ -834,7 +840,40 @@ describe("reader tolerance", () => {
     );
   });
 
-  it("throws MolblockParseError on V3000 rather than reading it as empty", () => {
+  it("reads a V3000 record rather than refusing it (decision 90)", () => {
+    // This test used to assert the opposite, and the assertion was true when it
+    // was written: the reader was V2000-only. It is no longer true. RDKit
+    // switches to V3000 unprompted for a large or wide structure, so refusing
+    // made the client bridge mark every such answer's verification
+    // "unavailable" — an unchecked round trip on a perfectly readable file.
+    const text = molblock(
+      "",
+      "     RDKit          2D",
+      "",
+      "  0  0  0  0  0  0  0  0  0  0999 V3000",
+      "M  V30 BEGIN CTAB",
+      "M  V30 COUNTS 3 2 0 0 0",
+      "M  V30 BEGIN ATOM",
+      "M  V30 1 C 0.000000 0.000000 0.000000 0",
+      "M  V30 2 C 1.500000 0.000000 0.000000 0",
+      "M  V30 3 O 2.250000 1.299038 0.000000 0",
+      "M  V30 END ATOM",
+      "M  V30 BEGIN BOND",
+      "M  V30 1 1 1 2",
+      "M  V30 2 1 2 3",
+      "M  V30 END BOND",
+      "M  V30 END CTAB",
+      "M  END",
+    );
+    const result = readMolblock(text);
+    expect(molecularFormula(result.molecule)).toBe("C2H6O");
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("still refuses a V3000 header with nothing readable behind it, without throwing", () => {
+    // A truncated CTAB is a MOLBLOCK, so the tolerance rule applies: an empty
+    // molecule and a warning, not a thrown file. Only text that is not a
+    // molblock at all throws, which the test above this one pins.
     const text = molblock(
       "",
       "  chemcore          2D",
@@ -843,7 +882,9 @@ describe("reader tolerance", () => {
       "M  V30 BEGIN CTAB",
       "M  END",
     );
-    expect(() => readMolblock(text)).toThrow(MolblockParseError);
+    const result = readMolblock(text);
+    expect(result.molecule.atomIds).toEqual([]);
+    expect(() => readMolblock("hello")).toThrow(MolblockParseError);
   });
 });
 
@@ -1285,5 +1326,570 @@ describe("what the format cannot carry", () => {
     };
     const back = roundTrip(sided);
     expect(requireBond(back, back.bondIds[0] ?? "").doubleBondSide).toBe("auto");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// V3000
+//
+// Real molecules again, so a failure reads as a chemistry error. The corpus is
+// built around threo/erythro 3-chlorobutan-2-ol, which is the smallest structure
+// where one AND group (a racemate, two species) and two AND groups (a mixture of
+// diastereomers, four species) name different compounds.
+// ---------------------------------------------------------------------------
+
+/** CH3-CH(OH)-CH(Cl)-CH3, with a wedge at C2 and a hash at C3. */
+function chlorobutanol(): { readonly mol: Molecule; readonly centres: readonly string[] } {
+  const centres: string[] = [];
+  const mol = buildMolecule((b) => {
+    const c1 = b.atom("C", vec(0, 0));
+    const c2 = b.atom("C", vec(0.87, 0.5));
+    const o = b.atom("O", vec(0.87, 1.5));
+    const c3 = b.atom("C", vec(1.73, 0));
+    const c4 = b.atom("C", vec(2.6, 0.5));
+    const cl = b.atom("Cl", vec(1.73, -1));
+    b.bond(c1, c2, 1);
+    b.bond(c2, o, 1, "wedge");
+    b.bond(c2, c3, 1);
+    b.bond(c3, c4, 1);
+    b.bond(c3, cl, 1, "hash");
+    centres.push(c2, c3);
+  });
+  return { mol, centres };
+}
+
+/** The groups of `mol`, as `[tag, atom row]` pairs — comparable across a round
+ *  trip, where the ids are minted afresh and only the ROWS survive. */
+function groupRows(mol: Molecule): Array<readonly [string, readonly number[]]> {
+  return stereoGroupsOf(mol).map(
+    (group) =>
+      [
+        stereoGroupTag(group),
+        group.atomIds.map((id) => mol.atomIds.indexOf(id) + 1).sort((a, b) => a - b),
+      ] as const,
+  );
+}
+
+describe("V3000 writer", () => {
+  it("refuses V2000 for a molecule with stereo groups, naming the groups", () => {
+    const { mol, centres } = chlorobutanol();
+    const racemate = withStereoGroups(mol, [{ kind: "and", index: 1, atomIds: centres }]);
+    // V2000 has no field for a collection, so writing it would export a single
+    // enantiomer where the drawing says racemate: a different compound in a file
+    // that looks perfectly valid.
+    let thrown: unknown;
+    try {
+      writeMolblock(racemate);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(MolblockStereoGroupError);
+    expect((thrown as MolblockStereoGroupError).stereoGroups).toEqual(racemate.stereoGroups);
+    expect((thrown as Error).message).toMatch(/and1/);
+    // Explicitly asking for V2000 is the same refusal — decision 49 leaves it in
+    // place for a direct API caller.
+    expect(() => writeMolblock(racemate, { version: "V2000" })).toThrow(
+      MolblockStereoGroupError,
+    );
+    // And a molecule without groups still writes V2000 by default.
+    expect(writeMolblock(mol)).toContain("V2000");
+  });
+
+  it("writes the same bytes twice (T8)", () => {
+    const { mol, centres } = chlorobutanol();
+    const grouped = withStereoGroups(mol, [
+      { kind: "or", index: 2, atomIds: [centres[1] ?? ""] },
+      { kind: "and", index: 1, atomIds: [centres[0] ?? ""] },
+    ]);
+    const once = writeMolblock(grouped, { version: "V3000" });
+    const twice = writeMolblock(grouped, { version: "V3000" });
+    expect(once).toBe(twice);
+    // No clock: the header's program line carries no timestamp, which is what
+    // makes a molblock usable as a fixture and as the payload of a content hash.
+    expect(once.split("\n")[1]).toBe(writeMolblock(mol, { version: "V3000" }).split("\n")[1]);
+  });
+
+  it("orders groups by kind then stored index, and atoms by row", () => {
+    const { mol, centres } = chlorobutanol();
+    const a = withStereoGroups(mol, [
+      { kind: "or", index: 1, atomIds: [centres[1] ?? ""] },
+      { kind: "abs", index: 1, atomIds: [centres[0] ?? ""] },
+    ]);
+    const collection = writeMolblock(a, { version: "V3000" })
+      .split("\n")
+      .filter((line) => line.includes("MDLV30"));
+    expect(collection).toEqual([
+      "M  V30 MDLV30/STEABS ATOMS=(1 2)",
+      "M  V30 MDLV30/STEREL1 ATOMS=(1 4)",
+    ]);
+  });
+
+  it("uses the V3000 CFG numbering, not the V2000 stereo codes (T5)", () => {
+    const mol = buildMolecule((b) => {
+      const c = b.atom("C", vec(0, 0));
+      const f = b.atom("F", vec(1, 0));
+      const cl = b.atom("Cl", vec(-0.5, 0.87));
+      const br = b.atom("Br", vec(-0.5, -0.87));
+      const c2 = b.atom("C", vec(2, 0));
+      const c3 = b.atom("C", vec(3, 0));
+      b.bond(c, f, 1, "wedge");
+      b.bond(c, cl, 1, "hash");
+      b.bond(c, br, 1, "wavy");
+      b.bond(f, c2, 2, "either");
+      b.bond(c2, c3, 1);
+    });
+    const bondLines = writeMolblock(mol, { version: "V3000" })
+      .split("\n")
+      .filter((line) => /^M  V30 \d+ \d+ \d+ \d+/.test(line));
+    // 1 = up, 2 = either, 3 = down. The V2000 table says 1 / 4 / 3 / 6 for the
+    // same four bonds, and reusing it here would mangle every wedge while
+    // leaving the file perfectly parseable.
+    expect(bondLines).toEqual([
+      "M  V30 1 1 1 2 CFG=1",
+      "M  V30 2 1 1 3 CFG=3",
+      "M  V30 3 1 1 4 CFG=2",
+      "M  V30 4 2 2 5 CFG=2",
+      "M  V30 5 1 5 6",
+    ]);
+    // The same five bonds in V2000, for contrast: 1 / 6 / 4 / 3, where V3000
+    // spends 1 / 3 / 2 / 2. Only the wedge agrees, which is exactly why the two
+    // tables have to be separate.
+    const v2000 = writeMolblock(mol)
+      .split("\n")
+      // A V2000 bond row is seven three-column fields and nothing else.
+      .filter((line) => line.length === 21 && line.endsWith("  0  0  0"))
+      .map((line) => line.slice(0, 12));
+    expect(v2000).toEqual([
+      "  1  2  1  1",
+      "  1  3  1  6",
+      "  1  4  1  4",
+      "  2  5  2  3",
+      "  5  6  1  0",
+    ]);
+  });
+
+  it("uses the V3000 sentinels for valence, mass and radicals (T6)", () => {
+    const mol = buildMolecule((b) => {
+      // Sodium with its hydrogens pinned to zero: total valence zero, which
+      // V2000 spells `vvv` = 15 and V3000 spells `VAL=-1`.
+      b.atom("Na", vec(0, 0), { explicitHydrogenCount: 0 });
+      // 13-C with two unpaired electrons: a triplet.
+      b.atom("C", vec(2, 0), { isotope: 13, radicalElectrons: 2, charge: -1 });
+    });
+    const atomLines = writeMolblock(mol, { version: "V3000" })
+      .split("\n")
+      .filter((line) => /^M  V30 \d+ [A-Z]/.test(line));
+    expect(atomLines[0]).toContain("VAL=-1");
+    expect(atomLines[0]).not.toContain("VAL=15");
+    // MASS is the mass number itself, unlike V2000's `dd` difference column;
+    // RAD is a spin multiplicity, so two electrons are a triplet, code 3.
+    expect(atomLines[1]).toContain("MASS=13");
+    expect(atomLines[1]).toContain("RAD=3");
+    expect(atomLines[1]).toContain("CHG=-1");
+    // No `HCOUNT`, ever: the spec's own atom table calls it a QUERY field, which
+    // is the `hhh` trap over again.
+    expect(writeMolblock(mol, { version: "V3000", hydrogenAssertion: "hhh" })).not.toContain(
+      "HCOUNT",
+    );
+  });
+
+  it("keeps every line inside 80 characters, continuing with a dash (T7)", () => {
+    // Nonacosane-ish: a long chain with every carbon in one AND group, which is
+    // what pushes a COLLECTION entry past the 80-character limit.
+    const chain = buildMolecule((b) => {
+      let previous: string | undefined;
+      for (let i = 0; i < 28; i++) {
+        const id = b.atom("C", vec(i * 0.87, i % 2 === 0 ? 0 : 0.5));
+        if (previous !== undefined) b.bond(previous, id, 1);
+        previous = id;
+      }
+    });
+    const grouped = withStereoGroups(chain, [
+      { kind: "and", index: 1, atomIds: chain.atomIds },
+    ]);
+    const lines = writeMolblock(grouped, { version: "V3000" }).split("\n");
+    for (const line of lines) expect(line.length, line).toBeLessThanOrEqual(80);
+    const collection = lines.filter(
+      (line, index) => line.includes("MDLV30") || (lines[index - 1] ?? "").endsWith("-"),
+    );
+    expect(collection.length).toBeGreaterThan(1);
+    expect(collection[0]?.endsWith("-")).toBe(true);
+    expect(collection[1]?.startsWith("M  V30 ")).toBe(true);
+  });
+});
+
+describe("V3000 round trip", () => {
+  const CORPUS: ReadonlyArray<readonly [string, (centres: readonly string[]) => Parameters<typeof withStereoGroups>[1]]> = [
+    ["an AND group holding both centres (a racemate)", (c) => [{ kind: "and", index: 1, atomIds: [...c] }]],
+    ["an OR group holding both centres", (c) => [{ kind: "or", index: 1, atomIds: [...c] }]],
+    ["an explicit ABS group", (c) => [{ kind: "abs", index: 1, atomIds: [...c] }]],
+    [
+      "several groups at once",
+      (c) => [
+        { kind: "abs", index: 1, atomIds: [c[0] ?? ""] },
+        { kind: "or", index: 3, atomIds: [c[1] ?? ""] },
+      ],
+    ],
+    [
+      "two independent AND groups (a mixture of diastereomers)",
+      (c) => [
+        { kind: "and", index: 1, atomIds: [c[0] ?? ""] },
+        { kind: "and", index: 2, atomIds: [c[1] ?? ""] },
+      ],
+    ],
+  ];
+
+  for (const [name, groupsOf] of CORPUS) {
+    it(`round-trips ${name}`, () => {
+      const { mol, centres } = chlorobutanol();
+      const original = withStereoGroups(mol, groupsOf(centres));
+      const back = readMolblock(writeMolblock(original, { version: "V3000" }));
+      expect(back.warnings).toEqual([]);
+      expect(molecularFormula(back.molecule)).toBe(molecularFormula(original));
+      // Compared as (tag, rows): the ids are minted afresh on import, so the
+      // STORED index and the membership are what has to survive, not the ids.
+      expect(groupRows(back.molecule)).toEqual(groupRows(original));
+      // Writing the imported molecule reproduces the file, which is the property
+      // decision 92's stored index exists for: deriving the number from array
+      // position would renumber `or3` to `or1` here.
+      expect(writeMolblock(back.molecule, { version: "V3000" })).toBe(
+        writeMolblock(original, { version: "V3000" }),
+      );
+    });
+  }
+
+  it("round-trips a group big enough to need a continuation, in both directions (T7)", () => {
+    const chain = buildMolecule((b) => {
+      let previous: string | undefined;
+      for (let i = 0; i < 28; i++) {
+        const id = b.atom("C", vec(i * 0.87, i % 2 === 0 ? 0 : 0.5));
+        if (previous !== undefined) b.bond(previous, id, 1);
+        previous = id;
+      }
+    });
+    const original = withStereoGroups(chain, [
+      { kind: "and", index: 1, atomIds: chain.atomIds },
+    ]);
+    const text = writeMolblock(original, { version: "V3000" });
+    // The write side really does continue, or this test proves nothing.
+    expect(text).toMatch(/-\nM  V30 /);
+    const back = readMolblock(text);
+    // A reader that dropped the continuation would return a group that is merely
+    // SMALLER, and the molecule would still look fine — which is why the length
+    // is asserted and not just the presence of a group.
+    expect(back.molecule.stereoGroups?.[0]?.atomIds).toHaveLength(28);
+    expect(back.warnings).toEqual([]);
+    expect(writeMolblock(back.molecule, { version: "V3000" })).toBe(text);
+  });
+
+  it("joins a continuation broken anywhere, including mid-number", () => {
+    const head = [
+      "cont",
+      "     RDKit          2D",
+      "",
+      "  0  0  0  0  0  0  0  0  0  0999 V3000",
+      "M  V30 BEGIN CTAB",
+      "M  V30 COUNTS 6 5 0 0 0",
+      "M  V30 BEGIN ATOM",
+      "M  V30 1 C 0.000000 0.000000 0.000000 0",
+      "M  V30 2 C 1.305000 0.750000 0.000000 0",
+      "M  V30 3 O 1.305000 2.250000 0.000000 0",
+      "M  V30 4 C 2.610000 0.000000 0.000000 0",
+      "M  V30 5 C 3.915000 0.750000 0.000000 0",
+      "M  V30 6 Cl 2.610000 -1.500000 0.000000 0",
+      "M  V30 END ATOM",
+      "M  V30 BEGIN BOND",
+      "M  V30 1 1 1 2",
+      "M  V30 2 1 2 3 CFG=1",
+      "M  V30 3 1 2 4",
+      "M  V30 4 1 4 5",
+      "M  V30 5 1 4 6 CFG=3",
+      "M  V30 END BOND",
+      "M  V30 BEGIN COLLECTION",
+    ];
+    const tail = ["M  V30 END COLLECTION", "M  V30 END CTAB", "M  END"];
+    // RDKit reads every one of these — measured — so this reader must too. The
+    // spec's rule is to drop the dash and strip the next line's `M  V30`, which
+    // says nothing about where the break may fall.
+    const splits = [
+      ["M  V30 MDLV30/STERAC1 ATOMS=(2 2 4)"],
+      ["M  V30 MDLV30/STERAC1 ATOMS=(2 2 -", "M  V30 4)"],
+      ["M  V30 MDLV30/STERAC1 ATOMS=(2 2 4-", "M  V30 )"],
+      ["M  V30 MDLV30/STERAC1 ATOMS=(-", "M  V30 2 2 4)"],
+      ["M  V30 MDLV30/STERA-", "M  V30 C1 ATOMS=(2 2 4)"],
+      // A continuation line carrying no space after the tag, and one carrying
+      // two: the spec strips `M  V30`, not `M  V30 `.
+      ["M  V30 MDLV30/STERAC1 ATOMS=(2 -", "M  V30 2 4)"],
+    ];
+    for (const collection of splits) {
+      const result = readMolblock(molblock(...head, ...collection, ...tail));
+      const group = result.molecule.stereoGroups?.[0];
+      expect(group?.kind, collection.join(" | ")).toBe("and");
+      expect(group?.atomIds, collection.join(" | ")).toHaveLength(2);
+    }
+  });
+
+  it("reads the keywords a real RDKit answer carries", () => {
+    // Every value here was taken from RDKit MinimalLib's own V3000 output for
+    // 13-C-labelled nitromethane's charge-separated form, which is the shape of
+    // answer the client bridge could not check before.
+    const result = readMolblock(
+      molblock(
+        "",
+        "     RDKit          2D",
+        "",
+        "  0  0  0  0  0  0  0  0  0  0999 V3000",
+        "M  V30 BEGIN CTAB",
+        "M  V30 COUNTS 4 3 0 0 0",
+        "M  V30 BEGIN ATOM",
+        "M  V30 1 C 0.000000 0.000000 0.000000 0 MASS=13",
+        "M  V30 2 N 1.500000 0.000000 0.000000 0 CHG=1",
+        "M  V30 3 O 2.250000 1.299038 0.000000 0",
+        "M  V30 4 O 2.250000 -1.299038 0.000000 0 CHG=-1",
+        "M  V30 END ATOM",
+        "M  V30 BEGIN BOND",
+        "M  V30 1 1 1 2",
+        "M  V30 2 2 2 3",
+        "M  V30 3 1 2 4",
+        "M  V30 END BOND",
+        "M  V30 END CTAB",
+        "M  END",
+      ),
+    );
+    expect(result.warnings).toEqual([]);
+    expect(netCharge(result.molecule)).toBe(0);
+    const [c, n, , anion] = atomList(result.molecule);
+    // MASS is absolute: 13, not 13 plus carbon's reference mass number.
+    expect(c?.isotope).toBe(13);
+    expect(n?.charge).toBe(1);
+    expect(anion?.charge).toBe(-1);
+    expect(molecularFormula(result.molecule)).toBe("CH3NO2");
+  });
+
+  it("reads an aromatic V3000 bond and kekulises it, like the V2000 path", () => {
+    const lines = [
+      "benzene",
+      "     RDKit          2D",
+      "",
+      "  0  0  0  0  0  0  0  0  0  0999 V3000",
+      "M  V30 BEGIN CTAB",
+      "M  V30 COUNTS 6 6 0 0 0",
+      "M  V30 BEGIN ATOM",
+    ];
+    for (let i = 0; i < 6; i++) {
+      const angle = (2 * Math.PI * i) / 6;
+      lines.push(
+        `M  V30 ${i + 1} C ${(1.5 * Math.cos(angle)).toFixed(6)} ${(1.5 * Math.sin(angle)).toFixed(6)} 0.000000 0`,
+      );
+    }
+    lines.push("M  V30 END ATOM", "M  V30 BEGIN BOND");
+    for (let i = 0; i < 6; i++) {
+      lines.push(`M  V30 ${i + 1} 4 ${i + 1} ${((i + 1) % 6) + 1}`);
+    }
+    lines.push("M  V30 END BOND", "M  V30 END CTAB", "M  END");
+    const result = readMolblock(molblock(...lines));
+    // C6H6, not C6: the same trap the `hhh` field sprang on the V2000 side.
+    expect(molecularFormula(result.molecule)).toBe("C6H6");
+    expect(hasAromaticFlags(result.molecule)).toBe(false);
+    expect(result.warnings).toEqual([]);
+  });
+});
+
+describe("V3000 reader tolerance", () => {
+  function v3000(...body: string[]): string {
+    return molblock(
+      "tolerance",
+      "     RDKit          2D",
+      "",
+      "  0  0  0  0  0  0  0  0  0  0999 V3000",
+      "M  V30 BEGIN CTAB",
+      "M  V30 COUNTS 2 1 0 0 0",
+      "M  V30 BEGIN ATOM",
+      "M  V30 1 C 0.000000 0.000000 0.000000 0",
+      "M  V30 2 O 1.500000 0.000000 0.000000 0",
+      "M  V30 END ATOM",
+      "M  V30 BEGIN BOND",
+      "M  V30 1 1 1 2",
+      "M  V30 END BOND",
+      ...body,
+      "M  V30 END CTAB",
+      "M  END",
+    );
+  }
+
+  it("skips an unsupported block whole rather than reading its rows as atoms", () => {
+    const result = readMolblock(
+      v3000(
+        "M  V30 BEGIN SGROUP",
+        "M  V30 1 SUP 0 ATOMS=(1 1) XBONDS=(1 1) LABEL=Boc",
+        "M  V30 2 C 99.000000 99.000000 0.000000 0",
+        "M  V30 END SGROUP",
+      ),
+    );
+    expect(molecularFormula(result.molecule)).toBe("CH4O");
+    expect(result.warnings.map((w) => w.kind)).toEqual(["unsupported-v3000-block"]);
+  });
+
+  it("drops a non-stereo collection with a warning", () => {
+    const result = readMolblock(
+      v3000(
+        "M  V30 BEGIN COLLECTION",
+        "M  V30 MDLV30/HILITE ATOMS=(1 1)",
+        "M  V30 mine/thing ATOMS=(1 2)",
+        "M  V30 END COLLECTION",
+      ),
+    );
+    expect(Object.hasOwn(result.molecule, "stereoGroups")).toBe(false);
+    expect(result.warnings.map((w) => w.kind)).toEqual([
+      "unsupported-collection",
+      "unsupported-collection",
+    ]);
+  });
+
+  it("drops a collection naming an atom that is not in the file", () => {
+    const result = readMolblock(
+      v3000(
+        "M  V30 BEGIN COLLECTION",
+        "M  V30 MDLV30/STERAC1 ATOMS=(2 1 99)",
+        "M  V30 END COLLECTION",
+      ),
+    );
+    expect(result.molecule.stereoGroups?.[0]?.atomIds).toHaveLength(1);
+    expect(result.warnings.map((w) => w.kind)).toEqual(["property-index-out-of-range"]);
+  });
+
+  it("keeps the first collection when the file puts one atom in two (T11)", () => {
+    const result = readMolblock(
+      v3000(
+        "M  V30 BEGIN COLLECTION",
+        "M  V30 MDLV30/STERAC1 ATOMS=(1 1)",
+        "M  V30 MDLV30/STEREL1 ATOMS=(2 1 2)",
+        "M  V30 END COLLECTION",
+      ),
+    );
+    // An atom belongs to at most one collection, so the later mention is dropped
+    // the way a repeated bond row is — and the rest of that collection survives.
+    expect(result.molecule.stereoGroups?.map((g) => [stereoGroupTag(g), g.atomIds.length])).toEqual(
+      [
+        ["and1", 1],
+        ["or1", 1],
+      ],
+    );
+    expect(result.warnings.map((w) => w.kind)).toEqual(["stereo-group-conflict"]);
+  });
+
+  it("unions several STEABS lines, which the spec says are one collection", () => {
+    const result = readMolblock(
+      v3000(
+        "M  V30 BEGIN COLLECTION",
+        "M  V30 MDLV30/STEABS ATOMS=(1 1)",
+        "M  V30 MDLV30/STEABS ATOMS=(1 2)",
+        "M  V30 END COLLECTION",
+      ),
+    );
+    expect(result.molecule.stereoGroups).toHaveLength(1);
+    expect(result.molecule.stereoGroups?.[0]?.atomIds).toHaveLength(2);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("drops an unnumbered STERAC and an empty collection", () => {
+    for (const entry of [
+      "M  V30 MDLV30/STERAC ATOMS=(1 1)",
+      "M  V30 MDLV30/STERAC1 ATOMS=(0)",
+      "M  V30 MDLV30/STERAC1",
+    ]) {
+      const result = readMolblock(
+        v3000("M  V30 BEGIN COLLECTION", entry, "M  V30 END COLLECTION"),
+      );
+      // An empty group would read as "this molecule is achiral" to every
+      // downstream consumer, so it is refused rather than stored.
+      expect(Object.hasOwn(result.molecule, "stereoGroups"), entry).toBe(false);
+      expect(result.warnings.map((w) => w.kind), entry).toEqual(["bad-v3000-row"]);
+    }
+  });
+
+  it("skips a malformed atom row and keeps the rest of the structure", () => {
+    const result = readMolblock(
+      molblock(
+        "tolerance",
+        "     RDKit          2D",
+        "",
+        "  0  0  0  0  0  0  0  0  0  0999 V3000",
+        "M  V30 BEGIN CTAB",
+        "M  V30 COUNTS 3 1 0 0 0",
+        "M  V30 BEGIN ATOM",
+        "M  V30 1 C 0.000000 0.000000 0.000000 0",
+        "M  V30 x C 9.000000 9.000000 0.000000 0",
+        "M  V30 2 O 1.500000 0.000000 0.000000 0",
+        "M  V30 END ATOM",
+        "M  V30 BEGIN BOND",
+        "M  V30 1 1 1 2",
+        "M  V30 END BOND",
+        "M  V30 END CTAB",
+        "M  END",
+      ),
+    );
+    expect(molecularFormula(result.molecule)).toBe("CH4O");
+    expect(result.warnings.map((w) => w.kind)).toEqual(["bad-v3000-row"]);
+  });
+
+  it("reads a query atom as a skipped atom, not as the end of the block", () => {
+    const result = readMolblock(
+      molblock(
+        "query",
+        "     RDKit          2D",
+        "",
+        "  0  0  0  0  0  0  0  0  0  0999 V3000",
+        "M  V30 BEGIN CTAB",
+        "M  V30 COUNTS 3 2 0 0 0",
+        "M  V30 BEGIN ATOM",
+        "M  V30 1 C 0.000000 0.000000 0.000000 0",
+        "M  V30 2 R# 1.500000 0.000000 0.000000 0 RGROUPS=(1 1)",
+        "M  V30 3 O 0.000000 1.500000 0.000000 0",
+        "M  V30 END ATOM",
+        "M  V30 BEGIN BOND",
+        "M  V30 1 1 1 2",
+        "M  V30 2 1 1 3",
+        "M  V30 END BOND",
+        "M  V30 END CTAB",
+        "M  END",
+      ),
+    );
+    // The R-group atom goes, and so does its bond; the O survives, which it
+    // would not if the parenthesised `RGROUPS=(1 1)` had split into fields.
+    expect(molecularFormula(result.molecule)).toBe("CH4O");
+    expect(result.warnings.map((w) => w.kind)).toEqual([
+      "unknown-element",
+      "bad-bond-endpoint",
+    ]);
+  });
+
+  it("notices a 3D conformer and keeps the flat projection", () => {
+    const result = readMolblock(
+      molblock(
+        "conformer",
+        "     RDKit          3D",
+        "",
+        "  0  0  0  0  0  0  0  0  0  0999 V3000",
+        "M  V30 BEGIN CTAB",
+        "M  V30 COUNTS 2 1 0 0 0",
+        "M  V30 BEGIN ATOM",
+        "M  V30 1 C 0.000000 0.000000 0.400000 0",
+        "M  V30 2 O 1.500000 0.000000 -0.400000 0",
+        "M  V30 END ATOM",
+        "M  V30 BEGIN BOND",
+        "M  V30 1 1 1 2",
+        "M  V30 END BOND",
+        "M  V30 END CTAB",
+        "M  END",
+      ),
+    );
+    expect(result.warnings.map((w) => w.kind)).toEqual(["three-dimensional"]);
+    expect(requireAtom(result.molecule, result.molecule.atomIds[0] ?? "").pos.y).toBe(0);
+  });
+
+  it("stops at an SDF record separator", () => {
+    const text = `${v3000()}$$$$\nM  V30 BEGIN CTAB\nM  V30 COUNTS 9 9 0 0 0\n`;
+    expect(readMolblock(text).molecule.atomIds).toHaveLength(2);
   });
 });

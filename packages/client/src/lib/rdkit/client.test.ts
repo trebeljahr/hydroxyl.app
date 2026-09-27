@@ -45,8 +45,13 @@ const BENZENE_FROM_RDKIT = [
 
 /**
  * A V3000 answer. RDKit switches to it unprompted — for more than 999 atoms,
- * and for coordinates past what the V2000 fields hold — and chem-core's codec
- * is V2000-only, so this is the shape of an answer that cannot be checked.
+ * and for coordinates past what the V2000 fields hold.
+ *
+ * This used to be the fixture for an answer that CANNOT be checked, and it was
+ * one: chem-core's codec was V2000-only. Decision 90 changed that, precisely
+ * because marking every such answer "unavailable" meant an unchecked round trip
+ * on a file that was perfectly readable. So it is now the fixture for an answer
+ * that IS checked, and `UNREADABLE_ANSWER` below took over the other job.
  */
 const V3000_FROM_RDKIT = [
   "",
@@ -66,6 +71,18 @@ const V3000_FROM_RDKIT = [
   "M  END",
   "",
 ].join("\n");
+
+/**
+ * An answer chem-core genuinely cannot read: the worker handed back something
+ * that is not a molblock at all.
+ *
+ * This fixture exists to keep the `unavailable` contract exercised, not to
+ * describe a likely file. The contract is what stops an unchecked round trip
+ * reading as a clean one, and the shrinking set of inputs that trigger it is no
+ * reason to stop testing it — every remaining trigger is a worker that answered
+ * with a log line, a truncated stream, or an error page.
+ */
+const UNREADABLE_ANSWER = "this is not a molblock";
 
 /** A conformer that is PRESENT and carries no layout: every atom at 0,0,0. */
 const ZERO_CONFORMER = [
@@ -224,6 +241,29 @@ describe("the boundary", () => {
     // `severity: "clean"` — the exact opposite of the truth. Measured with
     // real RDKit: its V3000 rendering of `CN(=O)=O` comes back
     // charge-separated, and the old report called that clean.
+    //
+    // The fixture used to be that V3000 answer. chem-core reads V3000 now
+    // (decision 90), so the fixture moved to an answer that is not a molblock at
+    // all — the CONTRACT is untouched, and weakening it to keep the old fixture
+    // alive would have thrown away the one thing that separates an unchecked
+    // round trip from a clean one.
+    respond = () => ({
+      ok: true,
+      value: { molblock: UNREADABLE_ANSWER, hadCoords: 0, coordsGenerated: false },
+      notes: [],
+    });
+    const result = await toMolblock(benzene());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.report.verification).toBe("unavailable");
+    expect(result.report.severity).not.toBe("clean");
+    expect(result.report.notes.join(" ")).toMatch(/could not be read back/);
+  });
+
+  it("CHECKS a V3000 answer now that chem-core reads one (decision 90)", async () => {
+    // The point of decision 90, stated as a test. RDKit answers in V3000
+    // unprompted for a large or wide structure, so "unavailable" on every V3000
+    // answer meant the common case went unchecked.
     respond = () => ({
       ok: true,
       value: { molblock: V3000_FROM_RDKIT, hadCoords: 2, coordsGenerated: false },
@@ -232,9 +272,11 @@ describe("the boundary", () => {
     const result = await toMolblock(benzene());
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.report.verification).toBe("unavailable");
+    expect(result.report.verification).toBe("verified");
+    // And the check actually bites: the fixture is C-O, not benzene, so a real
+    // difference is reported rather than a shrug.
     expect(result.report.severity).not.toBe("clean");
-    expect(result.report.notes.join(" ")).toMatch(/V3000/);
+    expect(result.report.diffs.length).toBeGreaterThan(0);
   });
 
   it("marks a genuinely checked result as verified, so the two are distinguishable", async () => {

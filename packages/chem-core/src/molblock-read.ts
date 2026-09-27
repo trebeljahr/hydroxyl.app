@@ -12,9 +12,21 @@
  * The warnings are returned rather than logged: the caller decides whether to
  * show a banner, a dialog, or nothing.
  *
+ * BOTH GENERATIONS, dispatched from the counts line (decision 90). V3000 is not
+ * an exotic case to punt on: RDKit answers in V3000 unprompted for a structure
+ * past 999 atoms or with coordinates too wide for the V2000 fields, so refusing
+ * it made the client's RDKit bridge mark every such answer's verification
+ * "unavailable" — an unchecked round trip on a file that was perfectly readable.
+ * Enhanced stereochemistry has no V2000 spelling at all, which makes V3000 the
+ * only way an ABS/AND/OR collection arrives.
+ *
+ * The V3000 body gets the SAME tolerance rule: a malformed row, an unsupported
+ * block and an unsupported collection are each a structured warning and are
+ * skipped. Only text that is not a molblock at all throws.
+ *
  * WHAT THIS DELIBERATELY DOES NOT DO: multi-record SDF iteration (it stops at
- * the first `$$$$`), the SDF data block, V3000, and query features (atom
- * lists, R-groups, bond topology).
+ * the first `$$$$`), the SDF data block, and query features (atom lists,
+ * R-groups, bond topology, Sgroups, templates).
  */
 
 import { elementBySymbol, normalizeElementInput, requireElement } from "./elements.js";
@@ -23,7 +35,18 @@ import { MoleculeBuilder } from "./builders.js";
 import { bondsAt, cloneAtomWith, degree, requireAtom, requireBond } from "./molecule.js";
 import { ringSize, ringsAtAtom } from "./rings.js";
 import { MOLFILE_BOND_LENGTH } from "./molblock-write.js";
-import type { Atom, AtomId, Bond, BondId, BondOrder, BondStereo, Molecule } from "./types.js";
+import { withStereoGroups } from "./stereo-groups.js";
+import type {
+  Atom,
+  AtomId,
+  Bond,
+  BondId,
+  BondOrder,
+  BondStereo,
+  Molecule,
+  StereoGroup,
+  StereoGroupKind,
+} from "./types.js";
 import { bondOrderSum, implicitHydrogenCount } from "./valence.js";
 import { vec } from "./vec.js";
 
@@ -138,6 +161,52 @@ export type MolblockWarning =
       readonly block: "atom";
       readonly expected: number;
       readonly found: number;
+    }
+  | {
+      /**
+       * A V3000 `M  V30 BEGIN <key>` block this reader does not model — an
+       * Sgroup, a template, a 3D-constraint block, an Rgroup. Skipped WHOLE, up
+       * to its matching `END`, so its rows cannot be mistaken for atoms or
+       * bonds. (These are variants on the existing union rather than a second
+       * error channel: a caller already has one place to look.)
+       */
+      readonly kind: "unsupported-v3000-block";
+      readonly message: string;
+      readonly line: number;
+      readonly block: string;
+    }
+  | {
+      /**
+       * A collection entry that is not one of the three stereo ones. `HILITE` is
+       * a rendering hint and a user collection carries no chemistry, so both are
+       * dropped — which is what the spec says a registration does by default.
+       */
+      readonly kind: "unsupported-collection";
+      readonly message: string;
+      readonly line: number;
+      readonly name: string;
+    }
+  | {
+      /** A V3000 row inside a block that could not be read at all. The V2000
+       *  equivalent is `bad-numeric-field` per column; a V3000 row is
+       *  keyword-based, so there is no column to name. */
+      readonly kind: "bad-v3000-row";
+      readonly message: string;
+      readonly line: number;
+      readonly block: string;
+      readonly text: string;
+    }
+  | {
+      /**
+       * The file put one atom in two stereo collections. An atom belongs to at
+       * most one — that is MDL semantics, and it is what makes a figure's
+       * per-centre tag single-valued — so the LATER mention is dropped, the way
+       * a repeated bond row is.
+       */
+      readonly kind: "stereo-group-conflict";
+      readonly message: string;
+      readonly line: number;
+      readonly atomIds: readonly AtomId[];
     };
 
 export interface MolblockReadResult {
@@ -326,13 +395,67 @@ interface AtomRow {
   readonly valenceField: number;
 }
 
-interface BondRow {
+/**
+ * An atom after each generation's own columns and keywords have been RESOLVED —
+ * legacy charge codes applied or superseded, a mass difference turned into a mass
+ * number, a spin multiplicity turned into an electron count.
+ *
+ * The two generations disagree about almost every encoding and agree about every
+ * meaning: V2000 charge is a legacy code plus an `M  CHG` override, V3000 charge
+ * is `CHG=` and absolute; V2000 isotope is a difference from the most abundant
+ * nuclide, V3000's `MASS=` is the mass number itself. So the resolution is
+ * per-generation and everything AFTER it — element lookup, the builder, aromatic
+ * flags, the kekulise-and-pin dance — is shared. That dance is the subtle part of
+ * this file, and two copies of it would drift.
+ */
+interface ParsedAtom {
+  readonly row: number;
+  readonly line: number;
+  readonly symbol: string;
+  readonly x: number;
+  readonly y: number;
+  readonly charge: number;
+  readonly radicalElectrons: number;
+  readonly isotope: number | undefined;
+  /**
+   * The file's hydrogen assertion, in V2000's OWN two fields, because that is
+   * what `assertedHydrogenCount` speaks and there is no reason for a second
+   * dialect. `hydrogenField` is a count plus one (0 = unspecified);
+   * `valenceField` is a total valence with `VALENCE_ZERO_CODE` meaning zero. The
+   * V3000 reader TRANSLATES into these — its own zero sentinel is `VAL=-1` — and
+   * the translation happens once, at the edge, rather than by sharing a constant
+   * that means different things in the two formats.
+   */
+  readonly hydrogenField: number;
+  readonly valenceField: number;
+}
+
+/**
+ * A bond after its stereo has been resolved to the MODEL's value.
+ *
+ * Resolved per generation, because the two numberings agree on nothing but `1`:
+ * V2000 spends 1/3/4/6 on wedge, either-on-a-double, wavy and hash; V3000 spends
+ * `CFG=` 1/2/3 on up, either and down, and leans on the bond ORDER to say which
+ * kind of "either" it means. A field holding a raw code would be a number whose
+ * meaning depended on where it came from, which is how a V3000 wedge gets read as
+ * a V2000 crossed double bond.
+ */
+interface ParsedBond {
   readonly row: number;
   readonly line: number;
   readonly from: number;
   readonly to: number;
   readonly type: number;
-  readonly stereo: number;
+  readonly stereo: BondStereo;
+}
+
+/** A stereo collection as the file stated it: rows, not ids, because the ids do
+ *  not exist until the atoms are built. */
+interface StereoCollectionRow {
+  readonly kind: StereoGroupKind;
+  readonly index: number;
+  readonly rows: readonly number[];
+  readonly line: number;
 }
 
 /**
@@ -481,7 +604,7 @@ export function readMolblock(
   const start = findRecordStart(lines);
   if (start === undefined) {
     throw new MolblockParseError(
-      "No readable V2000 counts line found on the fourth line of the record. " +
+      "No readable counts line found on the fourth line of the record. " +
         "This does not look like a molblock.",
     );
   }
@@ -491,15 +614,25 @@ export function readMolblock(
   if (!counts) {
     throw new MolblockParseError(`Unreadable counts line: "${countsLine}"`);
   }
-  if (counts.isV3000) {
-    throw new MolblockParseError(
-      "This is a V3000 molfile. Only V2000 is supported here; V3000 has an " +
-        "entirely different, tag-based body.",
-    );
-  }
-
   const title = lines[start] ?? "";
   const comment = lines[start + 2] ?? "";
+
+  // AUTO-DISPATCH (decision 90). The version stamp on the counts line is the
+  // only thing that distinguishes the two bodies, and a V3000 file's leading
+  // counts fields are all zeros by convention — so reading on regardless would
+  // produce an empty molecule with an empty warnings array, which is the worst
+  // of the available failures.
+  if (counts.isV3000) {
+    const body = readV3000Body(v30Entries(lines, start + 4), warnings);
+    const molecule = assembleMolecule(
+      body.atoms,
+      body.bonds,
+      body.collections,
+      scale,
+      warnings,
+    );
+    return { molecule, title, comment, warnings };
+  }
 
   // -------------------------------------------------------------------------
   // Atom block
@@ -634,7 +767,7 @@ export function readMolblock(
     });
     bondBlockStart += surplusAtomRows;
   }
-  const bondRows: BondRow[] = [];
+  const bondRows: ParsedBond[] = [];
   let readBondLines = 0;
   for (let i = 0; i < counts.bondCount; i++) {
     const lineIndex = bondBlockStart + i;
@@ -671,13 +804,25 @@ export function readMolblock(
       }
     }
 
+    let resolved = bondStereoFromCode(stereo.value);
+    if (resolved === undefined) {
+      warnings.push({
+        kind: "unsupported-bond-stereo",
+        message: `Bond ${row} has stereo code ${stereo.value}; read as plain.`,
+        line: lineNumber,
+        row,
+        stereo: stereo.value,
+      });
+      resolved = "none";
+    }
+
     bondRows.push({
       row,
       line: lineNumber,
       from: from.value,
       to: to.value,
       type: type.value,
-      stereo: stereo.value,
+      stereo: resolved,
     });
   }
 
@@ -749,32 +894,13 @@ export function readMolblock(
   }
 
   // -------------------------------------------------------------------------
-  // Build
+  // Resolve V2000's own encodings into the shared `ParsedAtom` form.
   //
-  // Through MoleculeBuilder: `addAtom`/`addBond` copy the whole record on
-  // every call, so a loop over them is quadratic.
+  // Everything from here on is generation-independent, which is why it lives in
+  // `assembleMolecule` below rather than inline: the kekulise-then-repin dance at
+  // the end of it is the subtle part of this file and must not exist twice.
   // -------------------------------------------------------------------------
-  const builder = new MoleculeBuilder();
-  // Parallel to the atom ids: what the file asserted about each atom's
-  // hydrogens, resolved once the molecule exists.
-  const assertionByAtomId = new Map<AtomId, { hydrogenField: number; valenceField: number }>();
-
-  for (const atom of atomRows) {
-    const element = resolveElement(atom.symbol);
-    if (element === undefined) {
-      warnings.push({
-        kind: "unknown-element",
-        message:
-          `Atom ${atom.row} has symbol "${atom.symbol}", which is not an element ` +
-          `(query atoms and R-groups are not supported); the atom was skipped.`,
-        line: atom.line,
-        row: atom.row,
-        symbol: atom.symbol,
-      });
-      rowToAtomId[atom.row] = undefined;
-      continue;
-    }
-
+  const parsed: ParsedAtom[] = atomRows.map((atom) => {
     // `M  CHG` supersedes the ccc column wholesale — not per atom. A file that
     // carries both and disagrees is a file whose ccc digits are stale.
     const charge = sawChargeProperty
@@ -806,15 +932,75 @@ export function readMolblock(
       // Selenium, nickel, copper and zinc go the same way. `monoisotopic` is
       // exactly that number and is already in the table; `weight` is the
       // fallback for the handful of elements where it is not populated.
-      const info = requireElement(element);
-      const reference = Math.round(info.monoisotopic ?? info.weight);
+      const element = resolveElement(atom.symbol);
+      const info = element === undefined ? undefined : requireElement(element);
+      const reference = info === undefined ? 0 : Math.round(info.monoisotopic ?? info.weight);
       isotope = reference + atom.massDiff;
     }
 
-    const id = builder.atom(element, vec(atom.x / scale, atom.y / scale), {
+    return {
+      row: atom.row,
+      line: atom.line,
+      symbol: atom.symbol,
+      x: atom.x,
+      y: atom.y,
       charge,
       radicalElectrons,
       isotope,
+      hydrogenField: atom.hydrogenField,
+      valenceField: atom.valenceField,
+    };
+  });
+
+  const molecule = assembleMolecule(parsed, bondRows, [], scale, warnings);
+  return { molecule, title, comment, warnings };
+}
+
+/**
+ * Build the molecule from resolved rows, and settle its hydrogens.
+ *
+ * Shared by both generations. `collections` is empty for V2000, which has no way
+ * to express one.
+ */
+function assembleMolecule(
+  atomRows: readonly ParsedAtom[],
+  bondRows: readonly ParsedBond[],
+  collections: readonly StereoCollectionRow[],
+  scale: number,
+  warnings: MolblockWarning[],
+): Molecule {
+
+  // Through MoleculeBuilder: `addAtom`/`addBond` copy the whole record on every
+  // call, so a loop over them is quadratic.
+  const builder = new MoleculeBuilder();
+  // Row index -> atom id, in an ARRAY on purpose. An object keyed by a number
+  // parsed out of the file would resolve "constructor" and "__proto__" to
+  // inherited members; an array index cannot.
+  const rowToAtomId: (AtomId | undefined)[] = [];
+  // Parallel to the atom ids: what the file asserted about each atom's
+  // hydrogens, resolved once the molecule exists.
+  const assertionByAtomId = new Map<AtomId, { hydrogenField: number; valenceField: number }>();
+
+  for (const atom of atomRows) {
+    const element = resolveElement(atom.symbol);
+    if (element === undefined) {
+      warnings.push({
+        kind: "unknown-element",
+        message:
+          `Atom ${atom.row} has symbol "${atom.symbol}", which is not an element ` +
+          `(query atoms and R-groups are not supported); the atom was skipped.`,
+        line: atom.line,
+        row: atom.row,
+        symbol: atom.symbol,
+      });
+      rowToAtomId[atom.row] = undefined;
+      continue;
+    }
+
+    const id = builder.atom(element, vec(atom.x / scale, atom.y / scale), {
+      charge: atom.charge,
+      radicalElectrons: atom.radicalElectrons,
+      isotope: atom.isotope,
     });
     rowToAtomId[atom.row] = id;
     assertionByAtomId.set(id, {
@@ -888,23 +1074,11 @@ export function readMolblock(
       });
     }
 
-    let stereo = bondStereoFromCode(bond.stereo);
-    if (stereo === undefined) {
-      warnings.push({
-        kind: "unsupported-bond-stereo",
-        message: `Bond ${bond.row} has stereo code ${bond.stereo}; read as plain.`,
-        line: bond.line,
-        row: bond.row,
-        stereo: bond.stereo,
-      });
-      stereo = "none";
-    }
-
     seenPairs.add(key);
     // `from` first, matching the row order: the narrow end of a wedge is at
     // the file's first atom, and swapping the endpoints here would invert
     // every stereocentre in the structure.
-    const bondId = builder.bond(from, to, order, stereo);
+    const bondId = builder.bond(from, to, order, bond.stereo);
     if (aromatic) aromaticBondIds.push(bondId);
   }
 
@@ -960,7 +1134,63 @@ export function readMolblock(
   molecule = setHydrogenPins(molecule, new Map());
   molecule = setHydrogenPins(molecule, hydrogenPins(molecule, assertionByAtomId));
 
-  return { molecule, title, comment, warnings };
+  // -------------------------------------------------------------------------
+  // Stereo collections, LAST: they name atom rows, and the rows only became ids
+  // just now. A collection whose atoms were all skipped disappears rather than
+  // becoming an empty group, because an empty group is a second spelling of
+  // "nothing was said about configuration" (decision 91).
+  // -------------------------------------------------------------------------
+  if (collections.length > 0) {
+    const groups: StereoGroup[] = [];
+    const owner = new Map<AtomId, string>();
+    for (const collection of collections) {
+      const key = `${collection.kind}\u0000${collection.index}`;
+      const atomIds: AtomId[] = [];
+      const conflicting: AtomId[] = [];
+      for (const row of collection.rows) {
+        const id = row >= 1 && row <= atomRows.length ? rowToAtomId[row] : undefined;
+        if (id === undefined) {
+          warnings.push({
+            kind: "property-index-out-of-range",
+            message:
+              `A stereo collection names atom ${row}, which is not in the file ` +
+              `(or was itself skipped); it was left out of the group.`,
+            line: collection.line,
+            index: row,
+          });
+          continue;
+        }
+        const held = owner.get(id);
+        if (held !== undefined && held !== key) {
+          conflicting.push(id);
+          continue;
+        }
+        owner.set(id, key);
+        atomIds.push(id);
+      }
+      if (conflicting.length > 0) {
+        warnings.push({
+          kind: "stereo-group-conflict",
+          message:
+            `${conflicting.length} atom(s) named by this stereo collection are ` +
+            `already in another one; an atom belongs to at most one, so the ` +
+            `later mention was dropped.`,
+          line: collection.line,
+          atomIds: conflicting,
+        });
+      }
+      if (atomIds.length === 0) continue;
+      groups.push({ kind: collection.kind, index: collection.index, atomIds });
+    }
+    // `withStereoGroups` is the one place a group list is validated and put in
+    // canonical order, and it UNIONS entries sharing a kind and an index — which
+    // is what lets the loop above hand over one entry per file line without
+    // coalescing several `STEABS` lines first. Every conflict it would throw on
+    // has already been turned into a warning above, so it cannot throw here.
+    molecule = withStereoGroups(molecule, groups);
+  }
+
+  return molecule;
 }
 
 /**
@@ -1171,4 +1401,555 @@ function assertedHydrogenCount(
   // An aromatic-flagged bond contributes 1.5, so the difference can be a half
   // integer while the flags are still on; rounding keeps it a count.
   return Math.max(0, Math.round(valence - bondOrderSum(mol, atomId)));
+}
+
+// ---------------------------------------------------------------------------
+// V3000
+//
+// A different body entirely: no fixed columns, `M  V30 ` on every line, and
+// tag-based blocks. The tolerance rule is the same one the top of this file
+// states — a malformed row is a warning and is skipped — so nothing below
+// throws.
+// ---------------------------------------------------------------------------
+
+/** `M  V30 ` — seven characters, on every body line including a continuation. */
+const V30_PREFIX = "M  V30 ";
+
+/**
+ * `M  V30` with no trailing space, which is what the spec says a reader strips
+ * from a continuation line. A file whose continuation carries no space after the
+ * tag is within its rights, and one that carries two (RDKit reads both) must not
+ * lose a digit to an over-eager slice.
+ */
+const V30_TAG = "M  V30";
+
+/** A V3000 stereo collection name to the kind it means, per the spec's
+ *  internal-collection table. Matched case-INSENSITIVELY, because the spec says
+ *  collection names are not case sensitive. */
+const STEREO_COLLECTION_KINDS: ReadonlyArray<readonly [string, StereoGroupKind]> = [
+  ["MDLV30/STEABS", "abs"],
+  ["MDLV30/STERAC", "and"],
+  ["MDLV30/STEREL", "or"],
+];
+
+/**
+ * V3000's `VAL=` sentinel for zero valence.
+ *
+ * NOT 15, which is V2000's. The spec's atom table reads "Integer > 0 or 0 = none
+ * (default), -1 = zero", and RDKit turns a V3000 `VAL=-1` into a V2000 `vvv` of
+ * 15 — measured. Translated into `VALENCE_ZERO_CODE` at the point of reading, so
+ * `assertedHydrogenCount` keeps speaking one dialect and the two constants never
+ * get shared.
+ */
+const V3000_VALENCE_ZERO = -1;
+
+/**
+ * Bond `CFG=` to the model's `BondStereo`.
+ *
+ * The V3000 numbering is 0 none, 1 up, 2 either, 3 down — three values where
+ * V2000 spends four, and only `1` agrees between them. Verified against the
+ * CTfile spec's bond-block table and against RDKit, which turns `CFG=1` into
+ * CXSMILES `wU`, `CFG=3` into `wD`, and `CFG=2` into `w`.
+ *
+ * `CFG=2` IS AMBIGUOUS BY DESIGN and the bond ORDER resolves it: on a single
+ * bond it is the squiggly "configuration unknown at this centre" (`wavy`), on a
+ * double bond the crossed "cis or trans unknown" (`either`). Measured: RDKit
+ * writes V2000 stereo 3 for a `CFG=2` double bond and reads a `CFG=2` single
+ * bond as an unknown wedge. So this table cannot be a plain `Record<number,
+ * BondStereo>`; see `bondStereoFromCfg`.
+ */
+function bondStereoFromCfg(cfg: number, order: number): BondStereo | undefined {
+  switch (cfg) {
+    case 0:
+      return "none";
+    case 1:
+      return "wedge";
+    case 2:
+      return order === 2 ? "either" : "wavy";
+    case 3:
+      return "hash";
+    default:
+      return undefined;
+  }
+}
+
+/** One logical V3000 entry: its content with the prefix and every continuation
+ *  joined, and the 1-based number of the physical line it started on. */
+interface V30Entry {
+  readonly content: string;
+  readonly line: number;
+}
+
+/**
+ * Split the body into logical entries, joining continuations.
+ *
+ * THE MOST LIKELY DEFECT IN THIS WHOLE CODEC is getting this wrong, because
+ * failing to join is SILENT: a COLLECTION entry listing a dozen atoms exceeds 80
+ * characters, so the tail lands on its own line, and a reader that skipped it
+ * would hand back a group that is merely SMALLER. The molecule still looks fine
+ * and the racemate has quietly become a partial one.
+ *
+ * The rule, quoted from the spec: "use a dash (-) as the last character. When
+ * read, the line is concatenated with the next line by removing the dash and
+ * stripping the initial 'M  V30' from the following line."
+ *
+ * THE SINGLE SPACE AFTER THE TAG GOES TOO. The spec's own worked example makes
+ * that explicit: `M  V30 10 20 30 "abc-` followed by `M  V30 def"` reads as
+ * `"abcdef"`, not `"abc def"` — so a break inside a token has to rejoin the token.
+ * Keeping the space instead turned `MDLV30/STERA-` plus `M  V30 C1` into
+ * `MDLV30/STERA C1`, a collection name this reader does not recognise, and the
+ * group vanished with a warning about an unsupported collection. Any FURTHER
+ * spaces are left alone: RDKit's writer breaks between fields, so its
+ * continuation legitimately starts with the next field.
+ *
+ * A line that is not a `M  V30` line at all ends the body: that is `M  END`, a
+ * `$$$$` separator, or a V2000-style property line in a mixed-up file.
+ */
+/** A body line's content: the tag, and the ONE space the spec's example shows is
+ *  part of it, removed. */
+function v30Content(raw: string): string {
+  return raw.startsWith(V30_PREFIX) ? raw.slice(V30_PREFIX.length) : raw.slice(V30_TAG.length);
+}
+
+function v30Entries(lines: readonly string[], from: number): V30Entry[] {
+  const entries: V30Entry[] = [];
+  let i = from;
+  while (i < lines.length) {
+    const raw = lines[i] ?? "";
+    const trimmed = raw.trim();
+    if (trimmed === "M  END" || trimmed === "M END" || trimmed === "$$$$") break;
+    if (!raw.startsWith(V30_TAG)) {
+      // Not ours. A blank line inside the body is noise from a text box; a
+      // property line means the file mixes generations. Either way, skip it
+      // rather than ending the CTAB, so a stray line cannot hide the collection
+      // block that follows.
+      i++;
+      continue;
+    }
+    const line = i + 1;
+    let content = v30Content(raw);
+    while (content.endsWith("-")) {
+      const next = lines[i + 1];
+      if (next === undefined || !next.startsWith(V30_TAG)) break;
+      i++;
+      content = content.slice(0, -1) + v30Content(next);
+    }
+    entries.push({ content, line });
+    i++;
+  }
+  return entries;
+}
+
+/**
+ * Split an entry into fields, keeping `(...)` lists and `"..."` strings whole.
+ *
+ * A naive whitespace split would turn `ATOMS=(2 2 4)` into three fields and lose
+ * the association between the keyword and its values — and then a keyword scan
+ * would find `4)` and read it as a nameless field. The spec's own grammar is
+ * `KEYWORD=(N val1 ... valN)` with quoted strings allowed inside, so both have
+ * to be respected here rather than patched up downstream.
+ */
+function v30Fields(content: string): string[] {
+  const fields: string[] = [];
+  let current = "";
+  let depth = 0;
+  let quoted = false;
+  for (const ch of content) {
+    if (quoted) {
+      current += ch;
+      if (ch === '"') quoted = false;
+      continue;
+    }
+    if (ch === '"') {
+      quoted = true;
+      current += ch;
+      continue;
+    }
+    if (ch === "(") depth++;
+    if (ch === ")") depth = Math.max(0, depth - 1);
+    if (depth === 0 && /\s/.test(ch)) {
+      if (current !== "") fields.push(current);
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  if (current !== "") fields.push(current);
+  return fields;
+}
+
+/** The `KEY=value` fields of an entry, upper-cased keys. A repeated key keeps
+ *  the LAST occurrence, which is the only reading that lets a later block
+ *  override an earlier one. */
+function v30Keywords(fields: readonly string[]): Map<string, string> {
+  const keywords = new Map<string, string>();
+  for (const field of fields) {
+    const eq = field.indexOf("=");
+    if (eq <= 0) continue;
+    keywords.set(field.slice(0, eq).toUpperCase(), field.slice(eq + 1));
+  }
+  return keywords;
+}
+
+/** A keyword's value as an integer, or `undefined` when it is absent or not a
+ *  number. Absent and unreadable are deliberately the same answer: the spec's
+ *  default for every one of these keywords is "not specified". */
+function keywordInt(keywords: ReadonlyMap<string, string>, key: string): number | undefined {
+  const text = keywords.get(key);
+  if (text === undefined) return undefined;
+  if (!/^[+-]?\d+$/.test(text.trim())) return undefined;
+  return Number.parseInt(text.trim(), 10);
+}
+
+/**
+ * The values inside a `KEYWORD=(N v1 v2 ... vN)` list.
+ *
+ * `N` BOUNDS the result, exactly as it does for a V2000 `M  CHG` payload, so
+ * trailing junk inside the parentheses cannot inject members. A list with fewer
+ * values than it declares yields what is there — the surplus declaration is the
+ * file's error, and dropping the values present would lose the group rather than
+ * repair it.
+ */
+function keywordList(keywords: ReadonlyMap<string, string>, key: string): number[] | undefined {
+  const text = keywords.get(key);
+  if (text === undefined) return undefined;
+  const numbers = text.match(/-?\d+/g);
+  if (!numbers || numbers.length === 0) return undefined;
+  const declared = Number.parseInt(numbers[0] ?? "", 10);
+  if (!Number.isFinite(declared) || declared < 0) return undefined;
+  const values: number[] = [];
+  for (const raw of numbers.slice(1, 1 + declared)) {
+    const value = Number.parseInt(raw, 10);
+    if (Number.isFinite(value)) values.push(value);
+  }
+  return values;
+}
+
+/** `BEGIN <KEY>` / `END <KEY>`, or undefined. */
+function blockBoundary(content: string): { readonly open: boolean; readonly key: string } | undefined {
+  const match = /^(BEGIN|END)\s+(\S+)/i.exec(content.trim());
+  if (!match) return undefined;
+  return { open: match[1]!.toUpperCase() === "BEGIN", key: match[2]!.toUpperCase() };
+}
+
+interface V3000Body {
+  readonly atoms: ParsedAtom[];
+  readonly bonds: ParsedBond[];
+  readonly collections: StereoCollectionRow[];
+}
+
+/**
+ * Parse the V3000 body.
+ *
+ * ONE PASS OVER THE ENTRIES, driven by the block keys rather than by the counts
+ * line. The counts line is read for the 3D flag and is otherwise ignored: a
+ * V3000 file's leading V2000-shaped counts are all zeros by convention, and
+ * `M  V30 COUNTS` can disagree with the body just as a V2000 counts line can. The
+ * blocks say where they end, so there is no cascade to protect against here and
+ * no reason to trust a number over the structure.
+ *
+ * An unmodelled block — Sgroup, template, 3D constraints, Rgroup — is skipped
+ * WHOLE, to its matching `END`. Skipping it row by row would let its rows be read
+ * as atoms.
+ */
+function readV3000Body(entries: readonly V30Entry[], warnings: MolblockWarning[]): V3000Body {
+  const atoms: ParsedAtom[] = [];
+  const bonds: ParsedBond[] = [];
+  const collections: StereoCollectionRow[] = [];
+  /** Nonzero z coordinates, by atom row — a 3D conformer, reported once. */
+  const spatialRows: number[] = [];
+
+  /** The block keys we are currently inside, innermost last. `CTAB` is the outer
+   *  one; the rest are its children. */
+  const open: string[] = [];
+  /** When set, everything up to the matching `END` is being discarded. */
+  let skipping: string | undefined;
+
+  for (const entry of entries) {
+    const boundary = blockBoundary(entry.content);
+    if (boundary) {
+      if (skipping !== undefined) {
+        if (!boundary.open && boundary.key === skipping) skipping = undefined;
+        else if (boundary.open) open.push(boundary.key);
+        continue;
+      }
+      if (boundary.open) {
+        if (boundary.key === "CTAB" || boundary.key === "ATOM" || boundary.key === "BOND" || boundary.key === "COLLECTION") {
+          open.push(boundary.key);
+        } else {
+          warnings.push({
+            kind: "unsupported-v3000-block",
+            message:
+              `The "${boundary.key}" block is not supported and was skipped ` +
+              `whole; the structure itself was read.`,
+            line: entry.line,
+            block: boundary.key,
+          });
+          skipping = boundary.key;
+        }
+        continue;
+      }
+      // An `END` for a block we never opened is a file error, not a reason to
+      // stop: the following blocks may still be readable.
+      const last = open[open.length - 1];
+      if (last === boundary.key) open.pop();
+      continue;
+    }
+    if (skipping !== undefined) continue;
+
+    const block = open[open.length - 1];
+    const fields = v30Fields(entry.content);
+    const keyword = fields[0]?.toUpperCase() ?? "";
+
+    if (keyword === "COUNTS") {
+      // na nb nsg n3d chiral. Read only to notice the dimensional claim; the
+      // blocks themselves say how many rows there are.
+      continue;
+    }
+
+    if (block === "ATOM") {
+      const atom = readV3000Atom(entry, fields, atoms.length + 1, warnings);
+      if (atom) {
+        if (Math.abs(atom.z) > Z_EPSILON) spatialRows.push(atom.parsed.row);
+        atoms.push(atom.parsed);
+      }
+      continue;
+    }
+
+    if (block === "BOND") {
+      const bond = readV3000Bond(entry, fields, bonds.length + 1, warnings);
+      if (bond) bonds.push(bond);
+      continue;
+    }
+
+    if (block === "COLLECTION") {
+      const collection = readV3000Collection(entry, fields, warnings);
+      if (collection) collections.push(collection);
+      continue;
+    }
+
+    // A row directly inside the CTAB that is not a counts line and not a block
+    // boundary: a link line, or something this reader has never seen.
+    if (block === "CTAB") {
+      warnings.push({
+        kind: "bad-v3000-row",
+        message: `Unrecognised V3000 line in the CTAB; ignored.`,
+        line: entry.line,
+        block: "CTAB",
+        text: entry.content,
+      });
+    }
+  }
+
+  if (spatialRows.length > 0) {
+    warnings.push({
+      kind: "three-dimensional",
+      message:
+        `This is a 3D record (${spatialRows.length} atom(s) off the z=0 plane); ` +
+        `the z coordinate was dropped and the atoms kept their flat projection, ` +
+        `which may overlap. A 2D layout pass is likely wanted.`,
+      rows: spatialRows,
+    });
+  }
+
+  return { atoms, bonds, collections };
+}
+
+/**
+ * One `index type x y z aamap [KEY=val ...]` row.
+ *
+ * THE ROW NUMBER IS THE POSITION IN THE BLOCK, not the index the file wrote. The
+ * spec says only that indices are unique, not that they are 1..n in order, and
+ * the bond block references them — so the file's own index is kept for the
+ * lookup and the position is what the shared builder counts by. Handling those as
+ * one number is how a file with a gap in its numbering loses its bonds.
+ */
+function readV3000Atom(
+  entry: V30Entry,
+  fields: readonly string[],
+  position: number,
+  warnings: MolblockWarning[],
+): { readonly parsed: ParsedAtom; readonly z: number } | undefined {
+  const index = Number.parseInt(fields[0] ?? "", 10);
+  const symbol = fields[1] ?? "";
+  if (!Number.isFinite(index) || index < 1 || symbol === "") {
+    warnings.push({
+      kind: "bad-v3000-row",
+      message: `Atom row ${position} has no readable index or symbol; skipped.`,
+      line: entry.line,
+      block: "ATOM",
+      text: entry.content,
+    });
+    return undefined;
+  }
+
+  const coords: number[] = [];
+  for (const raw of fields.slice(2, 5)) {
+    const value = Number(raw);
+    coords.push(Number.isFinite(value) ? value : 0);
+  }
+  if (coords.length < 3) {
+    // A row that stops before z. The spec requires all three, but a writer that
+    // trims is the sort of thing this reader exists to tolerate; a missing
+    // coordinate is 0, which is the spec's own default everywhere else.
+    while (coords.length < 3) coords.push(0);
+    warnings.push({
+      kind: "bad-v3000-row",
+      message: `Atom ${index} is missing a coordinate; the missing one was read as 0.`,
+      line: entry.line,
+      block: "ATOM",
+      text: entry.content,
+    });
+  }
+
+  const keywords = v30Keywords(fields.slice(5));
+  // `CHG=` is ABSOLUTE and there is no legacy column to supersede, so unlike
+  // V2000 there is nothing to decide here.
+  const charge = keywordInt(keywords, "CHG") ?? 0;
+  // `RAD=` is a spin MULTIPLICITY — 1 singlet, 2 doublet, 3 triplet — the same
+  // encoding as V2000's `M  RAD`, so the same table reads it.
+  const radicalElectrons =
+    RADICAL_ELECTRONS_BY_CODE.get(keywordInt(keywords, "RAD") ?? 0) ?? 0;
+  // `MASS=` is the mass number ITSELF, not a difference from a reference nuclide
+  // — that is V2000's `dd`. So there is no element table to consult and no
+  // most-abundant-isotope question to get wrong. Confirmed against the spec ("the
+  // absolute atomic weight of the designated atom") and against RDKit's `MASS=13`
+  // for 13-C.
+  const mass = keywordInt(keywords, "MASS");
+  const isotope = mass === undefined || mass <= 0 ? undefined : mass;
+
+  // `VAL=-1` means valence zero here; V2000 spells that 15. Translated rather
+  // than shared, so neither constant can drift into the other's format.
+  const val = keywordInt(keywords, "VAL");
+  const valenceField =
+    val === undefined || val === 0
+      ? 0
+      : val === V3000_VALENCE_ZERO
+        ? VALENCE_ZERO_CODE
+        : val;
+
+  return {
+    z: coords[2] ?? 0,
+    parsed: {
+      row: index,
+      line: entry.line,
+      symbol,
+      x: coords[0] ?? 0,
+      y: coords[1] ?? 0,
+      charge,
+      radicalElectrons,
+      isotope,
+      // `HCOUNT` is deliberately NOT read as an assertion. The spec's own atom
+      // table calls it "Query hydrogen count", and RDKit treats a query field as
+      // one — the same trap that made a molblock written with V2000's `hhh`
+      // arrive as benzene-minus-its-hydrogens. The total valence says the same
+      // thing without being a query.
+      hydrogenField: 0,
+      valenceField,
+    },
+  };
+}
+
+/** One `index type atom1 atom2 [CFG=n ...]` row. */
+function readV3000Bond(
+  entry: V30Entry,
+  fields: readonly string[],
+  position: number,
+  warnings: MolblockWarning[],
+): ParsedBond | undefined {
+  const type = Number.parseInt(fields[1] ?? "", 10);
+  const from = Number.parseInt(fields[2] ?? "", 10);
+  const to = Number.parseInt(fields[3] ?? "", 10);
+  if (!Number.isFinite(type) || !Number.isFinite(from) || !Number.isFinite(to)) {
+    warnings.push({
+      kind: "bad-v3000-row",
+      message: `Bond row ${position} is missing its type or an endpoint; skipped.`,
+      line: entry.line,
+      block: "BOND",
+      text: entry.content,
+    });
+    return undefined;
+  }
+
+  const keywords = v30Keywords(fields.slice(4));
+  const cfg = keywordInt(keywords, "CFG") ?? 0;
+  const stereo = bondStereoFromCfg(cfg, type);
+  if (stereo === undefined) {
+    warnings.push({
+      kind: "unsupported-bond-stereo",
+      message: `Bond ${position} has CFG=${cfg}; read as plain.`,
+      line: entry.line,
+      row: position,
+      stereo: cfg,
+    });
+  }
+
+  return {
+    row: position,
+    line: entry.line,
+    from,
+    to,
+    type,
+    stereo: stereo ?? "none",
+  };
+}
+
+/** One `name/subname ATOMS=(n ...)` collection entry. */
+function readV3000Collection(
+  entry: V30Entry,
+  fields: readonly string[],
+  warnings: MolblockWarning[],
+): StereoCollectionRow | undefined {
+  const name = (fields[0] ?? "").toUpperCase();
+  if (name === "DEFAULT") return undefined;
+
+  const matched = STEREO_COLLECTION_KINDS.find(([prefix]) => name.startsWith(prefix));
+  if (!matched) {
+    warnings.push({
+      kind: "unsupported-collection",
+      message:
+        `The collection "${fields[0] ?? ""}" is not a stereochemistry collection ` +
+        `and was dropped. Highlighting and user collections carry no chemistry.`,
+      line: entry.line,
+      name: fields[0] ?? "",
+    });
+    return undefined;
+  }
+  const [prefix, kind] = matched;
+
+  // `STEABS` is unnumbered and `STERACn` / `STERELn` carry `n > 0`. An absolute
+  // collection always gets index 1, so several `STEABS` lines UNION — which is
+  // what the spec asks for: collections sharing a name are pieces of one
+  // collection.
+  const suffix = name.slice(prefix.length);
+  const index = kind === "abs" ? 1 : Number.parseInt(suffix, 10);
+  if (kind !== "abs" && (!Number.isFinite(index) || index < 1)) {
+    warnings.push({
+      kind: "bad-v3000-row",
+      message:
+        `The collection "${fields[0] ?? ""}" carries no group number; ` +
+        `${prefix} needs one, so the collection was dropped.`,
+      line: entry.line,
+      block: "COLLECTION",
+      text: entry.content,
+    });
+    return undefined;
+  }
+
+  const rows = keywordList(v30Keywords(fields.slice(1)), "ATOMS");
+  if (rows === undefined || rows.length === 0) {
+    warnings.push({
+      kind: "bad-v3000-row",
+      message:
+        `The collection "${fields[0] ?? ""}" lists no atoms; dropped. (A group ` +
+        `with no centres says nothing, and an empty one would read as "this ` +
+        `molecule is achiral".)`,
+      line: entry.line,
+      block: "COLLECTION",
+      text: entry.content,
+    });
+    return undefined;
+  }
+
+  return { kind, index, rows, line: entry.line };
 }

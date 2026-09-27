@@ -203,8 +203,9 @@ function verificationOf(ok: boolean): Verification {
  * The note that goes with an `unavailable` verification.
  *
  * Without it the caller is told only that nothing is known; with it they are
- * told why, which for the common case is "RDKit answered in V3000 and the
- * codec here is V2000-only".
+ * told why — the reader's own refusal message, which names what it could not
+ * make sense of. (Until decision 90 the common case was "RDKit answered in
+ * V3000 and the codec here is V2000-only"; that one is read and checked now.)
  */
 function unverifiedNote(message: string): string {
   return `RDKit's output could not be read back for checking, so this report does not say what changed: ${message}`;
@@ -352,11 +353,12 @@ export async function fromMolblock(text: string): Promise<ChemIoResult<ImportedS
     read.value,
     buildReport(before, before ? read.value.molecule : undefined, {
       coordinates: coordinateOutcome(payload.hadCoords, payload.coordsGenerated, sourceHadLayout),
-      // A file chem-core refuses — a V3000 block, say — is still a legitimate
-      // RDKit import, but it leaves nothing to diff against, and that is a
-      // different statement from "nothing changed". Measured: RDKit
-      // charge-separates the nitro group in a V3000 `CN(=O)=O` and the old
-      // report called it clean.
+      // A file chem-core refuses is still a legitimate RDKit import, but it
+      // leaves nothing to diff against, and that is a different statement from
+      // "nothing changed". Measured: RDKit charge-separates the nitro group in a
+      // V3000 `CN(=O)=O` and the old report called it clean. The V3000 case is
+      // checked now (decision 90); what is left is an answer that is not a
+      // molblock at all.
       verification: verificationOf(source.ok),
       warnings: [...read.report.warnings, ...(source.ok ? source.report.warnings : [])],
       notes: source.ok ? result.notes : [...result.notes, unverifiedNote(source.error.message)],

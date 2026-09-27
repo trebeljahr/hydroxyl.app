@@ -6,8 +6,15 @@
  * format from 1980, so almost every rule below is a column count rather than
  * a design decision, and the comments say which is which.
  *
+ * ALSO WRITES V3000, since enhanced stereochemistry has no V2000 spelling at
+ * all: RDKit MinimalLib emits `MDLV30/STERAC1` in a COLLECTION block and never
+ * a V2000 equivalent (measured — see `writeV3000`). The version is an EXPLICIT
+ * option defaulting to V2000 and there is no "auto": decision 49 says the APP
+ * chooses and says so in its export dialog, so the policy lives where the
+ * dialog can report it and this codec stays free of it.
+ *
  * WHAT THIS DELIBERATELY DOES NOT DO: multi-record SDF (`$$$$` and the tagged
- * data block), V3000, and query features. Those belong in their own modules.
+ * data block) and query features. Those belong in their own modules.
  *
  * `doubleBondSide` is dropped, and comes back from the reader as `auto`. V2000
  * has no field for it and never will: it is a rendering hint saying which side
@@ -25,7 +32,8 @@
 
 import { hasAromaticFlags, kekulize } from "./aromatic.js";
 import { requireAtom, requireBond } from "./molecule.js";
-import type { AtomId, BondStereo, Molecule } from "./types.js";
+import { stereoGroupTag, stereoGroupsOf } from "./stereo-groups.js";
+import type { AtomId, BondStereo, Molecule, StereoGroup } from "./types.js";
 import { bondOrderSum, implicitHydrogenCount } from "./valence.js";
 
 /**
@@ -114,6 +122,18 @@ const COORD_WIDTH = 10;
  */
 export type HydrogenAssertion = "hhh" | "valence";
 
+/**
+ * Which molfile generation to write.
+ *
+ * THE CALLER PICKS; there is no `"auto"`. Decision 49 puts the choice in the
+ * app, which switches to V3000 whenever the molecule has stereo groups and says
+ * so in the export dialog. A codec that guessed would make the dialog's claim
+ * and the file's contents two separate things that could drift, and it would
+ * take the refusal below — the one thing that tells a direct API caller its
+ * request cannot be honoured — away from it.
+ */
+export type MolblockVersion = "V2000" | "V3000";
+
 export interface MolblockWriteOptions {
   /** Line 1 of the header. Newlines are stripped; clipped to 80 characters. */
   readonly title?: string | undefined;
@@ -123,6 +143,9 @@ export interface MolblockWriteOptions {
   readonly coordinateScale?: number | undefined;
   /** See `HydrogenAssertion`. Defaults to `"valence"`. */
   readonly hydrogenAssertion?: HydrogenAssertion | undefined;
+  /** See `MolblockVersion`. Defaults to `"V2000"`, which is what every reader
+   *  takes and what a molecule with no stereo groups should still be. */
+  readonly version?: MolblockVersion | undefined;
 }
 
 /**
@@ -150,6 +173,32 @@ export class MolblockLabelError extends Error {
 }
 
 /**
+ * Thrown when V2000 was asked for and the molecule carries stereo groups.
+ *
+ * The same reasoning as `MolblockLabelError` above, one field further on. V2000
+ * has NO spelling for an ABS/AND/OR collection — verified 2026-09-14: RDKit
+ * MinimalLib writes enhanced stereo only as V3000, and `get_molblock()` on
+ * `C[C@H](O)[C@@H](C)Cl |&1:1,3|` emits `MDLV30/STERAC1` inside a V3000
+ * COLLECTION block with nothing in the V2000 rendering standing in for it. So
+ * writing V2000 anyway would export a single enantiomer where the drawing says
+ * racemate: a file that looks perfectly valid and names a different compound,
+ * which is exactly what a display label would have done.
+ *
+ * Refusing is the only honest option, and as with a label the caller is the one
+ * that knows what to do about it — decision 49 has the export dialog switch to
+ * V3000 and say so — so this error hands over the groups it needs to explain
+ * itself rather than just a sentence.
+ */
+export class MolblockStereoGroupError extends Error {
+  readonly stereoGroups: readonly StereoGroup[];
+  constructor(message: string, stereoGroups: readonly StereoGroup[]) {
+    super(message);
+    this.name = "MolblockStereoGroupError";
+    this.stereoGroups = stereoGroups;
+  }
+}
+
+/**
  * Bond stereo as V2000 codes.
  *
  * Written as a total `Record` so that adding a member to `BondStereo` is a
@@ -168,6 +217,80 @@ const STEREO_TO_CODE: Record<BondStereo, number> = {
   wavy: 4,
   hash: 6,
 };
+
+/**
+ * Bond stereo as V3000 `CFG=` values, which are NOT the V2000 codes.
+ *
+ * V2000 spends four numbers on this (1 wedge, 6 hash, 4 either-on-a-single-bond,
+ * 3 either-on-a-double-bond); V3000 spends three, and only `1` means the same
+ * thing in both. Verified twice over, because reusing the V2000 table here would
+ * mangle every wedge in the file and the file would still parse:
+ *
+ *   - the CTfile specification's bond-block table reads "0 = none (default),
+ *     1 = up, 2 = either, 3 = down";
+ *   - RDKit MinimalLib agrees in the round trip. Feeding it a V3000 bond with
+ *     `CFG=1` yields `wU` in CXSMILES and V2000 stereo 1; `CFG=3` yields `wD`
+ *     and V2000 stereo 6; `CFG=2` yields `w` (the unknown wedge) on a single
+ *     bond and V2000 stereo 3 on a double bond.
+ *
+ * THE MODEL'S TWO KINDS OF "EITHER" COLLAPSE INTO `CFG=2`, and that is the
+ * format's doing, not a loss here. `wavy` is a squiggly single bond meaning
+ * "configuration unknown at this centre"; `either` is a crossed double bond
+ * meaning "cis or trans unknown". V3000 writes both as `CFG=2` and lets the bond
+ * ORDER say which is meant, so the reader disambiguates the same way. That is
+ * why `STEREO_TO_CODE` above must keep its four distinct numbers: the model's
+ * distinction is real, and only this one format merges it.
+ *
+ * A total `Record`, so a new `BondStereo` member is a compile error in BOTH
+ * writers rather than a bond quietly exported as plain.
+ */
+const STEREO_TO_CFG: Record<BondStereo, number> = {
+  none: 0,
+  wedge: 1,
+  either: 2,
+  wavy: 2,
+  hash: 3,
+};
+
+/** `MDLV30/` collection names, per the CTfile spec's internal-collection table
+ *  and confirmed against RDKit's output. `STEABS` is UNNUMBERED — there is one
+ *  absolute collection per structure — while the other two take the group's
+ *  stored index. */
+const COLLECTION_NAME: Record<StereoGroup["kind"], string> = {
+  abs: "MDLV30/STEABS",
+  and: "MDLV30/STERAC",
+  or: "MDLV30/STEREL",
+};
+
+/** Every V3000 body line starts with this, continuations included. */
+const V30 = "M  V30 ";
+
+/**
+ * A V3000 line is 80 characters at most, continued with a trailing dash.
+ *
+ * The spec: "Each entry is one line of no more than 80 characters. To allow
+ * continuation when the 80-character line is too short, use a dash (-) as the
+ * last character. When read, the line is concatenated with the next line by
+ * removing the dash and stripping the initial 'M  V30' from the following line."
+ *
+ * The break happens at 78 so that the content plus the space plus the dash still
+ * fit — which is also where RDKit breaks: measured, its longest written line is
+ * 77 characters including the dash.
+ */
+const MAX_V30_CONTENT = 80;
+const V30_BREAK = 78;
+
+/**
+ * V3000's "valence zero" sentinel, which is NOT V2000's 15.
+ *
+ * V2000 uses `vvv` = 15 because 0 already means "unspecified"; V3000 uses
+ * `VAL=-1` and keeps 1..14 for a real valence. Verified against the spec's atom
+ * keyword table ("Integer > 0 or 0 = none (default), -1 = zero") and against
+ * RDKit, which turns a V3000 `VAL=-1` into a V2000 `vvv` of 15 and back. Sharing
+ * `VALENCE_ZERO_CODE` between the two writers would write a valence of fifteen
+ * into a file that means something else by it.
+ */
+const V3000_VALENCE_ZERO = -1;
 
 /** Right-justify an integer in a fixed-width column. */
 function int(value: number, width: number): string {
@@ -244,19 +367,86 @@ function propertyLines(tag: string, pairs: readonly (readonly [number, number])[
 function radicalCode(electrons: number): number {
   return electrons >= 2 ? 3 : 2;
 }
+/**
+ * Everything both writers need to know about one atom, decided once.
+ *
+ * The hydrogen decision in particular: a count that has to be ASSERTED, and the
+ * total valence that expresses it. Shared because the DECISION is the same in
+ * both generations and only the ENCODING differs — V2000 spends `vvv` with 15
+ * for zero, V3000 spends `VAL=` with -1 for zero — and a second copy of the
+ * reasoning is a second place for the two to drift.
+ */
+interface AtomFacts {
+  readonly hydrogens: number;
+  /**
+   * The TOTAL valence to state, or `undefined` for "say nothing and let the
+   * reader derive".
+   *
+   * Never a hydrogen COUNT. Both formats' hydrogen-count fields are QUERY fields
+   * — V2000's `hhh`, and V3000's `HCOUNT`, which the CTfile spec's atom table
+   * literally names "Query hydrogen count" — and RDKit treats a query field as
+   * one: benzene written with `hhh` arrives as C6 rather than C6H6, silently.
+   * The total valence is not a query field, and this package's reader already
+   * subtracts the drawn bonds back off it.
+   */
+  readonly totalValence: number | undefined;
+}
 
 /**
- * Serialise `mol` as a V2000 molblock.
+ * Whether this atom's hydrogen count has to be stated, and as what valence.
+ *
+ * In `"valence"` mode only a PIN is worth a field: it is the model saying "do not
+ * derive", and it is the one thing a valence table cannot recover (pyrrole's N-H
+ * is the standing casualty). Silence is the higher-fidelity choice for a reader
+ * with its own table, because this package's table is calibrated to RDKit's on
+ * purpose, so an assertion can only ever disagree with it.
+ */
+function atomFacts(
+  hSource: Molecule,
+  atomId: AtomId,
+  pinned: boolean,
+  assertion: HydrogenAssertion,
+): AtomFacts {
+  const hydrogens = Math.max(implicitHydrogenCount(hSource, atomId), 0);
+  if (assertion !== "hhh" && !pinned) return { hydrogens, totalValence: undefined };
+  // Rounded because an aromatic bond that kekulisation could not resolve still
+  // weighs 1.5, and a fractional valence is not a legal field.
+  return {
+    hydrogens,
+    totalValence: Math.round(bondOrderSum(hSource, atomId) + hydrogens),
+  };
+}
+
+/** Both writers refuse the same unrepresentable valence, with the same message
+ *  naming the bound that was exceeded. */
+function checkValence(atomId: AtomId, hydrogens: number, total: number): void {
+  if (total <= MAX_ENCODABLE_VALENCE) return;
+  throw new Error(
+    `Atom ${atomId} carries ${hydrogens} hydrogens, and its total valence of ` +
+      `${total} exceeds the ${MAX_ENCODABLE_VALENCE} a molfile valence field ` +
+      `can express. Reduce the hydrogen count.`,
+  );
+}
+
+/**
+ * Serialise `mol` as a molblock.
+ *
+ * V2000 by default (`options.version`), because it is what every reader takes
+ * and what thirty years of tooling expects. V3000 is the caller's explicit
+ * choice — see `MolblockVersion` for why there is no "auto".
  *
  * @throws {MolblockLabelError} if any atom carries a display `label`.
- * @throws {Error} if the structure is too large for the three-column counts
+ * @throws {MolblockStereoGroupError} if V2000 was asked for and the molecule
+ *   carries stereo groups, which V2000 cannot express at all.
+ * @throws {Error} if the structure is too large for V2000's three-column counts
  *   fields, if a coordinate does not fit its ten-column field, or if an atom's
- *   hydrogen count fits neither `hhh` nor `vvv`. All three are cases where the
+ *   valence exceeds what a valence field holds. All of them are cases where the
  *   only alternative is a file that describes a different molecule.
  */
 export function writeMolblock(mol: Molecule, options: MolblockWriteOptions = {}): string {
   const scale = options.coordinateScale ?? MOLFILE_BOND_LENGTH;
   const assertion = options.hydrogenAssertion ?? "valence";
+  const version = options.version ?? "V2000";
 
   // Collected across the whole molecule and reported in one go: a user who
   // abbreviated six groups wants one dialog listing six, not six dialogs.
@@ -274,11 +464,18 @@ export function writeMolblock(mol: Molecule, options: MolblockWriteOptions = {})
     );
   }
 
-  if (mol.atomIds.length > MAX_V2000_COUNT || mol.bondIds.length > MAX_V2000_COUNT) {
-    throw new Error(
-      `V2000 counts fields are three characters wide, so it cannot express ` +
-        `${mol.atomIds.length} atoms / ${mol.bondIds.length} bonds. Use V3000 ` +
-        `for structures this large.`,
+  const groups = stereoGroupsOf(mol);
+  if (version === "V2000" && groups.length > 0) {
+    const described = groups
+      .map((group) => `${stereoGroupTag(group)} (${group.atomIds.join(", ")})`)
+      .join(", ");
+    throw new MolblockStereoGroupError(
+      `Cannot write a V2000 molblock for a molecule carrying stereo groups: ` +
+        `${described}. V2000 has no field for an ABS/AND/OR collection, so the ` +
+        `file would claim a single enantiomer where the drawing says a racemate ` +
+        `— a different compound, in a file that looks perfectly valid. Write ` +
+        `V3000 instead, or clear the groups first.`,
+      groups,
     );
   }
 
@@ -301,15 +498,6 @@ export function writeMolblock(mol: Molecule, options: MolblockWriteOptions = {})
   const rowOf = new Map<AtomId, number>();
   mol.atomIds.forEach((id, index) => rowOf.set(id, index + 1));
 
-  const charges: [number, number][] = [];
-  const isotopes: [number, number][] = [];
-  const radicals: [number, number][] = [];
-
-  const lines: string[] = [];
-  lines.push(headerLine(options.title));
-  lines.push(PROGRAM_LINE);
-  lines.push(headerLine(options.comment));
-
   // The chiral flag says "the drawn stereochemistry is absolute, not a
   // racemate". Wedges and hashes are the only way this model states
   // configuration, so their presence is exactly the condition.
@@ -319,6 +507,43 @@ export function writeMolblock(mol: Molecule, options: MolblockWriteOptions = {})
   })
     ? 1
     : 0;
+
+  const header = [
+    headerLine(options.title),
+    PROGRAM_LINE,
+    headerLine(options.comment),
+  ];
+
+  const body =
+    version === "V3000"
+      ? writeV3000(mol, hSource, rowOf, chiral, scale, assertion, groups)
+      : writeV2000(mol, hSource, rowOf, chiral, scale, assertion);
+
+  return `${[...header, ...body].join("\n")}\n`;
+}
+
+/** The V2000 body: counts line, fixed-column atom and bond blocks, `M  XXX`
+ *  property lines, `M  END`. */
+function writeV2000(
+  mol: Molecule,
+  hSource: Molecule,
+  rowOf: ReadonlyMap<AtomId, number>,
+  chiral: number,
+  scale: number,
+  assertion: HydrogenAssertion,
+): string[] {
+  if (mol.atomIds.length > MAX_V2000_COUNT || mol.bondIds.length > MAX_V2000_COUNT) {
+    throw new Error(
+      `V2000 counts fields are three characters wide, so it cannot express ` +
+        `${mol.atomIds.length} atoms / ${mol.bondIds.length} bonds. Use V3000 ` +
+        `for structures this large.`,
+    );
+  }
+
+  const charges: [number, number][] = [];
+  const isotopes: [number, number][] = [];
+  const radicals: [number, number][] = [];
+  const lines: string[] = [];
 
   lines.push(
     `${int(mol.atomIds.length, 3)}${int(mol.bondIds.length, 3)}` +
@@ -356,46 +581,23 @@ export function writeMolblock(mol: Molecule, options: MolblockWriteOptions = {})
     const x = coord(atom.pos.x * scale);
     const y = coord(atom.pos.y * scale);
     if (x === undefined || y === undefined) {
-      throw new Error(
-        `Atom ${atomId} sits at (${atom.pos.x}, ${atom.pos.y}), which at a ` +
-          `coordinate scale of ${scale} does not fit the ${COORD_WIDTH}-column ` +
-          `fixed-width coordinate field. Writing it anyway would shift every ` +
-          `later column on the line and produce a file no reader can parse. ` +
-          `Move the structure back towards the origin, or lower ` +
-          `\`coordinateScale\`.`,
-      );
+      throw coordinateError(atomId, atom.pos.x, atom.pos.y, scale);
     }
 
-    // Hydrogens are implicit in the model, so the count has to be asserted
-    // here or a reader will re-derive it with its own valence table and
-    // disagree (pyrrole's N-H is the classic casualty). `hhh` is "count plus
-    // one" because 0 is reserved for "not specified".
-    const hydrogens = Math.max(implicitHydrogenCount(hSource, atomId), 0);
+    const facts = atomFacts(hSource, atomId, atom.explicitHydrogenCount !== undefined, assertion);
     let hydrogenField = 0;
     let valenceField = 0;
-    // In "valence" mode an unpinned atom is left unstated, so the reader
-    // derives with its own table. Only a PIN is worth a field: it is the
-    // model saying "do not derive", and it is the one thing a valence table
-    // cannot recover.
-    const stateIt = assertion === "hhh" || atom.explicitHydrogenCount !== undefined;
-    if (!stateIt) {
+    if (facts.totalValence === undefined) {
       // nothing to say
     } else if (assertion !== "hhh") {
       // `vvv` is the total valence, not a query field, and the reader already
       // subtracts the drawn bonds back off it. 15 is the spec's "valence
       // zero", since 0 already means "unspecified".
-      const total = Math.round(bondOrderSum(hSource, atomId) + hydrogens);
-      if (total > MAX_ENCODABLE_VALENCE) {
-        throw new Error(
-          `Atom ${atomId} carries ${hydrogens} hydrogens, and its total ` +
-            `valence of ${total} exceeds the ${MAX_ENCODABLE_VALENCE} the ` +
-            `V2000 valence field can express. Reduce the hydrogen count or ` +
-            `use V3000.`,
-        );
-      }
-      valenceField = total === 0 ? VALENCE_ZERO_CODE : total;
-    } else if (hydrogens <= MAX_ENCODABLE_HYDROGENS) {
-      hydrogenField = hydrogens + 1;
+      checkValence(atomId, facts.hydrogens, facts.totalValence);
+      valenceField = facts.totalValence === 0 ? VALENCE_ZERO_CODE : facts.totalValence;
+    } else if (facts.hydrogens <= MAX_ENCODABLE_HYDROGENS) {
+      // `hhh` is "count plus one" because 0 is reserved for "not specified".
+      hydrogenField = facts.hydrogens + 1;
     } else {
       // Past H4 the `hhh` field is out of room, so the count goes out as a
       // total valence instead and the reader subtracts the drawn bonds back
@@ -404,18 +606,8 @@ export function writeMolblock(mol: Molecule, options: MolblockWriteOptions = {})
       // but clamping to H4 quietly deleted hydrogens from the exported
       // molecule, and this module's whole position (see `MolblockLabelError`)
       // is that a plausible wrong file is worse than a refusal.
-      // Rounded because an aromatic bond that kekulisation could not resolve
-      // still weighs 1.5, and a fractional valence is not a legal field.
-      const total = Math.round(bondOrderSum(hSource, atomId) + hydrogens);
-      if (total > MAX_ENCODABLE_VALENCE) {
-        throw new Error(
-          `Atom ${atomId} carries ${hydrogens} hydrogens, and its total ` +
-            `valence of ${total} exceeds the ${MAX_ENCODABLE_VALENCE} the ` +
-            `V2000 valence field can express. Reduce the hydrogen count or ` +
-            `use V3000.`,
-        );
-      }
-      valenceField = total;
+      checkValence(atomId, facts.hydrogens, facts.totalValence);
+      valenceField = facts.totalValence;
     }
 
     lines.push(
@@ -470,6 +662,192 @@ export function writeMolblock(mol: Molecule, options: MolblockWriteOptions = {})
   lines.push(...propertyLines("ISO", isotopes));
   lines.push(...propertyLines("RAD", radicals));
   lines.push("M  END");
+  return lines;
+}
 
-  return `${lines.join("\n")}\n`;
+/** The one refusal both writers make about a coordinate, so the message cannot
+ *  drift between them. */
+function coordinateError(atomId: AtomId, x: number, y: number, scale: number): Error {
+  return new Error(
+    `Atom ${atomId} sits at (${x}, ${y}), which at a coordinate scale of ` +
+      `${scale} does not fit the ${COORD_WIDTH}-column fixed-width coordinate ` +
+      `field. Writing it anyway would shift every later column on the line and ` +
+      `produce a file no reader can parse. Move the structure back towards the ` +
+      `origin, or lower \`coordinateScale\`.`,
+  );
+}
+
+/**
+ * Break one V3000 entry into as many physical lines as the 80-character limit
+ * needs.
+ *
+ * `content` is the entry WITHOUT its `M  V30 ` prefix. Every line gets the
+ * prefix; every line but the last gets a trailing dash. The reader rejoins by
+ * dropping the dash and the next line's prefix, so a break may fall anywhere —
+ * verified against RDKit, which reads a COLLECTION entry split mid-list, split
+ * mid-number and split immediately after `ATOMS=(`.
+ *
+ * A WRITER THAT NEVER CONTINUES emits a file no reader can parse, and a reader
+ * that never joins loses the tail of a group SILENTLY: the group comes back
+ * smaller and the molecule still looks fine. A COLLECTION block listing many
+ * atoms will exceed 80 characters at around a dozen of them, so this is not a
+ * theoretical path.
+ *
+ * Breaking is done on the CONTENT, never on the assembled line, so the prefix is
+ * never itself split.
+ */
+function v30Lines(content: string): string[] {
+  if (V30.length + content.length <= MAX_V30_CONTENT) return [`${V30}${content}`];
+
+  const lines: string[] = [];
+  let rest = content;
+  // One character of the break budget goes to the dash itself.
+  const chunk = V30_BREAK - V30.length - 1;
+  while (V30.length + rest.length > MAX_V30_CONTENT) {
+    lines.push(`${V30}${rest.slice(0, chunk)}-`);
+    rest = rest.slice(chunk);
+  }
+  lines.push(`${V30}${rest}`);
+  return lines;
+}
+
+/**
+ * The V3000 body: a V2000-shaped counts line carrying the version stamp and
+ * nothing else, then the tag-based CTAB.
+ *
+ * The all-zero counts line is not a placeholder this writer invented — RDKit
+ * emits exactly `  0  0  0  0  0  0  0  0  0  0999 V3000` and puts the real
+ * numbers in `M  V30 COUNTS`. A V2000-only reader that trusted the leading
+ * counts would read an empty molecule rather than a corrupt one, which is the
+ * kinder of the two failures.
+ *
+ * DETERMINISM. Nothing here consults a clock, a random source or object-key
+ * order: the atom and bond blocks follow `atomIds` / `bondIds`, the groups come
+ * out in `stereoGroupsOf`'s canonical order (kind, then stored index) and the
+ * atom indices inside a group come out SORTED BY ROW, not in whatever order
+ * built the group.
+ */
+function writeV3000(
+  mol: Molecule,
+  hSource: Molecule,
+  rowOf: ReadonlyMap<AtomId, number>,
+  chiral: number,
+  scale: number,
+  assertion: HydrogenAssertion,
+  groups: readonly StereoGroup[],
+): string[] {
+  const lines: string[] = [
+    `  0  0  0  0  0  0  0  0  0  0999 V3000`,
+    `${V30}BEGIN CTAB`,
+    // na nb nsg n3d chiral: no Sgroups and no 3D constraints are ever written.
+    `${V30}COUNTS ${mol.atomIds.length} ${mol.bondIds.length} 0 0 ${chiral}`,
+    `${V30}BEGIN ATOM`,
+  ];
+
+  for (const atomId of mol.atomIds) {
+    const atom = requireAtom(mol, atomId);
+    const row = rowOf.get(atomId) ?? 0;
+
+    // Same coordinates, same absence of a y-flip, and the same ten-column
+    // budget: V3000 fields are free-form, but a number that needs more than ten
+    // characters is a structure nobody can draw and the V2000 path would refuse.
+    const x = coord(atom.pos.x * scale);
+    const y = coord(atom.pos.y * scale);
+    if (x === undefined || y === undefined) {
+      throw coordinateError(atomId, atom.pos.x, atom.pos.y, scale);
+    }
+
+    // index type x y z aamap, then keywords. `aamap` is a reaction atom-atom
+    // mapping and is 0 for a plain structure.
+    let content = `${row} ${atom.element} ${x.trim()} ${y.trim()} ${ZERO_COORD.trim()} 0`;
+
+    const charge = Math.trunc(atom.charge);
+    // `CHG=` is the ABSOLUTE charge, so there is no legacy column to supersede
+    // and no `M  CHG` line to write.
+    if (charge !== 0) content += ` CHG=${charge}`;
+
+    const radicalElectrons = Math.trunc(atom.radicalElectrons);
+    // `RAD=` is a spin MULTIPLICITY, not a count — 1 singlet, 2 doublet,
+    // 3 triplet — the same encoding as V2000's `M  RAD`, so `radicalCode` is
+    // shared rather than re-derived.
+    if (radicalElectrons > 0) content += ` RAD=${radicalCode(radicalElectrons)}`;
+
+    const isotope = atom.isotope === undefined ? 0 : Math.trunc(atom.isotope);
+    // `MASS=` is the ABSOLUTE mass number, unlike V2000's `dd` column, which is
+    // a difference from the element's most abundant isotope. Confirmed against
+    // the spec ("the absolute atomic weight of the designated atom") and against
+    // RDKit, which writes `MASS=13` for 13-C. A reader that took this as a
+    // difference would import 13-C as mass number 25.
+    if (isotope > 0) content += ` MASS=${isotope}`;
+
+    const facts = atomFacts(hSource, atomId, atom.explicitHydrogenCount !== undefined, assertion);
+    if (facts.totalValence !== undefined) {
+      checkValence(atomId, facts.hydrogens, facts.totalValence);
+      // `VAL=-1` is V3000's "valence zero"; `VAL=0` would mean "unspecified".
+      // NOT 15, which is V2000's sentinel and would be read here as a valence
+      // of fifteen. `HCOUNT` is not used at all: the spec's own atom table
+      // calls it "Query hydrogen count", which is the `hhh` trap over again.
+      content += ` VAL=${facts.totalValence === 0 ? V3000_VALENCE_ZERO : facts.totalValence}`;
+    }
+
+    // The atom block also has a `CFG=` keyword, and it is a stereo PARITY
+    // (1 odd, 2 even, 3 either) — a different field from the bond block's
+    // `CFG=` (1 up, 2 either, 3 down) despite the shared name. It is never
+    // written: parity is derived from the bond wedges, exactly as the V2000
+    // `sss` column is left at 0.
+    lines.push(...v30Lines(content));
+  }
+  lines.push(`${V30}END ATOM`);
+
+  if (mol.bondIds.length > 0) {
+    lines.push(`${V30}BEGIN BOND`);
+    mol.bondIds.forEach((bondId, index) => {
+      const bond = requireBond(mol, bondId);
+      const from = rowOf.get(bond.from);
+      const to = rowOf.get(bond.to);
+      if (from === undefined || to === undefined) {
+        throw new Error(`Bond ${bondId} references an atom that is not in the molecule`);
+      }
+      const type = bond.aromatic ? 4 : bond.order;
+      // index type atom1 atom2. `from` FIRST, for the same reason as V2000: the
+      // narrow end of a wedge is at the first atom, so swapping the endpoints
+      // would invert every stereocentre in the file.
+      let content = `${index + 1} ${type} ${from} ${to}`;
+      const cfg = STEREO_TO_CFG[bond.stereo];
+      if (cfg !== 0) content += ` CFG=${cfg}`;
+      lines.push(...v30Lines(content));
+    });
+    lines.push(`${V30}END BOND`);
+  }
+
+  if (groups.length > 0) {
+    lines.push(`${V30}BEGIN COLLECTION`);
+    for (const group of groups) {
+      // STEABS is unnumbered; STERAC and STEREL take the group's STORED index
+      // (decision 92), never its position in the array — the `&1` a figure tag
+      // prints and the `n` a file states are the same number, and deriving it
+      // from a position would renumber a group on any unrelated edit.
+      const name =
+        group.kind === "abs"
+          ? COLLECTION_NAME.abs
+          : `${COLLECTION_NAME[group.kind]}${group.index}`;
+      // Sorted by ROW, so the list reads in the same order as the atom block and
+      // two writes of one molecule agree. An id ordering would disagree with the
+      // row ordering the moment the ids were not minted in drawing order, which
+      // is every imported file.
+      const rows = group.atomIds
+        .map((id) => rowOf.get(id))
+        .filter((row): row is number => row !== undefined)
+        .sort((a, b) => a - b);
+      // A group whose every atom left the molecule writes nothing rather than
+      // `ATOMS=(0)`, which a reader would take as an empty collection.
+      if (rows.length === 0) continue;
+      lines.push(...v30Lines(`${name} ATOMS=(${rows.length} ${rows.join(" ")})`));
+    }
+    lines.push(`${V30}END COLLECTION`);
+  }
+
+  lines.push(`${V30}END CTAB`);
+  lines.push("M  END");
+  return lines;
 }

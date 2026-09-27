@@ -98,11 +98,17 @@ export interface ChangeReport {
    * chem-core and comparing. When that re-read fails there is nothing to
    * compare, and an empty `diffs` then means "not checked" rather than
    * "nothing changed" — the two are opposites and must not share a
-   * representation. The mundane trigger is a V3000 molfile: chem-core's codec
-   * is V2000-only, and RDKit switches to V3000 on its own for a structure
-   * whose coordinates overflow the V2000 field width, so a legitimate export
-   * can come back unreadable while the molecule was in fact rewritten
-   * (measured: RDKit charge-separates `CN(=O)=O` on the way through).
+   * representation.
+   *
+   * The mundane trigger USED to be a V3000 molfile: chem-core's codec was
+   * V2000-only, and RDKit switches to V3000 on its own for a structure whose
+   * coordinates overflow the V2000 field width, so a legitimate export came back
+   * unreadable while the molecule was in fact rewritten (measured: RDKit
+   * charge-separates `CN(=O)=O` on the way through). chem-core reads V3000 now
+   * (decision 90) and that case is CHECKED. What is left is a worker answer that
+   * is not a molblock at all, or a file so damaged the reader calls the import
+   * lossy — rarer, and exactly why this flag has to stay: the rarer the trigger,
+   * the more likely an empty `diffs` gets read as a clean bill of health.
    */
   readonly verification: Verification;
 }
