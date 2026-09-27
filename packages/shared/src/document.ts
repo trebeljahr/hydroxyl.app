@@ -40,6 +40,8 @@ import {
   type BondStereo,
   type DoubleBondSide,
   type Molecule,
+  type StereoGroup,
+  type StereoGroupKind,
 } from "@starter/chem-core";
 import {
   DISPLAY_FLAG_KEYS,
@@ -532,6 +534,36 @@ type SideListIsTotal =
 const SIDE_LIST_IS_TOTAL: SideListIsTotal = true;
 void SIDE_LIST_IS_TOTAL;
 
+/**
+ * Enhanced-stereochemistry kinds, with the same two-way guard as the bond value
+ * unions above and for the same reason.
+ *
+ * This is the FIRST widening of `Molecule` itself since `BondStereo` gained
+ * `either`, and that widening is the reason the guards exist: the model grew a
+ * member, this file's `z.enum` did not, and a sketch holding one imported bond
+ * encoded fine and then failed to decode — the whole document lost. So the
+ * chem-core type, this list, the schema, the encoder, the decoder and a
+ * round-trip test are one change, never two.
+ */
+export const STEREO_GROUP_KIND_VALUES = [
+  "abs",
+  "and",
+  "or",
+] as const satisfies readonly StereoGroupKind[];
+
+type StereoGroupKindListIsTotal =
+  StereoGroupKind extends (typeof STEREO_GROUP_KIND_VALUES)[number] ? true : never;
+const STEREO_GROUP_KIND_LIST_IS_TOTAL: StereoGroupKindListIsTotal = true;
+void STEREO_GROUP_KIND_LIST_IS_TOTAL;
+
+const stereoGroupSchema = z.object({
+  kind: z.enum(STEREO_GROUP_KIND_VALUES),
+  /** Stored, never derived from array position (decision 92): the number a
+   *  V3000 file states and a figure tag prints. */
+  index: z.number().int().positive(),
+  atomIds: z.array(nonEmptyString),
+});
+
 const bondSchema = z.object({
   id: nonEmptyString,
   from: nonEmptyString,
@@ -561,9 +593,47 @@ const moleculeShapeSchema = z.object({
   atomIds: z.array(nonEmptyString),
   bondIds: z.array(nonEmptyString),
   nextId: z.number().int().positive(),
+  /**
+   * OPTIONAL AND ADDITIVE, so `SCHEMA_VERSION` stays 1. A document saved before
+   * the field existed simply has no key and still decodes; a required field
+   * would have made the whole saved corpus unopenable, and a version bump would
+   * have made every document this build writes unopenable by the other build,
+   * because `sketchDocumentSchema` validates the version with
+   * `.max(SCHEMA_VERSION)`.
+   *
+   * Absent is also MEANINGFUL, not merely tolerated: it says nothing was ever
+   * asserted about configuration, which is different from an explicit `abs`
+   * group (decision 91).
+   */
+  stereoGroups: z.array(stereoGroupSchema).optional(),
 });
 
 type MoleculeShape = z.infer<typeof moleculeShapeSchema>;
+
+/**
+ * The same guard for `Molecule`, in BOTH directions (decision 24).
+ *
+ * The atom and bond guard above runs one way only — it catches a model field the
+ * schema forgot, which is the `either` bug. `Molecule` gets both, because the
+ * reverse is now reachable too: a schema key that is no longer a model field
+ * would be validated on every decode, dropped by `rebuildMolecule`, and never
+ * written again, so a document would fail to open over a field that means
+ * nothing. Neither direction has a runtime cost; both are type errors at the
+ * line below.
+ *
+ * Declared here rather than beside `moleculeShapeSchema` only because it has to
+ * follow the inferred shape type.
+ */
+type MoleculeSchemaCoversModel = keyof Molecule extends keyof MoleculeShape
+  ? true
+  : never;
+type MoleculeSchemaIsExact = keyof MoleculeShape extends keyof Molecule
+  ? true
+  : never;
+const MOLECULE_SCHEMA_COVERS_MODEL: MoleculeSchemaCoversModel = true;
+const MOLECULE_SCHEMA_IS_EXACT: MoleculeSchemaIsExact = true;
+void MOLECULE_SCHEMA_COVERS_MODEL;
+void MOLECULE_SCHEMA_IS_EXACT;
 
 /** The counter suffix of a generated id (`a12` -> 12). Foreign ids that carry
  *  no trailing digits cannot collide with a generated one, so they impose no
@@ -695,6 +765,122 @@ function checkMoleculeIntegrity(mol: MoleculeShape, ctx: z.RefinementCtx): void 
       });
     }
   }
+
+  checkStereoGroups(mol, ctx);
+}
+
+/**
+ * The five things a stereo-group list has to satisfy to mean anything.
+ *
+ * Every one of them is a document that decodes into a molecule the editor could
+ * not have produced, and every one fails LATER and further away than here — a
+ * group naming an atom that does not exist survives every render and then
+ * crashes a molfile export; an atom in two groups gives a figure a per-centre
+ * tag with two values and the renderer picks whichever it meets first.
+ *
+ * `withStereoGroups` in chem-core enforces the same invariants on every write.
+ * That is deliberate duplication, not redundancy: this side guards a file, which
+ * is untrusted and must fail with a listed reason, while that side guards a
+ * caller, which is a programming error and throws.
+ */
+function checkStereoGroups(mol: MoleculeShape, ctx: z.RefinementCtx): void {
+  const groups = mol.stereoGroups;
+  if (groups === undefined) return;
+
+  // An EMPTY ARRAY is rejected rather than silently normalised. The model omits
+  // the key when there is nothing to say, so `[]` is a second spelling of the
+  // same statement, and two spellings mean `toEqual` and `JSON.stringify`
+  // disagree about two molecules that are identical.
+  if (groups.length === 0) {
+    ctx.addIssue({
+      code: "custom",
+      message:
+        "stereoGroups is present but empty; a molecule that says nothing about " +
+        "configuration omits the key entirely",
+      path: ["stereoGroups"],
+    });
+    return;
+  }
+
+  const owner = new Map<string, number>();
+  const seenKeys = new Map<string, number>();
+
+  groups.forEach((group, position) => {
+    if (group.atomIds.length === 0) {
+      ctx.addIssue({
+        code: "custom",
+        message: `stereo group ${position} is empty`,
+        path: ["stereoGroups", position, "atomIds"],
+      });
+    }
+
+    // Indices are PER KIND, so `and` 1 and `or` 1 are different groups and only
+    // a repeat within one kind is a conflict. The separator is an escape rather
+    // than a literal control byte, for the grep reason spelled out in
+    // chem-core's molblock reader.
+    const key = `${group.kind}\u0000${group.index}`;
+    const first = seenKeys.get(key);
+    if (first !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message:
+          `two ${group.kind} stereo groups both carry index ${group.index} ` +
+          `(positions ${first} and ${position}); the index is what a V3000 file ` +
+          `states and what a figure tag prints, so it must be unique per kind`,
+        path: ["stereoGroups", position, "index"],
+      });
+    } else {
+      seenKeys.set(key, position);
+    }
+
+    // There is exactly one absolute collection per structure, because V3000
+    // writes it as `MDLV30/STEABS` with no number at all while numbering
+    // `STERACn` and `STERELn`. A numbered abs group could not be written back.
+    if (group.kind === "abs" && group.index !== 1) {
+      ctx.addIssue({
+        code: "custom",
+        message:
+          `an abs stereo group carries index ${group.index}; there is only one ` +
+          `absolute collection per structure (V3000 writes it unnumbered), so ` +
+          `its index is always 1`,
+        path: ["stereoGroups", position, "index"],
+      });
+    }
+
+    group.atomIds.forEach((atomId, slot) => {
+      // `Object.hasOwn`, never a plain index read: `mol.atoms["toString"]`
+      // resolves up Object.prototype, so a group naming a prototype member
+      // would pass an existence check and own no atom at all.
+      if (!Object.hasOwn(mol.atoms, atomId)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `stereo group ${position} names ${atomId}, which is not an atom`,
+          path: ["stereoGroups", position, "atomIds", slot],
+        });
+        return;
+      }
+      const held = owner.get(atomId);
+      if (held !== undefined && held !== position) {
+        ctx.addIssue({
+          code: "custom",
+          message:
+            `atom ${atomId} is in stereo groups ${held} and ${position}; an atom ` +
+            `belongs to at most one ABS/AND/OR collection`,
+          path: ["stereoGroups", position, "atomIds", slot],
+        });
+        return;
+      }
+      if (held === position) {
+        ctx.addIssue({
+          code: "custom",
+          message: `stereo group ${position} names atom ${atomId} twice`,
+          path: ["stereoGroups", position, "atomIds", slot],
+        });
+        return;
+      }
+      owner.set(atomId, position);
+    });
+  });
 }
 
 /**
@@ -739,13 +925,31 @@ function rebuildMolecule(mol: MoleculeShape): Molecule {
       aromatic: parsed.aromatic,
     };
   }
-  return {
+  const rebuilt: {
+    -readonly [K in keyof Molecule]: Molecule[K];
+  } = {
     atoms,
     bonds,
     atomIds: [...mol.atomIds],
     bondIds: [...mol.bondIds],
     nextId: mol.nextId,
   };
+  // The key is WRITTEN ONLY WHEN THE FILE CARRIED ONE, not set to `[]` or to
+  // `undefined`. `exactOptionalPropertyTypes` makes the difference visible in
+  // the type, and `Object.hasOwn` is how the rest of the package asks whether a
+  // molecule says anything about grouping — the same distinction `cloneAtomWith`
+  // maintains for a pinned hydrogen count.
+  //
+  // `checkStereoGroups` has already rejected a present-but-empty array, so a
+  // surviving list is non-empty and every id in it names an atom.
+  if (mol.stereoGroups !== undefined) {
+    rebuilt.stereoGroups = mol.stereoGroups.map((group) => ({
+      kind: group.kind,
+      index: group.index,
+      atomIds: [...group.atomIds],
+    }));
+  }
+  return rebuilt;
 }
 
 export const moleculeSchema = moleculeShapeSchema
@@ -971,13 +1175,26 @@ function encodeMolecule(mol: Molecule): JsonObject {
     const bond = mol.bonds[id];
     if (bond) bonds[id] = encodeBond(bond);
   }
-  return {
+  const encoded: JsonObject = {
     atoms,
     bonds,
     atomIds: [...mol.atomIds],
     bondIds: [...mol.bondIds],
     nextId: mol.nextId,
   };
+  // Omitted when absent, exactly as `encodeAtom` omits an unset optional: a
+  // `stereoGroups: undefined` key survives `structuredClone`, so a molecule that
+  // says nothing about grouping would encode differently before and after a save
+  // and every round-trip equality assertion would fail for a reason with nothing
+  // to do with chemistry.
+  if (mol.stereoGroups !== undefined) {
+    encoded.stereoGroups = mol.stereoGroups.map((group) => ({
+      kind: group.kind,
+      index: group.index,
+      atomIds: [...group.atomIds],
+    }));
+  }
+  return encoded;
 }
 
 function encodePanel(panel: Panel): JsonObject {

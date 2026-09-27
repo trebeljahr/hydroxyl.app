@@ -19,8 +19,97 @@ import type {
   BondOrder,
   BondStereo,
   Molecule,
+  StereoGroup,
 } from "./types.js";
 import { DEG, fromPolar, add as addVec, ORIGIN, type Vec2 } from "./vec.js";
+
+// ---------------------------------------------------------------------------
+// Molecule assembly
+//
+// Every Molecule record built from PARTS rather than from a spread goes through
+// `assembleMolecule`, for the same reason `assembleAtom` exists in molecule.ts:
+// a field added to `Molecule` later is dropped by each hand-written literal,
+// silently, and no test of a hand-written fixture catches it. `stereoGroups` is
+// the type's first optional field and the literal sites are spread over three
+// modules and two packages — removal and merging in ops.ts, extraction and
+// insertion in fragment.ts, `build` below, and the document decoder in
+// @starter/shared — so "remember to carry it" was never going to hold.
+//
+// A site that writes `{ ...mol, bonds }` needs none of this: the spread carries
+// every field the type has and every field it will grow. Those are deliberately
+// left alone, and `benzene` at the bottom of this file is one of them.
+//
+// HERE rather than in molecule.ts because ops.ts and fragment.ts both need it
+// and cip.ts imports ops.ts: anything on that path must stay clear of the
+// perception modules, and this module already sits at the bottom of the graph
+// next to `buildMolecule`.
+// ---------------------------------------------------------------------------
+
+/**
+ * Every field of a `Molecule`, with the optional ones widened to accept
+ * `undefined` for "there is no such key".
+ *
+ * NOTHING HERE IS OPTIONAL, deliberately, and that is the whole mechanism. If
+ * `stereoGroups` carried a `?` then a call site that forgot it would compile,
+ * and a field that silently vanishes on the first atom delete is exactly the
+ * failure this assembler exists to prevent — no test of a hand-written fixture
+ * catches it. Required-but-nullable makes every site SAY what it does with the
+ * field: carry it, prune it, or remap it. Writing `undefined` is a decision on
+ * the record; omitting the key is an oversight.
+ */
+interface MoleculeFields {
+  readonly atoms: Readonly<Record<AtomId, Atom>>;
+  readonly bonds: Readonly<Record<BondId, Bond>>;
+  readonly atomIds: readonly AtomId[];
+  readonly bondIds: readonly BondId[];
+  readonly nextId: number;
+  readonly stereoGroups: readonly StereoGroup[] | undefined;
+}
+
+/**
+ * Compile-time guard in BOTH directions: `MoleculeFields` lists exactly the
+ * fields of `Molecule`. A field added to types.ts is then a type error here
+ * rather than one that vanishes on the first atom delete, and a field left
+ * behind here after the model dropped it is a type error too.
+ */
+type MoleculeFieldsCoverModel = keyof Molecule extends keyof MoleculeFields
+  ? true
+  : never;
+type MoleculeFieldsAreExact = keyof MoleculeFields extends keyof Molecule
+  ? true
+  : never;
+const MOLECULE_FIELDS_COVER_MODEL: MoleculeFieldsCoverModel = true;
+const MOLECULE_FIELDS_ARE_EXACT: MoleculeFieldsAreExact = true;
+void MOLECULE_FIELDS_COVER_MODEL;
+void MOLECULE_FIELDS_ARE_EXACT;
+
+/**
+ * The one place a `Molecule` record is assembled from parts.
+ *
+ * `stereoGroups` is OMITTED rather than stored as an empty array, so a molecule
+ * that says nothing about grouping is deep-equal to one that never could (see
+ * the field's comment in types.ts). Callers may therefore hand the result of a
+ * prune straight in without testing it for emptiness first.
+ *
+ * Deliberately does NOT validate or reorder the groups. That is
+ * `withStereoGroups`'s job in stereo-groups.ts, which needs `compareIds` from
+ * selection.ts and so sits higher in the import graph.
+ */
+export function assembleMolecule(fields: MoleculeFields): Molecule {
+  const mol: {
+    -readonly [K in keyof Molecule]: Molecule[K];
+  } = {
+    atoms: fields.atoms,
+    bonds: fields.bonds,
+    atomIds: fields.atomIds,
+    bondIds: fields.bondIds,
+    nextId: fields.nextId,
+  };
+  if (fields.stereoGroups !== undefined && fields.stereoGroups.length > 0) {
+    mol.stereoGroups = fields.stereoGroups;
+  }
+  return mol;
+}
 
 function pairKey(a: AtomId, b: AtomId): string {
   return a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`;
@@ -85,15 +174,22 @@ export class MoleculeBuilder {
     return id;
   }
 
+  /**
+   * No `stereoGroups`: the builder has no gesture for one, and an ABS/AND/OR
+   * collection is a statement about perceived stereocentres that a caller makes
+   * after the structure exists. `withStereoGroups` is how a template or a
+   * fixture adds one.
+   */
   build(): Molecule {
     if (this.atomIds.length === 0) return emptyMolecule();
-    return {
+    return assembleMolecule({
       atoms: this.atomRecords,
       bonds: this.bondRecords,
       atomIds: this.atomIds,
       bondIds: this.bondIds,
       nextId: this.nextId,
-    };
+      stereoGroups: undefined,
+    });
   }
 }
 

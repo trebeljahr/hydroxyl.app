@@ -1,4 +1,10 @@
-import { benzene, buildMolecule, elementCounts, emptyMolecule } from "@starter/chem-core";
+import {
+  benzene,
+  buildMolecule,
+  elementCounts,
+  emptyMolecule,
+  withStereoGroups,
+} from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
 import { DEFAULT_DISPLAY_FLAGS } from "@starter/chem-render";
 import { describe, expect, it } from "vitest";
@@ -18,6 +24,7 @@ import {
   touchDocument,
   withFigureLayout,
   MAX_FIGURE_COLUMNS,
+  STEREO_GROUP_KIND_VALUES,
   type SketchDocument,
 } from "./document.js";
 
@@ -77,6 +84,34 @@ function stereocentre(): Molecule {
   });
 }
 
+/**
+ * A racemate: threo/erythro 3-chlorobutan-2-ol with BOTH stereocentres in one
+ * AND group, plus a separately-asserted absolute centre and a relative one.
+ *
+ * This is the fixture the `either` bug would have caught. A widened `Molecule`
+ * whose schema had not been widened with it encodes fine — `encodeMolecule`
+ * returns a `JsonObject`, so a new member is not a type error — and then fails
+ * to decode, and one grouped molecule is enough to lose a whole document.
+ */
+function racemate(): Molecule {
+  const ids: string[] = [];
+  const mol = buildMolecule((b) => {
+    const c1 = b.atom("C", { x: 0, y: 0 });
+    const c2 = b.atom("C", { x: 0.87, y: 0.5 });
+    const o = b.atom("O", { x: 0.87, y: 1.5 });
+    const c3 = b.atom("C", { x: 1.74, y: 0 });
+    const c4 = b.atom("C", { x: 2.61, y: 0.5 });
+    const cl = b.atom("Cl", { x: 1.74, y: -1 });
+    b.bond(c1, c2, 1);
+    b.bond(c2, o, 1, "wedge");
+    b.bond(c2, c3, 1);
+    b.bond(c3, c4, 1);
+    b.bond(c3, cl, 1, "hash");
+    ids.push(c2, c3);
+  });
+  return withStereoGroups(mol, [{ kind: "and", index: 1, atomIds: ids }]);
+}
+
 function documentOf(molecule: Molecule, title: string): SketchDocument {
   return createDocument({ id: `doc-${title}`, title, molecule, now: NOW });
 }
@@ -125,6 +160,7 @@ const FIXTURES: ReadonlyArray<readonly [string, () => Molecule]> = [
   ["ethanol", ethanol],
   ["acetate", acetate],
   ["a wedge-bearing stereocentre", stereocentre],
+  ["a racemate with an AND group", racemate],
   ["an empty molecule", emptyMolecule],
 ];
 
@@ -666,3 +702,128 @@ describe("figure layout (additive, no schema bump)", () => {
   });
 });
 
+
+describe("stereo groups (additive, no schema bump)", () => {
+  /** An encoded document whose molecule carries one AND group, as a mutable
+   *  plain object to corrupt. */
+  function groupedFixture(): Record<string, any> {
+    return JSON.parse(
+      JSON.stringify(encodeDocument(documentOf(racemate(), "racemate"))),
+    ) as Record<string, any>;
+  }
+
+  function molOf(encoded: Record<string, any>): Record<string, any> {
+    return encoded.molecule as Record<string, any>;
+  }
+
+  it("round-trips a group through real JSON, at schema version 1", () => {
+    const original = documentOf(racemate(), "racemate");
+    const encoded = groupedFixture();
+    expect(molOf(encoded).stereoGroups).toEqual([
+      { kind: "and", index: 1, atomIds: ["a2", "a4"] },
+    ]);
+    // O1: the field is optional and additive, so the version does not move. A
+    // bump here would make `.max(SCHEMA_VERSION)` reject every document the
+    // other build writes.
+    expect(encoded.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(SCHEMA_VERSION).toBe(1);
+    expect(roundTrip(original)).toEqual(original);
+  });
+
+  it("decodes a document written before the field existed, with no key", () => {
+    const old = encodedFixture();
+    expect(Object.hasOwn(molOf(old), "stereoGroups")).toBe(false);
+    const decoded = decodeDocument(old);
+    // Absent has to stay absent through the whole cycle: `{}` and
+    // `{ stereoGroups: [] }` are two spellings of one statement that no
+    // `toEqual` would match, and absent already means something different from
+    // an explicit abs group (decision 91).
+    expect(Object.hasOwn(decoded.molecule, "stereoGroups")).toBe(false);
+    const reencoded = encodeDocument(decoded) as { molecule: Record<string, unknown> };
+    expect(Object.hasOwn(reencoded.molecule, "stereoGroups")).toBe(false);
+  });
+
+  it("keeps an explicit abs group distinct from no groups (decision 91)", () => {
+    const encoded = groupedFixture();
+    molOf(encoded).stereoGroups = [{ kind: "abs", index: 1, atomIds: ["a2", "a4"] }];
+    const decoded = decodeDocument(encoded);
+    expect(decoded.molecule.stereoGroups).toEqual([
+      { kind: "abs", index: 1, atomIds: ["a2", "a4"] },
+    ]);
+  });
+
+  it("names the atom when one atom is in two groups (T11)", () => {
+    const encoded = groupedFixture();
+    molOf(encoded).stereoGroups = [
+      { kind: "and", index: 1, atomIds: ["a2"] },
+      { kind: "or", index: 1, atomIds: ["a2"] },
+    ];
+    expect(messagesFor(encoded).join(" ")).toMatch(/a2 is in stereo groups/);
+  });
+
+  it("rejects a group naming an atom that does not exist, a prototype member included", () => {
+    for (const atomId of ["a99", "toString", "__proto__", "constructor"]) {
+      const encoded = groupedFixture();
+      molOf(encoded).stereoGroups = [{ kind: "and", index: 1, atomIds: [atomId] }];
+      expect(messagesFor(encoded).join(" "), atomId).toMatch(/is not an atom/);
+    }
+  });
+
+  it("rejects an empty group, a present-but-empty list, and a repeated index", () => {
+    const empty = groupedFixture();
+    molOf(empty).stereoGroups = [{ kind: "and", index: 1, atomIds: [] }];
+    expect(safeDecodeDocument(empty).ok).toBe(false);
+
+    const none = groupedFixture();
+    molOf(none).stereoGroups = [];
+    expect(messagesFor(none).join(" ")).toMatch(/present but empty/);
+
+    const repeated = groupedFixture();
+    molOf(repeated).stereoGroups = [
+      { kind: "and", index: 1, atomIds: ["a2"] },
+      { kind: "and", index: 1, atomIds: ["a4"] },
+    ];
+    expect(messagesFor(repeated).join(" ")).toMatch(/both carry index 1/);
+
+    // Per KIND, so these two are different groups and must be accepted.
+    const perKind = groupedFixture();
+    molOf(perKind).stereoGroups = [
+      { kind: "and", index: 1, atomIds: ["a2"] },
+      { kind: "or", index: 1, atomIds: ["a4"] },
+    ];
+    expect(safeDecodeDocument(perKind).ok).toBe(true);
+  });
+
+  it("rejects a numbered abs group, since V3000 writes STEABS unnumbered", () => {
+    const encoded = groupedFixture();
+    molOf(encoded).stereoGroups = [{ kind: "abs", index: 2, atomIds: ["a2"] }];
+    expect(messagesFor(encoded).join(" ")).toMatch(/absolute collection/);
+  });
+
+  it("rejects an index or a kind the model cannot express", () => {
+    for (const group of [
+      { kind: "and", index: 0, atomIds: ["a2"] },
+      { kind: "and", index: 1.5, atomIds: ["a2"] },
+      { kind: "and", index: -1, atomIds: ["a2"] },
+      { kind: "racemic", index: 1, atomIds: ["a2"] },
+      { kind: "and", index: 1, atomIds: "a2" },
+    ]) {
+      const encoded = groupedFixture();
+      molOf(encoded).stereoGroups = [group];
+      expect(safeDecodeDocument(encoded).ok, JSON.stringify(group)).toBe(false);
+    }
+  });
+
+  it("keeps the kind list and the model in step", () => {
+    // The two-way `satisfies` guard in document.ts is the compile-time half;
+    // this is the half that fails when someone adds a kind and forgets the list.
+    expect([...STEREO_GROUP_KIND_VALUES]).toEqual(["abs", "and", "or"]);
+    for (const kind of STEREO_GROUP_KIND_VALUES) {
+      const encoded = groupedFixture();
+      molOf(encoded).stereoGroups = [
+        { kind, index: 1, atomIds: ["a2"] },
+      ];
+      expect(safeDecodeDocument(encoded).ok, kind).toBe(true);
+    }
+  });
+});

@@ -52,6 +52,8 @@ import type {
   DoubleBondSide,
   Molecule,
 } from "./types.js";
+import { assembleMolecule } from "./builders.js";
+import { prunedStereoGroups, stereoGroupsOf } from "./stereo-groups.js";
 import type { Vec2 } from "./vec.js";
 
 // ---------------------------------------------------------------------------
@@ -93,7 +95,23 @@ export function removeAtoms(mol: Molecule, ids: readonly AtomId[]): Molecule {
 
   // nextId is carried over untouched: deleting the newest atom must not free
   // its id for the next one.
-  return { atoms, bonds, atomIds, bondIds, nextId: mol.nextId };
+  //
+  // Stereo groups are PRUNED, not carried. A group naming a deleted atom is a
+  // dangling reference exactly like a bond naming one, and it fails later and
+  // further away: the document schema rejects it on save, so the user loses the
+  // file rather than the group. A group that empties out disappears, because an
+  // empty group is a second spelling of "nothing was said" (see the field
+  // comment on `Molecule.stereoGroups`). The stored kind and index of a group
+  // that merely SHRANK are untouched — it is still `&1`, and renumbering it
+  // here would change what an unrelated group's written label says.
+  return assembleMolecule({
+    atoms,
+    bonds,
+    atomIds,
+    bondIds,
+    nextId: mol.nextId,
+    stereoGroups: prunedStereoGroups(stereoGroupsOf(mol), (id) => !doomed.has(id)),
+  });
 }
 
 export function removeAtom(mol: Molecule, id: AtomId): Molecule {
@@ -528,7 +546,21 @@ export function mergeAtoms(
 
   return {
     ok: true,
-    molecule: { atoms, bonds, atomIds, bondIds, nextId: mol.nextId },
+    // The survivor keeps the TARGET's stereo group membership and the dragged
+    // atom's id is simply DROPPED from every group. Not transferred: merging
+    // destroys the ligand set at that position — the two atoms' bonds are
+    // rewired onto one centre — so a transferred ABS/AND/OR statement would
+    // describe a stereocentre that no longer exists. The survivor keeps the
+    // target's id and position (decision 1), and this is the same choice one
+    // field further on.
+    molecule: assembleMolecule({
+      atoms,
+      bonds,
+      atomIds,
+      bondIds,
+      nextId: mol.nextId,
+      stereoGroups: prunedStereoGroups(stereoGroupsOf(mol), (id) => id !== draggedId),
+    }),
     survivingId: targetId,
     removedAtomId: draggedId,
     removedBondIds,

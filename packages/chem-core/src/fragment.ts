@@ -25,6 +25,12 @@ import {
   requireBond,
 } from "./molecule.js";
 import type { Atom, AtomId, Bond, BondId, Molecule } from "./types.js";
+import { assembleMolecule } from "./builders.js";
+import {
+  graftStereoGroups,
+  remappedStereoGroups,
+  stereoGroupsOf,
+} from "./stereo-groups.js";
 import { add as addVec, type Vec2 } from "./vec.js";
 
 export interface ExtractedFragment {
@@ -136,7 +142,25 @@ export function extractFragment(
   }
 
   return {
-    molecule: { atoms, bonds, atomIds, bondIds, nextId },
+    // Groups are REMAPPED THROUGH `atomIdMap`, which restricts and renumbers in
+    // one step: the map covers exactly the extracted atoms, so a group's
+    // centres outside the selection have no image and are dropped, and a group
+    // that loses all of them disappears. Carrying the source ids across is what
+    // T3 warns about — a fragment whose group names `a7` when the fragment's
+    // atoms are `a1`..`a3` is a clipboard entry that cannot be pasted and a
+    // document that cannot be saved.
+    //
+    // The kind and stored index SURVIVE. Copying half a racemate still copies
+    // the statement "these centres invert together"; it is `insertFragment`'s
+    // job to renumber it against whatever the paste target already holds.
+    molecule: assembleMolecule({
+      atoms,
+      bonds,
+      atomIds,
+      bondIds,
+      nextId,
+      stereoGroups: remappedStereoGroups(stereoGroupsOf(mol), atomIdMap),
+    }),
     atomIdMap,
     bondIdMap,
   };
@@ -219,7 +243,23 @@ export function insertFragment(
   }
 
   return {
-    molecule: { atoms, bonds, atomIds, bondIds, nextId },
+    // The fragment's groups are grafted onto the target's: remapped through the
+    // fresh ids, AND/OR indices pushed past the target's so the two numberings
+    // stay separate statements, the single `abs` collection unioned. See
+    // `graftStereoGroups` for why renumbering rather than merging is the right
+    // reading of a paste.
+    molecule: assembleMolecule({
+      atoms,
+      bonds,
+      atomIds,
+      bondIds,
+      nextId,
+      stereoGroups: graftStereoGroups(
+        stereoGroupsOf(target),
+        stereoGroupsOf(fragment),
+        atomIdMap,
+      ),
+    }),
     atomIdMap,
     bondIdMap,
     atomIds: newAtomIds,

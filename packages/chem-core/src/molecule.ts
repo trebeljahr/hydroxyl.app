@@ -25,6 +25,16 @@ import type {
 } from "./types.js";
 import { ORIGIN, type Vec2 } from "./vec.js";
 
+/**
+ * No `stereoGroups` key, and that is not an omission. A molecule with no atoms
+ * has no stereocentres to collect, and the field's whole point is that ABSENT
+ * means "nothing was said about configuration" — distinct from an explicit
+ * `abs` group (decision 91). Every other `Molecule` literal in the package goes
+ * through `assembleMolecule`, which is what makes a field added later a compile
+ * error rather than one that vanishes on the first atom delete; this one stays a
+ * literal because a frozen singleton cannot be built from parts, and a new
+ * REQUIRED field would still be a type error right here.
+ */
 export const EMPTY_MOLECULE: Molecule = Object.freeze({
   atoms: Object.freeze({}),
   bonds: Object.freeze({}),

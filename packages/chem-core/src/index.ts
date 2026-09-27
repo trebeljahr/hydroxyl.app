@@ -20,6 +20,10 @@ export * from "./transform.js";
 export * from "./fragment.js";
 export * from "./hit.js";
 export * from "./selection.js";
+// The ABS/AND/OR record layer. Below ops and fragment in the graph (both
+// import it to keep a group honest across a delete, a merge and a paste) and
+// deliberately above nothing that perceives: it asks no stereo questions.
+export * from "./stereo-groups.js";
 export * from "./sprout.js";
 export * from "./rings.js";
 export * from "./aromatic.js";
