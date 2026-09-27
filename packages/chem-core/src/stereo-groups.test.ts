@@ -344,12 +344,42 @@ describe("the group maintenance primitives", () => {
       ["f1", "a7"],
       ["f2", "a8"],
     ]);
+    // Canonical order, not append order: the result goes straight onto a
+    // molecule, and a pasted `and4` sitting after the target's `or1` would make
+    // a written file differ from the same file loaded back.
     expect(graftStereoGroups(target, fragment, map).map((g) => [g.kind, g.index])).toEqual([
       ["and", 3],
-      ["or", 1],
       ["and", 4],
+      ["or", 1],
       ["or", 3],
     ]);
     expect(graftStereoGroups(target, fragment, new Map())).toBe(target);
+  });
+});
+
+describe("a pasted molecule still writes the file it reads back", () => {
+  it("keeps the group order canonical across a paste", () => {
+    const { mol, c2, c3 } = chlorobutanol();
+    const target = withStereoGroups(mol, [{ kind: "or", index: 1, atomIds: [c2, c3] }]);
+    const { molecule: fragment } = extractFragment(target, [c2, c3]);
+    const pasted = insertFragment(
+      withStereoGroups(target, [
+        { kind: "or", index: 1, atomIds: [c2] },
+        { kind: "and", index: 1, atomIds: [c3] },
+      ]),
+      withStereoGroups(fragment, [
+        { kind: "and", index: 1, atomIds: [fragment.atomIds[1] ?? ""] },
+      ]),
+    );
+    expect(pasted.molecule.stereoGroups?.map((g) => [g.kind, g.index])).toEqual([
+      ["and", 1],
+      ["and", 2],
+      ["or", 1],
+    ]);
+    // The property that matters downstream: putting the same list through the
+    // validator changes nothing, so the writer sees one order either way.
+    expect(withStereoGroups(pasted.molecule, pasted.molecule.stereoGroups ?? []).stereoGroups).toEqual(
+      pasted.molecule.stereoGroups,
+    );
   });
 });

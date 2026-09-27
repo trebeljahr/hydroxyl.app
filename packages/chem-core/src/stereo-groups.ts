@@ -138,6 +138,19 @@ export class StereoGroupError extends Error {
   }
 }
 
+/**
+ * Canonical group order, IN PLACE: kind then stored index.
+ *
+ * Shared by every producer, because the V3000 writer's byte-identity promise
+ * rests on it. A writer that sorted for itself would be the second owner of the
+ * order, and the two would be free to disagree about a molecule that had been
+ * pasted into rather than loaded — which is exactly the case that breaks a
+ * round-trip comparison while every individual write stays deterministic.
+ */
+function sortStereoGroups(groups: StereoGroup[]): void {
+  groups.sort((a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind] || a.index - b.index);
+}
+
 /** Sorted, deduplicated atom ids. */
 function canonicalAtomIds(ids: readonly AtomId[]): AtomId[] {
   return [...new Set(ids)].sort(compareIds);
@@ -219,9 +232,7 @@ export function withStereoGroups(
     if (atomIds.length === 0) continue;
     canonical.push({ kind: bucket.kind, index: bucket.index, atomIds });
   }
-  canonical.sort(
-    (a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind] || a.index - b.index,
-  );
+  sortStereoGroups(canonical);
 
   if (canonical.length === 0) {
     if (mol.stereoGroups === undefined) return mol;
@@ -332,11 +343,18 @@ export function graftStereoGroups(
     grafted.push(shift === 0 ? group : { ...group, index: group.index + shift });
   }
   if (absAtomIds.length > 0) {
-    grafted.unshift({
+    grafted.push({
       kind: "abs",
       index: ABS_STEREO_GROUP_INDEX,
       atomIds: canonicalAtomIds(absAtomIds),
     });
   }
+  // Sorted, not appended: `insertFragment` hands this straight to
+  // `assembleMolecule`, which validates and reorders nothing, so appending would
+  // leave a pasted `and2` sitting after the target's `or1`. Every individual
+  // write would still be deterministic and the round trip would still lose —
+  // loading the written file gives the canonical order back, and the two files
+  // would differ by nothing but the order of two lines.
+  sortStereoGroups(grafted);
   return grafted;
 }
