@@ -55,6 +55,17 @@ const CHANNEL_NAME = "chemistry-sketcher/documents";
 let channel: BroadcastChannel | null = null;
 let unavailable = false;
 
+/**
+ * Every live `onDocumentChange` handler's unsubscribe, so that
+ * `closeDocumentsChannel` can drop them even though the effects that
+ * registered them are gone.
+ *
+ * A `Set` of closures rather than the handlers themselves: the handler is
+ * built per call and the channel it was added to is the one captured in the
+ * closure, so replaying these is correct even across a channel swap.
+ */
+const listeners = new Set<() => void>();
+
 function documentsChannel(): BroadcastChannel | null {
   if (unavailable) return null;
   if (channel !== null) return channel;
@@ -122,7 +133,72 @@ export function onDocumentChange(listener: (change: DocumentChange) => void): ()
     listener({ kind, id });
   };
   live.addEventListener("message", handler);
-  return () => {
+  // Registered so that `closeDocumentsChannel` can reach a handler whose
+  // effect is gone — and REMOVED again by the ordinary unsubscribe, because a
+  // set that only ever grew would be the same leak one level up.
+  const off = (): void => {
     live.removeEventListener("message", handler);
+    listeners.delete(off);
   };
+  listeners.add(off);
+  return off;
+}
+
+
+/**
+ * Close the channel and forget every handler on it.
+ *
+ * WHAT THIS IS FOR, AND WHY IT IS NOT AN ORDINARY LIFECYCLE HOOK. A browser
+ * tab that navigates away takes the channel with it, so nothing in production
+ * ever needs to call this. The one situation that does is a module REPLACED
+ * while the page stays alive — Fast Refresh. `channel` is module scope, so the
+ * outgoing module instance's channel, its message handler, and the closure
+ * over the editor store that handler reaches are all still registered with the
+ * browser while the incoming instance opens a second channel of its own. Edit
+ * a file thirty times in a session and thirty channels are listening, each
+ * holding a document; that is one of the retainers behind the steady heap
+ * climb in manual notes 3.
+ *
+ * Idempotent, and safe to call when no channel was ever opened: both are
+ * ordinary during teardown.
+ */
+export function closeDocumentsChannel(): void {
+  for (const off of listeners) off();
+  listeners.clear();
+  const live = channel;
+  channel = null;
+  // Reset, not sticky: a fresh module instance must be free to try again. The
+  // flag records "this environment has no BroadcastChannel", which is a
+  // property of the environment and is re-derived on the next call.
+  unavailable = false;
+  try {
+    live?.close();
+  } catch {
+    // Already closed. Nothing here is worth throwing over.
+  }
+}
+
+/**
+ * DEV ONLY, AND DEAD CODE IN A PRODUCTION BUILD.
+ *
+ * `import.meta.hot` is defined by the dev bundler and replaced with a literal
+ * `undefined` in `next build`, so this whole block is dropped from the shipped
+ * bundle — it costs the app nothing and exists purely so that `pnpm dev` does
+ * not accumulate one `BroadcastChannel`, one message handler and one retained
+ * document per Fast Refresh (decision 94).
+ *
+ * The cast is the narrowest way to say this without pulling Vite's ambient
+ * client types into a Next app: `import.meta.hot` is not in the TypeScript lib
+ * and declaring it globally would claim it exists everywhere. TypeScript
+ * erases the cast, so the bundler still sees the literal `import.meta.hot`
+ * member access it looks for.
+ */
+interface HotModule {
+  readonly hot?: { dispose(callback: () => void): void } | undefined;
+}
+
+if ((import.meta as ImportMeta & HotModule).hot) {
+  (import.meta as ImportMeta & HotModule).hot?.dispose(() => {
+    closeDocumentsChannel();
+  });
 }
