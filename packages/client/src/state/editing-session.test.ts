@@ -33,16 +33,15 @@
  * gap is a source-level property and `src/lib/weak-cache.node.test.ts` is its
  * guard. Neither test is the contract on its own.
  *
- * The heap figure is still worth having, so it is measured and reported when
- * the runner was started with `--expose-gc`:
- *
- *     NODE_OPTIONS=--expose-gc pnpm --filter @starter/client exec \
- *       vitest run --project node src/state/editing-session.test.ts
- *
- * Measured that way on the 300-atom stress fixture, 300 transactions of 10
- * pointer frames each (3000 molecule edits, 3000 scene builds): 28.4 MB at the
- * start, 52.2 MB after 100, 58.2 MB after 150, and 58.0 MB at the end — a
- * plateau at the point the history cap starts dropping its oldest entries.
+ * AND THE COUNTS ARE ONLY HALF THE CONTRACT. Every assertion here is a bound
+ * on the NEWEST document, and the newest document has at most one cache entry
+ * whether the keys are weak or strong; `documentsRetained` sees the difference
+ * only because `keysRetained` can count a container that degraded to a strong
+ * one. Whether an OLD document is actually collectable is a question for a
+ * forced collection, and decision 86's harness —
+ * `src/state/document-lifetime.leak.test.ts`, in its own vitest project — is
+ * where it is asked. This file stays because it is fast, needs no collector,
+ * and names which KIND of key grew when one does.
  */
 
 import { describe, expect, it } from "vitest";
@@ -135,30 +134,11 @@ describe("a long editing session", () => {
     expect(derivedCacheStats().moleculesRetained).toBe(0);
   });
 
-  // SKIPPED, NOT PASSED, without `--expose-gc`. A heap figure is only honest
-  // after a forced collection, so without one this test has nothing to say; a
-  // body that asserted its own inability to run would report a green test for
-  // a measurement nobody took.
-  it.runIf(typeof (globalThis as { gc?: () => void }).gc === "function")(
-    "does not grow the heap once the history cap is reached",
-    () => {
-    const gc = (globalThis as { gc?: () => void }).gc!;
-    const store = createEditorStore({ document: fixtureDocument("2024-01-01T00:00:00.000Z") });
-
-    drive(store, DEFAULT_HISTORY_LIMIT * 2);
-    gc();
-    gc();
-    const settled = process.memoryUsage().heapUsed;
-
-    drive(store, DEFAULT_HISTORY_LIMIT * 3);
-    gc();
-    gc();
-    const later = process.memoryUsage().heapUsed;
-
-    // Generous, because this is a plateau test and not a byte count: past the
-    // cap, three times as many further edits must not cost another whole
-    // session's worth of memory.
-    expect(later).toBeLessThan(settled * 2 + 16 * 1024 * 1024);
-    },
-  );
+  // THE HEAP FIGURE LIVES IN `document-lifetime.leak.test.ts` NOW, and so does
+  // the question this file cannot ask. A plateau test needs a forced
+  // collection; this project has none, so the version that used to sit here
+  // was `it.runIf(gc)` and skipped itself in every ordinary run — a green
+  // report for a measurement nobody took. Decision 86's harness runs in its
+  // own vitest project with a real collector and asserts the thing a count
+  // cannot: that a document the session has finished with is COLLECTABLE.
 });

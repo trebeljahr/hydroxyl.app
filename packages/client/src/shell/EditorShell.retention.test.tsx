@@ -98,8 +98,19 @@ function drive(edits: number): void {
   }
 }
 
+/**
+ * A MINUTE, NOT THE DEFAULT FIVE SECONDS. 200 transactions of five frames each
+ * and 50 full re-renders of the shell in jsdom is deliberately a lot of work —
+ * a listener added per render has to be unmissable — and it takes about 3.5 s
+ * on a quiet machine. This repo is routinely built by several agent sessions
+ * at once, and under that load the same run has been measured at 15 s. The
+ * default timeout would then fail for machine load rather than for the
+ * property, which is the worst kind of red.
+ */
+const RETENTION_TIMEOUT_MS = 60_000;
+
 describe("the mounted shell", () => {
-  it("registers no listeners, nodes or console output per edit", () => {
+  it("registers no listeners, nodes or console output per edit", { timeout: RETENTION_TIMEOUT_MS }, () => {
     // NO `matchMedia` STUB, deliberately. jsdom has none, and `useTheme`'s
     // mount effect used to read it unguarded — so mounting the shell threw
     // before it rendered anything, which is why no unit test had ever mounted
