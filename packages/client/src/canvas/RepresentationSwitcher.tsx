@@ -137,8 +137,30 @@ export function RepresentationSwitcher(): ReactElement {
               // explanation. `blocked` is tested first all the same: if a
               // blocked panel ever did reach the canvas, "unavailable" is the
               // more important of the two things to say.
+              //
+              // AND BECAUSE IT IS NOT `disabled`, ITS HOVER MUST CLEAR 4.5:1.
+              // WCAG 1.4.3 exempts INACTIVE controls from the contrast floor;
+              // this one is active, so the exemption never covered it. Carrying
+              // the muted ink through the hover put `--muted-foreground`
+              // (rgb 115) on `--accent` (rgb 245) in light mode: 4.349:1, under
+              // the floor, at precisely the moment the pointer is on the button
+              // in order to read `availability.message`. The idle pair is fine
+              // (115 on rgb 255 is 4.742:1), which is why this hid for so long.
+              //
+              // SO THE INK GOES TO FULL CONTRAST ON HOVER, and the entry still
+              // reads as unavailable, because the ink was never the thing saying
+              // so. The LINE-THROUGH says it — it survives the hover untouched —
+              // and the `title` spells out the reason. Ink was the third and
+              // weakest of those three signals, and it is the only one the
+              // contrast floor binds, so it is the one that yields. Pairing the
+              // hover ink with its own hover ground (`accent-foreground` on
+              // `accent`: 16.444:1 light, 14.499:1 dark) is what both branches
+              // below already do, so a hovered unavailable entry now reads as
+              // struck through rather than as merely faint — the clearer of the
+              // two, and the same treatment ToolRail's disabled picker entry
+              // needed for the identical token pair.
               blocked
-                ? "bg-background text-muted-foreground line-through hover:bg-accent hover:text-muted-foreground"
+                ? "bg-background text-muted-foreground line-through hover:bg-accent hover:text-accent-foreground"
                 : onCanvas
                   ? "bg-accent text-accent-foreground font-medium"
                   : "bg-background text-foreground hover:bg-accent hover:text-accent-foreground",
@@ -188,16 +210,49 @@ export function RepresentationSwitcher(): ReactElement {
                 return (
                   <label
                     key={key}
+                    // The row, not the box: the colours under test are the
+                    // label's, and Chromium is the only place they can be
+                    // measured, so the e2e run needs a handle on the element
+                    // that declares them.
+                    data-view-flag-row={key}
                     className={cn(
-                      "flex flex-wrap items-center gap-x-2 text-xs",
+                      // `-mx-1 px-1` so the hover highlight below has an edge to
+                      // reach without moving the text off the legend's margin.
+                      "-mx-1 flex flex-wrap items-center gap-x-2 rounded-sm px-1 text-xs",
                       // BOTH branches named, not just the disabled one. A live
                       // label used to carry no colour at all and was legible
                       // only by inheriting from `PopoverContent`; the disabled
                       // one was the only label stating an ink, so a half-applied
                       // cascade left the greyed-out rows as the readable ones.
+                      //
+                      // AND BOTH branches name a GROUND, not only an ink. Naming
+                      // one of the pair is naming neither: `text-popover-
+                      // foreground` is a promise about a contrast ratio, and the
+                      // ratio does not exist until the other half of it is on
+                      // the element too. Until now every label here was legible
+                      // only by inheriting `PopoverContent`'s ground — the exact
+                      // dependency this change exists to remove, one level in
+                      // from the entries that already had it removed.
+                      //
+                      // AND BOTH NAME A HOVER PAIR, including the disabled
+                      // branch, whose hover deliberately repeats its resting
+                      // colours. A state defined by the absence of a class is a
+                      // state that vanishes the moment the cascade hiccups, and
+                      // that is as true of "this row does not react" as it is of
+                      // a resting colour: written down, the non-reaction is a
+                      // decision; left out, it is whatever the cascade does.
+                      //
+                      // The disabled row must not move to `bg-accent`, because
+                      // `--muted-foreground` on `--accent` is 4.349:1 in light
+                      // mode — the same failure just fixed on the blocked panel
+                      // button above. Holding `bg-popover` keeps it at 4.742:1
+                      // light and 7.849:1 dark, and the still ground is itself
+                      // the signal: only the live rows light up under the
+                      // pointer, so hovering the column tells you which switches
+                      // are actually yours, without either row going dim.
                       enabled
-                        ? "text-popover-foreground"
-                        : "text-muted-foreground cursor-not-allowed",
+                        ? "bg-popover text-popover-foreground hover:bg-accent hover:text-accent-foreground"
+                        : "bg-popover text-muted-foreground hover:bg-popover hover:text-muted-foreground cursor-not-allowed",
                     )}
                     title={reason}
                   >

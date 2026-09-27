@@ -688,6 +688,30 @@ async function freezeColourTransitions(page: Page): Promise<void> {
 }
 
 /**
+ * Park the pointer inside an element so `:hover` applies, then read it.
+ *
+ * WHY HOVER IS MEASURED AT ALL. Every other reading here is a RESTING one, and
+ * the 4.5:1 floor binds a control in each state it can be in, not only the one
+ * it sits in. The blocked panel button is the case that made that concrete: it
+ * is deliberately not `disabled`, because its click is how the refusal is read,
+ * so WCAG 1.4.3's exemption for inactive controls never applied to it — and it
+ * used to carry `text-muted-foreground` through the hover, which is 4.349:1 on
+ * `--accent` in light mode. The resting pair passes, so only a hovered reading
+ * can see it.
+ *
+ * `page.mouse.move` RATHER THAN `page.hover`, because hover runs a hit-target
+ * check and these labels wrap a disabled input and a wrapped reason line, so
+ * the centre of the box can land on a child or in the gap between the two lines
+ * and the check fails on markup that is perfectly hoverable. `dy` is a fraction
+ * of the height, so 0.25 reaches the FIRST line of a two-line label.
+ */
+async function parkPointerOn(page: Page, selector: string, dy = 0.5): Promise<void> {
+  const box = await page.locator(selector).boundingBox();
+  if (box === null) throw new Error(`${selector} has no box to hover`);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height * dy);
+}
+
+/**
  * BOTH SCHEMES, because the report was about both and a light-only check would
  * leave the darker half of the claim resting on one person's screenshot. With no
  * stored preference, `shell/theme.ts` falls back to `prefers-color-scheme`, so
@@ -826,4 +850,99 @@ async function runPickerColourChecks(
   // The measured collision, now impossible: a working control and a refused one
   // cannot be the same colour.
   expect(usable.colour).not.toBe(disabledLabel);
+
+  // ── 4. The view options' own labels, resting AND hovered ─────────────────
+  //
+  // These rows were the last place in the strip still legible only by
+  // inheriting `PopoverContent`'s ground: both branches named an ink and
+  // neither named a background, so `paintsOwnGround` was false for every one of
+  // them and the ratio measured above was an ancestor's, not the row's.
+  const rows = { live: "aromaticCircles", refused: "showLocants" } as const;
+  const hoveredGrounds: Record<string, string> = {};
+  for (const [what, flag] of Object.entries(rows)) {
+    const selector = `[data-view-flag-row="${flag}"]`;
+    expect(await paintsOwnGround(page, selector), `${what} label has no ground`).toBe(
+      true,
+    );
+    const resting = await paintedText(page, selector);
+    expect(
+      resting.contrast,
+      `${what} label resting at ${resting.colour} on ${resting.background}`,
+    ).toBeGreaterThanOrEqual(4.5);
+    expectGroundMatchesScheme(resting, scheme, `${what} label resting`);
+
+    await parkPointerOn(page, selector, 0.25);
+    const hovered = await paintedText(page, selector);
+    expect(
+      hovered.contrast,
+      `${what} label hovered at ${hovered.colour} on ${hovered.background}`,
+    ).toBeGreaterThanOrEqual(4.5);
+    expectGroundMatchesScheme(hovered, scheme, `${what} label hovered`);
+    hoveredGrounds[what] = hovered.background;
+  }
+  // The live row lights up under the pointer and the refused one does not, so
+  // hovering the column says which switches are yours. That is the signal the
+  // refused row keeps INSTEAD of going dim: the failing pairing was precisely
+  // the muted ink on the accent ground, so it holds its own ground and its own
+  // ink through the hover, and states both rather than leaving the non-reaction
+  // to the absence of a class.
+  expect(hoveredGrounds.refused).not.toBe(hoveredGrounds.live);
+  await page.keyboard.press("Escape");
+
+  // ── 5. A genuinely BLOCKED panel button, resting AND hovered ─────────────
+  //
+  // Reached the only way the app offers one. A fresh sketch is empty, where
+  // "condensed" is unavailable merely FOR BEING EMPTY — which is not `blocked`,
+  // and is why the panel can be added at all — and then a ring, because a ring
+  // has no condensed formula. The button that comes out is the one control here
+  // that is enabled, struck through, and carries a refusal in its `title`.
+  await page.keyboard.press("ControlOrMeta+k");
+  await page.click('[data-palette-command="file.new"]');
+  const panelList = '[data-shell="figure-panels"]';
+  await page.locator(`${panelList} [aria-label="View for the new panel"]`).click();
+  await page.getByRole("option", { name: "Condensed formula", exact: true }).click();
+  await page.locator('[data-shell="add-panel"]').click();
+  await page.click('[data-tool="ring"]');
+  const canvas = (await page.locator(CANVAS).boundingBox())!;
+  await page.mouse.click(canvas.x + canvas.width / 2, canvas.y + canvas.height / 2);
+
+  const third = page.locator("[data-switcher-panel]").nth(2);
+  await expect(third).toBeVisible();
+  // Enabled on purpose: the click is the way to read the refusal, which is what
+  // takes the button out of 1.4.3's exemption for inactive controls.
+  await expect(third).toBeEnabled();
+  await expect(third).toHaveAttribute(
+    "title",
+    "A ring has no condensed formula; use the sum formula instead.",
+  );
+  const blockedId = await third.getAttribute("data-switcher-panel");
+  const blockedSelector = `[data-switcher-panel="${blockedId ?? ""}"]`;
+  // The line-through is what says "unavailable", and it is not a colour, so it
+  // survives the ink going to full contrast below.
+  expect(
+    await page.evaluate(
+      (sel) => getComputedStyle(document.querySelector(sel)!).textDecorationLine,
+      blockedSelector,
+    ),
+  ).toContain("line-through");
+
+  const blockedResting = await paintedText(page, blockedSelector);
+  expect(
+    blockedResting.contrast,
+    `blocked resting at ${blockedResting.colour} on ${blockedResting.background}`,
+  ).toBeGreaterThanOrEqual(4.5);
+  expectGroundMatchesScheme(blockedResting, scheme, "blocked resting");
+
+  await parkPointerOn(page, blockedSelector);
+  const blockedHovered = await paintedText(page, blockedSelector);
+  // The assertion the shipped class list failed: 4.349:1 in light mode, because
+  // the hover moved the ground to `--accent` and kept `--muted-foreground`.
+  expect(
+    blockedHovered.contrast,
+    `blocked hovered at ${blockedHovered.colour} on ${blockedHovered.background}`,
+  ).toBeGreaterThanOrEqual(4.5);
+  expectGroundMatchesScheme(blockedHovered, scheme, "blocked hovered");
+  // And the hover really is a different painting, so the check above is not
+  // quietly re-measuring the resting state.
+  expect(blockedHovered.background).not.toBe(blockedResting.background);
 }
