@@ -24,6 +24,7 @@ import {
   flipAtoms,
   horizontalMirror,
   ORIGIN,
+  stereoGroupCoverage,
   withStereoGroups,
 } from "@starter/chem-core";
 import type { AtomId, Molecule } from "@starter/chem-core";
@@ -551,6 +552,37 @@ describe("decision 88: rac- and rel- above the structure", () => {
     const paddedLayout = annotationLayout(padded, PUBLICATION_STYLE, DESCRIPTORS);
     expect(placementsOfKind(paddedLayout, "stereoPrefix").map((p) => p.text)).toEqual(["rac-"]);
     expect(placementsOfKind(paddedLayout, "stereoGroup")).toEqual([]);
+  });
+
+  it("tells two AND collections apart by their stored INDEX, not by kind", () => {
+    // The same case as above with the second collection changed from `or1` to
+    // `and2`, which is what a real racemate import looks like: kind alone no
+    // longer separates the two, so only the stored index (decision 92) can say
+    // which group the prefix speaks for.
+    //
+    // Reachable exactly as the `or1` case is — a V3000 file carrying
+    // `MDLV30/STERAC1 ATOMS=(2 2 4)` and `MDLV30/STERAC2 ATOMS=(1 1)` — and
+    // without this the figure prints `rac-` alone while the file holds TWO
+    // statements, which is the one disagreement decision 97 exists to forbid.
+    const { mol, c2, c3 } = chlorobutanol();
+    const twoAnd = withStereoGroups(mol, [
+      { kind: "and", index: 1, atomIds: [c2, c3] },
+      { kind: "and", index: 2, atomIds: ["a1" as AtomId] },
+    ]);
+    // The prefix really does come from `and1`, so the tag below is the one it
+    // does NOT speak for rather than an accident of ordering.
+    expect(stereoGroupCoverage(twoAnd)).toMatchObject({
+      kind: "whole",
+      prefix: "rac-",
+      group: { kind: "and", index: 1 },
+    });
+    for (const style of STYLES) {
+      const layout = annotationLayout(twoAnd, style, DESCRIPTORS);
+      expect(placementsOfKind(layout, "stereoPrefix").map((p) => p.text)).toEqual(["rac-"]);
+      const tags = placementsOfKind(layout, "stereoGroup");
+      expect(tags.map((p) => p.text), style.name).toEqual(["and2"]);
+      expect(tags[0]!.source).toEqual({ kind: "atom", atomId: "a1" });
+    }
   });
 
   it("loses to the letter and to the tag when they contest one slot", () => {
