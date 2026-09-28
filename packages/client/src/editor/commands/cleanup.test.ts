@@ -11,7 +11,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { benzene, elementCounts, netCharge, translateAtoms } from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
+import { modelToPx } from "@starter/chem-render";
 import { createDocument } from "@starter/shared";
+
+import { buildCanvasScene } from "@/canvas/scene-bridge";
 
 import { createEditorStore } from "@/state";
 import type { EditorStore } from "@/state";
@@ -106,6 +109,49 @@ describe("cleanUpStructure", () => {
       "Atoms a1, a2 carry a display label",
     );
     expect(store.getState().history.past.length).toBe(entries);
+  });
+
+  it("points at the atom RDKit refused: held, selected and centred, until the next edit", async () => {
+    // RDKit names the atom by INDEX, and the bridge maps it back to an id.
+    // Shown bare, "atom # 3" was a number nobody could find on the drawing.
+    const store = storeWith(benzene());
+    const target = store.getState().document.molecule.atomIds[3]!;
+    const message = "Explicit valence for atom # 3 C, 5, is greater than permitted";
+    const entries = store.getState().history.past.length;
+
+    await cleanUpStructure(store, async () => ({
+      ok: false,
+      error: { message, atomIds: [target] },
+    }));
+
+    const state = store.getState();
+    expect(state.ui.refusal).toEqual({ source: "Clean up", atomIds: [target], message });
+    expect(state.selection.atomIds).toEqual([target]);
+    expect(state.ui.statusMessage).toBe(`Clean up stopped at the selected atom: ${message}`);
+    expect(state.history.past.length).toBe(entries);
+    const centre = modelToPx(
+      buildCanvasScene(state.document, null).style,
+      state.document.molecule.atoms[target]!.pos,
+    );
+    expect(state.viewport.pan).toEqual(centre);
+
+    // Its ids describe the molecule that was refused, so the next edit — any
+    // edit — takes it away.
+    state.applyMoleculeEdit("Nudge", (m) => translateAtoms(m, [m.atomIds[0]!], { x: 1, y: 0 }));
+    expect(store.getState().ui.refusal).toBeNull();
+  });
+
+  it("does not point at atoms of a drawing that changed during the await", async () => {
+    const store = storeWith(benzene());
+    const target = store.getState().document.molecule.atomIds[0]!;
+    await cleanUpStructure(store, async () => {
+      store
+        .getState()
+        .applyMoleculeEdit("Draw bond", (m) => translateAtoms(m, [m.atomIds[1]!], { x: 1, y: 1 }));
+      return { ok: false, error: { message: "refused", atomIds: [target] } };
+    });
+    expect(store.getState().ui.refusal).toBeNull();
+    expect(store.getState().ui.statusMessage).toBe("refused");
   });
 
   it("survives a throwing layout without leaving a transaction open", async () => {

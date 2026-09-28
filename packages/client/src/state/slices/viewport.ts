@@ -18,6 +18,7 @@
 import { castDraft } from "immer";
 import type { EditorSliceCreator, ViewportSlice } from "../types";
 import {
+  centreOn as vpCentreOn,
   createViewport,
   clampZoom,
   panBy as vpPanBy,
@@ -73,6 +74,10 @@ export function createViewportSlice(
         // in chem-render, and duplicating the scale here would let the two
         // disagree the first time a style preset changed the bond length.
         apply(vpZoomToFit(get().viewport, bounds, margin));
+      },
+
+      centreOn(scenePoint) {
+        apply(vpCentreOn(get().viewport, scenePoint));
       },
 
       resetViewport(zoom = 1) {

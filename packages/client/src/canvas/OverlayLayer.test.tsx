@@ -32,6 +32,7 @@ import type { RenderScene } from "@starter/chem-render";
 
 import { EMPTY_SELECTION } from "@/state";
 import type { Selection } from "@/state";
+import type { EditorIssue } from "@/editor/issues";
 
 import { NO_INTERACTION_OVERLAY } from "@/editor/interaction";
 
@@ -58,6 +59,32 @@ function handleFrame(element: Element): { x: number; y: number; scale: number } 
   );
   if (match === null) throw new Error("rotate mark has no screen frame");
   return { x: Number(match[1]), y: Number(match[2]), scale: Number(match[3]) };
+}
+
+/** What `valenceIssues` reports for a carbon with five bonds. */
+function overValentIssue(atomId: string, bondIds: readonly string[]): EditorIssue {
+  return {
+    kind: "over-valent",
+    severity: "error",
+    atomId,
+    atomIds: [atomId],
+    bondIds,
+    message: "C has 5 bonds but allows at most 4",
+    label: "C has 5 bonds; max 4",
+  };
+}
+
+/** A decision-77 warning: sound chemistry this build cannot express. */
+function alleneIssue(atomId: string): EditorIssue {
+  return {
+    kind: "unrepresentable-stereo",
+    severity: "warning",
+    atomId,
+    atomIds: [atomId],
+    bondIds: [],
+    message: "contains a stereogenic axis or plane this build cannot express",
+    label: "allene axis not expressible",
+  };
 }
 
 const SELECTION: Selection = {
@@ -343,59 +370,76 @@ describe("OverlayLayer — gesture marks", () => {
     expect(Number(rect.getAttribute("height"))).toBeGreaterThan(0);
   });
 
-  it("badges a valence issue without refusing anything", () => {
-    const container = renderGesture({
-      issues: [
-        { atomId: "a1", severity: "error", message: "C has 5 bonds but allows at most 4" },
-      ],
-    });
+  it("rings an error's atom, bands its bonds, and labels it — refusing nothing", () => {
+    const container = renderGesture({ issues: [overValentIssue("a1", ["b7", "b12"])] });
+
+    const halo = container.querySelector('[data-overlay="issue-halo"]')!;
+    expect(halo.getAttribute("data-overlay-target")).toBe("a1");
+    expect(halo.getAttribute("stroke")).toBe("#dc2626");
+    // Outside the selection halo, so a located atom shows both rings.
+    const centre = INDEX.atomCentre("a1")!;
+    expect(Number(halo.getAttribute("cx"))).toBeCloseTo(centre.x, 6);
+    expect(Number(halo.getAttribute("r"))).toBeGreaterThan(13);
+
+    const bands = [...container.querySelectorAll('[data-overlay="issue-bond"]')];
+    expect(bands.map((b) => b.getAttribute("data-overlay-target"))).toEqual(["b7", "b12"]);
+
+    const label = container.querySelector('[data-overlay="issue-label"]')!;
+    expect(label.textContent).toBe("C has 5 bonds; max 4");
+    expect(label.getAttribute("data-overlay-target")).toBe("a1");
+    // An error is a ring and a label, never the warning's dot.
+    expect(container.querySelector('[data-overlay="valence-issue"]')).toBeNull();
+  });
+
+  it("keeps the label one SCREEN size whatever the zoom", () => {
+    const at = (zoom: number): number =>
+      Number(
+        renderGesture({ issues: [overValentIssue("a1", [])], zoom })
+          .querySelector('[data-overlay="issue-label"]')!
+          .getAttribute("font-size"),
+      );
+    // Scene px times zoom is screen px: the product is the constant.
+    expect(at(1) * 1).toBeCloseTo(at(0.25) * 0.25, 6);
+    expect(at(4) * 4).toBeCloseTo(at(1) * 1, 6);
+  });
+
+  it("marks a warning with an amber dot and no ring or label (decision 77)", () => {
+    // A correctly drawn allene carries a mark because this build cannot
+    // state its configuration, not because the drawing is wrong. A red ring
+    // and a label would say the opposite of what is true.
+    const container = renderGesture({ issues: [alleneIssue("a2")] });
     const badge = container.querySelector('[data-overlay="valence-issue"]')!;
-    expect(badge).not.toBeNull();
-    expect(badge.getAttribute("data-overlay-target")).toBe("a1");
-    expect(badge.querySelector("title")?.textContent).toContain("at most 4");
+    expect(badge.getAttribute("data-overlay-severity")).toBe("warning");
+    expect(badge.getAttribute("fill")).toBe("#d97706");
+    expect(container.querySelector('[data-overlay="issue-halo"]')).toBeNull();
+    expect(container.querySelector('[data-overlay="issue-label"]')).toBeNull();
   });
 
-  it("colours a warning badge differently from an error badge (decision 77)", () => {
-    // A correctly drawn allene carries a badge because this build cannot
-    // state its configuration, not because the drawing is wrong. In the error
-    // colour that badge says the opposite of what is true.
-    const container = renderGesture({
-      issues: [
-        { atomId: "a1", severity: "error", message: "C has 5 bonds but allows at most 4" },
-        {
-          atomId: "a2",
-          severity: "warning",
-          message: "contains a stereogenic axis or plane this build cannot express",
-        },
-      ],
-    });
-    const badges = [...container.querySelectorAll('[data-overlay="valence-issue"]')];
-    expect(badges).toHaveLength(2);
-    const bySeverity = new Map(
-      badges.map((b) => [b.getAttribute("data-overlay-severity"), b.getAttribute("fill")]),
-    );
-    expect(bySeverity.get("error")).toBe("#dc2626");
-    expect(bySeverity.get("warning")).toBe("#d97706");
-    expect(bySeverity.get("error")).not.toBe(bySeverity.get("warning"));
-  });
-
-  it("badges two issues on one atom rather than dropping the second", () => {
+  it("stacks two errors' labels on one atom rather than dropping or overprinting one", () => {
     // An atom can carry a valence error and a structural one at once — a wedge
-    // on an over-valent carbon is one edit away — and the two arrive as one
-    // concatenated list from `EditorCanvas`. Keyed on the atom id alone, React
-    // renders the first and silently discards the second.
+    // on an over-valent carbon is one edit away. Keyed on the atom id alone,
+    // React renders the first and silently discards the second.
     const container = renderGesture({
       issues: [
-        { atomId: "a1", severity: "error", message: "C has 5 bonds but allows at most 4" },
+        overValentIssue("a1", []),
         {
+          kind: "wedge-on-non-stereocenter",
+          severity: "error",
           atomId: "a1",
-          severity: "warning",
+          atomIds: ["a1", "a2"],
+          bondIds: ["b7"],
           message: "a wedge bond starts at an atom that is not a stereocentre",
+          label: "wedge at a non-stereocentre",
         },
       ],
     });
-    const badges = container.querySelectorAll('[data-overlay="valence-issue"]');
-    expect(badges).toHaveLength(2);
+    const labels = [...container.querySelectorAll('[data-overlay="issue-label"]')];
+    expect(labels.map((l) => l.textContent)).toEqual([
+      "C has 5 bonds; max 4",
+      "wedge at a non-stereocentre",
+    ]);
+    expect(labels[0]!.getAttribute("y")).not.toBe(labels[1]!.getAttribute("y"));
+    expect(container.querySelectorAll('[data-overlay="issue-halo"]')).toHaveLength(2);
   });
 
   it("draws the rotate handle it is given, and none when it is given none", () => {
@@ -478,12 +522,13 @@ describe("OverlayLayer — gesture marks", () => {
         angle: 0,
         handleHovered: false,
       },
-      issues: [{ atomId: "a1", severity: "error", message: "x" }],
+      issues: [overValentIssue("a1", ["b7"]), alleneIssue("a2")],
       rotateHandle: rotateHandleGeometry(INDEX, ["a1", "a2"]),
     });
     expect(container.querySelectorAll("[data-atom-id]")).toHaveLength(0);
     expect(container.querySelectorAll("[data-bond-id]")).toHaveLength(0);
-    // Six marks: ghost, target, marquee, pivot, badge, handle. The marquee and
+    // Marks: ghost, target, marquee, pivot, issue ring, band, label and badge,
+    // handle. The marquee and
     // the handle are mutually exclusive in the real canvas — a sweep hides the
     // handle — so this fixture asks for the marquee and gets no handle.
     expect(container.querySelectorAll("[data-overlay]").length).toBeGreaterThan(3);
@@ -492,9 +537,10 @@ describe("OverlayLayer — gesture marks", () => {
 
 describe("OverlayLayer — sized in bonds, so it is the same in every style (decision 107)", () => {
   // Every mark sized with the drawing: two halos and two bands, a focus
-  // ring, a badge, and the gesture marks. The rotate handle, its preview and
-  // the pivot are UI sized in SCREEN px, so they are checked apart below.
-  const SCREEN_SIZED = new Set(["rotate-handle", "rotate-preview", "rotate-pivot"]);
+  // ring, an error's ring and band, a warning's dot, and the gesture marks.
+  // The rotate handle, its preview, the pivot and the issue label are UI
+  // sized in SCREEN px, so they are checked apart below.
+  const SCREEN_SIZED = new Set(["rotate-handle", "rotate-preview", "rotate-pivot", "issue-label"]);
 
   function everyMark(style: typeof SCREEN_STYLE, withMarquee: boolean): Element[] {
     const scene = buildScene(MOL, style, representation("skeletal"));
@@ -507,7 +553,7 @@ describe("OverlayLayer — sized in bonds, so it is the same in every style (dec
           hoveredAtomId="a3"
           hoveredBondId="b10"
           focusedAtomId="a5"
-          issues={[{ atomId: "a2", severity: "error", message: "x" }]}
+          issues={[overValentIssue("a2", ["b8"]), alleneIssue("a6")]}
           rotateHandle={rotateHandleGeometry(index, ["a1", "a2", "a3"])}
           interaction={{
             ghost: { from: { x: 0, y: 0 }, to: { x: 1, y: 1 } },
@@ -534,7 +580,7 @@ describe("OverlayLayer — sized in bonds, so it is the same in every style (dec
         screen.map((el) => el.getAttribute("data-overlay")),
       );
       expect(screen.filter((el) => !SCREEN_SIZED.has(el.getAttribute("data-overlay")!)).length)
-        .toBe(withMarquee ? 9 : 8);
+        .toBe(withMarquee ? 11 : 10);
 
       screen.forEach((mark, at) => {
         const other = publication[at]!;

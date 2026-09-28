@@ -90,7 +90,7 @@ import {
 } from "./cip.js";
 import { bondsAt, getBond, requireAtom, requireBond } from "./molecule.js";
 import { liftParity, type LiftLigand, type LiftOutcome } from "./parity.js";
-import { unrepresentableStereo } from "./stereo-axes.js";
+import { unrepresentableStereo, type UnrepresentableStereoKind } from "./stereo-axes.js";
 import { stereoGroupsOf } from "./stereo-groups.js";
 import type { AtomId, BondId, Bond, Molecule, StereoGroup } from "./types.js";
 
@@ -137,15 +137,22 @@ export type StructuralIssueKind =
 /**
  * A drawing problem that is not a valence problem.
  *
- * SAME SHAPE AS `ValenceIssue` on purpose, keyed on an ATOM: the canvas badge
- * in the editor renders from `atomCentre(issue.atomId)` and needs no change to
- * show one of these. `bondId` is OMITTED rather than set to undefined —
- * chem-core runs `exactOptionalPropertyTypes`.
+ * SAME SHAPE AS `ValenceIssue` on purpose, keyed on an ATOM: the canvas
+ * renders from `atomCentre(issue.atomId)` whichever family an issue came
+ * from. `atomIds` and `bondIds` are everything the issue concerns, anchor
+ * first — both ends of a misplaced wedge, every bond of a stereogenic axis —
+ * so the overlay marks the whole problem and not only its anchor. `bondId` is
+ * the one bond a wedge issue is ABOUT, and is OMITTED rather than set to
+ * undefined — chem-core runs `exactOptionalPropertyTypes`.
  */
 export interface StructuralIssue {
   readonly atomId: AtomId;
+  readonly atomIds: readonly AtomId[];
+  readonly bondIds: readonly BondId[];
   readonly severity: "error" | "warning";
   readonly message: string;
+  /** The few words that fit beside the atom on the canvas. */
+  readonly label: string;
   readonly kind: StructuralIssueKind;
   readonly bondId?: BondId;
 }
@@ -557,11 +564,22 @@ function computeDoubleBondDescriptor(
 // Structural issues
 // ---------------------------------------------------------------------------
 
+/** What the canvas calls each kind in the few words beside the anchor atom. */
+const UNREPRESENTABLE_LABEL: Readonly<Record<UnrepresentableStereoKind, string>> = {
+  "allene-axis": "allene axis",
+  "cumulene-cis-trans": "cumulene cis/trans",
+  "biaryl-axis": "biaryl axis",
+  "spiro-axis": "spiro axis",
+  "planar-cyclophane": "planar chirality",
+  helicene: "helicity",
+};
+
 /**
  * Drawing problems stereochemistry can see, keyed on the atom to badge.
  *
- * REPORTED AND NEVER REPAIRED. A wedge whose WIDE end turns out to be the
- * stereocentre gets its own message: the fix is to flip the bond. A molecule
+ * REPORTED AND NEVER REPAIRED HERE. A wedge whose WIDE end turns out to be the
+ * stereocentre gets its own message: the fix is to flip the bond, and
+ * `issueFixes` in issues.ts offers that as a click the author makes. A molecule
  * with a stereogenic axis or plane gets an `unrepresentable-stereo` warning on
  * that element's anchor atom, so an allene never reads as a molecule with
  * nothing to say about its configuration.
@@ -577,8 +595,14 @@ export function structuralIssues(mol: Molecule): readonly StructuralIssue[] {
     if (isStereocenter(mol, bond.from)) continue;
 
     const backwards = isStereocenter(mol, bond.to);
+    const anchor = backwards ? bond.to : bond.from;
     issues.push({
-      atomId: backwards ? bond.to : bond.from,
+      atomId: anchor,
+      atomIds: [anchor, anchor === bond.from ? bond.to : bond.from],
+      bondIds: [bondId],
+      label: backwards
+        ? `${bond.stereo} points the wrong way`
+        : `${bond.stereo} at a non-stereocentre`,
       // AN ERROR, not a warning (decision 77). A wedge that names no
       // configuration, or that names it at the wrong end, makes the exported
       // file say something the author did not draw — the same kind of wrong
@@ -598,9 +622,15 @@ export function structuralIssues(mol: Molecule): readonly StructuralIssue[] {
   for (const element of unrepresentableStereo(mol)) {
     const issue: StructuralIssue = {
       atomId: element.anchorAtomId,
+      atomIds: [
+        element.anchorAtomId,
+        ...element.atomIds.filter((id) => id !== element.anchorAtomId),
+      ],
+      bondIds: element.bondIds,
       severity: "warning",
       kind: "unrepresentable-stereo",
       message: `contains a stereogenic axis or plane this build cannot express: ${element.reason}`,
+      label: `${UNREPRESENTABLE_LABEL[element.kind]} not expressible`,
     };
     issues.push(element.bondIds[0] === undefined ? issue : { ...issue, bondId: element.bondIds[0] });
   }

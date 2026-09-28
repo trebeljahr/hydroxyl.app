@@ -134,15 +134,16 @@ describe("EditorCanvas — the DOM contract", () => {
     ).toBe(6);
   });
 
-  it("badges a wedge drawn on an atom that is not a stereocentre", () => {
+  it("rings a wedge drawn on an atom that is not a stereocentre", () => {
     // The acceptance criterion, end to end: chem-core reports it, the canvas
     // has to show it. Propan-2-ol's carbinol carbon carries two methyls, so
     // the wedge asserts a configuration that does not exist — and it renders
-    // perfectly, which is why only a badge catches it.
+    // perfectly, which is why only the overlay catches it.
     //
-    // Composed in `EditorCanvas` from `valenceIssues` plus `structuralIssues`,
-    // which is the wiring under test: the second list is a sibling of the
-    // first rather than part of it, because stereo perception reads valence.
+    // chem-core's `chemistryIssues` composes the valence and the structural
+    // families, and `EditorCanvas` reads it through `editorIssues`: that is
+    // the wiring under test, since the structural list is a sibling of the
+    // valence one rather than part of it — stereo perception reads valence.
     const molecule = buildMolecule((b) => {
       const c1 = b.atom("C", { x: 0, y: 0 });
       const c2 = b.atom("C", { x: 0.87, y: 0.5 });
@@ -155,11 +156,18 @@ describe("EditorCanvas — the DOM contract", () => {
     editorStore.getState().openDocument({ ...DOC, molecule });
     render(<EditorCanvas />);
 
-    const badge = document.querySelector('[data-overlay="valence-issue"]');
-    expect(badge).not.toBeNull();
-    // Badged on the narrow end, which is where the wedge makes its claim.
-    expect(badge?.getAttribute("data-overlay-target")).toBe("a2");
-    expect(badge?.querySelector("title")?.textContent).toContain("stereocentre");
+    const halo = document.querySelector('[data-overlay="issue-halo"]');
+    expect(halo).not.toBeNull();
+    // Ringed on the narrow end, which is where the wedge makes its claim,
+    // with the wedge itself banded and the reason printed beside it.
+    expect(halo?.getAttribute("data-overlay-target")).toBe("a2");
+    const band = document.querySelector('[data-overlay="issue-bond"]');
+    expect(band?.getAttribute("data-overlay-target")).toBe(
+      Object.values(molecule.bonds).find((bond) => bond.stereo === "wedge")!.id,
+    );
+    expect(document.querySelector('[data-overlay="issue-label"]')?.textContent).toBe(
+      "wedge at a non-stereocentre",
+    );
   });
 
   it("paints through the viewport's own affine map, not a second one", () => {

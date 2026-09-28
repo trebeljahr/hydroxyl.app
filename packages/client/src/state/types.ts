@@ -181,6 +181,28 @@ export interface UiState {
   /** The full periodic table behind the element picker's "Show all". */
   readonly periodicTableOpen: boolean;
   readonly figureExport: FigureExportSettings;
+  /**
+   * What an outside toolkit refused about THE CURRENT MOLECULE, or nothing.
+   *
+   * chem-core's own issues are derived from the molecule and need no state.
+   * This is the other kind: RDKit refusing a "Clean up" over an atom chem-core
+   * accepts — its valence table and chem-core's still differ for some charged
+   * hypervalent atoms — or over one chem-core already reports. It cannot be
+   * derived, so it is held, and it is cleared the moment the molecule changes
+   * (see `createEditorStore`), because the atom ids it names belong to the
+   * molecule that was refused and a stale mark would point at the wrong
+   * atom — or at none.
+   */
+  readonly refusal: ToolkitRefusal | null;
+}
+
+/** An outside toolkit's refusal, located. See `UiState.refusal`. */
+export interface ToolkitRefusal {
+  /** Who refused, as the list names it: "RDKit". */
+  readonly source: string;
+  readonly atomIds: readonly AtomId[];
+  /** The toolkit's own sentence, verbatim. */
+  readonly message: string;
 }
 
 /**
@@ -342,6 +364,8 @@ export interface ViewportSlice {
    *  chem-render's `RenderStyle`, so the store cannot derive the molecule's
    *  pixel extent on its own. */
   zoomToFit(bounds: Bounds, margin?: number): void;
+  /** Puts a SCENE px point at the centre of the view, at the current zoom. */
+  centreOn(scenePoint: Vec2): void;
   /** Back to the origin at `zoom`, 1 when omitted. The view command passes
    *  the zoom that reads 100% for the document's style (decision 107). */
   resetViewport(zoom?: number): void;
@@ -365,6 +389,7 @@ export interface UiSlice {
   setPeriodicTableOpen(open: boolean): void;
   setFigureExport(patch: Partial<FigureExportSettings>): void;
   clearElementInputBuffer(): void;
+  setRefusal(refusal: ToolkitRefusal | null): void;
 }
 
 export type EditorState = DocumentSlice &

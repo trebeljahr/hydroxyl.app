@@ -1,9 +1,12 @@
 import { createRequire } from "node:module";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
+  applyIssueFix,
   benzene,
   buildMolecule,
+  chemistryIssues,
   elementCounts,
+  issueFixes,
   netCharge,
   requireAtom,
   requireBond,
@@ -21,6 +24,7 @@ import {
   type RDKitModuleLike,
 } from "./ops";
 import {
+  atomIdsNamedByRdkit,
   hasMeaningfulCoordinates,
   maxCoordinateDelta,
   moleculeToMolblock,
@@ -468,5 +472,79 @@ describe("InChI", () => {
     if (!op.ok) return;
     expect(op.value.inchi).toBe("InChI=1S/C4H5N/c1-2-4-5-3-1/h1-5H");
     expect(op.value.inchiKey).toMatch(/^[A-Z]{14}-[A-Z]{10}-[A-Z]$/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A refused "Clean up" names an atom the user can find
+//
+// Cleanup is `normalizeMolblock(..., "generate")`. When RDKit's sanitizer
+// refuses, all it says is an index; `atomIdsNamedByRdkit` is what turns that
+// into the id the overlay rings. Asserted against the real wasm, because the
+// wording being parsed is RDKit's and only RDKit can say it has not changed.
+// ---------------------------------------------------------------------------
+
+describe("a refused Clean up names the atom", () => {
+  /** CH3-NH3, three hydrogens PINNED on a nitrogen left uncharged. */
+  function unchargedMethylammonium() {
+    return buildMolecule((b) => {
+      const c = b.atom("C", vec(0, 0));
+      b.bond(c, b.atom("N", vec(1, 0), { explicitHydrogenCount: 3 }), 1);
+    });
+  }
+
+  function cleanUp(mol: Parameters<typeof moleculeToMolblock>[0]) {
+    const written = moleculeToMolblock(mol);
+    if (!written.ok) throw new Error(written.error.message);
+    return normalizeMolblock(RDKit, written.value, "generate", log);
+  }
+
+  it("lands on the atom chem-core marks, for a pinned hydrogen count that overflows", () => {
+    // The regression: chem-core used to call this clean while RDKit refused
+    // it, so the status line named "atom # 1" and the canvas showed nothing.
+    const mol = unchargedMethylammonium();
+    const nitrogen = mol.atomIds[1]!;
+    expect(chemistryIssues(mol).map((issue) => issue.atomId)).toEqual([nitrogen]);
+
+    const op = cleanUp(mol);
+    expect(op.ok).toBe(false);
+    if (op.ok) return;
+    expect(op.kind).toBe("sanitize-failed");
+    expect(atomIdsNamedByRdkit(mol, [op.message, ...op.notes].join("\n"))).toEqual([nitrogen]);
+  });
+
+  it("cleans up once the offered fix is taken", () => {
+    const mol = unchargedMethylammonium();
+    const [issue] = chemistryIssues(mol);
+    for (const fix of issueFixes(mol, issue!)) {
+      const fixed = applyIssueFix(mol, fix);
+      expect(chemistryIssues(fixed), fix.title).toEqual([]);
+      expect(cleanUp(fixed).ok, fix.title).toBe(true);
+    }
+  });
+
+  it("lands on the right atom when that atom is not the first one written", () => {
+    // Iodine heptafluoride drawn after an ethane, so RDKit names the iodine as
+    // "atom # 2": a mapping that ignored the offset would ring a carbon.
+    // chem-core and RDKit agree it is over-valent — both stop iodine at 5 —
+    // and the refusal has to land on the same atom chem-core marks.
+    const mol = buildMolecule((b) => {
+      b.bond(b.atom("C", vec(-2.7, 0)), b.atom("C", vec(-1.9, 0.5)), 1);
+      const iodine = b.atom("I", vec(0, 0));
+      for (let i = 0; i < 7; i++) {
+        const angle = (2 * Math.PI * i) / 7;
+        b.bond(iodine, b.atom("F", vec(Math.cos(angle), Math.sin(angle))), 1);
+      }
+    });
+    const iodine = mol.atomIds[2]!;
+    expect(requireAtom(mol, iodine).element).toBe("I");
+    expect(chemistryIssues(mol).map((issue) => issue.atomId)).toEqual([iodine]);
+
+    const op = cleanUp(mol);
+    expect(op.ok).toBe(false);
+    if (op.ok) return;
+    expect(op.kind).toBe("sanitize-failed");
+    expect(op.message).toContain("atom # 2");
+    expect(atomIdsNamedByRdkit(mol, [op.message, ...op.notes].join("\n"))).toEqual([iodine]);
   });
 });

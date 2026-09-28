@@ -249,6 +249,87 @@ describe("free valence and over-valence", () => {
     expect(V.valenceIssues(benzene())).toEqual([]);
     expect(V.valenceIssues(linearChain(8))).toEqual([]);
   });
+
+  it("names every bond at an over-valent atom, and the atom as the anchor", () => {
+    const bad = buildMolecule((b) => {
+      const c = b.atom("C");
+      for (let i = 0; i < 5; i++) b.bond(c, b.atom("Cl"), 1);
+    });
+    const [issue] = V.valenceIssues(bad);
+    expect(issue!.kind).toBe("over-valent");
+    expect(issue!.atomIds).toEqual([bad.atomIds[0]]);
+    expect([...issue!.bondIds].sort()).toEqual([...bad.bondIds].sort());
+    expect(issue!.label).toBe("C has 5 bonds; max 4");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A pinned hydrogen count is part of the valence
+//
+// The regression behind "Clean up" failing with an RDKit atom index on a
+// drawing the editor called clean: over-valence was measured on the drawn
+// bonds alone, so hydrogens stated through the properties panel never counted.
+// RDKit counts them (`numExplicitHs`) and refused the structure.
+// ---------------------------------------------------------------------------
+
+/** CH3-NH3 with the nitrogen's hydrogens PINNED at three and no charge drawn:
+ *  methylammonium with its plus sign forgotten. */
+function unchargedMethylammonium(): Molecule {
+  return buildMolecule((b) => {
+    const c = b.atom("C", vec(0, 0));
+    const n = b.atom("N", vec(1, 0), { explicitHydrogenCount: 3 });
+    b.bond(c, n, 1);
+  });
+}
+
+describe("a pinned hydrogen count counts toward over-valence", () => {
+  it("reports an uncharged nitrogen stated as NH3 with a carbon on it", () => {
+    const mol = unchargedMethylammonium();
+    const nitrogen = mol.atomIds[1]!;
+    expect(V.explicitValence(mol, nitrogen)).toBe(1);
+    expect(V.statedValence(mol, nitrogen)).toBe(4);
+    expect(V.isOverValent(mol, nitrogen)).toBe(true);
+
+    const issues = V.valenceIssues(mol);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.atomId).toBe(nitrogen);
+    expect(issues[0]!.message).toBe(
+      "N has 1 bond and 3 pinned hydrogens but allows at most 3",
+    );
+    expect(issues[0]!.label).toBe("N has 1 bond + 3 H; max 3");
+  });
+
+  it("is satisfied once the charge is drawn", () => {
+    const mol = unchargedMethylammonium();
+    const nitrogen = mol.atomIds[1]!;
+    const charged = {
+      ...mol,
+      atoms: { ...mol.atoms, [nitrogen]: { ...mol.atoms[nitrogen]!, charge: 1 } },
+    };
+    expect(V.valenceIssues(charged)).toEqual([]);
+  });
+
+  it("leaves a pin that fits alone: ammonia stated as NH3 is fine", () => {
+    const ammonia = buildMolecule((b) => b.atom("N", undefined, { explicitHydrogenCount: 3 }));
+    expect(V.valenceIssues(ammonia)).toEqual([]);
+    const tooMany = buildMolecule((b) => b.atom("N", undefined, { explicitHydrogenCount: 4 }));
+    expect(V.valenceIssues(tooMany)).toHaveLength(1);
+  });
+
+  it("does not report pyrrole's N-H, Kekule or flagged", () => {
+    // The flagged form is the one that needs RDKit's order: two aromatic
+    // bonds and the pinned hydrogen sum to 4, and only snapping AFTER the
+    // hydrogen is added brings that back to nitrogen's 3.
+    const pinned = monocycle(["N", "C", "C", "C", "C"], [1, 3], {
+      0: { explicitHydrogenCount: 1 },
+    });
+    const nitrogen = pinned.atomIds[0]!;
+    expect(V.valenceIssues(pinned)).toEqual([]);
+    const flagged = importAromatic(pinned);
+    expect(V.bondOrderSum(flagged, nitrogen)).toBe(3);
+    expect(V.statedValence(flagged, nitrogen)).toBe(3);
+    expect(V.valenceIssues(flagged)).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------

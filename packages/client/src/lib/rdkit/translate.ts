@@ -620,3 +620,39 @@ export function describeError(error: unknown): string {
   if (typeof error === "number") return `RDKit aborted internally (exception code ${error})`;
   return String(error);
 }
+
+/**
+ * The atoms an RDKit refusal names, as chem-core ids, in the order it names
+ * them — or none.
+ *
+ * RDKit reports a sanitization failure by 0-based ATOM INDEX: "Explicit
+ * valence for atom # 3 N, 4, is greater than permitted", "Can't kekulize mol.
+ * Unkekulized atoms: 0 1 2 3 4". Shown verbatim that is a number a chemist
+ * cannot find on a drawing, which is what made a refused "Clean up" feel like
+ * the editor pointing at nothing. The index is the row of the atom block
+ * `moleculeToMolblock` wrote, and that block is written in `mol.atomIds` order
+ * — kekulisation changes bond orders, never ids or their order — so the index
+ * maps straight back. An index past the end is dropped rather than guessed:
+ * it would mean `mol` is not the molecule that was written.
+ */
+export function atomIdsNamedByRdkit(mol: Molecule, text: string): AtomId[] {
+  // Each index with where in the text it was found, so the result follows the
+  // text whichever pattern matched; the sort is stable, which keeps a
+  // kekulisation list in its own order.
+  const found: { readonly at: number; readonly index: number }[] = [];
+  for (const match of text.matchAll(/atom # (\d+)/gi)) {
+    found.push({ at: match.index, index: Number(match[1]) });
+  }
+  for (const match of text.matchAll(/Unkekulized atoms:((?:\s+\d+)+)/gi)) {
+    for (const index of match[1]!.trim().split(/\s+/)) {
+      found.push({ at: match.index, index: Number(index) });
+    }
+  }
+  found.sort((a, b) => a.at - b.at);
+  const ids: AtomId[] = [];
+  for (const { index } of found) {
+    const id = mol.atomIds[index];
+    if (id !== undefined && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}

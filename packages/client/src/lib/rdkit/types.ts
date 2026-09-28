@@ -59,7 +59,12 @@ export type ChemIoErrorKind =
 export interface ChemIoError {
   readonly kind: ChemIoErrorKind;
   readonly message: string;
-  /** Set for `labelled-atoms`: the atoms the UI must ask the user about. */
+  /**
+   * The atoms the failure is about, for the UI to mark and select: the
+   * labelled atoms of `labelled-atoms`, the unresolved ring of
+   * `unkekulizable`, and the atom a `sanitize-failed` refusal names by RDKit
+   * index, mapped back to its id.
+   */
   readonly atomIds?: readonly AtomId[];
   /** Set for `lossy-import`: what the reader dropped and where. */
   readonly warnings?: readonly MolblockWarning[];

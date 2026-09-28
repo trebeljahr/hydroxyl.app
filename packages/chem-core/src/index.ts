@@ -47,6 +47,8 @@ export * from "./stereo-axes.js";
 // Perception LAST among the chemistry modules: it reads valence, rings and
 // aromaticity, and only stereo-config reads it.
 export * from "./stereo.js";
+// After stereo.js and valence.js, which it composes. Nothing imports it.
+export * from "./issues.js";
 // Coordinate-free configuration and reading conventions, built on stereo.ts's
 // CIP ranking.
 export * from "./stereo-config.js";

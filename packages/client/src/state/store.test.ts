@@ -940,3 +940,32 @@ describe("scheme annotations ride in the document", () => {
     expect(store.getState().document.annotations.map((a) => a.id)).toEqual(["ann_2"]);
   });
 });
+
+describe("a toolkit refusal", () => {
+  const refusal = { source: "Clean up", atomIds: ["a1"], message: "refused" } as const;
+
+  it("outlives changes that leave the molecule alone", () => {
+    const store = makeStore();
+    store.getState().setRefusal(refusal);
+    store.getState().setStatusMessage("hello");
+    store.getState().setHoveredAtom("a2");
+    store.getState().selectAtoms(["a3"]);
+    store.getState().panBy({ x: 10, y: 0 });
+    expect(store.getState().ui.refusal).toBe(refusal);
+  });
+
+  it("goes with the molecule it named — on an edit, an undo and an import", () => {
+    const store = makeStore();
+    store.getState().setRefusal(refusal);
+    moveTo(store, firstAtomId(store), 5, 5);
+    expect(store.getState().ui.refusal).toBeNull();
+
+    store.getState().setRefusal(refusal);
+    store.getState().undo();
+    expect(store.getState().ui.refusal).toBeNull();
+
+    store.getState().setRefusal(refusal);
+    store.getState().openDocument(createDocument({ molecule: ethanol(), now: "2024-01-01T00:00:00.000Z" }));
+    expect(store.getState().ui.refusal).toBeNull();
+  });
+});

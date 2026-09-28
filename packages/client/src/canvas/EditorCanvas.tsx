@@ -47,7 +47,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type { ReactElement } from "react";
 import { pxPerModelUnit } from "@starter/chem-render";
-import { moleculeIssues } from "@/editor/derived";
+import { editorIssues } from "@/editor/issues";
 import { movingAtomIds, useCanvasInteraction } from "@/editor/interaction";
 import { toolDef } from "@/editor/tools";
 import { describeAtom } from "@/editor/traversal";
@@ -259,14 +259,15 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
   // Recomputed per document, which during a drag is per frame. Measured at
   // 0.18 ms for a 300-heavy-atom structure — a tenth of the frame budget.
   //
-  // Through `moleculeIssues` rather than chem-core directly, so these badges
-  // and the status bar's count are ONE walk of the molecule. It composes both
-  // families: valence errors and the structural ones stereo perception finds
-  // (a wedge on a non-stereocentre, a wedge drawn backwards). The shared cache
-  // does not help mid-drag — a per-move commit mints a new Molecule every
-  // frame and every frame misses — but it makes every re-render that changed
-  // nothing chemical free, which is most of them.
-  const issues = useMemo(() => moleculeIssues(doc.molecule), [doc.molecule]);
+  // Through `editorIssues` rather than chem-core directly, so these marks,
+  // the status bar's count and its issue list are ONE walk of the molecule.
+  // It composes both chem-core families — valence errors and the structural
+  // ones stereo perception finds — with whatever a toolkit refused about this
+  // molecule. The shared cache does not help mid-drag — a per-move commit
+  // mints a new Molecule every frame and every frame misses — but it makes
+  // every re-render that changed nothing chemical free, which is most of them.
+  const refusal = useEditorStore((state) => state.ui.refusal);
+  const issues = useMemo(() => editorIssues(doc.molecule, refusal), [doc.molecule, refusal]);
 
   // The atoms the rotate handle is placed around: exactly the ones a drag over
   // the selection would move, so the handle can never appear beside a

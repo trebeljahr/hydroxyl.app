@@ -12,6 +12,7 @@ import {
 import type { MolblockWarning, Molecule } from "@starter/chem-core";
 
 import {
+  atomIdsNamedByRdkit,
   classifyWarnings,
   COORDINATE_SCALE,
   diffMolecules,
@@ -641,5 +642,39 @@ describe("a V3000 row the reader had to drop (decision 90's tolerance, priced)",
     expect(read.report.severity).toBe("info");
     expect(read.report.warnings.map((w) => w.kind)).toEqual(["bad-v3000-row"]);
     expect(read.value.molecule.atomIds).toHaveLength(2);
+  });
+});
+
+describe("atomIdsNamedByRdkit", () => {
+  // Ethanol written by `moleculeToMolblock`: row N of the atom block is
+  // `atomIds[N - 1]`, and RDKit counts rows from zero.
+  const ethanol = buildMolecule((b) => {
+    const c1 = b.atom("C", vec(0, 0));
+    const c2 = b.atom("C", vec(1, 0));
+    b.bond(c1, c2, 1);
+    b.bond(c2, b.atom("O", vec(1.5, 0.8)), 1);
+  });
+
+  it("maps a valence refusal's 0-based index to the atom written in that row", () => {
+    expect(
+      atomIdsNamedByRdkit(ethanol, "Explicit valence for atom # 2 O, 3, is greater than permitted"),
+    ).toEqual([ethanol.atomIds[2]]);
+    // RDKit 2025's shorter wording, with no count.
+    expect(
+      atomIdsNamedByRdkit(ethanol, "Explicit valence for atom # 0 C greater than permitted"),
+    ).toEqual([ethanol.atomIds[0]]);
+  });
+
+  it("maps every atom of an unkekulizable ring, once each", () => {
+    expect(
+      atomIdsNamedByRdkit(ethanol, "Can't kekulize mol.  Unkekulized atoms: 0 1 2\natom # 1"),
+    ).toEqual([...ethanol.atomIds]);
+  });
+
+  it("drops an index past the end rather than guessing, and names nothing it cannot read", () => {
+    expect(atomIdsNamedByRdkit(ethanol, "Explicit valence for atom # 9 N, 4")).toEqual([]);
+    expect(atomIdsNamedByRdkit(ethanol, "RDKit could not read that as a chemical structure.")).toEqual(
+      [],
+    );
   });
 });

@@ -69,7 +69,7 @@ export function createEditorStore(init: EditorStoreInit = {}): EditorStore {
   // same `set`/`get`/`store` triple and contributes its own keys to one flat
   // state object, so a component selects `state.tool` without knowing which
   // file defined it.
-  return createStore<EditorState>()(
+  const store = createStore<EditorState>()(
     immer((...a) => ({
       ...createDocumentSlice({ document, now })(...a),
       ...createSelectionSlice()(...a),
@@ -78,6 +78,20 @@ export function createEditorStore(init: EditorStoreInit = {}): EditorStore {
       ...createUiSlice()(...a),
     })),
   );
+
+  // A toolkit's refusal names atoms of ONE molecule. Every path that replaces
+  // the molecule — an edit, an undo, an import, a restore — has to drop it,
+  // and one subscription here is the only way to cover paths nobody has
+  // written yet. Holding the ids rather than the refused molecule is what
+  // lets this clear it instead of comparing references, and keeps a document
+  // that was closed from being retained by a stale refusal.
+  store.subscribe((state, previous) => {
+    if (state.ui.refusal === null) return;
+    if (state.document.molecule === previous.document.molecule) return;
+    state.setRefusal(null);
+  });
+
+  return store;
 }
 
 /**

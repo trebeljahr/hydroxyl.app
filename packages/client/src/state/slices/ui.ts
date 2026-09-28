@@ -16,6 +16,8 @@
  * bug in the app to introduce.
  */
 
+import { castDraft } from "immer";
+
 import type { EditorSliceCreator, UiSlice, UiState } from "../types";
 
 export const INITIAL_UI_STATE: UiState = Object.freeze({
@@ -30,6 +32,7 @@ export const INITIAL_UI_STATE: UiState = Object.freeze({
   exportDialogOpen: false,
   periodicTableOpen: false,
   figureExport: Object.freeze({ width: "single", customWidthCm: 12, dpi: 300, style: "publication" }),
+  refusal: null,
 });
 
 export interface UiSliceOptions {
@@ -143,6 +146,13 @@ export function createUiSlice(
       if (get().ui.elementInputBuffer === "") return;
       set((draft) => {
         draft.ui.elementInputBuffer = "";
+      });
+    },
+
+    setRefusal(refusal) {
+      if (get().ui.refusal === refusal) return;
+      set((draft) => {
+        draft.ui.refusal = castDraft(refusal);
       });
     },
   });

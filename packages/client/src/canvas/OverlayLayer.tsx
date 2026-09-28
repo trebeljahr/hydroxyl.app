@@ -24,12 +24,13 @@
 
 import type { ReactElement } from "react";
 
-import type { AtomId, BondId, ValenceIssue, Vec2 } from "@starter/chem-core";
+import type { AtomId, BondId, Vec2 } from "@starter/chem-core";
 import { modelToPx } from "@starter/chem-render";
 import type { ScenePoint } from "@starter/chem-render";
 
 import type { Selection } from "@/state";
 import type { InteractionOverlayState } from "@/editor/interaction";
+import type { EditorIssue } from "@/editor/issues";
 
 import { ROTATE_HANDLE_RADIUS_PX } from "./handles";
 import type { RotateHandleGeometry } from "./handles";
@@ -43,8 +44,11 @@ export interface OverlayLayerProps {
   readonly hoveredBondId: BondId | null;
   /** The gesture in flight, in MODEL units. Converted here, with `modelToPx`. */
   readonly interaction?: InteractionOverlayState | undefined;
-  /** Atoms to badge. Never a refusal — see the note on `valenceBadge`. */
-  readonly issues?: readonly ValenceIssue[] | undefined;
+  /**
+   * Issues to mark. Never a refusal of a gesture — see the note on
+   * `issueMarks`. Errors get a ring, bands and a label; warnings a dot.
+   */
+  readonly issues?: readonly EditorIssue[] | undefined;
   /**
    * The rotate handle, from `rotateHandleGeometry` — computed by the caller
    * because the adapter's hit test needs the very same value, and the two
@@ -53,8 +57,11 @@ export interface OverlayLayerProps {
    */
   readonly rotateHandle?: RotateHandleGeometry | undefined;
   /**
-   * The view's zoom. Only the rotate handle's marks read it: they are UI
-   * sized in screen px, where everything else here is sized with the drawing.
+   * The view's zoom. Read by the marks that are UI sized in SCREEN px, where
+   * everything else here is sized with the drawing: the rotate handle, and
+   * the issue labels — a label that scaled with the drawing would be
+   * unreadable zoomed out on a large structure, which is exactly when
+   * someone is hunting for the atom it names.
    */
   readonly zoom?: number | undefined;
   /**
@@ -130,8 +137,8 @@ const SELECTED_BOND_WIDTH_PX = 12;
  * button is still down rather than discover it when nothing happens on
  * release.
  *
- * The issue badge takes its colour from the issue's SEVERITY (decision 77),
- * not from the fact that it is a badge: red for a drawing that states
+ * An issue mark takes its colour from the issue's SEVERITY (decision 77),
+ * not from the fact that it is a mark: red for a drawing that states
  * something wrong, amber for sound chemistry this build cannot express. Both
  * are reports and neither is a refusal — the gesture colours above are the
  * only place the overlay says "no".
@@ -139,15 +146,14 @@ const SELECTED_BOND_WIDTH_PX = 12;
 const ACCEPT_COLOR = "#16a34a";
 const REFUSE_COLOR = "#dc2626";
 const GHOST_COLOR = "#2563eb";
-const BADGE_COLOR = "#dc2626";
+const ISSUE_ERROR_COLOR = "#dc2626";
 /**
- * A WARNING badge is not the error badge (decision 77). An allene's atom
- * carries a mark because this build cannot state its configuration, not
- * because the drawing is wrong, and a badge in the error colour says the
- * opposite. Amber, as the status bar's notice and the export dialog's
- * warnings are.
+ * A WARNING's mark is not an error's (decision 77). An allene's atom carries
+ * a mark because this build cannot state its configuration, not because the
+ * drawing is wrong, and a mark in the error colour says the opposite. Amber,
+ * as the status bar's notice and the export dialog's warnings are.
  */
-const BADGE_WARNING_COLOR = "#d97706";
+const ISSUE_WARNING_COLOR = "#d97706";
 const FOCUS_COLOR = "#7c3aed";
 /** Clear of the selection ring so both are legible on the same atom. */
 const FOCUS_RING_PAD_PX = 5;
@@ -156,6 +162,17 @@ const MARQUEE_WIDTH_PX = 1;
 const TARGET_RADIUS_PX = 14;
 const BADGE_RADIUS_PX = 5;
 const BADGE_OFFSET_PX = 12;
+/**
+ * An ERROR is marked where it is, not beside it: a red ring just outside the
+ * selection halo, so a located atom shows both; a translucent band along
+ * every bond the issue names, which for an over-valent atom is the bonds that
+ * add up too high and for a misplaced wedge is the wedge; and a short label.
+ */
+const ISSUE_RING_PAD_PX = 3;
+const ISSUE_BOND_WIDTH_PX = 9;
+/** Screen px — divided by the zoom where it is used. */
+const ISSUE_LABEL_FONT_PX = 12;
+const ISSUE_LABEL_HALO_PX = 3.5;
 
 export function OverlayLayer({
   index,
@@ -173,11 +190,19 @@ export function OverlayLayer({
   const zoom =
     zoomProp !== undefined && Number.isFinite(zoomProp) && zoomProp > 0 ? zoomProp : 1;
   const showHandle = handle !== undefined && interaction?.marquee == null;
+  const errors = (issues ?? []).filter((issue) => issue.severity === "error");
+  const warnings = (issues ?? []).filter((issue) => issue.severity !== "error");
   return (
     // Pointer-events off, as on the scene layer: the root <svg> is the only
     // element that handles pointers. A halo that ate its own clicks would make
     // the atom unpickable the moment it became hoverable.
     <g data-layer="overlay" style={{ pointerEvents: "none" }}>
+      {/*
+        Error rings and bands UNDER everything else: they say where a problem
+        is, and must not hide the selection or the hover that answers what a
+        click would do about it. Their labels go on top, further down.
+      */}
+      {errors.map((issue, at) => issueMarks(index, u, issue, at))}
       {/*
         Draw order is bonds under atoms, and selection under hover. Hover on
         top because it answers "what do I get if I click here", which has to
@@ -197,7 +222,8 @@ export function OverlayLayer({
         most recent statement of intent on the canvas and has to win.
       */}
       {focusedAtomId == null ? null : focusRing(index, u, focusedAtomId)}
-      {(issues ?? []).map((issue, at) => valenceBadge(index, u, issue, at))}
+      {warnings.map((issue, at) => valenceBadge(index, u, issue, at))}
+      {issueLabels(index, u, errors, zoom)}
       {showHandle && interaction?.handleHovered === true
         ? rotatePreview(handle, zoom)
         : null}
@@ -503,18 +529,126 @@ function pivotMark(
 }
 
 /**
- * A dot beside an atom `valenceIssues()` flagged.
+ * The ring and bands of one ERROR: where the problem is.
  *
- * A BADGE AND NEVER A REFUSAL. Sprouting and template placement are never
+ * A MARK AND NEVER A REFUSAL. Sprouting and template placement are never
  * blocked by valence — drawing something briefly over-valent is a normal step
- * in sketching an intermediate — so the editor reports it and carries on. The
- * mark is offset up and to the right so it clears both the atom's own label
- * and any selection halo around it.
+ * in sketching an intermediate — so the editor reports it and carries on.
+ * Keyed by position as well as id, for the reason `valenceBadge` gives.
+ */
+function issueMarks(
+  index: SceneIndex,
+  u: number,
+  issue: EditorIssue,
+  at: number,
+): ReactElement | null {
+  const centre = index.atomCentre(issue.atomId);
+  if (centre === undefined || !isFinitePoint(centre)) return null;
+  const radius = issueRingRadius(index, u, issue.atomId);
+  return (
+    <g key={`issue:${at}:${issue.atomId}`} data-overlay-issue={issue.kind}>
+      {issue.bondIds.map((bondId) => {
+        const segment = index.bondSegment(bondId);
+        if (segment === undefined) return null;
+        if (!isFinitePoint(segment.a) || !isFinitePoint(segment.b)) return null;
+        return (
+          <line
+            key={bondId}
+            data-overlay="issue-bond"
+            data-overlay-target={bondId}
+            x1={segment.a.x}
+            y1={segment.a.y}
+            x2={segment.b.x}
+            y2={segment.b.y}
+            stroke={ISSUE_ERROR_COLOR}
+            strokeWidth={ISSUE_BOND_WIDTH_PX * u}
+            strokeOpacity={0.22}
+            strokeLinecap="round"
+          />
+        );
+      })}
+      <circle
+        data-overlay="issue-halo"
+        data-overlay-target={issue.atomId}
+        cx={centre.x}
+        cy={centre.y}
+        r={radius}
+        fill={ISSUE_ERROR_COLOR}
+        fillOpacity={0.1}
+        stroke={ISSUE_ERROR_COLOR}
+        strokeWidth={2 * u}
+      />
+    </g>
+  );
+}
+
+/** Just outside the selection halo, in the same `u` units the halo uses. */
+function issueRingRadius(index: SceneIndex, u: number, atomId: AtomId): number {
+  return (
+    Math.max(index.atomRadiusPx(atomId), MIN_ATOM_HALO_RADIUS_PX * u) +
+    (ATOM_HALO_PAD_PX + ISSUE_RING_PAD_PX) * u
+  );
+}
+
+/**
+ * The short reason beside each error's atom: "C has 5 bonds; max 4".
+ *
+ * Up and to the right of the ring, clear of the atom's own label, and
+ * STACKED when one atom carries two errors — an over-valent carbon with a
+ * misplaced wedge on it is one edit away — rather than printed over each
+ * other. White-haloed text rather than a filled pill: a pill needs the text
+ * measured, and the overlay renders once with no DOM to measure against.
+ */
+function issueLabels(
+  index: SceneIndex,
+  u: number,
+  errors: readonly EditorIssue[],
+  zoom: number,
+): ReactElement[] {
+  const scale = 1 / (Number.isFinite(zoom) && zoom > 0 ? zoom : 1);
+  const fontSize = ISSUE_LABEL_FONT_PX * scale;
+  const stacked = new Map<AtomId, number>();
+  const labels: ReactElement[] = [];
+  errors.forEach((issue, at) => {
+    const centre = index.atomCentre(issue.atomId);
+    if (centre === undefined || !isFinitePoint(centre)) return;
+    const row = stacked.get(issue.atomId) ?? 0;
+    stacked.set(issue.atomId, row + 1);
+    const reach = issueRingRadius(index, u, issue.atomId);
+    labels.push(
+      <text
+        key={`issue-label:${at}:${issue.atomId}`}
+        data-overlay="issue-label"
+        data-overlay-target={issue.atomId}
+        x={centre.x + reach * 0.7}
+        y={centre.y - reach * 0.7 - row * fontSize * 1.25}
+        fontSize={fontSize}
+        fontWeight={600}
+        fontFamily="ui-sans-serif, system-ui, sans-serif"
+        fill={ISSUE_ERROR_COLOR}
+        stroke="#ffffff"
+        strokeWidth={ISSUE_LABEL_HALO_PX * scale}
+        strokeLinejoin="round"
+        paintOrder="stroke"
+      >
+        {issue.label}
+      </text>,
+    );
+  });
+  return labels;
+}
+
+/**
+ * A dot beside an atom carrying a WARNING: sound chemistry this build cannot
+ * express (decision 77). A dot, not a ring and a label, because nothing is
+ * wrong with the drawing and the canvas must not say otherwise; the issue
+ * list names it. The mark is offset up and to the right so it clears both
+ * the atom's own label and any selection halo around it.
  */
 function valenceBadge(
   index: SceneIndex,
   u: number,
-  issue: ValenceIssue,
+  issue: EditorIssue,
   at: number,
 ): ReactElement | null {
   const centre = index.atomCentre(issue.atomId);
@@ -533,7 +667,7 @@ function valenceBadge(
       cx={centre.x + reach + BADGE_OFFSET_PX * 0.5 * u}
       cy={centre.y - reach - BADGE_OFFSET_PX * 0.5 * u}
       r={BADGE_RADIUS_PX * u}
-      fill={issue.severity === "error" ? BADGE_COLOR : BADGE_WARNING_COLOR}
+      fill={issue.severity === "error" ? ISSUE_ERROR_COLOR : ISSUE_WARNING_COLOR}
       stroke="#ffffff"
       strokeWidth={1.5 * u}
     >

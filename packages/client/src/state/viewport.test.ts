@@ -2,6 +2,7 @@ import type { Vec2 } from "@starter/chem-core";
 import { describe, expect, it } from "vitest";
 
 import {
+  centreOn,
   clampZoom,
   createViewport,
   DEFAULT_FIT_MARGIN,
@@ -354,5 +355,20 @@ describe("visibleBounds", () => {
   it("collapses to the pan point for a zero-size viewport", () => {
     const vp = makeViewport({ x: 9, y: 9 }, 1, { width: 0, height: 0 });
     expect(visibleBounds(vp)).toEqual({ min: { x: 9, y: 9 }, max: { x: 9, y: 9 } });
+  });
+});
+
+describe("centreOn", () => {
+  it("puts the point at the centre of the screen and leaves the zoom alone", () => {
+    const vp = zoomAt(createViewport({ width: 800, height: 600 }), { x: 100, y: 100 }, 3);
+    const moved = centreOn(vp, { x: 250, y: -40 });
+    expect(moved.zoom).toBe(vp.zoom);
+    expect(toScreen(moved, { x: 250, y: -40 })).toEqual({ x: 400, y: 300 });
+  });
+
+  it("returns the same viewport when there is nothing to do or nothing finite to do it with", () => {
+    const vp = createViewport({ width: 800, height: 600 });
+    expect(centreOn(vp, { x: 0, y: 0 })).toBe(vp);
+    expect(centreOn(vp, { x: Number.NaN, y: 1 })).toBe(vp);
   });
 });

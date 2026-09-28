@@ -24,7 +24,7 @@
 
 import { requireElement } from "./elements.js";
 import { bondsAt, getAtom, requireAtom } from "./molecule.js";
-import type { AtomId, Molecule } from "./types.js";
+import type { AtomId, BondId, Molecule } from "./types.js";
 
 /** An aromatic bond contributes 1.5, so a benzene carbon totals 3. */
 const AROMATIC_BOND_ORDER = 1.5;
@@ -330,15 +330,58 @@ export function canAcceptBond(mol: Molecule, atomId: AtomId, order = 1): boolean
   return freeValence(mol, atomId) >= order;
 }
 
-export function isOverValent(mol: Molecule, atomId: AtomId): boolean {
-  const max = maxValence(mol, atomId);
-  return max !== Infinity && explicitValence(mol, atomId) > max;
+/**
+ * Drawn bonds, radicals AND a pinned hydrogen count: the valence the atom is
+ * STATED to carry, which is the number over-valence has to be measured on.
+ *
+ * THE BUG THIS EXISTS FOR. `explicitValence` leaves a pinned count out, and
+ * rightly — `implicitHydrogenCount` returns the pin verbatim, so it is not an
+ * input there. But measuring over-valence on it alone meant a methylamine
+ * nitrogen pinned to three hydrogens and left uncharged read as sound: one
+ * drawn bond, three stated hydrogens, a valence of four on a neutral
+ * nitrogen, and no error anywhere. RDKit counts those hydrogens
+ * (`numExplicitHs`) and refuses the structure, so "Clean up" failed with
+ * "Explicit valence for atom # 1 N, 4, is greater than permitted" on a
+ * drawing the editor itself called clean.
+ *
+ * THE ORDER IS RDKIT'S. `calcExplicitValence` adds the explicit hydrogens
+ * BEFORE the aromatic snap, not after. That is what keeps a flagged pyrrole's
+ * `[nH]` legal: two aromatic bonds and the pinned hydrogen sum to 4, the snap
+ * brings it to 3, and nitrogen allows 3. Adding the pin after the snap would
+ * report every pyrrole, indole and imidazole an importer flagged.
+ */
+export function statedValence(mol: Molecule, atomId: AtomId): number {
+  const atom = requireAtom(mol, atomId);
+  const pinned = Math.max(0, atom.explicitHydrogenCount ?? 0);
+  const raw = bondOrderSum(mol, atomId) + atom.radicalElectrons + pinned;
+  return resolveAromaticValence(mol, atomId, raw);
 }
 
+/** On `statedValence`, so a pinned hydrogen count is counted. */
+export function isOverValent(mol: Molecule, atomId: AtomId): boolean {
+  const max = maxValence(mol, atomId);
+  return max !== Infinity && statedValence(mol, atomId) > max;
+}
+
+export type ValenceIssueKind = "over-valent" | "negative-hydrogens";
+
+/**
+ * A valence problem, located.
+ *
+ * `atomId` is the ANCHOR — the atom a UI selects and centres on. `atomIds`
+ * and `bondIds` are everything the problem concerns, anchor first, so an
+ * overlay can mark the lot without re-deriving which bonds make an atom
+ * over-valent. `message` is the sentence for a list or a tooltip; `label` is
+ * the few words that fit beside the atom on the canvas.
+ */
 export interface ValenceIssue {
+  readonly kind: ValenceIssueKind;
   readonly atomId: AtomId;
+  readonly atomIds: readonly AtomId[];
+  readonly bondIds: readonly BondId[];
   readonly severity: "error" | "warning";
   readonly message: string;
+  readonly label: string;
 }
 
 /**
@@ -352,19 +395,39 @@ export function valenceIssues(mol: Molecule): ValenceIssue[] {
   for (const atomId of mol.atomIds) {
     const atom = requireAtom(mol, atomId);
     if (isOverValent(mol, atomId)) {
+      const drawn = explicitValence(mol, atomId);
+      const bonds = `${drawn} ${drawn === 1 ? "bond" : "bonds"}`;
+      const max = maxValence(mol, atomId);
+      const pinned = Math.max(0, atom.explicitHydrogenCount ?? 0);
+      // Named only when it is part of the count. A stated count of zero adds
+      // nothing, and "and 0 pinned hydrogens" would send the reader looking
+      // for a cause that is not there.
+      const hydrogens =
+        pinned === 0 ? "" : ` and ${pinned} pinned ${pinned === 1 ? "hydrogen" : "hydrogens"}`;
       issues.push({
+        kind: "over-valent",
         atomId,
+        atomIds: [atomId],
+        // Every bond at the atom: which one is surplus is the author's call,
+        // and `issueFixes` offers to lower one only when there is no choice.
+        bondIds: bondsAt(mol, atomId).map((bond) => bond.id),
         severity: "error",
-        message:
-          `${atom.element} has ${explicitValence(mol, atomId)} bonds but allows ` +
-          `at most ${maxValence(mol, atomId)}`,
+        message: `${atom.element} has ${bonds}${hydrogens} but allows at most ${max}`,
+        label:
+          pinned === 0
+            ? `${atom.element} has ${bonds}; max ${max}`
+            : `${atom.element} has ${bonds} + ${pinned} H; max ${max}`,
       });
     }
     if (atom.explicitHydrogenCount !== undefined && atom.explicitHydrogenCount < 0) {
       issues.push({
+        kind: "negative-hydrogens",
         atomId,
+        atomIds: [atomId],
+        bondIds: [],
         severity: "error",
         message: `${atom.element} has a negative hydrogen count`,
+        label: `${atom.element} has ${atom.explicitHydrogenCount} H`,
       });
     }
   }

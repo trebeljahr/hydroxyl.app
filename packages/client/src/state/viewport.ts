@@ -277,6 +277,20 @@ export function zoomToFit(
 }
 
 /**
+ * The same view with `point` (scene px) at its centre.
+ *
+ * The zoom is left alone: this is "take me to that atom", and a jump that
+ * also rescaled would lose the reader's sense of how big the structure is
+ * just as they look for the atom in it. `pan` IS the centre point by
+ * definition, so there is no arithmetic to get wrong.
+ */
+export function centreOn(vp: Viewport, point: Vec2): Viewport {
+  if (!isFiniteVec(point)) return vp;
+  if (point.x === vp.pan.x && point.y === vp.pan.y) return vp;
+  return { ...vp, pan: { x: point.x, y: point.y } };
+}
+
+/**
  * The scene rectangle currently on screen, in px.
  *
  * `min` is top-left in screen terms as well as numerically smallest, because

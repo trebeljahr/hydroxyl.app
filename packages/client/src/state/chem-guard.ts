@@ -26,6 +26,7 @@
 import { isDraft } from "immer";
 import {
   addAtom as coreAddAtom,
+  applyIssueFix as coreApplyIssueFix,
   addBond as coreAddBond,
   appendChain as coreAppendChain,
   attachRingToAtom as coreAttachRingToAtom,
@@ -150,6 +151,9 @@ export const guardedOps = {
   /** Swaps `from`/`to`, which INVERTS a wedge — the narrow end is at `from`,
    *  never at whichever id sorts first. */
   flipBond: guard("flipBond", coreFlipBond),
+
+  /** The issue list's one-click fixes: a charge, a bond order, a wedge. */
+  applyIssueFix: guard("applyIssueFix", coreApplyIssueFix),
 
   /**
    * The ABS/AND/OR statement, written by decision 89's selection commands.

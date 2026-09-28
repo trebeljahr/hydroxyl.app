@@ -20,6 +20,7 @@ import type { InchiAndMolblock, OpResult, SmilesAndMolblock } from "./ops";
 import { NO_COORDS } from "./ops";
 import { isReady, type WorkerMessage, type WorkerPayload, type WorkerRequest } from "./protocol";
 import {
+  atomIdsNamedByRdkit,
   buildReport,
   describeError,
   hasMeaningfulCoordinates,
@@ -167,8 +168,27 @@ function layoutFor(mol: Molecule): "preserve" | "generate" {
   return hasMeaningfulCoordinates(mol) ? "preserve" : "generate";
 }
 
-function opError(result: Extract<OpResult<WorkerPayload>, { ok: false }>): ChemIoError {
-  return { kind: result.kind, message: result.message, notes: result.notes };
+/**
+ * The worker's failure as a `ChemIoError`, with the atoms it names.
+ *
+ * `written` is the molecule whose molblock went in, when there was one. A
+ * sanitization refusal names atoms by RDKit index, and only the caller that
+ * wrote the file can turn those back into ids — see `atomIdsNamedByRdkit`.
+ */
+function opError(
+  result: Extract<OpResult<WorkerPayload>, { ok: false }>,
+  written?: Molecule,
+): ChemIoError {
+  const atomIds =
+    written === undefined
+      ? []
+      : atomIdsNamedByRdkit(written, [result.message, ...result.notes].join("\n"));
+  return {
+    kind: result.kind,
+    message: result.message,
+    notes: result.notes,
+    ...(atomIds.length > 0 ? { atomIds } : {}),
+  };
 }
 
 /**
@@ -220,7 +240,7 @@ export async function toSmiles(mol: Molecule, title = ""): Promise<ChemIoResult<
   const written = moleculeToMolblock(mol, title);
   if (!written.ok) return written;
   const result = await call({ op: "smiles", text: written.value, layout: layoutFor(mol) });
-  if (!result.ok) return fail(opError(result));
+  if (!result.ok) return fail(opError(result, mol));
   const payload = result.value as SmilesAndMolblock;
   // Diff against RDKit's own reading of what we sent, not against the SMILES:
   // RDKit canonicalises the right and the wrong answer to the same string.
@@ -273,7 +293,7 @@ export async function toInchi(mol: Molecule, title = ""): Promise<ChemIoResult<I
   const written = moleculeToMolblock(mol, title);
   if (!written.ok) return written;
   const result = await call({ op: "inchi", text: written.value, layout: layoutFor(mol) });
-  if (!result.ok) return fail(opError(result));
+  if (!result.ok) return fail(opError(result, mol));
   const payload = result.value as InchiAndMolblock;
   if (payload.inchi === "") {
     return fail({
@@ -306,7 +326,7 @@ export async function toMolblock(mol: Molecule, title = ""): Promise<ChemIoResul
   if (!written.ok) return written;
   const hadLayout = hasMeaningfulCoordinates(mol);
   const result = await call({ op: "normalize", text: written.value, layout: layoutFor(mol) });
-  if (!result.ok) return fail(opError(result));
+  if (!result.ok) return fail(opError(result, mol));
   const payload = result.value as WorkerPayload;
   const round = molblockToMolecule(payload.molblock);
   return ok(
@@ -371,7 +391,7 @@ export async function generate2DCoords(mol: Molecule): Promise<ChemIoResult<Mole
   const written = moleculeToMolblock(mol);
   if (!written.ok) return written;
   const result = await call({ op: "normalize", text: written.value, layout: "generate" });
-  if (!result.ok) return fail(opError(result));
+  if (!result.ok) return fail(opError(result, mol));
   const payload = result.value as WorkerPayload;
   const read = molblockToMolecule(payload.molblock);
   if (!read.ok) return read;
@@ -405,7 +425,7 @@ export async function canonicalize(
   const written = moleculeToMolblock(mol, title);
   if (!written.ok) return written;
   const result = await call({ op: "smiles", text: written.value, layout: layoutFor(mol) });
-  if (!result.ok) return fail(opError(result));
+  if (!result.ok) return fail(opError(result, mol));
   const payload = result.value as SmilesAndMolblock;
   const read = molblockToMolecule(payload.molblock);
   if (!read.ok) return read;

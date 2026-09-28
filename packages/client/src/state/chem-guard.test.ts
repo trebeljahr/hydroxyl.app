@@ -98,6 +98,13 @@ describe("guardedOps", () => {
           direction: { x: 0, y: 1 },
         }),
       addAtom: (d) => void guardedOps.addAtom(d, { element: "C" }),
+      applyIssueFix: (d) =>
+        void guardedOps.applyIssueFix(d, {
+          kind: "set-charge",
+          title: "Make it C⁺",
+          atomId: firstAtom,
+          charge: 1,
+        }),
       addBond: (d) =>
         void guardedOps.addBond(d, { from: mol.atomIds[0]!, to: mol.atomIds[3]! }),
       extractFragment: (d) => void guardedOps.extractFragment(d, [firstAtom]),

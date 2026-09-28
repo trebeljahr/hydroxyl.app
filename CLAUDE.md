@@ -91,6 +91,15 @@ Invariants to preserve when editing it:
   arrows, plus signs, brackets, text — is the document's `annotations`, typed
   in chem-render's `scheme/annotation.ts`. chem-core never learns what an
   arrow is.
+- **Over-valence counts a pinned hydrogen count.** `statedValence` is bonds +
+  radicals + `explicitHydrogenCount`, added BEFORE the aromatic snap as
+  RDKit's `calcExplicitValence` does. Measured on drawn bonds alone, an
+  uncharged N pinned to NH3 with a carbon on it read as clean while RDKit
+  refused it.
+- **Issues and their fixes are chem-core's.** `chemistryIssues` returns every
+  issue located (anchor `atomId`, all `atomIds`/`bondIds`, a canvas `label`);
+  `issueFixes`/`applyIssueFix` decide which one-click repair is obvious. The
+  client only routes a click into the store.
 - **`exactMass()` throws** rather than substituting an average atomic weight
   when an element has no verified monoisotopic value. Do not "fix" this by
   falling back — a plausible wrong mass is worse than an error.
