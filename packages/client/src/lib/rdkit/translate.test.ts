@@ -9,9 +9,10 @@ import {
   withStereoGroups,
   writeMolblock,
 } from "@starter/chem-core";
-import type { Molecule } from "@starter/chem-core";
+import type { MolblockWarning, Molecule } from "@starter/chem-core";
 
 import {
+  classifyWarnings,
   COORDINATE_SCALE,
   diffMolecules,
   hasMeaningfulCoordinates,
@@ -375,5 +376,268 @@ describe("diffMolecules", () => {
 
   it("says nothing when nothing changed", () => {
     expect(diffMolecules(benzene(), benzene())).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `classifyWarnings` is the whole of import triage: `lossy` refuses the import,
+// `changed` shows a banner, `info` a footnote. Nothing tested it. Measured:
+// deleting "collection-count-mismatch" from CHANGED_WARNINGS, or
+// "three-dimensional", or "unknown-element" from LOSSY_WARNINGS, each left the
+// client dom project 626/626 green — a warning silently demoted a tier with no
+// test to notice.
+//
+// So the table is pinned as a TABLE, over every `MolblockWarning` kind rather
+// than the handful this branch added. The record is typed by kind, so a kind
+// added to chem-core is a compile error here until someone decides what it
+// costs an import.
+// ---------------------------------------------------------------------------
+type Severity = "clean" | "info" | "changed" | "lossy";
+
+interface WarningCase {
+  readonly warning: MolblockWarning;
+  readonly severity: Severity;
+  /** Why it sits in that tier, in the words a reviewer would need. */
+  readonly because: string;
+}
+
+const WARNING_TIERS: Readonly<Record<MolblockWarning["kind"], WarningCase>> = {
+  // ── lossy: an atom or a bond is not in the molecule that came back ──────
+  "truncated-block": {
+    warning: { kind: "truncated-block", message: "", block: "atom", expected: 3, found: 2 },
+    severity: "lossy",
+    because: "the file ran short, so the missing rows are missing atoms",
+  },
+  "surplus-block": {
+    warning: { kind: "surplus-block", message: "", block: "atom", expected: 2, found: 3 },
+    severity: "lossy",
+    because: "the surplus rows were skipped to keep the bond block aligned",
+  },
+  "unknown-element": {
+    warning: { kind: "unknown-element", message: "", line: 5, row: 2, symbol: "*" },
+    severity: "lossy",
+    because: "a dummy atom or an R-group vanishing turns a scaffold into another compound",
+  },
+  "bad-bond-endpoint": {
+    warning: { kind: "bad-bond-endpoint", message: "", line: 9, row: 1, index: 7 },
+    severity: "lossy",
+    because: "the bond is dropped, so two fragments come back where one was drawn",
+  },
+  "self-bond": {
+    warning: { kind: "self-bond", message: "", line: 9, row: 1 },
+    severity: "lossy",
+    because: "dropped, and the bond the author meant is not there",
+  },
+  "duplicate-bond": {
+    warning: { kind: "duplicate-bond", message: "", line: 9, row: 2 },
+    severity: "lossy",
+    because: "the later row is dropped, and it may have carried the higher order",
+  },
+  "property-index-out-of-range": {
+    warning: { kind: "property-index-out-of-range", message: "", line: 12, index: 99 },
+    severity: "lossy",
+    because: "a charge or an isotope named for an atom that is not there is lost",
+  },
+  "dropped-v3000-row": {
+    warning: {
+      kind: "dropped-v3000-row",
+      message: "",
+      line: 8,
+      block: "ATOM",
+      text: "M  V30 x C 0 0 0 0",
+    },
+    severity: "lossy",
+    because: "the V3000 twin of unknown-element: the row is skipped and the atom is gone",
+  },
+  // ── changed: the graph is the file's, but it reads differently ──────────
+  "unsupported-bond-type": {
+    warning: { kind: "unsupported-bond-type", message: "", line: 9, row: 1, type: 8 },
+    severity: "changed",
+    because: "the bond is kept as single, which is a different bond",
+  },
+  "unsupported-bond-stereo": {
+    warning: { kind: "unsupported-bond-stereo", message: "", line: 9, row: 1, stereo: 7 },
+    severity: "changed",
+    because: "the bond is kept flat, so a stated configuration is no longer stated",
+  },
+  unkekulized: {
+    warning: { kind: "unkekulized", message: "", atomIds: ["a1"] },
+    severity: "changed",
+    because: "aromatic flags survived, and a flagged system derives another formula",
+  },
+  "three-dimensional": {
+    warning: { kind: "three-dimensional", message: "", rows: [1, 2] },
+    severity: "changed",
+    because: "z was dropped, so the atoms kept a flat projection that may overlap",
+  },
+  "collection-count-mismatch": {
+    warning: {
+      kind: "collection-count-mismatch",
+      message: "",
+      line: 20,
+      name: "MDLV30/STERAC1",
+      declared: 18,
+      found: 17,
+    },
+    severity: "changed",
+    because: "measured on an 18-centre racemate: coverage fell from rac- to per-centre tags",
+  },
+  // ── info: the file said something this app does not model ──────────────
+  "bad-property-line": {
+    warning: { kind: "bad-property-line", message: "", line: 12 },
+    severity: "info",
+    because: "an unreadable property line asserted nothing that was kept",
+  },
+  "unsupported-v3000-block": {
+    warning: { kind: "unsupported-v3000-block", message: "", line: 8, block: "SGROUP" },
+    severity: "info",
+    because: "an Sgroup or a template is an annotation on the graph, not the graph",
+  },
+  "unsupported-collection": {
+    warning: { kind: "unsupported-collection", message: "", line: 20, name: "HILITE" },
+    severity: "info",
+    because: "a HILITE or a user collection carries no chemistry",
+  },
+  "bad-v3000-row": {
+    warning: {
+      kind: "bad-v3000-row",
+      message: "",
+      line: 8,
+      block: "CTAB",
+      text: "M  V30 LINKNODE 1 2 1 1 2 1 3",
+    },
+    severity: "info",
+    because: "its arms all keep the graph: a stray CTAB line, a coordinate read as 0",
+  },
+  "stereo-group-conflict": {
+    warning: { kind: "stereo-group-conflict", message: "", line: 21, atomIds: ["a2"] },
+    severity: "info",
+    because: "the later mention is dropped and the atom keeps the first collection",
+  },
+  // ── field-dependent: see the two cases below ───────────────────────────
+  "bad-numeric-field": {
+    warning: { kind: "bad-numeric-field", message: "", line: 5, field: "x", text: "abc" },
+    severity: "lossy",
+    because: "an unreadable x or y defaults to 0, stacking the atom on the origin",
+  },
+};
+
+describe("classifyWarnings (the import triage table)", () => {
+  it("gives every warning kind the tier its consequence earns", () => {
+    for (const [kind, spec] of Object.entries(WARNING_TIERS)) {
+      // The record's key and its sample must agree, or a copy-paste would pin
+      // one kind twice and leave another unpinned.
+      expect(spec.warning.kind, kind).toBe(kind);
+      expect(classifyWarnings([spec.warning]), `${kind}: ${spec.because}`).toBe(spec.severity);
+    }
+  });
+
+  it("reads no warnings as clean, and takes the WORST of several", () => {
+    expect(classifyWarnings([])).toBe("clean");
+    const info = WARNING_TIERS["unsupported-collection"].warning;
+    const changed = WARNING_TIERS["three-dimensional"].warning;
+    const lossy = WARNING_TIERS["unknown-element"].warning;
+    expect(classifyWarnings([info, changed])).toBe("changed");
+    expect(classifyWarnings([info, changed, lossy])).toBe("lossy");
+    // Order cannot matter: an import is as bad as its worst warning.
+    expect(classifyWarnings([lossy, changed, info])).toBe("lossy");
+  });
+
+  it("splits bad-numeric-field by the field, because only x and y lose a position", () => {
+    // A bad x or y defaults the coordinate to 0 and stacks the atom on the
+    // origin — the drawing is not the file. A bad charge or mass field is read
+    // as 0, which is the format's own default and no loss.
+    const field = (name: string): MolblockWarning => ({
+      kind: "bad-numeric-field",
+      message: "",
+      line: 5,
+      field: name,
+      text: "abc",
+    });
+    expect(classifyWarnings([field("x")])).toBe("lossy");
+    expect(classifyWarnings([field("y")])).toBe("lossy");
+    expect(classifyWarnings([field("charge")])).toBe("info");
+    expect(classifyWarnings([field("stereo")])).toBe("info");
+  });
+});
+
+describe("a V3000 row the reader had to drop (decision 90's tolerance, priced)", () => {
+  function v3000(...body: string[]): string {
+    return [
+      "dropped row",
+      "  chemcore          2D",
+      "",
+      "  0  0  0  0  0  0  0  0  0  0999 V3000",
+      "M  V30 BEGIN CTAB",
+      ...body,
+      "M  V30 END CTAB",
+      "M  END",
+      "",
+    ].join("\n");
+  }
+
+  it("refuses an atom row it could not read, exactly as the V2000 file that loses an atom does", () => {
+    // Measured before the split: this returned ok with severity `info` — a
+    // footnote — while the V2000 file losing the same atom refused as `lossy`.
+    // Same loss, three tiers apart, and drag-and-drop import reaches both.
+    const read = molblockToMolecule(
+      v3000(
+        "M  V30 COUNTS 3 1 0 0 0",
+        "M  V30 BEGIN ATOM",
+        "M  V30 1 C 0.000000 0.000000 0.000000 0",
+        "M  V30 x C 9.000000 9.000000 0.000000 0",
+        "M  V30 2 O 1.500000 0.000000 0.000000 0",
+        "M  V30 END ATOM",
+        "M  V30 BEGIN BOND",
+        "M  V30 1 1 1 2",
+        "M  V30 END BOND",
+      ),
+    );
+    expect(read.ok).toBe(false);
+    if (read.ok) return;
+    expect(read.error.kind).toBe("lossy-import");
+    expect(read.error.warnings?.map((w) => w.kind)).toEqual(["dropped-v3000-row"]);
+  });
+
+  it("refuses a bond row it could not read: two fragments came back where one was drawn", () => {
+    const read = molblockToMolecule(
+      v3000(
+        "M  V30 COUNTS 2 1 0 0 0",
+        "M  V30 BEGIN ATOM",
+        "M  V30 1 C 0.000000 0.000000 0.000000 0",
+        "M  V30 2 O 1.500000 0.000000 0.000000 0",
+        "M  V30 END ATOM",
+        "M  V30 BEGIN BOND",
+        "M  V30 1 1 1",
+        "M  V30 END BOND",
+      ),
+    );
+    expect(read.ok).toBe(false);
+    if (read.ok) return;
+    expect(read.error.kind).toBe("lossy-import");
+  });
+
+  it("keeps an import whose V3000 row was only read generously", () => {
+    // The other side of the split, and the reason it is a split rather than the
+    // coarse kind added to the lossy table: the row stops before z, the spec's
+    // own default fills it, and the molecule IS the file's graph. Still a
+    // warning — still `info` — and still imported.
+    const read = molblockToMolecule(
+      v3000(
+        "M  V30 COUNTS 2 1 0 0 0",
+        "M  V30 BEGIN ATOM",
+        "M  V30 1 C 0.000000 0.000000 0.000000 0",
+        "M  V30 2 O 1.500000",
+        "M  V30 END ATOM",
+        "M  V30 BEGIN BOND",
+        "M  V30 1 1 1 2",
+        "M  V30 END BOND",
+      ),
+    );
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.report.severity).toBe("info");
+    expect(read.report.warnings.map((w) => w.kind)).toEqual(["bad-v3000-row"]);
+    expect(read.value.molecule.atomIds).toHaveLength(2);
   });
 });

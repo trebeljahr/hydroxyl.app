@@ -67,6 +67,18 @@ export const COORDINATE_SCALE = MOLFILE_BOND_LENGTH;
  * `molblockVersionFor`) is not measured against this at all — measuring it would
  * refuse a large structure for a reason that does not apply to the file being
  * written.
+ *
+ * WHICH MAKES THE REFUSAL AVOIDABLE NOW, AND IT IS STILL A REFUSAL. chem-core
+ * can write a thousand-atom molecule as V3000; decision 49 says the app picks
+ * V3000 exactly when the document states a stereo group, and nothing else. So a
+ * large ungrouped molecule has no export path, and the sentence says so rather
+ * than leaving the reader to infer that the format is the wall. Offering V3000
+ * for size alone would need its own ruling — every reader takes V2000 and not
+ * every reader takes V3000, so the default is not a free choice.
+ *
+ * Duplicated from `molblock-write.ts`'s own constant on purpose: the two checks
+ * answer different questions (this one asks whether to refuse BEFORE choosing a
+ * generation, that one enforces the format) and chem-core exports no such value.
  */
 const MAX_V2000_COUNT = 999;
 
@@ -160,6 +172,14 @@ const LOSSY_WARNINGS: ReadonlySet<MolblockWarning["kind"]> = new Set([
   "truncated-block",
   "surplus-block",
   "property-index-out-of-range",
+  // The V3000 twin of `unknown-element` and `bad-bond-endpoint`: an atom or
+  // bond row the reader could not read at all, so it is not in the molecule.
+  // Measured before it was split out of the coarser `bad-v3000-row`: a V3000
+  // file whose atom row was dropped came back at `info` — a footnote — while the
+  // V2000 file losing the same atom refused as `lossy`. Same loss, and
+  // drag-and-drop import reaches both. `bad-v3000-row` stays OUT of this set:
+  // its other arms keep the graph the file describes.
+  "dropped-v3000-row",
 ]);
 
 /**
@@ -242,7 +262,9 @@ export function moleculeToMolblock(mol: Molecule, title = ""): ChemIoResult<stri
       kind: "too-large",
       message:
         `A V2000 molblock cannot express ${mol.atomIds.length} atoms / ` +
-        `${mol.bondIds.length} bonds; the counts fields are three characters wide.`,
+        `${mol.bondIds.length} bonds; the counts fields are three characters wide. ` +
+        `V3000 has no such limit, but this app writes V3000 only for a structure ` +
+        `that states a stereo group.`,
     });
   }
   const kekulised = kekulizeWithReport(mol);
