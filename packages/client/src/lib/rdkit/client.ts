@@ -66,6 +66,48 @@ let workerBroken: string | undefined;
 let nextId = 1;
 const pending = new Map<number, Pending>();
 
+/**
+ * WHICH COPY OF THIS MODULE OWNS THE PAGE'S WORKER, kept where a re-evaluated
+ * copy can see it.
+ *
+ * Module scope is the right home for the worker while this file is evaluated
+ * once per page, and today it is: measured on 2026-09-29, an edit to this file
+ * or to `protocol.ts` makes Next do a FULL reload, because this directory is
+ * imported from outside the React tree (`lib/io/open.ts`, `commands/cleanup.ts`
+ * and `commands/figure.ts` all reach it by `import()`), and a reload ends the
+ * worker with the page. A static import from a component does not change that
+ * — tried — and neither does an `accept` in `index.ts`, because `figure.ts`
+ * imports this file directly.
+ *
+ * It stops being true the moment some copy of this module is swapped in while
+ * the page lives on. The new copy starts with `worker === undefined`, and a
+ * dedicated worker is not collected for being unreferenced: the browser keeps
+ * it running for the life of the page. Forced in the browser with a
+ * self-accepting copy, one edit left two live workers, both still answering
+ * requests, each with 6.9 MB of compiled wasm and RDKit's heap.
+ *
+ * So a copy about to start a worker first disposes whichever copy owns one.
+ * The page then holds at most one however the copies came to exist, and
+ * without anything depending on the bundler's HMR hook (which is below, and is
+ * the prompt half). `Symbol.for` because the key must be the same value in
+ * every copy, and a module-level `Symbol()` would be fresh in each.
+ */
+const PAGE_OWNER = Symbol.for("chemistry-sketcher/rdkit-worker-owner");
+
+type PageRegistry = { [PAGE_OWNER]?: () => void };
+
+function claimPage(): void {
+  const registry = globalThis as PageRegistry;
+  const previous = registry[PAGE_OWNER];
+  if (previous !== undefined && previous !== disposeRdkitWorker) previous();
+  registry[PAGE_OWNER] = disposeRdkitWorker;
+}
+
+function releasePage(): void {
+  const registry = globalThis as PageRegistry;
+  if (registry[PAGE_OWNER] === disposeRdkitWorker) delete registry[PAGE_OWNER];
+}
+
 function failAll(message: string): void {
   for (const [id, entry] of pending) {
     clearTimeout(entry.timer);
@@ -85,6 +127,7 @@ function ensureWorker(): Worker | undefined {
   // static export — a 404 whose error event carries an empty message. See the
   // header of worker.ts.
   const url = `${rdkitAssetBase()}rdkit.worker.js`;
+  claimPage();
   let created: Worker;
   try {
     created = new Worker(url);
@@ -147,12 +190,43 @@ function call(request: Omit<WorkerRequest, "id">): Promise<OpResult<WorkerPayloa
   });
 }
 
-/** Tears the worker down. For tests, and for a page that is going away. */
+/**
+ * Tears the worker down. For tests, and for a page that is going away.
+ *
+ * Every request still waiting on it is answered `worker-unavailable` here and
+ * now, rather than left to its 45 s timeout. A later operation starts a fresh
+ * worker, so this does not latch.
+ *
+ * It is also what another copy of this module calls to take the page over
+ * (see `PAGE_OWNER`). A caller still holding a superseded copy can take it
+ * back the same way; that costs a wasm start per switch, never a second live
+ * worker.
+ */
 export function disposeRdkitWorker(): void {
-  worker?.terminate();
+  if (worker) {
+    worker.onmessage = null;
+    worker.onerror = null;
+    worker.terminate();
+  }
   failAll("The RDKit worker was disposed.");
   workerBroken = undefined;
+  releasePage();
 }
+
+/**
+ * Dispose when the bundler swaps this copy out: the prompt half of the fix at
+ * `PAGE_OWNER`, without which the outgoing worker would live on until the
+ * next RDKit operation, which may never come.
+ *
+ * `turbopackHot`, NOT `hot`. Turbopack's `import.meta` carries `url` and
+ * `turbopackHot` and nothing else — read off the served chunk — so the
+ * Vite-style `import.meta.hot` is always undefined here and a hook behind it
+ * never runs. Next declares `turbopackHot` in its global types, and it is
+ * undefined in a production build, where nothing is ever swapped.
+ */
+import.meta.turbopackHot?.dispose(() => {
+  disposeRdkitWorker();
+});
 
 /**
  * Whether `mol` should be handed to RDKit with its own layout or with a fresh
