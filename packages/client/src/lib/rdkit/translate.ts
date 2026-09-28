@@ -197,6 +197,13 @@ const CHANGED_WARNINGS: ReadonlySet<MolblockWarning["kind"]> = new Set([
   // coverage fell from `rac-` to per-centre tags. That is a banner, not a
   // footnote.
   "collection-count-mismatch",
+  // An atom the file named in two collections keeps only the first, so the
+  // second collection comes back short. Priced the SAME as
+  // `collection-count-mismatch` deliberately: both leave the graph alone and
+  // change what the structure says about its own configuration, and both can
+  // drop a molecule from `rac-` to per-centre tags. Reading one as a banner and
+  // the other as a footnote would be pricing the cause instead of the loss.
+  "stereo-group-conflict",
 ]);
 
 /** A bad x or y defaults the coordinate to 0, stacking an atom on the origin. */

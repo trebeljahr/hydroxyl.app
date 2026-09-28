@@ -511,8 +511,10 @@ const WARNING_TIERS: Readonly<Record<MolblockWarning["kind"], WarningCase>> = {
   },
   "stereo-group-conflict": {
     warning: { kind: "stereo-group-conflict", message: "", line: 21, atomIds: ["a2"] },
-    severity: "info",
-    because: "the later mention is dropped and the atom keeps the first collection",
+    severity: "changed",
+    because:
+      "the second collection comes back short, so the configuration the structure " +
+      "states is a different one — the same loss as collection-count-mismatch",
   },
   // ── field-dependent: see the two cases below ───────────────────────────
   "bad-numeric-field": {
