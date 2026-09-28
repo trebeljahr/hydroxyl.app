@@ -71,6 +71,7 @@ import {
 } from "./figure";
 import {
   exportCurrent,
+  leaveToRecents,
   newSketch,
   openFromDisk,
   saveNow,
@@ -1004,6 +1005,9 @@ function changeCharge(store: EditorStore, delta: number): void {
 // Mod+O are preventable in every engine. Mod+N is NOT — Chrome opens a new
 // window before a page script sees the event — so "New sketch" is
 // palette-only rather than advertising a key that does something else.
+// "Back to my sketches" is palette-only for the same reason: the one
+// convention for "go home" is Mod+Shift+H in Safari and Chrome on a Mac and
+// Alt+Home elsewhere, and both are the browser's own Home page.
 // ---------------------------------------------------------------------------
 
 const FILE_COMMANDS: readonly Command[] = [
@@ -1051,6 +1055,16 @@ const FILE_COMMANDS: readonly Command[] = [
     // will do anything useful with.
     enabled: (state) => !isEmpty(state.document.molecule),
     run: (store) => exportCurrent(store, "mol"),
+  },
+  {
+    // The top bar's link runs this too, so a click and the palette take the
+    // same save-then-leave path. See `leaveToRecents`.
+    id: "file.recents",
+    title: "Back to my sketches",
+    keywords: ["home", "back", "sketches", "recents", "library", "leave", "close", "exit"],
+    group: "file",
+    enabled: () => true,
+    run: (store) => leaveToRecents(store),
   },
 ];
 

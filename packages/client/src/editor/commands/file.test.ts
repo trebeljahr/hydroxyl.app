@@ -1,17 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { benzene, buildMolecule, vec, withStereoGroups } from "@starter/chem-core";
+import { benzene, buildMolecule, setCharge, vec, withStereoGroups } from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
 import { createDocument } from "@starter/shared";
 
 import { createMemoryDocumentStore, type MemoryDocumentStore } from "@/persistence/memory-store";
 import { setDocumentStore } from "@/persistence/documents";
 import { recordFor } from "@/persistence/record";
+import {
+  baselineEditorDocument,
+  startEditorPersistence,
+  stopEditorPersistence,
+} from "@/persistence/session";
 import { createEditorStore, type EditorStore } from "@/state";
 
 import { molblockVersionNotice } from "@/lib/rdkit/translate";
 
-import { applyImport, exportCurrent } from "./file";
+import { applyImport, exportCurrent, leaveToRecents } from "./file";
 
 /** Ethanol: three heavy atoms, so a document swap is visible by count alone. */
 function ethanol() {
@@ -42,6 +47,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  stopEditorPersistence();
+  vi.unstubAllEnvs();
   setDocumentStore(null);
 });
 
@@ -168,5 +175,95 @@ describe("exporting the current document says which molfile generation it wrote"
     // And the file really did change generation, so the sentence is not decorative.
     expect(downloads.join("")).toContain("V3000");
     expect(downloads.join("")).toContain("MDLV30/STERAC1");
+  });
+});
+
+describe("leaving the editor for the recents grid", () => {
+  /** A real edit to the open benzene: the first carbon becomes a cation. */
+  function chargeFirstAtom(): void {
+    const atomId = Object.keys(editor.getState().document.molecule.atoms)[0]!;
+    editor.getState().applyMoleculeEdit("Increase charge", (m) => setCharge(m, atomId, 1));
+  }
+
+  function openSession(): void {
+    // A debounce that never fires on its own inside a test, so the only write
+    // that can land the edit is the one leaving starts.
+    startEditorPersistence(editor, { debounceMs: 100_000 });
+    baselineEditorDocument(editor.getState().document);
+  }
+
+  it("puts the pending edit in storage BEFORE it navigates", async () => {
+    openSession();
+    chargeFirstAtom();
+    const id = editor.getState().document.id;
+
+    const storedAtNavigation: number[] = [];
+    const navigate = vi.fn(() => {
+      // Read synchronously inside the navigation: by the time a real page
+      // load starts, the write has to have happened already.
+      storedAtNavigation.push(store.counts.put);
+    });
+    await leaveToRecents(editor, { navigate, confirm: () => false });
+
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(storedAtNavigation).toEqual([1]);
+    const stored = await store.get(id);
+    expect(stored.ok && Object.values(stored.value.molecule.atoms).some((a) => a.charge === 1)).toBe(
+      true,
+    );
+  });
+
+  it("writes nothing and asks nothing when the sketch is already saved", async () => {
+    openSession();
+    const confirm = vi.fn<(message: string) => boolean>(() => true);
+    const navigate = vi.fn();
+
+    await leaveToRecents(editor, { navigate, confirm });
+
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(store.counts.put).toBe(0);
+  });
+
+  it("goes to the route in the server build and to a document-relative file in the export", async () => {
+    openSession();
+    const navigate = vi.fn();
+
+    vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "0");
+    await leaveToRecents(editor, { navigate });
+    vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "1");
+    await leaveToRecents(editor, { navigate });
+
+    // Never a literal "/" in the export: opened from a subdirectory or an app
+    // shell, that names a file outside the bundle.
+    expect(navigate.mock.calls).toEqual([["/"], ["index.html"]]);
+  });
+
+  it("ASKS before leaving a sketch the store refused, and stays when told to", async () => {
+    openSession();
+    store.failWith("quota", "There is no room left in this browser's storage.");
+    chargeFirstAtom();
+    const confirm = vi.fn<(message: string) => boolean>(() => false);
+    const navigate = vi.fn();
+
+    await leaveToRecents(editor, { navigate, confirm });
+
+    expect(navigate).not.toHaveBeenCalled();
+    expect(confirm).toHaveBeenCalledTimes(1);
+    // The store's own reason, verbatim, and the sketch by name.
+    expect(confirm.mock.calls[0]?.[0]).toMatch(/no room left/);
+    expect(confirm.mock.calls[0]?.[0]).toMatch(/“Untitled”/);
+    expect(editor.getState().ui.statusMessage).toMatch(/Stayed in the editor/);
+  });
+
+  it("leaves a refused sketch when the chemist says so", async () => {
+    openSession();
+    store.failWith("quota", "There is no room left in this browser's storage.");
+    chargeFirstAtom();
+    const navigate = vi.fn();
+
+    await leaveToRecents(editor, { navigate, confirm: () => true });
+
+    expect(navigate).toHaveBeenCalledTimes(1);
   });
 });

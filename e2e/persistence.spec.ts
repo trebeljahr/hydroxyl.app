@@ -20,6 +20,7 @@ const CANVAS = "[data-canvas-root]";
 const FORMULA = '[data-status="formula"]';
 const CHARGE = '[data-status="charge"]';
 const SAVE_STATE = '[data-status="save-state"]';
+const RECENTS_LINK = '[data-shell="recents-link"]';
 
 const BENZENE_MOLBLOCK = `Benzene
   chemcore          2D
@@ -303,6 +304,57 @@ test("the recents grid lists what was saved, and opens it", async ({ page }) => 
 
   await card.locator('[data-recents="open"]').click();
   await expect(page.locator(CHARGE)).toContainText("+6");
+});
+
+test("the top bar goes home with a stroke drawn a moment ago, and the card brings it back", async ({
+  page,
+}) => {
+  // Clicked straight after the stroke, with nothing awaited that would give
+  // the autosave debounce time to fire: the write that puts this card on the
+  // grid is the one the link waits for before it navigates.
+  const atoms = page.locator(`${CANVAS} [data-layer="scene"] circle[data-atom-id]`);
+  await page.goto("/editor");
+  await expect(atoms).toHaveCount(6);
+  const id = await currentDocId(page);
+
+  const box = (await page.locator(CANVAS).boundingBox())!;
+  await page.click('[data-tool="ring"]');
+  await page.mouse.click(box.x + 90, box.y + 90);
+  await expect.poll(() => atoms.count()).toBeGreaterThan(6);
+  const drawn = await atoms.count();
+
+  await page.locator(RECENTS_LINK).click();
+  await expect(page).toHaveURL((url) => url.pathname === "/");
+
+  const card = page.locator(`[data-recents="card"][data-doc-id="${id}"]`);
+  await expect(card).toBeVisible();
+  await expect(card.locator('[data-recents="thumbnail"]')).toBeVisible();
+  await card.locator('[data-recents="open"]').click();
+  await expect(atoms).toHaveCount(drawn);
+});
+
+test("leaving a sketch the store refused asks first, and stays when told to", async ({
+  page,
+}) => {
+  await page.goto("/editor?storage=full");
+  await chargeUpEverything(page);
+  await expect(page.locator(`${SAVE_STATE}[data-save-status="error"]`)).toBeVisible({
+    timeout: 10_000,
+  });
+
+  const asked: string[] = [];
+  page.once("dialog", (dialog) => {
+    asked.push(dialog.message());
+    void dialog.dismiss();
+  });
+  await page.locator(RECENTS_LINK).click();
+  await expect(page.locator('[data-status="message"]')).toContainText("Stayed in the editor");
+  expect(new URL(page.url()).pathname).toMatch(/^\/editor/);
+  expect(asked[0]).toMatch(/no room left/i);
+
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.locator(RECENTS_LINK).click();
+  await expect(page).toHaveURL((url) => url.pathname === "/");
 });
 
 test("?doc= opens THAT document, not whichever one the tab saw last", async ({ page }) => {
@@ -602,7 +654,7 @@ test("the palette lists the file commands", async ({ page }) => {
       node.getAttribute("data-palette-command"),
     ),
   );
-  for (const id of ["file.new", "file.open", "file.save", "file.export-mol"]) {
+  for (const id of ["file.new", "file.open", "file.save", "file.export-mol", "file.recents"]) {
     expect(listed).toContain(id);
   }
 });

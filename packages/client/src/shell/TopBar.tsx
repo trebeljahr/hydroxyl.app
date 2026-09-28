@@ -13,10 +13,16 @@
  * The title field is the one control that is not — a text input is not a
  * command — and it is also the reason the keyboard layer's text-entry guard
  * exists: typing "Benzene-1,2-diol" into it must not switch tools eight times.
+ *
+ * "Sketches", at the far left, is a LINK whose click runs a command. A link
+ * so that it can be opened in a new tab and so that its href is right in the
+ * prerendered HTML; a command so that a plain click saves before it leaves,
+ * exactly as the palette's "Back to my sketches" does.
  */
 
-import type { ReactElement } from "react";
+import type { MouseEvent, ReactElement } from "react";
 import {
+  ChevronLeftIcon,
   CommandIcon,
   ImageDownIcon,
   MoonIcon,
@@ -33,6 +39,7 @@ import {
 } from "@/components/ui/tooltip";
 import { STYLE_PRESETS, STYLE_PRESET_TITLES } from "@/canvas/scene-bridge";
 import { commandById, formatShortcut } from "@/editor/commands/registry";
+import { recentsHref } from "@/lib/deployment";
 import { cn } from "@/lib/utils";
 import { editorStore, useEditorStore } from "@/state";
 
@@ -143,6 +150,55 @@ function StylePresetSwitch(): ReactElement {
   );
 }
 
+/**
+ * The way out of the editor, to the recents grid.
+ *
+ * `recentsHref()`, never a literal "/": the static export can be opened from a
+ * subdirectory or as a document-relative `index.html` inside an app shell,
+ * where "/" names the wrong file entirely. And a plain `<a>`, not `next/link`,
+ * for the reason `lib/deployment.ts` measured: a client-side navigation in the
+ * export leaves the relative asset prefix pointing into a directory with no
+ * assets in it.
+ *
+ * A PLAIN CLICK IS TAKEN OVER, a modified one is not. The plain click waits
+ * for the open sketch to reach storage before it navigates — see
+ * `leaveToRecents`. A Cmd/Ctrl/Shift/middle click opens the grid in another
+ * tab or window, this editor stays open and goes on autosaving, and there is
+ * nothing to wait for.
+ */
+function RecentsLink(): ReactElement {
+  const command = commandById("file.recents");
+  const onClick = (event: MouseEvent<HTMLAnchorElement>): void => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      return;
+    }
+    event.preventDefault();
+    void command.run(editorStore);
+  };
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <a
+          href={recentsHref()}
+          data-shell="recents-link"
+          data-command={command.id}
+          onClick={onClick}
+          className={cn(
+            "flex h-8 items-center gap-0.5 rounded-md pl-1 pr-2 text-xs",
+            "hover:bg-accent hover:text-accent-foreground",
+            "focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-2",
+          )}
+        >
+          <ChevronLeftIcon className="size-4" aria-hidden="true" />
+          <span aria-hidden="true">Sketches</span>
+          <span className="sr-only">{command.title}</span>
+        </a>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{command.title}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 export function TopBar(): ReactElement {
   const title = useEditorStore((state) => state.document.metadata.title);
   // Rendered as an attribute rather than as text: the e2e specs need to know
@@ -157,6 +213,9 @@ export function TopBar(): ReactElement {
       data-doc-id={docId}
       className="bg-background flex h-11 shrink-0 items-center gap-2 border-b px-3"
     >
+      <RecentsLink />
+      <div className="bg-border h-5 w-px" aria-hidden="true" />
+
       <input
         aria-label="Document title"
         data-shell="document-title"

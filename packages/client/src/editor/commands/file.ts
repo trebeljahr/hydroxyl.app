@@ -11,12 +11,18 @@
 
 import { createDocument, type SketchDocument } from "@starter/shared";
 
+import { recentsHref } from "@/lib/deployment";
 import { exportDocument, type ExportFormat } from "@/lib/io/save";
 import { molblockVersionNotice } from "@/lib/rdkit/translate";
 import { openText, type OpenTextOptions } from "@/lib/io/open";
 import { pickTextFiles } from "@/lib/io/file-system";
 import { copyOf, documentStore, saveDocument } from "@/persistence/documents";
-import { baselineEditorDocument, saveEditorDocumentNow } from "@/persistence/session";
+import {
+  baselineEditorDocument,
+  flushEditorDocument,
+  saveEditorDocumentNow,
+} from "@/persistence/session";
+import type { StoreResult } from "@/persistence/types";
 import type { EditorStore } from "@/state";
 
 /** What a chemist's file manager will offer, plus the wildcard: the whole
@@ -218,4 +224,55 @@ export async function newSketch(store: EditorStore): Promise<void> {
   // Not saved: an empty document has nothing to lose, and writing one on every
   // Mod+N would fill the recents grid with blanks. The first edit persists it.
   await Promise.resolve();
+}
+
+/** What leaving needs from outside the store. Injectable so a test can watch
+ *  the order of the write and the navigation without a real page load. */
+export interface LeaveOptions {
+  readonly flush?: () => Promise<StoreResult<void> | null>;
+  readonly navigate?: (href: string) => void;
+  readonly confirm?: (message: string) => boolean;
+}
+
+/**
+ * Back to the recents grid, with the open sketch in storage first.
+ *
+ * THE WRITE IS AWAITED BEFORE THE NAVIGATION. A bare link would already be
+ * covered — `pagehide` journals the pending document to localStorage, and the
+ * grid recovers the journal before it reads the library — but that is the
+ * last-resort path, taken while the page is being destroyed. Here the page is
+ * still alive, so the ordinary IndexedDB write can finish and be checked, and
+ * the card the grid draws comes from a real save, thumbnail included.
+ *
+ * A REFUSED WRITE ASKS BEFORE IT LEAVES. The flush resolves a `StoreResult`
+ * and never rejects: a full quota, or a sketch another tab deleted while it
+ * was open here, is `{ok:false}`. Navigating on that would carry the chemist
+ * away from the only complete copy, so they decide. "May be lost" rather than
+ * "will be": the `pagehide` journal still tries, but it cannot be promised.
+ */
+export async function leaveToRecents(
+  store: EditorStore,
+  options: LeaveOptions = {},
+): Promise<void> {
+  const flush = options.flush ?? flushEditorDocument;
+  const navigate =
+    options.navigate ??
+    ((href: string) => {
+      window.location.assign(href);
+    });
+  const confirm = options.confirm ?? ((message: string) => window.confirm(message));
+
+  const result = await flush();
+  if (result !== null && !result.ok) {
+    const { title } = store.getState().document.metadata;
+    const leave = confirm(
+      `${result.error.message}\n\nLeave the editor anyway? ` +
+        `Changes to “${title}” since its last save may be lost.`,
+    );
+    if (!leave) {
+      store.getState().setStatusMessage(`Stayed in the editor: “${title}” is not saved.`);
+      return;
+    }
+  }
+  navigate(recentsHref());
 }
