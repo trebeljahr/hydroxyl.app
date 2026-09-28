@@ -143,6 +143,32 @@ describe("the schema ladder", () => {
     expect(migrated.message).toMatch(/newer version/i);
   });
 
+  it("upgrades a v1 row to v2: it gains annotations: [] and loses nothing", () => {
+    const original = benzeneDoc("doc_1");
+    const v1 = JSON.parse(JSON.stringify(encodeDocument(original))) as Record<string, unknown>;
+    delete v1.annotations;
+    delete v1.nextAnnotationId;
+    v1.schemaVersion = 1;
+    const migrated = migrateStored(v1);
+    expect(migrated.ok && migrated.upgradedFrom).toBe(1);
+    const decoded = decodeStored(v1);
+    expect(decoded.ok).toBe(true);
+    if (!decoded.ok) return;
+    expect(decoded.value.annotations).toEqual([]);
+    expect(decoded.value).toEqual(original);
+  });
+
+  it("names a row holding a field this build does not know as a newer build's (decision 110)", () => {
+    const encoded = JSON.parse(JSON.stringify(encodeDocument(benzeneDoc("doc_1")))) as {
+      panels: Record<string, unknown>[];
+    };
+    encoded.panels[0]!.view = { kind: "chain" };
+    const decoded = decodeStored(encoded);
+    expect(decoded.ok).toBe(false);
+    if (decoded.ok) return;
+    expect(decoded.error.message).toMatch(/newer version/i);
+  });
+
   it("refuses a value carrying no version at all", () => {
     expect(migrateStored({}).ok).toBe(false);
     expect(migrateStored({ schemaVersion: 0 }).ok).toBe(false);

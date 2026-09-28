@@ -44,7 +44,7 @@ import { documentBondLength, movingAtomIds, reduce } from "./machine";
 // A harness that behaves like the store, without being it
 // ---------------------------------------------------------------------------
 
-const EMPTY: Selection = { atomIds: [], bondIds: [] };
+const EMPTY: Selection = { atomIds: [], bondIds: [], annotationIds: [] };
 
 /**
  * Ethanol, drawn as a chemist would: a zig-zag C-C-O.
@@ -662,7 +662,7 @@ describe("moving a selection", () => {
     // defensible answer, so the gesture is a plain move.
     const mol = benzene();
     const driver = new Driver(mol);
-    driver.selection = { atomIds: ["a1", "a2"], bondIds: [] };
+    driver.selection = { atomIds: ["a1", "a2"], bondIds: [], annotationIds: [] };
     dragTo(driver, sample(pos(mol, "a1"), atomHit("a1")), pos(mol, "a4"), 4, () =>
       atomHit("a4"),
     );
@@ -675,7 +675,7 @@ describe("rotating a selection", () => {
   it("turns the selection about its centroid, from the grab handle", () => {
     const mol = benzene();
     const driver = new Driver(mol);
-    driver.selection = { atomIds: ["a1", "a2", "a3", "a4", "a5", "a6"], bondIds: [] };
+    driver.selection = { atomIds: ["a1", "a2", "a3", "a4", "a5", "a6"], bondIds: [], annotationIds: [] };
 
     // The centroid of benzene is the origin. Grab at due east and drag to due
     // north: a quarter turn.
@@ -693,7 +693,7 @@ describe("rotating a selection", () => {
   it("does not accumulate over frames, and cancels back to the base", () => {
     const mol = benzene();
     const driver = new Driver(mol);
-    driver.selection = { atomIds: mol.atomIds, bondIds: [] };
+    driver.selection = { atomIds: mol.atomIds, bondIds: [], annotationIds: [] };
     dragTo(driver, sample({ x: 2, y: 0 }, { kind: "handle" }), { x: 0, y: 2 }, 30);
     driver.send({ kind: "cancel" });
     expect(driver.molecule).toBe(mol);
@@ -707,13 +707,13 @@ describe("rotating a selection", () => {
     // of opening a "Rotate selection" entry that changes nothing.
     const mol = benzene();
     const handle = new Driver(mol);
-    handle.selection = { atomIds: ["a1"], bondIds: [] };
+    handle.selection = { atomIds: ["a1"], bondIds: [], annotationIds: [] };
     dragTo(handle, sample({ x: 0, y: 1 }, { kind: "handle" }), { x: 1, y: 1 }, 3);
     expect(handle.state.kind).not.toBe("rotating");
     expect(handle.count("beginTransaction")).toBe(0);
 
     const alt = new Driver(mol);
-    alt.selection = { atomIds: ["a1"], bondIds: [] };
+    alt.selection = { atomIds: ["a1"], bondIds: [], annotationIds: [] };
     const from = sample(pos(mol, "a1"), atomHit("a1"), { alt: true });
     dragTo(alt, from, { x: 0.5, y: -1.5 }, 3);
     alt.send({ kind: "dragEnd", sample: sample({ x: 0.5, y: -1.5 }) });
@@ -724,7 +724,7 @@ describe("rotating a selection", () => {
     // Two atoms is the smallest selection with something to turn.
     const mol = benzene();
     const driver = new Driver(mol);
-    driver.selection = { atomIds: [], bondIds: ["b7"] };
+    driver.selection = { atomIds: [], bondIds: ["b7"], annotationIds: [] };
     dragTo(driver, sample({ x: 0, y: 2 }, { kind: "handle" }), { x: -2, y: 0 }, 6);
     expect(driver.state.kind).toBe("rotating");
   });
@@ -1029,16 +1029,16 @@ describe("panning", () => {
 describe("movingAtomIds", () => {
   it("drops ids the molecule no longer has, because setAtomPositions throws on them", () => {
     const mol = benzene();
-    expect(movingAtomIds(mol, { atomIds: ["a1", "a99"], bondIds: [] })).toEqual(["a1"]);
+    expect(movingAtomIds(mol, { atomIds: ["a1", "a99"], bondIds: [], annotationIds: [] })).toEqual(["a1"]);
     // And it does not fall through Object.prototype on a hostile id.
     expect(
-      movingAtomIds(mol, { atomIds: ["constructor" as AtomId], bondIds: [] }),
+      movingAtomIds(mol, { atomIds: ["constructor" as AtomId], bondIds: [], annotationIds: [] }),
     ).toEqual([]);
   });
 
   it("adds the endpoints of a selected bond exactly once", () => {
     const mol = benzene();
-    expect(movingAtomIds(mol, { atomIds: ["a2"], bondIds: ["b8"] })).toEqual([
+    expect(movingAtomIds(mol, { atomIds: ["a2"], bondIds: ["b8"], annotationIds: [] })).toEqual([
       "a2",
       "a3",
     ]);

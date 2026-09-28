@@ -16,6 +16,7 @@
  */
 
 import type { AtomId, BondId, Molecule } from "@starter/chem-core";
+import type { SchemeAnnotation, SchemeAnnotationId } from "@starter/chem-render";
 import { castDraft } from "immer";
 import type {
   EditorSliceCreator,
@@ -27,6 +28,7 @@ import type {
 export const EMPTY_SELECTION: Selection = Object.freeze({
   atomIds: Object.freeze([]),
   bondIds: Object.freeze([]),
+  annotationIds: Object.freeze([]),
 });
 
 /** Order-preserving de-duplication. A rubber band that sweeps an atom twice,
@@ -53,13 +55,19 @@ function nextSelection(
   current: Selection,
   atomIds: readonly AtomId[],
   bondIds: readonly BondId[],
+  annotationIds: readonly SchemeAnnotationId[],
 ): Selection {
   const atoms = unique(atomIds);
   const bonds = unique(bondIds);
-  if (sameIds(current.atomIds, atoms) && sameIds(current.bondIds, bonds)) {
+  const annotations = unique(annotationIds);
+  if (
+    sameIds(current.atomIds, atoms) &&
+    sameIds(current.bondIds, bonds) &&
+    sameIds(current.annotationIds, annotations)
+  ) {
     return current;
   }
-  return { atomIds: atoms, bondIds: bonds };
+  return { atomIds: atoms, bondIds: bonds, annotationIds: annotations };
 }
 
 /**
@@ -74,6 +82,7 @@ function nextSelection(
 export function pruneSelection(
   selection: Selection,
   molecule: Molecule,
+  annotations: readonly SchemeAnnotation[],
 ): Selection {
   // `Object.hasOwn`, not `in`: `molecule.atoms` is a plain object, so `in`
   // walks Object.prototype and an atom id of "constructor" or "toString"
@@ -85,13 +94,25 @@ export function pruneSelection(
   const bondIds = selection.bondIds.filter((id) =>
     Object.hasOwn(molecule.bonds, id),
   );
+  // Annotations the same edit pruned (their anchor went with the atoms) leave
+  // the selection in the same entry. A Set of the survivors, not a property
+  // lookup, so no id can resolve up a prototype.
+  const surviving =
+    selection.annotationIds.length === 0
+      ? undefined
+      : new Set(annotations.map((annotation) => annotation.id));
+  const annotationIds =
+    surviving === undefined
+      ? selection.annotationIds
+      : selection.annotationIds.filter((id) => surviving.has(id));
   if (
     atomIds.length === selection.atomIds.length &&
-    bondIds.length === selection.bondIds.length
+    bondIds.length === selection.bondIds.length &&
+    annotationIds.length === selection.annotationIds.length
   ) {
     return selection;
   }
-  return { atomIds, bondIds };
+  return { atomIds, bondIds, annotationIds };
 }
 
 export function createSelectionSlice(): EditorSliceCreator<SelectionSlice> {
@@ -99,9 +120,10 @@ export function createSelectionSlice(): EditorSliceCreator<SelectionSlice> {
     const apply = (
       atomIds: readonly AtomId[],
       bondIds: readonly BondId[],
+      annotationIds: readonly SchemeAnnotationId[] = [],
     ): void => {
       const current = get().selection;
-      const next = nextSelection(current, atomIds, bondIds);
+      const next = nextSelection(current, atomIds, bondIds, annotationIds);
       if (next === current) return;
       // Computed outside the recipe and assigned wholesale, like every other
       // value in this store — see slices/document.ts for the full reason.
@@ -114,7 +136,7 @@ export function createSelectionSlice(): EditorSliceCreator<SelectionSlice> {
       selection: EMPTY_SELECTION,
 
       setSelection(selection) {
-        apply(selection.atomIds, selection.bondIds);
+        apply(selection.atomIds, selection.bondIds, selection.annotationIds);
       },
 
       selectAtoms(ids) {
@@ -132,6 +154,9 @@ export function createSelectionSlice(): EditorSliceCreator<SelectionSlice> {
         apply(
           patch.atomIds ? [...current.atomIds, ...patch.atomIds] : current.atomIds,
           patch.bondIds ? [...current.bondIds, ...patch.bondIds] : current.bondIds,
+          patch.annotationIds
+            ? [...current.annotationIds, ...patch.annotationIds]
+            : current.annotationIds,
         );
       },
 
@@ -144,6 +169,7 @@ export function createSelectionSlice(): EditorSliceCreator<SelectionSlice> {
             ? current.atomIds.filter((other) => other !== id)
             : [...current.atomIds, id],
           current.bondIds,
+          current.annotationIds,
         );
       },
 
@@ -154,6 +180,7 @@ export function createSelectionSlice(): EditorSliceCreator<SelectionSlice> {
           current.bondIds.includes(id)
             ? current.bondIds.filter((other) => other !== id)
             : [...current.bondIds, id],
+          current.annotationIds,
         );
       },
 
@@ -164,7 +191,10 @@ export function createSelectionSlice(): EditorSliceCreator<SelectionSlice> {
       selectAll() {
         const molecule = get().document.molecule;
         // The id lists, not `Object.keys`: they carry insertion order, which
-        // is what every consumer of a selection expects to see.
+        // is what every consumer of a selection expects to see. The molecule
+        // only, for now: every command that acts on a selection acts on atoms
+        // and bonds, and the arrow tools that give annotations a delete and a
+        // copy are where "all" widens to include them.
         apply(molecule.atomIds, molecule.bondIds);
       },
 

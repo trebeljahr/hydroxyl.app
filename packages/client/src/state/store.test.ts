@@ -24,6 +24,7 @@ import { describe, expect, it } from "vitest";
 import { guardedOps } from "./chem-guard";
 import { DEFAULT_HISTORY_LIMIT } from "./history";
 import { createEditorStore, type EditorStore } from "./store";
+import type { UndoableState } from "./types";
 
 /** Ethanol, drawn the way the chain tool would lay it down. */
 function ethanol(): Molecule {
@@ -122,9 +123,10 @@ describe("createEditorStore", () => {
     const store = createEditorStore();
     // Resolved from packages/shared/dist via the package exports, not from a
     // tsconfig paths mapping into src.
-    expect(SCHEMA_VERSION).toBe(1);
+    expect(SCHEMA_VERSION).toBe(2);
     expect(store.getState().document.schemaVersion).toBe(SCHEMA_VERSION);
     expect(store.getState().document.molecule.atomIds).toEqual([]);
+    expect(store.getState().document.annotations).toEqual([]);
     expect(store.getState().document.panels.length).toBeGreaterThan(0);
     expect(store.getState().canUndo()).toBe(false);
     expect(store.getState().canRedo()).toBe(false);
@@ -856,5 +858,85 @@ describe("draft safety", () => {
 
     expect(store.getState().document).toBe(before);
     expect(isDraft(store.getState().document.molecule)).toBe(false);
+  });
+});
+
+describe("scheme annotations ride in the document", () => {
+  /** Ethanol and a second ethanol drawn to its right as the product side, a
+   *  reaction arrow between them anchored by each one's oxygen, and a curly
+   *  arrow from the left oxygen's lone pair into its own C-O bond. */
+  function schemeStore(): EditorStore {
+    const now = fakeClock();
+    const molecule = buildMolecule((b) => {
+      for (const dx of [0, 5]) {
+        const c1 = b.atom("C", { x: dx, y: 0 });
+        const c2 = b.atom("C", { x: dx + 1, y: 0 });
+        const o = b.atom("O", { x: dx + 1.5, y: 0.87 });
+        b.bond(c1, c2);
+        b.bond(c2, o);
+      }
+    });
+    // a1 a2 a3 (b4 b5), then a6 a7 a8 (b9 b10).
+    const document = createDocument({
+      molecule,
+      now: now(),
+      annotations: [
+        { id: "ann_1", kind: "reactionArrow", from: ["a3"], to: ["a8"] },
+        {
+          id: "ann_2",
+          kind: "curlyArrow",
+          electrons: "pair",
+          source: { kind: "lonePair", atomId: "a3" },
+          sink: { kind: "bond", bondId: "b5" },
+          bulge: 0.3,
+          skew: 0,
+        },
+      ],
+    });
+    return createEditorStore({ document, now });
+  }
+
+  it("keeps UndoableState at exactly document and selection", () => {
+    // A field added to UndoableState is a compile error here, and so is one
+    // taken away: annotations belong to the document and ride in its snapshot.
+    const pinned: Record<keyof UndoableState, true> = { document: true, selection: true };
+    expect(Object.keys(pinned)).toEqual(["document", "selection"]);
+  });
+
+  it("prunes an annotation anchored to a deleted atom in the same undo entry", () => {
+    const store = schemeStore();
+    const before = store.getState().document;
+    store.getState().setSelection({ atomIds: ["a3"], bondIds: [], annotationIds: ["ann_2"] });
+    store
+      .getState()
+      .applyMoleculeEdit("Delete", (mol) => guardedOps.removeAtoms(mol, ["a3"]));
+
+    const after = store.getState();
+    // The curly arrow's lone pair went with its oxygen; the reaction arrow's
+    // species survived, so it is re-pointed to ethanol's lowest atom.
+    expect(after.document.annotations).toEqual([
+      { id: "ann_1", kind: "reactionArrow", from: ["a1"], to: ["a8"] },
+    ]);
+    expect(after.selection.annotationIds).toEqual([]);
+
+    // ONE entry: undo brings the atom and both arrows back, by reference.
+    after.undo();
+    expect(store.getState().document).toBe(before);
+    expect(store.getState().selection.annotationIds).toEqual(["ann_2"]);
+  });
+
+  it("leaves the annotation list itself untouched by an edit that names nothing in it", () => {
+    const store = schemeStore();
+    const annotations = store.getState().document.annotations;
+    moveTo(store, "a6", 5, 1);
+    expect(store.getState().document.annotations).toBe(annotations);
+  });
+
+  it("drops a reaction arrow whose whole species is deleted", () => {
+    const store = schemeStore();
+    store
+      .getState()
+      .applyMoleculeEdit("Delete", (mol) => guardedOps.removeAtoms(mol, ["a6", "a7", "a8"]));
+    expect(store.getState().document.annotations.map((a) => a.id)).toEqual(["ann_2"]);
   });
 });

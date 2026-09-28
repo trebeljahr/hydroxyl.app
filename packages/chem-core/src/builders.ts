@@ -19,6 +19,7 @@ import type {
   BondOrder,
   BondStereo,
   Molecule,
+  SpeciesJoin,
   StereoGroup,
 } from "./types.js";
 import { DEG, fromPolar, add as addVec, ORIGIN, type Vec2 } from "./vec.js";
@@ -64,6 +65,7 @@ interface MoleculeFields {
   readonly bondIds: readonly BondId[];
   readonly nextId: number;
   readonly stereoGroups: readonly StereoGroup[] | undefined;
+  readonly speciesJoins: readonly SpeciesJoin[] | undefined;
 }
 
 /**
@@ -86,14 +88,16 @@ void MOLECULE_FIELDS_ARE_EXACT;
 /**
  * The one place a `Molecule` record is assembled from parts.
  *
- * `stereoGroups` is OMITTED rather than stored as an empty array, so a molecule
- * that says nothing about grouping is deep-equal to one that never could (see
- * the field's comment in types.ts). Callers may therefore hand the result of a
- * prune straight in without testing it for emptiness first.
+ * `stereoGroups` and `speciesJoins` are OMITTED rather than stored as empty
+ * arrays, so a molecule that says nothing about grouping is deep-equal to one
+ * that never could (see the fields' comments in types.ts). Callers may
+ * therefore hand the result of a prune straight in without testing it for
+ * emptiness first.
  *
- * Deliberately does NOT validate or reorder the groups. That is
- * `withStereoGroups`'s job in stereo-groups.ts, which needs `compareIds` from
- * selection.ts and so sits higher in the import graph.
+ * Deliberately does NOT validate or reorder either list. That is
+ * `withStereoGroups`'s job in stereo-groups.ts and `withSpeciesJoins`'s in
+ * species.ts, which need `compareIds` from selection.ts and so sit higher in
+ * the import graph.
  */
 export function assembleMolecule(fields: MoleculeFields): Molecule {
   const mol: {
@@ -107,6 +111,11 @@ export function assembleMolecule(fields: MoleculeFields): Molecule {
   };
   if (fields.stereoGroups !== undefined && fields.stereoGroups.length > 0) {
     mol.stereoGroups = fields.stereoGroups;
+  }
+  // Same rule, same reason: an empty join list is a second spelling of "no
+  // species are joined", so the key is dropped rather than stored as `[]`.
+  if (fields.speciesJoins !== undefined && fields.speciesJoins.length > 0) {
+    mol.speciesJoins = fields.speciesJoins;
   }
   return mol;
 }
@@ -189,6 +198,9 @@ export class MoleculeBuilder {
       bondIds: this.bondIds,
       nextId: this.nextId,
       stereoGroups: undefined,
+      // No gesture joins species mid-build either; `withSpeciesJoins` does it
+      // once the structure exists, for the same reason as the groups.
+      speciesJoins: undefined,
     });
   }
 }

@@ -27,6 +27,11 @@ import {
 import type { Atom, AtomId, Bond, BondId, Molecule } from "./types.js";
 import { assembleMolecule } from "./builders.js";
 import {
+  graftSpeciesJoins,
+  remappedSpeciesJoins,
+  speciesJoinsOf,
+} from "./species.js";
+import {
   graftStereoGroups,
   remappedStereoGroups,
   stereoGroupsOf,
@@ -160,6 +165,10 @@ export function extractFragment(
       bondIds,
       nextId,
       stereoGroups: remappedStereoGroups(stereoGroupsOf(mol), atomIdMap),
+      // Joins restrict and remap the same way: copying one ion of a joined
+      // salt copies no join, and copying both copies the statement that they
+      // are one species.
+      speciesJoins: remappedSpeciesJoins(speciesJoinsOf(mol), atomIdMap),
     }),
     atomIdMap,
     bondIdMap,
@@ -257,6 +266,13 @@ export function insertFragment(
       stereoGroups: graftStereoGroups(
         stereoGroupsOf(target),
         stereoGroupsOf(fragment),
+        atomIdMap,
+      ),
+      // Nothing to renumber: a join carries no index, only atoms, and every
+      // pasted atom is fresh.
+      speciesJoins: graftSpeciesJoins(
+        speciesJoinsOf(target),
+        speciesJoinsOf(fragment),
         atomIdMap,
       ),
     }),

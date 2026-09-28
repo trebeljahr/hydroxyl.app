@@ -69,4 +69,8 @@ export * from "./svg/serialize.js";
 export * from "./figure/compose.js";
 export * from "./figure/physical.js";
 export * from "./svg/figure.js";
+// Scheme annotations: the stored arrows, plus signs, brackets and text a
+// document holds beside its molecule. Types, anchors and pruning only — the
+// layer that resolves them to geometry and draws them builds on this.
+export * from "./scheme/annotation.js";
 export * from "./fixtures.js";

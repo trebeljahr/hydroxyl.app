@@ -210,7 +210,7 @@ describe("hit resolution mid-gesture", () => {
 
   it("still sees the target atom under a dragged atom sitting on top of it", () => {
     const { molecule, a1, a3 } = atoms;
-    const h = new Harness(storeWith(molecule, { atomIds: [a3], bondIds: [] }));
+    const h = new Harness(storeWith(molecule, { atomIds: [a3], bondIds: [], annotationIds: [] }));
 
     h.press({ x: 0, y: 2 });
     h.dragStart({ x: 0, y: 2 }, { x: 0, y: 1.5 });
@@ -223,7 +223,7 @@ describe("hit resolution mid-gesture", () => {
 
   it("merges a dragged atom onto the atom it is dropped dead-on", () => {
     const { molecule, a1, a2, a3 } = atoms;
-    const h = new Harness(storeWith(molecule, { atomIds: [a3], bondIds: [] }));
+    const h = new Harness(storeWith(molecule, { atomIds: [a3], bondIds: [], annotationIds: [] }));
 
     h.drag({ x: 0, y: 2 }, { x: 0, y: 0 });
 
@@ -242,7 +242,7 @@ describe("hit resolution mid-gesture", () => {
     // slightly off the pointer. Both offsets small is the case that used to
     // fail and the case a chemist actually produces.
     const { molecule, a1, a3 } = atoms;
-    const h = new Harness(storeWith(molecule, { atomIds: [a3], bondIds: [] }));
+    const h = new Harness(storeWith(molecule, { atomIds: [a3], bondIds: [], annotationIds: [] }));
 
     h.press({ x: 0.02, y: 2.01 });
     h.dragStart({ x: 0.02, y: 2.01 }, { x: 0.02, y: 1.5 });
@@ -256,7 +256,7 @@ describe("hit resolution mid-gesture", () => {
 
   it("refuses to merge two atoms that are already bonded, and puts the atom back", () => {
     const { molecule, a1, a2 } = atoms;
-    const h = new Harness(storeWith(molecule, { atomIds: [a2], bondIds: [] }));
+    const h = new Harness(storeWith(molecule, { atomIds: [a2], bondIds: [], annotationIds: [] }));
     const before = h.store.getState().document;
     const entriesBefore = h.store.getState().history.past.length;
 
@@ -274,7 +274,7 @@ describe("hit resolution mid-gesture", () => {
 
   it("marks the refusal on the overlay while the button is still down", () => {
     const { molecule, a1, a2 } = atoms;
-    const h = new Harness(storeWith(molecule, { atomIds: [a2], bondIds: [] }));
+    const h = new Harness(storeWith(molecule, { atomIds: [a2], bondIds: [], annotationIds: [] }));
 
     h.press({ x: 1, y: 0 });
     h.dragStart({ x: 1, y: 0 }, { x: 0.8, y: 0 });

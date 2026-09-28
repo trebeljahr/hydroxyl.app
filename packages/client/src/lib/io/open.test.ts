@@ -147,6 +147,18 @@ describe("importing a native sketch", () => {
     expect(result.message).toMatch(/newer version/i);
   });
 
+  it("names a sketch file holding a field this build does not know as a newer version's", async () => {
+    const doc = JSON.parse(JSON.stringify(encodeDocument(createDocument({ id: "doc_1" })))) as Record<
+      string,
+      unknown
+    >;
+    doc.somethingNewer = true;
+    const result = await openText(JSON.stringify(doc));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toMatch(/newer version/i);
+  });
+
   it("names what is wrong with a malformed sketch", async () => {
     const result = await openText('{"schemaVersion":1,"id":"doc_1"}');
     expect(result.ok).toBe(false);

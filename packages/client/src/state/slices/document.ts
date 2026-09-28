@@ -32,6 +32,7 @@
  */
 
 import type { Molecule } from "@starter/chem-core";
+import { pruneSchemeAnnotations } from "@starter/chem-render";
 import {
   DISPLAY_FLAG_KEYS,
   createPanel,
@@ -368,14 +369,24 @@ export function createDocumentSlice(
         // Recording that would be an undo step with nothing to see.
         if (molecule === before.document.molecule) return;
 
+        // Annotations whose anchors the edit removed go in the SAME entry, and
+        // a species reference whose atom went but whose species survived is
+        // re-pointed (decision 103) — so undo brings atoms and arrows back
+        // together, and no saved document ever holds a dangling reference.
+        // The same array comes back when nothing it names was touched.
+        const annotations = pruneSchemeAnnotations(
+          before.document.annotations,
+          before.document.molecule,
+          molecule,
+        );
         commit(label, {
           document: touchDocument(
-            { ...before.document, molecule },
+            { ...before.document, molecule, annotations },
             options.now(),
           ),
           // In the SAME entry as the edit, so undoing a deletion brings the
           // atoms and the selection back together.
-          selection: pruneSelection(before.selection, molecule),
+          selection: pruneSelection(before.selection, molecule, annotations),
         });
       },
 

@@ -30,6 +30,7 @@ import type {
   RingTemplateName,
   Vec2,
 } from "@starter/chem-core";
+import type { SchemeAnnotationId } from "@starter/chem-render";
 import type {
   PanelId,
   RepresentationDisplay,
@@ -57,13 +58,23 @@ import type { Bounds, Viewport, ViewportSize } from "./viewport";
 export interface Selection {
   readonly atomIds: readonly AtomId[];
   readonly bondIds: readonly BondId[];
+  /**
+   * Scheme annotations — arrows, plus signs, brackets, labels — by id.
+   *
+   * HERE and not in chem-core's `Selection`: chem-core has no business
+   * knowing what an arrow is, and its canonically-sorted selection stays a
+   * molecule selection. The client's is the editor's, and the editor selects
+   * whatever it can draw.
+   */
+  readonly annotationIds: readonly SchemeAnnotationId[];
 }
 
 /** A partial selection, for the additive operations (shift-click, rubber-band
- *  extend) that name only the half of the selection they touch. */
+ *  extend) that name only the part of the selection they touch. */
 export interface SelectionPatch {
   readonly atomIds?: readonly AtomId[];
   readonly bondIds?: readonly BondId[];
+  readonly annotationIds?: readonly SchemeAnnotationId[];
 }
 
 export interface UndoableState {

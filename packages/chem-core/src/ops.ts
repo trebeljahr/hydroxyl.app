@@ -54,6 +54,7 @@ import type {
 } from "./types.js";
 import { assembleMolecule } from "./builders.js";
 import { prunedStereoGroups, stereoGroupsOf } from "./stereo-groups.js";
+import { prunedSpeciesJoins, renamedSpeciesJoins, speciesJoinsOf } from "./species.js";
 import type { Vec2 } from "./vec.js";
 
 // ---------------------------------------------------------------------------
@@ -111,6 +112,9 @@ export function removeAtoms(mol: Molecule, ids: readonly AtomId[]): Molecule {
     bondIds,
     nextId: mol.nextId,
     stereoGroups: prunedStereoGroups(stereoGroupsOf(mol), (id) => !doomed.has(id)),
+    // Species joins are pruned the same way and for the same reason; a join
+    // left naming a single atom joins nothing and goes (decision 102).
+    speciesJoins: prunedSpeciesJoins(speciesJoinsOf(mol), (id) => !doomed.has(id)),
   });
 }
 
@@ -560,6 +564,13 @@ export function mergeAtoms(
       bondIds,
       nextId: mol.nextId,
       stereoGroups: prunedStereoGroups(stereoGroupsOf(mol), (id) => id !== draggedId),
+      // Species joins are the opposite choice, deliberately: the dragged id is
+      // RENAMED to the survivor's rather than dropped. A group describes the
+      // ligand set at a centre, which merging destroys; a join says which
+      // pieces are one compound, which merging only makes more true — the two
+      // atoms are now one. Dropping it would silently split a salt whose only
+      // joined atom was the one the user dragged.
+      speciesJoins: renamedSpeciesJoins(speciesJoinsOf(mol), draggedId, targetId),
     }),
     survivingId: targetId,
     removedAtomId: draggedId,

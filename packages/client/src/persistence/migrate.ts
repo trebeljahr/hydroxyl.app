@@ -9,12 +9,12 @@
  * parsed value, one version step at a time, and only then does the result meet
  * the schema.
  *
- * SCHEMA_VERSION IS STILL 1, so there is nothing to upgrade FROM yet and the
- * ladder below has no rungs. It exists anyway because the alternative — adding
- * the whole mechanism at the moment the first breaking change lands, with
- * users' documents already on disk — is how a format loses its old files. The
- * shape is what matters now: `migrateStored` is total, it never throws, and
- * every future step is a case in one switch.
+ * THE LADDER HAS ONE RUNG: 1 -> 2, the scheme model, which adds an empty
+ * annotation list and its id counter. The steps themselves are
+ * `DOCUMENT_UPGRADES` in @starter/shared, beside the schema they target,
+ * because a step is knowledge of the document's shape; this file only walks
+ * them. `migrateStored` is total, never throws, and every future step is one
+ * more entry there.
  *
  * INPUT IS UNTRUSTED, and IndexedDB is not a trusted source: rows survive a
  * hand edit through devtools, a half-written transaction, and a build that no
@@ -24,7 +24,12 @@
  * anything new reading external data has to be hardened too.
  */
 
-import { SCHEMA_VERSION, safeDecodeDocument } from "@starter/shared";
+import {
+  DOCUMENT_UPGRADES,
+  SCHEMA_VERSION,
+  isFromNewerBuild,
+  safeDecodeDocument,
+} from "@starter/shared";
 import type { SketchDocument } from "@starter/shared";
 
 import { storeFail, storeOk, type StoreResult } from "./types";
@@ -82,12 +87,32 @@ export function migrateStored(raw: unknown): MigrateResult {
 }
 
 /**
- * `UPGRADES[n]` turns a version-`n` value into a version-`n+1` one.
- *
- * Empty while SCHEMA_VERSION is 1. Each entry must also bump the value's own
- * `schemaVersion` field, since that is what the schema validates against.
+ * `UPGRADES[n]` turns a version-`n` value into a version-`n+1` one, bumping
+ * the value's own `schemaVersion`, which is what the schema validates.
  */
-const UPGRADES: Readonly<Record<number, (value: unknown) => unknown>> = {};
+const UPGRADES: Readonly<Record<number, (value: unknown) => unknown>> = DOCUMENT_UPGRADES;
+
+/**
+ * The sentence for a decode that failed on keys this build does not know, or
+ * `undefined` when it failed for another reason.
+ *
+ * Since v2 the codec REFUSES an unknown key rather than stripping it (decision
+ * 110), and the realistic source is a newer build — another tab opened after a
+ * deploy, a file exported from a newer version. Calling that "corrupt" would
+ * send the user looking for damage that is not there; saying which build to
+ * use is the whole remedy.
+ */
+export function newerBuildMessage(
+  error: Parameters<typeof isFromNewerBuild>[0],
+  what: string,
+): string | undefined {
+  if (!isFromNewerBuild(error)) return undefined;
+  return (
+    `${what} was written by a newer version of the editor: it holds fields this ` +
+    `version does not know, and opening it here would lose them. Reload to get ` +
+    `the newest version.`
+  );
+}
 
 /** Migrate, then decode. The only route from a stored row to a document. */
 export function decodeStored(raw: unknown): StoreResult<SketchDocument> {
@@ -95,6 +120,8 @@ export function decodeStored(raw: unknown): StoreResult<SketchDocument> {
   if (!migrated.ok) return storeFail("corrupt", migrated.message);
   const decoded = safeDecodeDocument(migrated.value);
   if (!decoded.ok) {
+    const newer = newerBuildMessage(decoded.error, "This document");
+    if (newer !== undefined) return storeFail("corrupt", newer);
     return storeFail(
       "corrupt",
       `This document could not be read: ${decoded.error.issues

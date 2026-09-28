@@ -84,6 +84,33 @@ export interface StereoGroup {
   readonly atomIds: readonly AtomId[];
 }
 
+/**
+ * A statement that several disconnected pieces of the drawing are ONE species
+ * (decision 102): the two ions of a salt, a compound and its solvent of
+ * crystallisation.
+ *
+ * A species is otherwise a connected component. Sodium chloride drawn beside
+ * an ester is three components, and without this record a scheme would count
+ * three reagents, put a plus sign between the ions and give each its own
+ * stoichiometric coefficient. The join says the components containing these
+ * atoms are one thing, and `species(mol)` in species.ts unions them.
+ *
+ * JOIN-ONLY. Nothing can split one component into two species: a bond between
+ * two reagents has no chemical meaning, so there is no record for it to make.
+ *
+ * The atoms NAME components rather than enumerate them, so an atom drawn later
+ * onto a joined component is in the species with no edit here, and a join
+ * whose components the user has since bonded together is redundant, not
+ * invalid. `withSpeciesJoins` keeps the list canonical: every join has at
+ * least two atoms, no atom is in two joins (overlapping joins are unioned, as
+ * joining is transitive), atom ids ascend by `compareIds`, and the joins
+ * ascend by their first atom.
+ */
+export interface SpeciesJoin {
+  /** At least two, deduplicated, ascending by `compareIds`. */
+  readonly atomIds: readonly AtomId[];
+}
+
 export interface Atom {
   readonly id: AtomId;
   readonly element: ElementSymbol;
@@ -183,6 +210,21 @@ export interface Molecule {
    * the one place the list is validated and put in canonical order.
    */
   readonly stereoGroups?: readonly StereoGroup[];
+  /**
+   * Components that are one species (decision 102). See `SpeciesJoin`.
+   *
+   * ON THE MOLECULE, not the document, for the reason `stereoGroups` is: which
+   * pieces make one compound is a statement about the chemistry, and it has to
+   * survive a copy, a paste, a duplicate and a delete exactly as a bond does.
+   * Here it rides through `fragment.ts` and `ops.ts` like the stereo groups
+   * do; on the document every one of those paths would need a second channel.
+   *
+   * THE KEY IS OMITTED when nothing is joined, never present holding `[]`, by
+   * the same two-spellings argument as `stereoGroups`. `assembleMolecule` is
+   * the one place the key is written; `withSpeciesJoins` in species.ts is the
+   * one place the list is validated and put in canonical order.
+   */
+  readonly speciesJoins?: readonly SpeciesJoin[];
 }
 
 /**

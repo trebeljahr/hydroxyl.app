@@ -248,6 +248,7 @@ export function formatShortcut(shortcut: string, isApple: boolean): string {
 const EMPTY_SELECTION: Selection = Object.freeze({
   atomIds: Object.freeze([]),
   bondIds: Object.freeze([]),
+  annotationIds: Object.freeze([]),
 });
 
 function hasSelection(state: EditorState): boolean {
@@ -765,6 +766,7 @@ const EDIT_COMMANDS: readonly Command[] = [
         state.setSelection({
           atomIds: inserted.atomIds,
           bondIds: inserted.bondIds,
+          annotationIds: [],
         });
       });
     },
@@ -788,7 +790,7 @@ const EDIT_COMMANDS: readonly Command[] = [
         // Onto the COPIES, so the next drag moves what was just made rather
         // than the original. `duplicateFragment` keys its map by SOURCE id
         // precisely so this is possible.
-        state.setSelection({ atomIds: copy.atomIds, bondIds: copy.bondIds });
+        state.setSelection({ atomIds: copy.atomIds, bondIds: copy.bondIds, annotationIds: [] });
       });
     },
   },

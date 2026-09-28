@@ -139,7 +139,7 @@ export async function copyFigure(store: EditorStore): Promise<void> {
  */
 function refuseLabelled(store: EditorStore, message: string, atomIds: readonly AtomId[] | undefined): void {
   if (atomIds !== undefined && atomIds.length > 0) {
-    store.getState().setSelection({ atomIds, bondIds: [] });
+    store.getState().setSelection({ atomIds, bondIds: [], annotationIds: [] });
   }
   report(store, message);
 }

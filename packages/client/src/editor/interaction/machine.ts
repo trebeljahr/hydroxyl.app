@@ -207,9 +207,12 @@ function sameMark(a: TargetMark | null, b: TargetMark | null): boolean {
 
 const EMPTY_ATOMS: readonly AtomId[] = Object.freeze([]);
 const EMPTY_BONDS: readonly BondId[] = Object.freeze([]);
+const EMPTY_ANNOTATIONS: readonly string[] = Object.freeze([]);
 
+/** The pointer machine picks atoms and bonds only; annotation picking
+ *  arrives with the arrow tools, inside this same machine. */
 function sel(atomIds: readonly AtomId[], bondIds: readonly BondId[]): Selection {
-  return { atomIds, bondIds };
+  return { atomIds, bondIds, annotationIds: EMPTY_ANNOTATIONS };
 }
 
 function selectionHasAtom(s: Selection, id: AtomId): boolean {

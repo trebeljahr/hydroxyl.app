@@ -59,7 +59,7 @@ import type { SketchDocument } from "@starter/shared";
 
 import { molblockToMolecule } from "@/lib/rdkit/translate";
 import type { ChemIoResult, ImportedStructure } from "@/lib/rdkit/types";
-import { migrateStored } from "@/persistence/migrate";
+import { migrateStored, newerBuildMessage } from "@/persistence/migrate";
 
 import { isLibraryFile, libraryFailureNote, readLibrary } from "./library";
 import { sniffFormat, splitSdfRecords, type SniffedFormat } from "./sniff";
@@ -174,6 +174,8 @@ function openJson(text: string, now: string | undefined): OpenResult {
   if (!migrated.ok) return { ok: false, message: migrated.message };
   const decoded = safeDecodeDocument(migrated.value);
   if (!decoded.ok) {
+    const newer = newerBuildMessage(decoded.error, "That sketch file");
+    if (newer !== undefined) return { ok: false, message: newer };
     const issues = decoded.error.issues
       .slice(0, 3)
       .map((issue) => `${issue.path.join(".") || "document"}: ${issue.message}`)

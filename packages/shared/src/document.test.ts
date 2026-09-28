@@ -3,6 +3,7 @@ import {
   buildMolecule,
   elementCounts,
   emptyMolecule,
+  joinSpecies,
   withStereoGroups,
 } from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
@@ -11,6 +12,9 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PANELS,
   DISPLAY_FLAG_KEYS,
+  DOCUMENT_UPGRADES,
+  addSchemeAnnotation,
+  isFromNewerBuild,
   VIEW_KINDS,
   defaultPanelsFor,
   SCHEMA_VERSION,
@@ -333,24 +337,23 @@ describe("round trip", () => {
     expect(decoded.panels[0]!.representation.display.showLocants).toBe(true);
   });
 
-  it("strips a display key this build does not know (decision 38, accepted until v2)", () => {
-    // The reverse of the legacy case: a newer build's flag reaching this one
-    // is dropped on decode, so re-saving here loses it. Accepted for now and
-    // owed to the scheme-model v2 bump; this test pins today's behaviour so
-    // a change to it is a deliberate one.
+  it("refuses a display key this build does not know rather than stripping it (decision 110)", () => {
+    // The reverse of the legacy case: a newer build's flag reaching this one.
+    // Until v2 it was dropped on decode and the next save lost it (decision
+    // 38); now the decode fails and names the cause, so nothing is re-saved.
     const encoded = encodedFixture();
     encoded.panels[0].representation.display.showSomethingNewer = true;
-    const decoded = decodeDocument(encoded);
-    expect(Object.hasOwn(decoded.panels[0]!.representation.display, "showSomethingNewer")).toBe(
-      false,
-    );
-    expect(JSON.stringify(encodeDocument(decoded))).not.toContain("showSomethingNewer");
+    const result = safeDecodeDocument(encoded);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(isFromNewerBuild(result.error)).toBe(true);
+    expect(JSON.stringify(result.error.issues)).toContain("showSomethingNewer");
   });
 
-  it("is still schema version 1: the rename is additive", () => {
-    // The scheme-model task owns the single bump to 2. A second bump here
-    // would give one release two migrations.
-    expect(SCHEMA_VERSION).toBe(1);
+  it("is schema version 2, the scheme model's single bump", () => {
+    // The scheme model owns the only bump in the projection and mechanism
+    // plan. A second one would give one release two migrations.
+    expect(SCHEMA_VERSION).toBe(2);
   });
 });
 
@@ -667,7 +670,6 @@ describe("figure layout (additive, no schema bump)", () => {
     const encoded = JSON.parse(JSON.stringify(encodeDocument(original))) as Record<string, unknown>;
     expect(encoded.figure).toEqual({ columns: 2 });
     expect(encoded.schemaVersion).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(1);
     const decoded = decodeDocument(encoded);
     expect(decoded.figure).toEqual({ columns: 2 });
     expect(decoded).toEqual(original);
@@ -716,17 +718,15 @@ describe("stereo groups (additive, no schema bump)", () => {
     return encoded.molecule as Record<string, any>;
   }
 
-  it("round-trips a group through real JSON, at schema version 1", () => {
+  it("round-trips a group through real JSON", () => {
     const original = documentOf(racemate(), "racemate");
     const encoded = groupedFixture();
     expect(molOf(encoded).stereoGroups).toEqual([
       { kind: "and", index: 1, atomIds: ["a2", "a4"] },
     ]);
-    // O1: the field is optional and additive, so the version does not move. A
-    // bump here would make `.max(SCHEMA_VERSION)` reject every document the
-    // other build writes.
+    // O1: the field arrived optional and additive at v1. It rides unchanged
+    // into v2, whose bump belongs to the scheme model.
     expect(encoded.schemaVersion).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(1);
     expect(roundTrip(original)).toEqual(original);
   });
 
@@ -842,5 +842,197 @@ describe("stereo groups (additive, no schema bump)", () => {
       ];
       expect(safeDecodeDocument(encoded).ok, kind).toBe(true);
     }
+  });
+});
+
+describe("the scheme model (schema v2)", () => {
+  /** Ethanol oxidised to sodium acetate, drawn as one molecule: ethanol
+   *  a1-a3 (bonds b4, b5), acetate a6-a9 (b10-b12) five bond lengths right,
+   *  and a sodium cation a13 beside it. With the three annotation shapes that
+   *  point at structure — a curly arrow, a reaction arrow between species and
+   *  a label — their ids minted by the document. */
+  function schemeMolecule(): Molecule {
+    return buildMolecule((b) => {
+      const c1 = b.atom("C", { x: 0, y: 0 });
+      const c2 = b.atom("C", { x: 0.87, y: 0.5 });
+      const o = b.atom("O", { x: 1.74, y: 0 });
+      b.bond(c1, c2);
+      b.bond(c2, o);
+      const methyl = b.atom("C", { x: 5, y: 0 });
+      const carboxyl = b.atom("C", { x: 5.87, y: 0.5 });
+      const carbonyl = b.atom("O", { x: 5.87, y: 1.5 });
+      const anionic = b.atom("O", { x: 6.74, y: 0 }, { charge: -1 });
+      b.bond(methyl, carboxyl);
+      b.bond(carboxyl, carbonyl, 2);
+      b.bond(carboxyl, anionic);
+      b.atom("Na", { x: 8, y: 0 }, { charge: 1 });
+    });
+  }
+
+  function scheme(): SketchDocument {
+    let doc = createDocument({
+      id: "doc-scheme",
+      title: "scheme",
+      molecule: schemeMolecule(),
+      now: NOW,
+    });
+    doc = addSchemeAnnotation(doc, {
+      kind: "curlyArrow",
+      electrons: "pair",
+      source: { kind: "lonePair", atomId: "a3" },
+      sink: { kind: "bond", bondId: "b11" },
+      bulge: 0.4,
+      skew: -0.1,
+    }).document;
+    doc = addSchemeAnnotation(doc, {
+      kind: "reactionArrow",
+      from: ["a1"],
+      to: ["a6"],
+      row: undefined,
+    }).document;
+    doc = addSchemeAnnotation(doc, { kind: "text", text: "[O]", at: { x: 3, y: 1 } }).document;
+    return doc;
+  }
+
+  /** The sodium acetate of `scheme()` joined into one species. */
+  function joinedScheme(): SketchDocument {
+    const doc = scheme();
+    return { ...doc, molecule: joinSpecies(doc.molecule, ["a13", "a9"]) };
+  }
+
+  function v1Of(doc: SketchDocument): Record<string, unknown> {
+    const encoded = JSON.parse(JSON.stringify(encodeDocument(doc))) as Record<string, unknown>;
+    delete encoded.annotations;
+    delete encoded.nextAnnotationId;
+    encoded.schemaVersion = 1;
+    return encoded;
+  }
+
+  it("opens a v1 document through the upgrade, gains annotations: [], and re-encodes as v2 with nothing lost", () => {
+    const original = documentOf(racemate(), "racemate");
+    const v1 = v1Of(original);
+    // Unmigrated, it is refused by name rather than decoded short of fields.
+    expect(safeDecodeDocument(v1).ok).toBe(false);
+    const upgraded = DOCUMENT_UPGRADES[1]!(v1);
+    const decoded = decodeDocument(upgraded);
+    expect(decoded.annotations).toEqual([]);
+    expect(decoded.nextAnnotationId).toBe(1);
+    expect(decoded.schemaVersion).toBe(2);
+    expect(decoded).toEqual(original);
+    expect(JSON.stringify(encodeDocument(decoded))).toBe(JSON.stringify(encodeDocument(original)));
+  });
+
+  it("round-trips annotations and species joins, and a decoded document equals itself", () => {
+    const doc = scheme();
+    const joined = joinedScheme();
+    expect(joined.molecule.speciesJoins).toEqual([{ atomIds: ["a9", "a13"] }]);
+    for (const original of [doc, joined]) {
+      const decoded = roundTrip(original);
+      expect(decoded).toEqual(original);
+      expect(roundTrip(decoded)).toEqual(decoded);
+      expect(undefinedValuedPaths(decoded)).toEqual([]);
+      expect(undefinedValuedPaths(encodeDocument(decoded))).toEqual([]);
+    }
+    const reaction = doc.annotations[1]!;
+    expect(reaction.kind).toBe("reactionArrow");
+    expect(Object.hasOwn(reaction, "row")).toBe(false);
+  });
+
+  it("mints ids from the document's counter, so a fixture with arrows is byte-stable", () => {
+    const a = scheme();
+    const b = scheme();
+    expect(a.annotations.map((x) => x.id)).toEqual(["ann_1", "ann_2", "ann_3"]);
+    expect(a.nextAnnotationId).toBe(4);
+    expect(JSON.stringify(encodeDocument(a))).toBe(JSON.stringify(encodeDocument(b)));
+    // Injected ids: the counter defaults to one past the highest.
+    const injected = createDocument({
+      id: "doc-injected",
+      molecule: ethanol(),
+      annotations: [{ id: "ann_7", kind: "bracket", species: ["a1"] }],
+      now: NOW,
+    });
+    expect(injected.nextAnnotationId).toBe(8);
+  });
+
+  it("refuses a dangling annotation, including one naming a prototype member", () => {
+    const encoded = JSON.parse(JSON.stringify(encodeDocument(scheme()))) as Record<string, any>;
+    for (const ghost of ["a99", "constructor", "toString"]) {
+      const copy = structuredClone(encoded);
+      copy.annotations[1].to = [ghost];
+      expect(safeDecodeDocument(copy).ok, ghost).toBe(false);
+    }
+    expect(() =>
+      addSchemeAnnotation(scheme(), { kind: "plus", between: ["a1", "constructor"] }),
+    ).toThrow(/constructor/);
+  });
+
+  it("refuses a duplicate annotation id and a counter that would reuse one", () => {
+    const encoded = JSON.parse(JSON.stringify(encodeDocument(scheme()))) as Record<string, any>;
+    const duplicate = structuredClone(encoded);
+    duplicate.annotations[2].id = "ann_1";
+    expect(safeDecodeDocument(duplicate).ok).toBe(false);
+    const stale = structuredClone(encoded);
+    stale.nextAnnotationId = 3;
+    expect(safeDecodeDocument(stale).ok).toBe(false);
+  });
+
+  it("refuses a malformed annotation: empty text, a skew past the chord, an empty species list", () => {
+    const encoded = JSON.parse(JSON.stringify(encodeDocument(scheme()))) as Record<string, any>;
+    const cases: ((copy: Record<string, any>) => void)[] = [
+      (copy) => (copy.annotations[2].text = ""),
+      (copy) => (copy.annotations[0].skew = 0.75),
+      (copy) => (copy.annotations[1].from = []),
+      (copy) => (copy.annotations[1].row = -1),
+      (copy) => (copy.annotations[0].electrons = "triple"),
+    ];
+    for (const breakIt of cases) {
+      const copy = structuredClone(encoded);
+      breakIt(copy);
+      expect(safeDecodeDocument(copy).ok, String(breakIt)).toBe(false);
+    }
+  });
+
+  it("refuses a malformed species join, and decodes a hand-ordered one canonically", () => {
+    const joined = joinedScheme();
+    const encoded = JSON.parse(JSON.stringify(encodeDocument(joined))) as Record<string, any>;
+    const bad: ((copy: Record<string, any>) => void)[] = [
+      (copy) => (copy.molecule.speciesJoins = []),
+      (copy) => (copy.molecule.speciesJoins = [{ atomIds: ["a9"] }]),
+      (copy) => (copy.molecule.speciesJoins = [{ atomIds: ["a9", "constructor"] }]),
+      (copy) =>
+        (copy.molecule.speciesJoins = [{ atomIds: ["a9", "a13"] }, { atomIds: ["a13", "a1"] }]),
+    ];
+    for (const breakIt of bad) {
+      const copy = structuredClone(encoded);
+      breakIt(copy);
+      expect(safeDecodeDocument(copy).ok, String(breakIt)).toBe(false);
+    }
+    const reordered = structuredClone(encoded);
+    reordered.molecule.speciesJoins = [{ atomIds: ["a13", "a9"] }];
+    expect(decodeDocument(reordered)).toEqual(joined);
+  });
+
+  it("refuses any key this build does not know, at any depth, as a newer build's document", () => {
+    const encoded = JSON.parse(JSON.stringify(encodeDocument(scheme()))) as Record<string, any>;
+    const newer: ((copy: Record<string, any>) => void)[] = [
+      (copy) => (copy.somethingNewer = 1),
+      (copy) => (copy.panels[0].view = { kind: "chain" }),
+      (copy) => (copy.molecule.atoms.a1.mapNumber = 3),
+      (copy) => (copy.annotations[1].style = "equilibrium"),
+      (copy) => (copy.metadata.license = "CC-BY"),
+    ];
+    for (const add of newer) {
+      const copy = structuredClone(encoded);
+      add(copy);
+      const result = safeDecodeDocument(copy);
+      expect(result.ok, String(add)).toBe(false);
+      if (!result.ok) expect(isFromNewerBuild(result.error), String(add)).toBe(true);
+    }
+    // A plain structural error is not mistaken for a newer build.
+    const broken = structuredClone(encoded);
+    broken.molecule.nextId = 1;
+    const result = safeDecodeDocument(broken);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(isFromNewerBuild(result.error)).toBe(false);
   });
 });

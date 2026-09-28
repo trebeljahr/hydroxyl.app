@@ -8,6 +8,14 @@
  * formula, ...), which is the whole point of the product: draw once, show it
  * every way a figure needs.
  *
+ * A REACTION SCHEME IS STILL ONE MOLECULE. Its species are the molecule's
+ * connected components, joined where `Molecule.speciesJoins` says several
+ * are one compound (decision 102; chem-core's species.ts carries the costs and
+ * the two outs). What is drawn between and on them — curly arrows, reaction
+ * arrows, plus signs, brackets, free text — is `annotations`, a sibling of the
+ * molecule typed in chem-render and positioned only by reference to atoms,
+ * bonds and species, or in chem-core model units.
+ *
  * Two rules govern everything below.
  *
  * 1. NO KEY IS EVER PRESENT WITH THE VALUE `undefined`. Not in a decoded
@@ -32,6 +40,7 @@
 import {
   makeAtom,
   emptyMolecule,
+  withSpeciesJoins,
   type Atom,
   type AtomId,
   type Bond,
@@ -44,11 +53,21 @@ import {
   type StereoGroupKind,
 } from "@starter/chem-core";
 import {
+  CURLY_ARROW_ELECTRONS,
+  CURLY_ARROW_MAX_SKEW,
+  CURLY_ARROW_SINK_KINDS,
+  CURLY_ARROW_SOURCE_KINDS,
   DISPLAY_FLAG_KEYS,
+  SCHEME_ANNOTATION_KINDS,
   VIEW_KINDS,
+  assembleSchemeAnnotation,
   defaultFlagsFor,
+  schemeAnnotationId,
   type DisplayFlagKey,
   type DisplayFlags,
+  type SchemeAnnotation,
+  type SchemeAnnotationId,
+  type SchemeAnnotationInput,
   type ViewKind,
 } from "@starter/chem-render";
 import { z } from "zod";
@@ -58,14 +77,24 @@ import { z } from "zod";
  * higher number is rejected rather than half-understood — silently dropping
  * fields we do not know about is how a save turns into data loss.
  *
- * KNOWN GAP WITHIN v1, OWED TO THE v2 BUMP (decision 38): the codec strips
- * display keys it does not know. A v1 document written by a newer build that
- * carries a flag this build lacks — `showLocants`, opened by a build from
- * before the rename — decodes without it, and re-saving drops it. Accepted
- * for now; the scheme-model task's v2 bump is where unknown-key handling gets
- * decided, and nothing before it should change that behaviour.
+ * 2 IS THE SCHEME MODEL, and the ONLY bump the projection and mechanism plan
+ * makes: `annotations` and `nextAnnotationId` arrived with it. A v1 document
+ * is upgraded by `DOCUMENT_UPGRADES[1]` before it meets the schema, which
+ * accepts exactly this version and nothing older — an unmigrated v1 value is
+ * refused by name rather than decoded short of two fields.
+ *
+ * UNKNOWN KEYS ARE REFUSED, NOT STRIPPED (decision 110, closing 38). Every
+ * object in the schema is strict. Before v2 the codec stripped a key it did
+ * not know, so a tab on an older build that opened a newer document dropped
+ * the newer field and autosave wrote the loss back — measured for a display
+ * flag, and for a whole enhanced-stereo collection, which re-saved a racemate
+ * as one enantiomer. Additive optional keys on v2 (`Panel.view` is the next
+ * one planned) would repeat that for every future feature. A strict decode
+ * turns it into "written by a newer version of the editor", which loses
+ * nothing. The only key accepted without being understood is a RETIRED one,
+ * listed by name: `showAtomIndices`.
  */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 // ---------------------------------------------------------------------------
 // Model
@@ -176,6 +205,24 @@ export interface SketchDocument {
   readonly schemaVersion: number;
   readonly id: string;
   readonly molecule: Molecule;
+  /**
+   * What is drawn between and on the species (see chem-render's
+   * scheme/annotation.ts). Always present, `[]` when there is none — the
+   * document-level list is not an optional statement the way a molecule's
+   * stereo groups are, and a required key is one fewer spelling.
+   *
+   * Part of the document, so it rides in every undo snapshot with the
+   * molecule; `UndoableState` does not and must not grow a field for it.
+   */
+  readonly annotations: readonly SchemeAnnotation[];
+  /**
+   * The annotation id counter: the next annotation is `ann_<nextAnnotationId>`.
+   * Monotonic and never reused, for the reason `Molecule.nextId` is — a stale
+   * id held by a selection or a gesture in flight must never resolve to a
+   * different arrow. Separate from the molecule's counter because that one's
+   * suffix rule belongs to atoms and bonds (decision 111).
+   */
+  readonly nextAnnotationId: number;
   readonly stylePreset: StylePresetId;
   readonly panels: readonly Panel[];
   /** Omitted, never `undefined`, when no layout has been chosen. */
@@ -372,6 +419,11 @@ export interface CreateDocumentInit {
   readonly id?: string | undefined;
   readonly title?: string | undefined;
   readonly molecule?: Molecule | undefined;
+  /** With their ids already chosen — the injectable path a fixture takes, so
+   *  a document holding an arrow is byte-stable across runs. */
+  readonly annotations?: readonly SchemeAnnotationInput[] | undefined;
+  /** Defaults to one past the highest `ann_<n>` among `annotations`. */
+  readonly nextAnnotationId?: number | undefined;
   readonly stylePreset?: StylePresetId | undefined;
   readonly panels?: readonly Panel[] | undefined;
   readonly figure?: FigureLayout | undefined;
@@ -383,10 +435,17 @@ export interface CreateDocumentInit {
 export function createDocument(init: CreateDocumentInit = {}): SketchDocument {
   const now = init.now ?? new Date().toISOString();
   const stylePreset = init.stylePreset ?? "screen";
+  const molecule = init.molecule ?? emptyMolecule();
+  const annotations = (init.annotations ?? []).map(assembleSchemeAnnotation);
+  for (const annotation of annotations) requireAnchorsIn(molecule, annotation);
   const doc: SketchDocument = {
     schemaVersion: SCHEMA_VERSION,
     id: init.id ?? generateId("doc"),
-    molecule: init.molecule ?? emptyMolecule(),
+    molecule,
+    annotations,
+    nextAnnotationId:
+      init.nextAnnotationId ??
+      annotations.reduce((next, a) => Math.max(next, (idSuffix(a.id) ?? 0) + 1), 1),
     stylePreset,
     // Seeded from the preset, so a display default the preset owns — the
     // aromatic circle — reaches the panels a document opens with.
@@ -420,6 +479,91 @@ export function withFigureLayout(
   return { ...rest, figure: { columns } };
 }
 
+/** An annotation as a caller adds one: everything but the id, which the
+ *  document's counter mints. */
+export type SchemeAnnotationDraft = SchemeAnnotationInput extends infer T
+  ? T extends unknown
+    ? Omit<T, "id">
+    : never
+  : never;
+
+/**
+ * Throws unless every atom and bond `annotation` names is in `molecule`.
+ *
+ * A programming error at this end — the codec reports the same condition in a
+ * FILE as a listed issue, because a file is untrusted and a caller is not.
+ * `Object.hasOwn`, never an index read: "constructor" is not an atom.
+ */
+function requireAnchorsIn(molecule: Molecule, annotation: SchemeAnnotation): void {
+  const missing = danglingReferences(molecule, annotation);
+  if (missing.length > 0) {
+    throw new Error(
+      `Annotation ${annotation.id} names ${missing.join(", ")}, which the molecule ` +
+        `does not hold. A dangling annotation is a document that cannot be saved.`,
+    );
+  }
+}
+
+/** Ids `annotation` names that `molecule` does not hold. */
+function danglingReferences(molecule: Molecule, annotation: SchemeAnnotation): string[] {
+  const missing: string[] = [];
+  const atom = (id: string): void => {
+    if (!Object.hasOwn(molecule.atoms, id)) missing.push(id);
+  };
+  const bond = (id: string): void => {
+    if (!Object.hasOwn(molecule.bonds, id)) missing.push(id);
+  };
+  switch (annotation.kind) {
+    case "curlyArrow":
+      for (const end of [annotation.source, annotation.sink]) {
+        if (end.kind === "bond") bond(end.bondId);
+        else atom(end.atomId);
+      }
+      break;
+    case "reactionArrow":
+      for (const id of [...annotation.from, ...annotation.to]) atom(id);
+      break;
+    case "plus":
+      for (const id of annotation.between) atom(id);
+      break;
+    case "bracket":
+      for (const id of annotation.species) atom(id);
+      break;
+    case "text":
+      break;
+    default: {
+      const unreachable: never = annotation;
+      void unreachable;
+    }
+  }
+  return missing;
+}
+
+/**
+ * `doc` with one more annotation, its id minted from the document's counter.
+ *
+ * The one place an id is minted, so ids stay monotonic and never reused, and
+ * a fixture that adds arrows in a fixed order gets the same ids every run.
+ *
+ * @throws if the draft names an atom or bond the molecule does not hold.
+ */
+export function addSchemeAnnotation(
+  doc: SketchDocument,
+  draft: SchemeAnnotationDraft,
+): { readonly document: SketchDocument; readonly id: SchemeAnnotationId } {
+  const id = schemeAnnotationId(doc.nextAnnotationId);
+  const annotation = assembleSchemeAnnotation({ ...draft, id } as SchemeAnnotationInput);
+  requireAnchorsIn(doc.molecule, annotation);
+  return {
+    document: {
+      ...doc,
+      annotations: [...doc.annotations, annotation],
+      nextAnnotationId: doc.nextAnnotationId + 1,
+    },
+    id,
+  };
+}
+
 /**
  * Stamp a document as modified. Spreading `metadata` is safe precisely
  * because nothing in this module ever stores an `undefined`-valued key — a
@@ -438,7 +582,10 @@ export function touchDocument(
 
 // `z.number()` in zod 4 already rejects NaN and Infinity, so a coordinate that
 // survives this is safe to hand to layout maths.
-const vec2Schema = z.object({ x: z.number(), y: z.number() });
+// EVERY OBJECT BELOW IS STRICT (decision 110): a key this build does not know
+// fails the decode instead of being stripped, so a newer build's field cannot
+// be lost by an older tab re-saving the document. See `SCHEMA_VERSION`.
+const vec2Schema = z.strictObject({ x: z.number(), y: z.number() });
 
 const nonEmptyString = z.string().min(1);
 
@@ -454,7 +601,7 @@ const isoTimestampSchema = nonEmptyString.refine(
   { message: "expected an ISO-8601 timestamp" },
 );
 
-const atomSchema = z.object({
+const atomSchema = z.strictObject({
   id: nonEmptyString,
   // Element symbols are validated by chem-core's periodic table, not here:
   // the document format has to survive a placeholder like "R" or an element
@@ -556,7 +703,7 @@ type StereoGroupKindListIsTotal =
 const STEREO_GROUP_KIND_LIST_IS_TOTAL: StereoGroupKindListIsTotal = true;
 void STEREO_GROUP_KIND_LIST_IS_TOTAL;
 
-const stereoGroupSchema = z.object({
+const stereoGroupSchema = z.strictObject({
   kind: z.enum(STEREO_GROUP_KIND_VALUES),
   /** Stored, never derived from array position (decision 92): the number a
    *  V3000 file states and a figure tag prints. */
@@ -564,7 +711,16 @@ const stereoGroupSchema = z.object({
   atomIds: z.array(nonEmptyString),
 });
 
-const bondSchema = z.object({
+/**
+ * One species join (decision 102). The invariants `withSpeciesJoins` keeps on
+ * every write are re-checked by `checkSpeciesJoins`, because a file is
+ * untrusted: at least two atoms, each one real, no atom in two joins.
+ */
+const speciesJoinSchema = z.strictObject({
+  atomIds: z.array(nonEmptyString),
+});
+
+const bondSchema = z.strictObject({
   id: nonEmptyString,
   from: nonEmptyString,
   to: nonEmptyString,
@@ -587,7 +743,7 @@ type SchemasCoverModel = keyof Atom extends keyof z.infer<typeof atomSchema>
 const SCHEMAS_COVER_MODEL: SchemasCoverModel = true;
 void SCHEMAS_COVER_MODEL;
 
-const moleculeShapeSchema = z.object({
+const moleculeShapeSchema = z.strictObject({
   atoms: z.record(z.string(), atomSchema),
   bonds: z.record(z.string(), bondSchema),
   atomIds: z.array(nonEmptyString),
@@ -619,6 +775,13 @@ const moleculeShapeSchema = z.object({
    * conditional one.
    */
   stereoGroups: z.array(stereoGroupSchema).optional(),
+  /**
+   * Components that are one species (decision 102). Optional and omitted when
+   * nothing is joined, like `stereoGroups`, for the same two-spellings reason.
+   * No backward gap this time: it arrived with v2, and a v1 build refuses a v2
+   * document outright rather than stripping the key.
+   */
+  speciesJoins: z.array(speciesJoinSchema).optional(),
 });
 
 type MoleculeShape = z.infer<typeof moleculeShapeSchema>;
@@ -780,6 +943,63 @@ function checkMoleculeIntegrity(mol: MoleculeShape, ctx: z.RefinementCtx): void 
   }
 
   checkStereoGroups(mol, ctx);
+  checkSpeciesJoins(mol, ctx);
+}
+
+/**
+ * The species-join invariants, reported as issues. `[]` is rejected for the
+ * reason `checkStereoGroups` rejects it; a one-atom join joins nothing; an
+ * atom in two joins is a second spelling of one larger join. The canonical
+ * ORDER is not checked — `rebuildMolecule` restores it, and a file written by
+ * hand in another order still says the same thing.
+ */
+function checkSpeciesJoins(mol: MoleculeShape, ctx: z.RefinementCtx): void {
+  const joins = mol.speciesJoins;
+  if (joins === undefined) return;
+  if (joins.length === 0) {
+    ctx.addIssue({
+      code: "custom",
+      message:
+        "speciesJoins is present but empty; a molecule with no joined species " +
+        "omits the key entirely",
+      path: ["speciesJoins"],
+    });
+    return;
+  }
+  const owner = new Map<string, number>();
+  joins.forEach((join, position) => {
+    if (new Set(join.atomIds).size < 2) {
+      ctx.addIssue({
+        code: "custom",
+        message: `species join ${position} names fewer than two atoms, so it joins nothing`,
+        path: ["speciesJoins", position, "atomIds"],
+      });
+    }
+    join.atomIds.forEach((atomId, slot) => {
+      if (!Object.hasOwn(mol.atoms, atomId)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `species join ${position} names ${atomId}, which is not an atom`,
+          path: ["speciesJoins", position, "atomIds", slot],
+        });
+        return;
+      }
+      const held = owner.get(atomId);
+      if (held !== undefined) {
+        ctx.addIssue({
+          code: "custom",
+          message:
+            held === position
+              ? `species join ${position} names atom ${atomId} twice`
+              : `atom ${atomId} is in species joins ${held} and ${position}; ` +
+                `overlapping joins are one join`,
+          path: ["speciesJoins", position, "atomIds", slot],
+        });
+        return;
+      }
+      owner.set(atomId, position);
+    });
+  });
 }
 
 /**
@@ -962,7 +1182,13 @@ function rebuildMolecule(mol: MoleculeShape): Molecule {
       atomIds: [...group.atomIds],
     }));
   }
-  return rebuilt;
+  // Through chem-core's writer rather than copied, so a join list decodes in
+  // the canonical order every in-memory molecule has and a hand-ordered file
+  // compares `toEqual` to the molecule it describes. `checkSpeciesJoins` has
+  // already rejected everything the writer would throw on.
+  return mol.speciesJoins === undefined
+    ? rebuilt
+    : withSpeciesJoins(rebuilt, mol.speciesJoins);
 }
 
 export const moleculeSchema = moleculeShapeSchema
@@ -1014,9 +1240,9 @@ const legacyDisplayShape = Object.fromEntries(
 ) as { [K in (typeof LEGACY_DISPLAY_KEYS)[number]]: z.ZodOptional<z.ZodBoolean> };
 
 export const representationSchema = z
-  .object({
+  .strictObject({
     kind: z.enum(VIEW_KINDS),
-    display: z.object({ ...legacyDisplayShape, ...displayShape }),
+    display: z.strictObject({ ...legacyDisplayShape, ...displayShape }),
   })
   .transform(
     (value): Representation => ({
@@ -1029,7 +1255,7 @@ export const representationSchema = z
   );
 
 export const panelSchema = z
-  .object({
+  .strictObject({
     id: nonEmptyString,
     representation: representationSchema,
     caption: z.string().optional(),
@@ -1042,7 +1268,7 @@ export const panelSchema = z
   );
 
 export const documentMetadataSchema = z
-  .object({
+  .strictObject({
     title: z.string(),
     createdAt: isoTimestampSchema,
     modifiedAt: isoTimestampSchema,
@@ -1059,20 +1285,84 @@ export const documentMetadataSchema = z
     }),
   );
 
+/**
+ * The annotation schemas, their enums built from chem-render's lists so a new
+ * kind or endpoint kind cannot be saved by one side and refused by the other.
+ * Anchors are checked against the molecule in the document's `superRefine`,
+ * because an annotation schema cannot see the molecule beside it.
+ */
+const curlySourceSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal(CURLY_ARROW_SOURCE_KINDS[0]), atomId: nonEmptyString }),
+  z.strictObject({ kind: z.literal(CURLY_ARROW_SOURCE_KINDS[1]), bondId: nonEmptyString }),
+  z.strictObject({ kind: z.literal(CURLY_ARROW_SOURCE_KINDS[2]), atomId: nonEmptyString }),
+]);
+const curlySinkSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal(CURLY_ARROW_SINK_KINDS[0]), atomId: nonEmptyString }),
+  z.strictObject({ kind: z.literal(CURLY_ARROW_SINK_KINDS[1]), bondId: nonEmptyString }),
+  z.strictObject({ kind: z.literal(CURLY_ARROW_SINK_KINDS[2]), atomId: nonEmptyString }),
+]);
+
+const annotationSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    id: nonEmptyString,
+    kind: z.literal("curlyArrow"),
+    electrons: z.enum(CURLY_ARROW_ELECTRONS),
+    source: curlySourceSchema,
+    sink: curlySinkSchema,
+    bulge: z.number(),
+    skew: z.number().min(-CURLY_ARROW_MAX_SKEW).max(CURLY_ARROW_MAX_SKEW),
+  }),
+  z.strictObject({
+    id: nonEmptyString,
+    kind: z.literal("reactionArrow"),
+    from: z.array(nonEmptyString).min(1),
+    to: z.array(nonEmptyString).min(1),
+    row: z.number().int().min(0).optional(),
+  }),
+  z.strictObject({
+    id: nonEmptyString,
+    kind: z.literal("plus"),
+    between: z.tuple([nonEmptyString, nonEmptyString]),
+  }),
+  z.strictObject({
+    id: nonEmptyString,
+    kind: z.literal("bracket"),
+    species: z.array(nonEmptyString).min(1),
+  }),
+  z.strictObject({
+    id: nonEmptyString,
+    kind: z.literal("text"),
+    text: z.string().min(1),
+    at: vec2Schema,
+  }),
+]);
+
+/** A new kind in chem-render's list with no arm above is a compile error. */
+type AnnotationSchemaIsTotal = (typeof SCHEME_ANNOTATION_KINDS)[number] extends z.infer<
+  typeof annotationSchema
+>["kind"]
+  ? true
+  : never;
+const ANNOTATION_SCHEMA_IS_TOTAL: AnnotationSchemaIsTotal = true;
+void ANNOTATION_SCHEMA_IS_TOTAL;
+
 export const sketchDocumentSchema = z
-  .object({
-    // A document from a future build is rejected outright; when
-    // SCHEMA_VERSION moves past 1, an upgrade step for the older numbers
-    // goes here rather than a wider bound.
-    schemaVersion: z.number().int().positive().max(SCHEMA_VERSION),
+  .strictObject({
+    // EXACTLY this version. A newer one is rejected outright; an older one
+    // has to be walked up `DOCUMENT_UPGRADES` first, and one that was not is
+    // refused here by name rather than decoded short of the fields its
+    // upgrade adds.
+    schemaVersion: z.literal(SCHEMA_VERSION),
     id: nonEmptyString,
     molecule: moleculeSchema,
+    annotations: z.array(annotationSchema),
+    nextAnnotationId: z.number().int().positive(),
     stylePreset: z.enum(["publication", "screen"]),
     panels: z.array(panelSchema),
     // Optional and additive: a file from before the field existed has no key,
     // and still decodes at SCHEMA_VERSION 1. See `FigureLayout`.
     figure: z
-      .object({ columns: z.number().int().min(1).max(MAX_FIGURE_COLUMNS) })
+      .strictObject({ columns: z.number().int().min(1).max(MAX_FIGURE_COLUMNS) })
       .optional(),
     metadata: documentMetadataSchema,
   })
@@ -1090,15 +1380,53 @@ export const sketchDocumentSchema = z
       }
       seen.add(panel.id);
     });
+
+    // Annotation ids are unique and below the counter, for the reason atom
+    // ids are below `nextId`; and every atom and bond an annotation names is
+    // in the molecule. A dangling annotation is REFUSED, never kept: an edit
+    // prunes it in the same undo entry, so a file holding one was not written
+    // by this editor, and accepting it would make every consumer handle a
+    // reference that resolves to nothing.
+    const annotationIds = new Set<string>();
+    doc.annotations.forEach((parsed, index) => {
+      if (annotationIds.has(parsed.id)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `duplicate annotation id ${parsed.id}`,
+          path: ["annotations", index, "id"],
+        });
+      }
+      annotationIds.add(parsed.id);
+      const suffix = idSuffix(parsed.id);
+      if (suffix !== undefined && suffix >= doc.nextAnnotationId) {
+        ctx.addIssue({
+          code: "custom",
+          message: `nextAnnotationId ${doc.nextAnnotationId} would reuse the id ${parsed.id}`,
+          path: ["nextAnnotationId"],
+        });
+      }
+      const missing = danglingReferences(doc.molecule, assembleSchemeAnnotation(parsed));
+      for (const id of missing) {
+        ctx.addIssue({
+          code: "custom",
+          message: `annotation ${parsed.id} names ${id}, which is not in the molecule`,
+          path: ["annotations", index],
+        });
+      }
+    });
   })
   .transform((doc): SketchDocument => {
     // Rebuilt key by key rather than spread: a spread would carry a `figure`
     // key holding `undefined` whenever the parser saw one, which is rule 1 of
-    // this file, and it would keep the parser's own object identity.
+    // this file, and it would keep the parser's own object identity. Each
+    // annotation goes through chem-render's assembler for the same reason —
+    // an absent `row` arrives from zod as a present key holding `undefined`.
     const base: SketchDocument = {
       schemaVersion: doc.schemaVersion,
       id: doc.id,
       molecule: doc.molecule,
+      annotations: doc.annotations.map(assembleSchemeAnnotation),
+      nextAnnotationId: doc.nextAnnotationId,
       stylePreset: doc.stylePreset,
       panels: doc.panels,
       metadata: doc.metadata,
@@ -1207,7 +1535,16 @@ function encodeMolecule(mol: Molecule): JsonObject {
       atomIds: [...group.atomIds],
     }));
   }
+  if (mol.speciesJoins !== undefined) {
+    encoded.speciesJoins = mol.speciesJoins.map((join) => ({ atomIds: [...join.atomIds] }));
+  }
   return encoded;
+}
+
+/** Key by key through the assembler, so an encoded annotation is a fresh
+ *  JSON-safe value with no `undefined`-valued key. */
+function encodeAnnotation(annotation: SchemeAnnotation): JsonObject {
+  return { ...assembleSchemeAnnotation(annotation) } as JsonObject;
 }
 
 function encodePanel(panel: Panel): JsonObject {
@@ -1240,12 +1577,42 @@ export function encodeDocument(doc: SketchDocument): unknown {
     schemaVersion: doc.schemaVersion,
     id: doc.id,
     molecule: encodeMolecule(doc.molecule),
+    annotations: doc.annotations.map(encodeAnnotation),
+    nextAnnotationId: doc.nextAnnotationId,
     stylePreset: doc.stylePreset,
     panels: doc.panels.map(encodePanel),
   };
   if (doc.figure !== undefined) encoded.figure = { columns: doc.figure.columns };
   encoded.metadata = encodeMetadata(doc.metadata);
   return encoded;
+}
+
+/**
+ * `DOCUMENT_UPGRADES[n]` turns a raw version-`n` value into a raw version-`n+1`
+ * one, bumping its `schemaVersion`. Walked by the client's `migrateStored`
+ * BEFORE the schema, one step at a time; kept here because the steps are
+ * knowledge of this file's shape.
+ *
+ * 1 -> 2 (the scheme model) adds an empty annotation list and its counter.
+ * Nothing else changed shape, so a v1 document is otherwise already a valid
+ * v2 one — v1 decoding STRIPPED unknown keys where v2 refuses them, and this
+ * build is the newest v1 there was, so every key a v1 file can carry is one
+ * it knows (the retired `showAtomIndices` is accepted by name).
+ */
+export const DOCUMENT_UPGRADES: Readonly<Record<number, (value: unknown) => unknown>> = {
+  1: (value) => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
+    return { ...value, schemaVersion: 2, annotations: [], nextAnnotationId: 1 };
+  },
+};
+
+/**
+ * True when a failed decode failed because the input carries keys this build
+ * does not know — the signature of a document written by a newer build, which
+ * the caller should say in those words rather than calling the file corrupt.
+ */
+export function isFromNewerBuild(error: z.ZodError): boolean {
+  return error.issues.some((issue) => issue.code === "unrecognized_keys");
 }
 
 /** Throws a `ZodError` listing every problem with the input. */

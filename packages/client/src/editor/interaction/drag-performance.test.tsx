@@ -76,7 +76,7 @@ describe("drag performance", () => {
     expect(molecule.atomIds).toHaveLength(HEAVY_ATOMS);
 
     const dragged = molecule.atomIds[HEAVY_ATOMS >> 1]!;
-    const selection: Selection = { atomIds: [dragged], bondIds: [] };
+    const selection: Selection = { atomIds: [dragged], bondIds: [], annotationIds: [] };
     const origin = molecule.atoms[dragged]!.pos;
 
     // The store's own path, without the store: `applyMoleculeEdit` computes
@@ -172,7 +172,7 @@ describe("drag performance", () => {
         <SceneLayer scene={first.scene} />
         <OverlayLayer
           index={first.index}
-          selection={{ atomIds: [], bondIds: [] }}
+          selection={{ atomIds: [], bondIds: [], annotationIds: [] }}
           hoveredAtomId={null}
           hoveredBondId={null}
           issues={valenceIssues(document.molecule)}
@@ -203,7 +203,7 @@ describe("drag performance", () => {
           <SceneLayer scene={next.scene} />
           <OverlayLayer
             index={next.index}
-            selection={{ atomIds: [dragged], bondIds: [] }}
+            selection={{ atomIds: [dragged], bondIds: [], annotationIds: [] }}
             hoveredAtomId={null}
             hoveredBondId={null}
             issues={valenceIssues(document.molecule)}

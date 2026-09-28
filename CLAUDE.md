@@ -85,6 +85,12 @@ Invariants to preserve when editing it:
   chain took over four minutes that way.
 - **Coordinates are y-up**, matching molfile and ordinary maths. Only the SVG
   renderer flips to y-down.
+- **A reaction scheme is still one Molecule.** Species are its connected
+  components, unioned across `Molecule.speciesJoins` (the salt, the solvate);
+  `species(mol)` in species.ts is memoised. What is drawn between species —
+  arrows, plus signs, brackets, text — is the document's `annotations`, typed
+  in chem-render's `scheme/annotation.ts`. chem-core never learns what an
+  arrow is.
 - **`exactMass()` throws** rather than substituting an average atomic weight
   when an element has no verified monoisotopic value. Do not "fix" this by
   falling back — a plausible wrong mass is worse than an error.

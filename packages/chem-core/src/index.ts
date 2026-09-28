@@ -24,6 +24,10 @@ export * from "./selection.js";
 // import it to keep a group honest across a delete, a merge and a paste) and
 // deliberately above nothing that perceives: it asks no stereo questions.
 export * from "./stereo-groups.js";
+// Species: connected components unioned across `Molecule.speciesJoins`, the
+// record layer for those joins beside them. Below ops and fragment for the
+// same reason as the stereo groups.
+export * from "./species.js";
 export * from "./sprout.js";
 export * from "./rings.js";
 export * from "./aromatic.js";

@@ -63,6 +63,7 @@ function handleFrame(element: Element): { x: number; y: number; scale: number } 
 const SELECTION: Selection = {
   atomIds: ["a1", "a4"],
   bondIds: ["b7", "b10"],
+  annotationIds: [],
 };
 
 function renderOverlay(
@@ -164,7 +165,7 @@ describe("OverlayLayer — the export boundary", () => {
           <SceneLayer scene={SCENE} />
           <OverlayLayer
             index={INDEX}
-            selection={{ atomIds: MOL.atomIds, bondIds: MOL.bondIds }}
+            selection={{ atomIds: MOL.atomIds, bondIds: MOL.bondIds, annotationIds: [] }}
             hoveredAtomId="a2"
             hoveredBondId="b9"
           />
@@ -186,7 +187,7 @@ describe("OverlayLayer — the export boundary", () => {
 
 describe("OverlayLayer — geometry and staleness", () => {
   it("draws each mark on the ink the index reports, not on model coordinates", () => {
-    const container = renderOverlay({ atomIds: ["a1"], bondIds: ["b7"] }, null, null);
+    const container = renderOverlay({ atomIds: ["a1"], bondIds: ["b7"], annotationIds: [] }, null, null);
 
     const centre = INDEX.atomCentre("a1")!;
     const ring = container.querySelector('[data-overlay="selected-atom"]')!;
@@ -221,7 +222,7 @@ describe("OverlayLayer — geometry and staleness", () => {
     // current molecule has lost. Feedback that crashes the canvas is worse
     // than feedback that is briefly missing.
     const container = renderOverlay(
-      { atomIds: ["a1", "a99"], bondIds: ["b7", "b99"] },
+      { atomIds: ["a1", "a99"], bondIds: ["b7", "b99"], annotationIds: [] },
       "a98",
       "b98",
     );
@@ -502,7 +503,7 @@ describe("OverlayLayer — sized in bonds, so it is the same in every style (dec
       <svg>
         <OverlayLayer
           index={index}
-          selection={{ atomIds: ["a1"], bondIds: ["b7"] }}
+          selection={{ atomIds: ["a1"], bondIds: ["b7"], annotationIds: [] }}
           hoveredAtomId="a3"
           hoveredBondId="b10"
           focusedAtomId="a5"

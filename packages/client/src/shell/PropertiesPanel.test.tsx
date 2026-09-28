@@ -28,7 +28,7 @@ beforeEach(() => {
 
 function select(atomIds: readonly string[], bondIds: readonly string[] = []): void {
   act(() => {
-    editorStore.getState().setSelection({ atomIds, bondIds });
+    editorStore.getState().setSelection({ atomIds, bondIds, annotationIds: [] });
   });
 }
 
