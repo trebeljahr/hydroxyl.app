@@ -824,6 +824,9 @@ describe("decision 58: a reported annotation that would print on text is not dra
       ["steroidSkeleton", steroid.molecule, { ...numbered(steroid.molecule), ...steroid.locants }],
       ["phenanthrene", phenanthrene(), numbered(phenanthrene())],
     ];
+    // Collected and asserted once: an expect() per glyph pair was ~110k
+    // matcher calls, most of this test's run time, and timed it out on CI.
+    const offenders: string[] = [];
     let annotations = 0;
     for (const [name, molecule, locants] of molecules) {
       for (const style of STYLES) {
@@ -841,13 +844,10 @@ describe("decision 58: a reported annotation that would print on text is not dra
               annotations++;
               for (const other of ink) {
                 if (other.run === run) continue;
-                for (const a of boxes) {
-                  for (const b of other.boxes) {
-                    expect(
-                      overlapArea(a, b),
-                      `${name}/${styleLabel(style)}/${view}/circles=${aromaticCircles}: ${run.id} on ${other.run.id}`,
-                    ).toBe(0);
-                  }
+                if (boxes.some((a) => other.boxes.some((b) => overlapArea(a, b) !== 0))) {
+                  offenders.push(
+                    `${name}/${styleLabel(style)}/${view}/circles=${aromaticCircles}: ${run.id} on ${other.run.id}`,
+                  );
                 }
               }
             }
@@ -855,6 +855,7 @@ describe("decision 58: a reported annotation that would print on text is not dra
         }
       }
     }
+    expect(offenders).toEqual([]);
     expect(annotations).toBeGreaterThan(1000);
   });
 });
