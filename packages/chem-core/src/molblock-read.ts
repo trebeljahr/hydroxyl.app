@@ -189,11 +189,41 @@ export type MolblockWarning =
   | {
       /** A V3000 row inside a block that could not be read at all. The V2000
        *  equivalent is `bad-numeric-field` per column; a V3000 row is
-       *  keyword-based, so there is no column to name. */
+       *  keyword-based, so there is no column to name.
+       *
+       *  KEPT FOR THE ROWS THAT STILL LAND SOMETHING: a stray CTAB line, an
+       *  atom row read generously with a missing coordinate defaulted to 0, a
+       *  collection dropped whole. The molecule is still the file's graph. The
+       *  rows where an ATOM or a BOND actually disappears are
+       *  `dropped-v3000-row` instead — see there for why the split exists. */
       readonly kind: "bad-v3000-row";
       readonly message: string;
       readonly line: number;
       readonly block: string;
+      readonly text: string;
+    }
+  | {
+      /**
+       * A V3000 ATOM or BOND row unreadable enough to be skipped, so the atom
+       * or bond it declared is NOT in the molecule that comes back.
+       *
+       * SPLIT OUT OF `bad-v3000-row` because that kind is too coarse to act
+       * on. Its other arms keep the graph the file describes — a missing
+       * coordinate is read as 0 and the atom survives — while these two lose a
+       * node or an edge, which is the same failure V2000 reports as
+       * `unknown-element` or `bad-bond-endpoint`. An importer classifying by
+       * kind has to be able to tell "the molecule is not the file" from "the
+       * molecule is the file, read generously", and it was classifying the
+       * V3000 loss two tiers below its V2000 twin.
+       *
+       * Decision 90's tolerance rule is unchanged: still a warning, still
+       * skipped, never a thrown file. What it costs the caller is the caller's
+       * to decide.
+       */
+      readonly kind: "dropped-v3000-row";
+      readonly message: string;
+      readonly line: number;
+      readonly block: "ATOM" | "BOND";
       readonly text: string;
     }
   | {
@@ -1805,7 +1835,7 @@ function readV3000Atom(
   const symbol = fields[1] ?? "";
   if (!Number.isFinite(index) || index < 1 || symbol === "") {
     warnings.push({
-      kind: "bad-v3000-row",
+      kind: "dropped-v3000-row",
       message: `Atom row ${position} has no readable index or symbol; skipped.`,
       line: entry.line,
       block: "ATOM",
@@ -1893,7 +1923,7 @@ function readV3000Bond(
   const to = Number.parseInt(fields[3] ?? "", 10);
   if (!Number.isFinite(type) || !Number.isFinite(from) || !Number.isFinite(to)) {
     warnings.push({
-      kind: "bad-v3000-row",
+      kind: "dropped-v3000-row",
       message: `Bond row ${position} is missing its type or an endpoint; skipped.`,
       line: entry.line,
       block: "BOND",

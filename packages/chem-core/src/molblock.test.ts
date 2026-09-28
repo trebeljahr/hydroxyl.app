@@ -1768,6 +1768,77 @@ describe("V3000 round trip", () => {
     expect(hasAromaticFlags(result.molecule)).toBe(false);
     expect(result.warnings).toEqual([]);
   });
+
+  // -------------------------------------------------------------------------
+  // The whole bond-stereo matrix, both generations. Decision 100: V3000 merges
+  // `either` and `wavy` into one `CFG=2` and the reader picks by bond order, so
+  // two of the sixteen cells come back as the OTHER model member with no
+  // warning. That is pinned here, not repaired: normalising at write time would
+  // have to degrade V2000, which keeps all sixteen.
+  // -------------------------------------------------------------------------
+  describe("bond stereo across both generations", () => {
+    const STEREO = ["wedge", "hash", "either", "wavy"] as const;
+
+    /** Two carbons, one bond, the order and mark asked for. */
+    function pair(order: 1 | 2, stereo: (typeof STEREO)[number]): Molecule {
+      return buildMolecule((b) => {
+        const a = b.atom("C", vec(0, 0));
+        const c = b.atom("C", vec(1.5, 0));
+        b.bond(a, c, order, stereo);
+      });
+    }
+
+    function readBack(mol: Molecule, version: "V2000" | "V3000") {
+      const result = readMolblock(writeMolblock(mol, { version }));
+      return {
+        stereo: bondList(result.molecule)[0]?.stereo,
+        warnings: result.warnings.map((w) => w.kind),
+      };
+    }
+
+    it("round-trips its eight cells through V2000, whatever the bond order", () => {
+      // The V2000 decode is order-INDEPENDENT — four codes for four members —
+      // so this is the control the V3000 measurement is read against, and the
+      // reason decision 100 refused to normalise.
+      for (const order of [1, 2] as const) {
+        for (const stereo of STEREO) {
+          expect(readBack(pair(order, stereo), "V2000"), `${order} ${stereo}`).toEqual({
+            stereo,
+            warnings: [],
+          });
+        }
+      }
+    });
+
+    it("round-trips six of its eight cells through V3000", () => {
+      // The two combinations chemistry actually uses: the squiggly bond states
+      // "configuration unknown at this centre" and only sits on a single bond,
+      // the crossed bond states "cis or trans unknown" and only on a double.
+      // The order the reader infers from is the order that was written, so
+      // these are exact.
+      expect(readBack(pair(1, "wavy"), "V3000")).toEqual({ stereo: "wavy", warnings: [] });
+      expect(readBack(pair(2, "either"), "V3000")).toEqual({ stereo: "either", warnings: [] });
+      for (const order of [1, 2] as const) {
+        for (const stereo of ["wedge", "hash"] as const) {
+          expect(readBack(pair(order, stereo), "V3000"), `${order} ${stereo}`).toEqual({
+            stereo,
+            warnings: [],
+          });
+        }
+      }
+    });
+
+    it("silently swaps the two cells chemistry has no use for, and says nothing", () => {
+      // KNOWN LIMIT, pinned so it is visible. `either` on a SINGLE bond and
+      // `wavy` on a DOUBLE bond are both model states the editor can reach and
+      // neither is a configuration anyone draws; V3000 writes both as `CFG=2`
+      // and the reader has only the bond order to go on, so each comes back as
+      // the other member. No warning is possible: from the reader's side there
+      // is nothing wrong with the file.
+      expect(readBack(pair(1, "either"), "V3000")).toEqual({ stereo: "wavy", warnings: [] });
+      expect(readBack(pair(2, "wavy"), "V3000")).toEqual({ stereo: "either", warnings: [] });
+    });
+  });
 });
 
 describe("V3000 reader tolerance", () => {
@@ -1939,7 +2010,133 @@ describe("V3000 reader tolerance", () => {
       ),
     );
     expect(molecularFormula(result.molecule)).toBe("CH4O");
+    // `dropped-v3000-row`, not `bad-v3000-row`: the counts line declared three
+    // atoms and two came back, which is the same loss V2000 reports as
+    // `unknown-element` and which an importer has to be able to refuse.
+    expect(result.warnings.map((w) => w.kind)).toEqual(["dropped-v3000-row"]);
+    expect(result.warnings[0]).toMatchObject({ block: "ATOM" });
+  });
+
+  it("skips a bond row with no readable type or endpoint, and says the bond is gone", () => {
+    // The bond block's own loss arm. Unreached by any suite before: the atom
+    // arm and this one shared a kind, so a test over the atom arm looked like
+    // cover for both.
+    const result = readMolblock(
+      molblock(
+        "bad bond row",
+        "     RDKit          2D",
+        "",
+        "  0  0  0  0  0  0  0  0  0  0999 V3000",
+        "M  V30 BEGIN CTAB",
+        "M  V30 COUNTS 2 1 0 0 0",
+        "M  V30 BEGIN ATOM",
+        "M  V30 1 C 0.000000 0.000000 0.000000 0",
+        "M  V30 2 O 1.500000 0.000000 0.000000 0",
+        "M  V30 END ATOM",
+        "M  V30 BEGIN BOND",
+        "M  V30 1 1 1",
+        "M  V30 END BOND",
+        "M  V30 END CTAB",
+        "M  END",
+      ),
+    );
+    // Methane and water, not methanol: the bond that joined them is gone, so
+    // the implicit hydrogens fill in and the formula gains two.
+    expect(molecularFormula(result.molecule)).toBe("CH6O");
+    expect(result.molecule.bondIds).toEqual([]);
+    expect(result.warnings.map((w) => w.kind)).toEqual(["dropped-v3000-row"]);
+    expect(result.warnings[0]).toMatchObject({ block: "BOND" });
+  });
+
+  it("defaults a missing coordinate to 0 and keeps the atom, which is not a loss", () => {
+    // The arm that must NOT read as atom loss, which is the whole reason
+    // `dropped-v3000-row` is a separate kind: the row stops before z, the spec's
+    // own default fills it, and the molecule still is the file's graph.
+    const result = readMolblock(
+      molblock(
+        "short atom row",
+        "     RDKit          2D",
+        "",
+        "  0  0  0  0  0  0  0  0  0  0999 V3000",
+        "M  V30 BEGIN CTAB",
+        "M  V30 COUNTS 2 1 0 0 0",
+        "M  V30 BEGIN ATOM",
+        "M  V30 1 C 0.000000 0.000000 0.000000 0",
+        "M  V30 2 O 1.500000",
+        "M  V30 END ATOM",
+        "M  V30 BEGIN BOND",
+        "M  V30 1 1 1 2",
+        "M  V30 END BOND",
+        "M  V30 END CTAB",
+        "M  END",
+      ),
+    );
+    expect(molecularFormula(result.molecule)).toBe("CH4O");
     expect(result.warnings.map((w) => w.kind)).toEqual(["bad-v3000-row"]);
+    expect(result.warnings[0]).toMatchObject({ block: "ATOM" });
+    expect(result.warnings[0]?.message).toContain("read as 0");
+  });
+
+  it("ignores a stray line sitting directly in the CTAB", () => {
+    // A link line, or anything else this reader has never seen, between the
+    // blocks rather than inside one. Nothing is lost from the graph; the line
+    // is reported so a file carrying a feature this app drops says so.
+    const result = readMolblock(
+      molblock(
+        "stray ctab line",
+        "     RDKit          2D",
+        "",
+        "  0  0  0  0  0  0  0  0  0  0999 V3000",
+        "M  V30 BEGIN CTAB",
+        "M  V30 COUNTS 2 1 0 0 0",
+        "M  V30 LINKNODE 1 2 1 1 2 1 3",
+        "M  V30 BEGIN ATOM",
+        "M  V30 1 C 0.000000 0.000000 0.000000 0",
+        "M  V30 2 O 1.500000 0.000000 0.000000 0",
+        "M  V30 END ATOM",
+        "M  V30 BEGIN BOND",
+        "M  V30 1 1 1 2",
+        "M  V30 END BOND",
+        "M  V30 END CTAB",
+        "M  END",
+      ),
+    );
+    expect(molecularFormula(result.molecule)).toBe("CH4O");
+    expect(result.warnings.map((w) => w.kind)).toEqual(["bad-v3000-row"]);
+    expect(result.warnings[0]).toMatchObject({ block: "CTAB" });
+    expect(result.warnings[0]?.message).toContain("Unrecognised V3000 line");
+  });
+
+  it("keeps a bond whose CFG is out of range and says the mark was dropped", () => {
+    // V3000 spends three numbers on `CFG=`; a fourth is a mark this reader has
+    // no model value for. The BOND survives — losing an edge over an
+    // unreadable wedge would be a worse answer than a flat bond — and the
+    // warning is the V2000 `unsupported-bond-stereo` arm's own kind, because
+    // what happened is the same thing.
+    const result = readMolblock(
+      molblock(
+        "bad cfg",
+        "     RDKit          2D",
+        "",
+        "  0  0  0  0  0  0  0  0  0  0999 V3000",
+        "M  V30 BEGIN CTAB",
+        "M  V30 COUNTS 2 1 0 0 0",
+        "M  V30 BEGIN ATOM",
+        "M  V30 1 C 0.000000 0.000000 0.000000 0",
+        "M  V30 2 O 1.500000 0.000000 0.000000 0",
+        "M  V30 END ATOM",
+        "M  V30 BEGIN BOND",
+        "M  V30 1 1 1 2 CFG=7",
+        "M  V30 END BOND",
+        "M  V30 END CTAB",
+        "M  END",
+      ),
+    );
+    expect(molecularFormula(result.molecule)).toBe("CH4O");
+    expect(result.warnings.map((w) => w.kind)).toEqual(["unsupported-bond-stereo"]);
+    expect(result.warnings[0]).toMatchObject({ stereo: 7 });
+    const bondId = result.molecule.bondIds[0] ?? "";
+    expect(result.molecule.bonds[bondId]?.stereo).toBe("none");
   });
 
   it("reads a query atom as a skipped atom, not as the end of the block", () => {

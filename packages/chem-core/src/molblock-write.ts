@@ -233,13 +233,31 @@ const STEREO_TO_CODE: Record<BondStereo, number> = {
  *     and V2000 stereo 6; `CFG=2` yields `w` (the unknown wedge) on a single
  *     bond and V2000 stereo 3 on a double bond.
  *
- * THE MODEL'S TWO KINDS OF "EITHER" COLLAPSE INTO `CFG=2`, and that is the
- * format's doing, not a loss here. `wavy` is a squiggly single bond meaning
+ * THE MODEL'S TWO KINDS OF "EITHER" COLLAPSE INTO `CFG=2`, AND TWO CELLS OF THE
+ * MATRIX COME BACK AS THE OTHER ONE. `wavy` is a squiggly single bond meaning
  * "configuration unknown at this centre"; `either` is a crossed double bond
- * meaning "cis or trans unknown". V3000 writes both as `CFG=2` and lets the bond
- * ORDER say which is meant, so the reader disambiguates the same way. That is
- * why `STEREO_TO_CODE` above must keep its four distinct numbers: the model's
- * distinction is real, and only this one format merges it.
+ * meaning "cis or trans unknown". V3000 writes both as `CFG=2` and has nothing
+ * else to say which was meant, so the reader infers it from the bond ORDER —
+ * single reads back `wavy`, double reads back `either`. That is exact for the
+ * two combinations chemistry uses, and SILENTLY WRONG for the two it does not:
+ *
+ *   - `either` on a SINGLE bond, written `CFG=2`, reads back as `wavy`;
+ *   - `wavy` on a DOUBLE bond, written `CFG=2`, reads back as `either`.
+ *
+ * Fourteen of the sixteen stereo x order cells round-trip exactly; those two do
+ * not, with no warning, because from the reader's side there is nothing to
+ * warn about. Both are reachable: the bond-stereo commands apply either mark to
+ * any selected bond, and decision 49 picks V3000 as soon as the document states
+ * a stereo group. `molblock.test.ts` pins the whole matrix so the two cells are
+ * visible rather than folklore.
+ *
+ * NOT NORMALISED AT WRITE TIME (decision 100). Collapsing `either` to `wavy` on
+ * a single bond in BOTH generations would make the two formats agree by
+ * DEGRADING V2000, which keeps all sixteen — destroying information one file
+ * can hold to make the other's limit uniform. Whether `either` should be
+ * offerable on a single bond at all is a separate question, not this codec's.
+ * That is also why `STEREO_TO_CODE` above must keep its four distinct numbers:
+ * the model's distinction is real, and only this one format merges it.
  *
  * A total `Record`, so a new `BondStereo` member is a compile error in BOTH
  * writers rather than a bond quietly exported as plain.

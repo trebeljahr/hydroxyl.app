@@ -954,6 +954,21 @@ describe("decision 95: which grouped atoms an RDKit reader will drop", () => {
     expect(wedgelessStereoGroupAtoms(racemate)).toEqual([c2]);
   });
 
+  it("names an either bond's atom too: the other half of the same rule", () => {
+    // `either` is the crossed DOUBLE bond and `wavy` the squiggly single one,
+    // but for this question they are the same thing — neither states a
+    // configuration, so neither earns a chiral tag and RDKit drops the atom
+    // from the collection either way. Pinned separately because the `wavy` test
+    // alone passes when the `either` arm of the guard is deleted.
+    const { mol, c2, c3 } = chlorobutanol();
+    const either = mol.bondIds.reduce(
+      (m, bondId) => (m.bonds[bondId]?.stereo === "wedge" ? setBondStereo(m, bondId, "either") : m),
+      mol,
+    );
+    const racemate = withStereoGroups(either, [{ kind: "and", index: 1, atomIds: [c2, c3] }]);
+    expect(wedgelessStereoGroupAtoms(racemate)).toEqual([c2]);
+  });
+
   it("names a grouped atom that is no stereocentre at all", () => {
     // An imported collection may hold one, and it is lost on the way out for
     // exactly the same reason a wedgeless centre is.
