@@ -9,7 +9,19 @@
  * The valence lists follow RDKit's default valence table, deliberately: RDKit
  * is the oracle for import/export, so disagreeing with it would surface as
  * round-trip drift. An empty list means "never add implicit hydrogens" (how
- * RDKit treats transition metals).
+ * RDKit treats transition metals). A list of `[0]` — the noble gases — means
+ * no hydrogens AND no bonds: RDKit refuses a bond to neon outright, so a drawn
+ * one is reported as over-valent here rather than exported into a refusal.
+ *
+ * THE LISTS WERE READ OFF THE PINNED RDKit (2025.3.4), NOT OUT OF A TEXTBOOK.
+ * RDKit's table moved in 2024.09, and the older one this file was first
+ * calibrated against disagreed with it on eleven rows: gallium and indium had
+ * no valence here and three there, so a lone Ga came back from a round trip
+ * as GaH3; xenon and polonium had none here and gained hydrogens there;
+ * iodine and astatine stopped at 5 there and carried 7 here, so IF6 drew one
+ * hydrogen that RDKit refused to sanitise. The client's
+ * `valence-table.node.test.ts` re-probes the real wasm for every element, so
+ * the next RDKit bump that moves a row fails a test instead of a round trip.
  *
  * PRECISION NOTE. `weight` is the IUPAC standard atomic weight (2021); for
  * elements with no stable isotope it is the mass number of the longest-lived
@@ -71,7 +83,7 @@ const CATEGORY_CODES: Record<string, ElementCategory> = {
 // z|symbol|name|group|period|category|weight|monoisotopic|valences|color
 const TABLE = `
 1|H|Hydrogen|1|1|n|1.008|1.0078250319|1|FFFFFF
-2|He|Helium|18|1|g|4.002602|4.0026032497||D9FFFF
+2|He|Helium|18|1|g|4.002602|4.0026032497|0|D9FFFF
 3|Li|Lithium|1|2|a|6.94|7.0160040|1|CC80FF
 4|Be|Beryllium|2|2|e|9.0121831|9.0121821|2|C2FF00
 5|B|Boron|13|2|m|10.81|11.0093055|3|FFB5B5
@@ -79,7 +91,7 @@ const TABLE = `
 7|N|Nitrogen|15|2|n|14.007|14.0030740052|3|3050F8
 8|O|Oxygen|16|2|n|15.999|15.9949146221|2|FF0D0D
 9|F|Fluorine|17|2|h|18.998403162|18.9984032|1|90E050
-10|Ne|Neon|18|2|g|20.1797|19.9924401759||B3E3F5
+10|Ne|Neon|18|2|g|20.1797|19.9924401759|0|B3E3F5
 11|Na|Sodium|1|3|a|22.98976928|22.98976967|1|AB5CF2
 12|Mg|Magnesium|2|3|e|24.305|23.98504190|2|8AFF00
 13|Al|Aluminium|13|3|p|26.9815384|26.98153844|3|BFA6A6
@@ -87,7 +99,7 @@ const TABLE = `
 15|P|Phosphorus|15|3|n|30.973761998|30.97376151|3,5|FF8000
 16|S|Sulfur|16|3|n|32.06|31.97207069|2,4,6|FFFF30
 17|Cl|Chlorine|17|3|h|35.45|34.96885271|1|1FF01F
-18|Ar|Argon|18|3|g|39.95|39.9623831||80D1E3
+18|Ar|Argon|18|3|g|39.95|39.9623831|0|80D1E3
 19|K|Potassium|1|4|a|39.0983|38.9637069|1|8F40D4
 20|Ca|Calcium|2|4|e|40.078|39.9625912|2|3DFF00
 21|Sc|Scandium|3|4|t|44.955907|||E6E6E6
@@ -100,12 +112,12 @@ const TABLE = `
 28|Ni|Nickel|10|4|t|58.6934|57.9353479||50D050
 29|Cu|Copper|11|4|t|63.546|62.9296011||C88033
 30|Zn|Zinc|12|4|t|65.38|63.9291466||7D80B0
-31|Ga|Gallium|13|4|p|69.723|||C28F8F
+31|Ga|Gallium|13|4|p|69.723||3|C28F8F
 32|Ge|Germanium|14|4|m|72.630||4|668F8F
 33|As|Arsenic|15|4|m|74.921595|74.9215964|3,5|BD80E3
 34|Se|Selenium|16|4|n|78.971|79.9165196|2,4,6|FFA100
 35|Br|Bromine|17|4|h|79.904|78.9183376|1|A62929
-36|Kr|Krypton|18|4|g|83.798|||5CB8D1
+36|Kr|Krypton|18|4|g|83.798||0|5CB8D1
 37|Rb|Rubidium|1|5|a|85.4678||1|702EB0
 38|Sr|Strontium|2|5|e|87.62||2|00FF00
 39|Y|Yttrium|3|5|t|88.905838|||94FFFF
@@ -118,12 +130,12 @@ const TABLE = `
 46|Pd|Palladium|10|5|t|106.42|105.903483||006985
 47|Ag|Silver|11|5|t|107.8682|106.905093||C0C0C0
 48|Cd|Cadmium|12|5|t|112.414|||FFD98F
-49|In|Indium|13|5|p|114.818|||A67573
+49|In|Indium|13|5|p|114.818||3|A67573
 50|Sn|Tin|14|5|p|118.710|119.9021947|2,4|668080
 51|Sb|Antimony|15|5|m|121.760|120.9038180|3,5|9E63B5
 52|Te|Tellurium|16|5|m|127.60|129.9062244|2,4,6|D47A00
-53|I|Iodine|17|5|h|126.90447|126.904468|1,3,5,7|940094
-54|Xe|Xenon|18|5|g|131.293|||429EB0
+53|I|Iodine|17|5|h|126.90447|126.904468|1,3,5|940094
+54|Xe|Xenon|18|5|g|131.293||0,2,4,6|429EB0
 55|Cs|Caesium|1|6|a|132.90545196|132.905447|1|57178F
 56|Ba|Barium|2|6|e|137.327|137.9052414|2|00C900
 57|La|Lanthanum|0|6|l|138.90547|||70D4FF
@@ -153,9 +165,9 @@ const TABLE = `
 81|Tl|Thallium|13|6|p|204.38|||A6544D
 82|Pb|Lead|14|6|p|207.2||2,4|575961
 83|Bi|Bismuth|15|6|p|208.98040||3,5|9E4FB5
-84|Po|Polonium|16|6|p|209|||AB5C00
-85|At|Astatine|17|6|h|210||1,3,5,7|754F45
-86|Rn|Radon|18|6|g|222|||428296
+84|Po|Polonium|16|6|p|209||2,4,6|AB5C00
+85|At|Astatine|17|6|h|210||1,3,5|754F45
+86|Rn|Radon|18|6|g|222||0|428296
 87|Fr|Francium|1|7|a|223||1|420066
 88|Ra|Radium|2|7|e|226||2|007D00
 89|Ac|Actinium|0|7|c|227|||70ABFA

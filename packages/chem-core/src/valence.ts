@@ -87,7 +87,7 @@ function hasAromaticPerception(mol: Molecule, atomId: AtomId): boolean {
  *
  * DOMAIN: main-group elements only, and the guard is the valence list rather
  * than the group number. Every element in the table that carries a default
- * valence is in group 1, 2 or 13-17, so `group - 10` is its outer-electron
+ * valence is in group 1, 2 or 13-18, so `group - 10` is its outer-electron
  * count and `group` is its own for the first two columns. Outside that the
  * arithmetic is nonsense — group 3 would read -7, and the f-block, which the
  * table records as group 0, would read -10 — so an element with no default
@@ -96,6 +96,12 @@ function hasAromaticPerception(mol: Molecule, atomId: AtomId): boolean {
  * means by that; this function refuses to invent it, in the same spirit as
  * `exactMass()`.
  *
+ * HELIUM IS THE ONE EXCEPTION THE GROUP RULE GETS WRONG. It sits in group 18
+ * because it is inert, not because it has eight outer electrons: its only
+ * shell closes at two. The noble gases carry RDKit's `[0]` valence, so they
+ * reach this arithmetic, and without the exception a lone helium would be
+ * drawn with four lone pairs instead of one.
+ *
  * Lifted out of the private helper below so `lewis.ts` can count lone pairs
  * from it rather than re-deriving the same expression: two copies of the
  * group-to-electron rule would be two places to get the d-block wrong.
@@ -103,6 +109,7 @@ function hasAromaticPerception(mol: Molecule, atomId: AtomId): boolean {
 export function outerElectronCount(symbol: string): number | undefined {
   const element = requireElement(symbol);
   if (element.valences.length === 0) return undefined;
+  if (element.z === 2) return 2;
   const group = element.group;
   return group <= 2 ? group : group - 10;
 }

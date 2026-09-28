@@ -33,7 +33,8 @@ import { outerElectronCount, totalValence } from "./valence.js";
  * can count look identical on the page, and only one of them is honest.
  */
 export type LonePairReason =
-  /** The element carries no default valences: a metal, or a noble gas. */
+  /** The element carries no default valences: a metal. The noble gases carry
+   *  RDKit's `[0]` and are counted like any other main-group atom. */
   | "no-valence-data"
   /** More bonds and charge than the atom has electrons to spend. */
   | "over-subscribed";

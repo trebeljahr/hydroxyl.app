@@ -252,6 +252,105 @@ describe("free valence and over-valence", () => {
 });
 
 // ---------------------------------------------------------------------------
+// The rows RDKit 2025.03 moved
+//
+// Each of these used to disagree with the pinned RDKit, which is the import
+// and export oracle, so each disagreement was a round trip that gained or lost
+// hydrogens. The client's valence-table.node.test.ts checks every element
+// against the real wasm; these pin the chemistry by name.
+// ---------------------------------------------------------------------------
+
+/** `centre` with `n` single-bonded `ligand` atoms around it. */
+function star(centre: string, ligand: string, n: number, order: 1 | 2 = 1): Molecule {
+  return buildMolecule((b) => {
+    const c = b.atom(centre, vec(0, 0));
+    for (let i = 0; i < n; i++) b.bond(c, b.atom(ligand, fromPolar((2 * Math.PI * i) / n, 1)), order);
+  });
+}
+
+describe("the heavier main-group rows follow RDKit 2025.03", () => {
+  it("gives a lone gallium or indium three hydrogens: gallane and indigane", () => {
+    for (const metal of ["Ga", "In"]) {
+      const lone = singleAtom(metal);
+      expect(V.implicitHydrogenCount(lone, first(lone)), metal).toBe(3);
+      expect(elementCounts(lone), metal).toEqual({ [metal]: 1, H: 3 });
+    }
+  });
+
+  it("saturates trimethylgallium's gallium with its three methyls", () => {
+    const gaMe3 = star("Ga", "C", 3);
+    const gallium = gaMe3.atomIds[0]!;
+    expect(V.implicitHydrogenCount(gaMe3, gallium)).toBe(0);
+    expect(V.valenceIssues(gaMe3)).toEqual([]);
+  });
+
+  it("reads polonium like the chalcogen above it: H2Po", () => {
+    const polane = singleAtom("Po");
+    expect(V.implicitHydrogenCount(polane, first(polane))).toBe(2);
+    expect(V.chargeAdjustedValences(polane, first(polane))).toEqual([2, 4, 6]);
+  });
+
+  it("draws the xenon fluorides and xenon trioxide without a hydrogen or a warning", () => {
+    for (const [name, mol] of [
+      ["XeF2", star("Xe", "F", 2)],
+      ["XeF4", star("Xe", "F", 4)],
+      ["XeF6", star("Xe", "F", 6)],
+      ["XeO3", star("Xe", "O", 3, 2)],
+    ] as const) {
+      expect(V.implicitHydrogenCount(mol, mol.atomIds[0]!), name).toBe(0);
+      expect(V.valenceIssues(mol), name).toEqual([]);
+    }
+  });
+
+  it("gives xenon with one bond the hydrogen of HXeCl", () => {
+    // The matrix-isolated noble-gas hydride, and the case that proves the list
+    // is [0, 2, 4, 6] rather than [] — with no valences xenon would take the
+    // chlorine and nothing else.
+    const hxecl = star("Xe", "Cl", 1);
+    expect(V.implicitHydrogenCount(hxecl, hxecl.atomIds[0]!)).toBe(1);
+  });
+
+  it("stops iodine at five: IF5 is clean and IF7 is over-valent", () => {
+    // RDKit 2025.03 refuses IF7 outright ("Explicit valence for atom # 1 I,
+    // 7, is greater than permitted"). Drawing it is still allowed — an
+    // over-valence is reported, never prevented — but the badge now warns
+    // before an export does.
+    const if5 = star("I", "F", 5);
+    expect(V.valenceIssues(if5)).toEqual([]);
+    const if7 = star("I", "F", 7);
+    expect(V.isOverValent(if7, if7.atomIds[0]!)).toBe(true);
+    // The old seventh valence used to hand six fluorines a hydrogen.
+    const if6 = star("I", "F", 6);
+    expect(V.implicitHydrogenCount(if6, if6.atomIds[0]!)).toBe(0);
+    expect(V.isOverValent(if6, if6.atomIds[0]!)).toBe(true);
+  });
+
+  it("treats astatine exactly as iodine", () => {
+    expect(V.implicitHydrogenCount(singleAtom("At"), first(singleAtom("At")))).toBe(1);
+    const at6 = star("At", "F", 6);
+    expect(V.isOverValent(at6, at6.atomIds[0]!)).toBe(true);
+  });
+
+  it("refuses a bond to a noble gas but keeps a lone one hydrogen-free", () => {
+    for (const gas of ["He", "Ne", "Ar", "Kr", "Rn"]) {
+      const lone = singleAtom(gas);
+      expect(V.implicitHydrogenCount(lone, first(lone)), gas).toBe(0);
+      expect(V.valenceIssues(lone), gas).toEqual([]);
+      const bonded = star(gas, "C", 1);
+      expect(V.isOverValent(bonded, bonded.atomIds[0]!), gas).toBe(true);
+    }
+  });
+
+  it("gives the helium cation the hydrogen of HeH+", () => {
+    // The helium hydride ion, and RDKit's answer for [He+] too.
+    const cation = buildMolecule((b) => {
+      b.atom("He", vec(0, 0), { charge: 1 });
+    });
+    expect(V.implicitHydrogenCount(cation, first(cation))).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Imported aromatic flags
 //
 // The regression suite for the half-integer defect. An aromatic-flagged bond

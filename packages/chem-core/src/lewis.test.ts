@@ -85,7 +85,36 @@ describe("outerElectronCount", () => {
     expect(outerElectronCount("Fe")).toBeUndefined();
     expect(outerElectronCount("Pt")).toBeUndefined();
     expect(outerElectronCount("U")).toBeUndefined();
-    expect(outerElectronCount("Ne")).toBeUndefined();
+  });
+
+  it("counts the noble gases, helium on its own closed shell", () => {
+    // They carry RDKit's `[0]` now, so they reach the arithmetic. Group 18
+    // reads 8 for every one of them except helium, whose only shell closes
+    // at two.
+    expect(outerElectronCount("Ne")).toBe(8);
+    expect(outerElectronCount("Xe")).toBe(8);
+    expect(outerElectronCount("He")).toBe(2);
+  });
+});
+
+describe("lonePairCount on the noble gases", () => {
+  it("gives a lone helium one pair and a lone neon four", () => {
+    const he = singleAtom("He");
+    expect(lonePairCount(he, he.atomIds[0]!)).toEqual({ kind: "counted", pairs: 1, unpaired: 0 });
+    const ne = singleAtom("Ne");
+    expect(lonePairCount(ne, ne.atomIds[0]!)).toEqual({ kind: "counted", pairs: 4, unpaired: 0 });
+  });
+
+  it("leaves xenon difluoride's xenon three pairs", () => {
+    // XeF2 is linear because of those three equatorial pairs, which is the
+    // textbook reason to draw them at all.
+    let xenon = "";
+    const xef2 = buildMolecule((b) => {
+      xenon = b.atom("Xe", vec(0, 0));
+      b.bond(xenon, b.atom("F", vec(-1, 0)));
+      b.bond(xenon, b.atom("F", vec(1, 0)));
+    });
+    expect(lonePairCount(xef2, xenon)).toEqual({ kind: "counted", pairs: 3, unpaired: 0 });
   });
 });
 
