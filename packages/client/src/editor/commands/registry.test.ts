@@ -464,6 +464,24 @@ describe("the surfaces the registry has to cover", () => {
     expect(commandById("view.zoom-out").enabled(store.getState())).toBe(false);
   });
 
+  it("resets to 100% as the status bar reads it, in either style (decision 107)", () => {
+    const store = storeWith(benzene());
+    store.getState().setViewportSize({ width: 800, height: 600 });
+    store.getState().panBy({ x: 40, y: 40 });
+    commandById("view.reset").run(store);
+    expect(store.getState().viewport.zoom).toBe(1);
+    expect(store.getState().viewport.pan).toEqual({ x: 0, y: 0 });
+
+    // Publication's bond is 24 px, so a viewport zoom of 1 would put a bond
+    // on screen at 55% of Screen's. Reset lands on the zoom that shows the
+    // same 44 px bond Screen shows at 100%.
+    commandById("view.style-publication").run(store);
+    store.getState().panBy({ x: 40, y: 40 });
+    commandById("view.reset").run(store);
+    expect(store.getState().viewport.zoom).toBeCloseTo(44 / 24, 12);
+    expect(store.getState().viewport.pan).toEqual({ x: 0, y: 0 });
+  });
+
   it("cannot fit an empty sketch", () => {
     const store = storeWith(buildMolecule(() => undefined));
     expect(commandById("view.fit").enabled(store.getState())).toBe(false);

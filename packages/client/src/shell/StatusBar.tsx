@@ -55,7 +55,8 @@ import { AlertTriangleIcon } from "lucide-react";
 import type { ValenceIssue } from "@starter/chem-core";
 import type { UnplacedAnnotation } from "@starter/chem-render";
 
-import { canvasAnnotatedScene } from "@/canvas/scene-bridge";
+import { canvasAnnotatedScene, renderStyleFor } from "@/canvas/scene-bridge";
+import { displayZoom } from "@/canvas/view-scale";
 import { commandById } from "@/editor/commands/registry";
 import { isFileExportBuild } from "@/lib/deployment";
 import { DONATE_URL } from "@/lib/donation";
@@ -332,13 +333,16 @@ export function StatusBar(): ReactElement {
       <ViewButton id="view.reset" label="Reset" />
       <ViewButton id="view.zoom-out" label="−" named />
       {/* The gestures are invisible, so the one place that shows the zoom
-          also says how to change it (decision 106). */}
+          also says how to change it (decision 106). The number is in
+          reference bonds, not scene px (decision 107): the same picture
+          reads the same percentage in Screen and Publication, so a style
+          switch, which moves nothing, does not appear to zoom either. */}
       <span
         data-status="zoom"
         title={ZOOM_HELP}
         className="w-12 text-right font-mono tabular-nums"
       >
-        {Math.round(zoom * 100)}%
+        {Math.round(displayZoom(zoom, renderStyleFor(doc)) * 100)}%
       </span>
       <ViewButton id="view.zoom-in" label="+" named />
 

@@ -183,6 +183,35 @@ export function zoomAt(vp: Viewport, screenAnchor: Vec2, factor: number): Viewpo
 }
 
 /**
+ * The scene was redrawn `factor` times larger; keep every point of it on the
+ * screen pixel it was painted on.
+ *
+ * This is what a style switch needs (decision 107). A scene is in px at its
+ * style's bond length, so going from Screen's 44 px bond to Publication's
+ * 24 px one redraws every point at 24/44 of its old coordinates. Left alone,
+ * the viewport would then paint the molecule 45% smaller and slid towards the
+ * scene origin, which is how the Publication switch used to look broken.
+ * Dividing the zoom by the factor and multiplying the pan by it cancels that
+ * exactly: `toScreen(vp', factor * p) === toScreen(vp, p)` for every p.
+ *
+ * STILL NO SECOND SCALE. This does not convert model units to px or flip
+ * anything. The caller hands in a ratio of two scene sizes it read off two
+ * styles, and this file stays inside px.
+ *
+ * The zoom is clamped like every other zoom. At the limits the drawing cannot
+ * keep its size, and it changes size rather than leaving the range that keeps
+ * `toModel` finite. The pan is then still scaled, so the centre stays put.
+ */
+export function rescaleScene(vp: Viewport, factor: number): Viewport {
+  if (!Number.isFinite(factor) || factor <= 0 || factor === 1) return vp;
+  return {
+    ...vp,
+    zoom: clampZoom(vp.zoom / factor),
+    pan: { x: vp.pan.x * factor, y: vp.pan.y * factor },
+  };
+}
+
+/**
  * A resize keeps `pan` and `zoom`, so the scene point at the centre stays at
  * the centre and the canvas grows outwards from what the user was looking at.
  */

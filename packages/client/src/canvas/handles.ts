@@ -32,6 +32,7 @@ import { visibleBounds } from "@/state/viewport";
 import type { Viewport } from "@/state/viewport";
 
 import type { SceneIndex } from "./metrics";
+import { bondScale } from "./view-scale";
 
 /**
  * Drawn radius and grab radius, SCREEN px. The grab is the generous one.
@@ -49,6 +50,10 @@ export const ROTATE_HANDLE_GRAB_PX = 12;
  * halo's radius around an unlabelled atom (9 + 4 in OverlayLayer). Scene px
  * because the halo is — it grows with the zoom, and a screen-sized clearance
  * would let the halo swallow the handle as the user zooms in.
+ *
+ * At the REFERENCE bond, like the halo it clears, and scaled by
+ * `bondScale(style)` for the same reason (decision 107). Unscaled, it sat a
+ * Screen-sized halo out at Publication, where the ring itself is 24/44 of that.
  */
 export const ROTATE_HANDLE_HALO_CLEARANCE_PX = 13;
 
@@ -150,7 +155,7 @@ export function rotateHandleGeometry(
       : 1;
   const orbit =
     reach +
-    ROTATE_HANDLE_HALO_CLEARANCE_PX +
+    ROTATE_HANDLE_HALO_CLEARANCE_PX * bondScale(index.scene.style) +
     (ROTATE_HANDLE_GAP_PX + ROTATE_HANDLE_RADIUS_PX) / zoom;
 
   // Scene px are y-DOWN, so "up" is a negative sine. This is not a second

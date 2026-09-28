@@ -34,6 +34,7 @@ import type { InteractionOverlayState } from "@/editor/interaction";
 import { ROTATE_HANDLE_RADIUS_PX } from "./handles";
 import type { RotateHandleGeometry } from "./handles";
 import type { SceneIndex } from "./metrics";
+import { bondScale } from "./view-scale";
 
 export interface OverlayLayerProps {
   readonly index: SceneIndex;
@@ -67,6 +68,18 @@ export interface OverlayLayerProps {
    */
   readonly focusedAtomId?: AtomId | null | undefined;
 }
+
+/*
+ * EVERY SCENE-SIZED MARK BELOW IS IN PX AT THE REFERENCE BOND — Screen's
+ * 44 px — and is drawn at `bondScale(style)` times that (decision 107). The
+ * marks were tuned on Screen and used to be drawn at those px whatever the
+ * style, so at Publication's 24 px bond a selection ring reached past half a
+ * bond and covered its neighbours. Scaled, each mark is the same fraction of
+ * a bond in every style, and with the viewport rescaled on a style switch it
+ * is the same size on screen too. `u` below is that factor. The rotate
+ * handle, its preview and the pivot are UI in SCREEN px and take the zoom
+ * instead, so they need no factor.
+ */
 
 /**
  * Halo geometry, in scene px at SCREEN_STYLE (44px bonds, a 2px atom dot).
@@ -156,6 +169,7 @@ export function OverlayLayer({
   focusedAtomId,
 }: OverlayLayerProps): ReactElement {
   const style = index.scene.style;
+  const u = bondScale(style);
   const zoom =
     zoomProp !== undefined && Number.isFinite(zoomProp) && zoomProp > 0 ? zoomProp : 1;
   const showHandle = handle !== undefined && interaction?.marquee == null;
@@ -169,34 +183,34 @@ export function OverlayLayer({
         top because it answers "what do I get if I click here", which has to
         win over "what did I already have" at the moment the two overlap.
       */}
-      {selection.bondIds.map((id) => bondHighlight(index, id, "selected-bond"))}
-      {selection.atomIds.map((id) => atomHalo(index, id, "selected-atom"))}
+      {selection.bondIds.map((id) => bondHighlight(index, u, id, "selected-bond"))}
+      {selection.atomIds.map((id) => atomHalo(index, u, id, "selected-atom"))}
       {hoveredBondId === null
         ? null
-        : bondHighlight(index, hoveredBondId, "hover-bond")}
+        : bondHighlight(index, u, hoveredBondId, "hover-bond")}
       {hoveredAtomId === null
         ? null
-        : atomHalo(index, hoveredAtomId, "hover-atom")}
+        : atomHalo(index, u, hoveredAtomId, "hover-atom")}
 
       {/*
         The gesture marks, drawn last so they sit over both. A drag is the
         most recent statement of intent on the canvas and has to win.
       */}
-      {focusedAtomId == null ? null : focusRing(index, focusedAtomId)}
-      {(issues ?? []).map((issue, at) => valenceBadge(index, issue, at))}
+      {focusedAtomId == null ? null : focusRing(index, u, focusedAtomId)}
+      {(issues ?? []).map((issue, at) => valenceBadge(index, u, issue, at))}
       {showHandle && interaction?.handleHovered === true
         ? rotatePreview(handle, zoom)
         : null}
       {showHandle ? rotateHandle(handle, interaction?.angle ?? 0, zoom) : null}
       {interaction?.target == null
         ? null
-        : targetRing(index, interaction.target.atomId, interaction.target.refused)}
+        : targetRing(index, u, interaction.target.atomId, interaction.target.refused)}
       {interaction?.ghost == null
         ? null
-        : ghostBond(style, interaction.ghost.from, interaction.ghost.to)}
+        : ghostBond(style, u, interaction.ghost.from, interaction.ghost.to)}
       {interaction?.marquee == null
         ? null
-        : marqueeRect(style, interaction.marquee.a, interaction.marquee.b)}
+        : marqueeRect(style, u, interaction.marquee.a, interaction.marquee.b)}
       {interaction?.pivot == null ? null : pivotMark(style, interaction.pivot, zoom)}
     </g>
   );
@@ -218,6 +232,7 @@ export function OverlayLayer({
  */
 function ghostBond(
   style: Parameters<typeof modelToPx>[0],
+  u: number,
   from: Vec2,
   to: Vec2,
 ): ReactElement | null {
@@ -233,9 +248,9 @@ function ghostBond(
       x2={b.x}
       y2={b.y}
       stroke={GHOST_COLOR}
-      strokeWidth={GHOST_WIDTH_PX}
+      strokeWidth={GHOST_WIDTH_PX * u}
       strokeOpacity={0.7}
-      strokeDasharray="5 4"
+      strokeDasharray={dashes(u, 5, 4)}
       strokeLinecap="round"
     />
   );
@@ -249,6 +264,7 @@ function ghostBond(
  */
 function targetRing(
   index: SceneIndex,
+  u: number,
   atomId: AtomId,
   refused: boolean,
 ): ReactElement | null {
@@ -261,11 +277,11 @@ function targetRing(
       data-overlay-target={atomId}
       cx={centre.x}
       cy={centre.y}
-      r={TARGET_RADIUS_PX}
+      r={TARGET_RADIUS_PX * u}
       fill="none"
       stroke={refused ? REFUSE_COLOR : ACCEPT_COLOR}
-      strokeWidth={2.5}
-      strokeDasharray={refused ? "4 3" : undefined}
+      strokeWidth={2.5 * u}
+      strokeDasharray={refused ? dashes(u, 4, 3) : undefined}
     />
   );
 }
@@ -283,6 +299,7 @@ function targetRing(
  */
 function marqueeRect(
   style: Parameters<typeof modelToPx>[0],
+  u: number,
   a: Vec2,
   b: Vec2,
 ): ReactElement | null {
@@ -302,8 +319,8 @@ function marqueeRect(
       fill={SELECTED_COLOR}
       fillOpacity={0.08}
       stroke={SELECTED_COLOR}
-      strokeWidth={MARQUEE_WIDTH_PX}
-      strokeDasharray="4 3"
+      strokeWidth={MARQUEE_WIDTH_PX * u}
+      strokeDasharray={dashes(u, 4, 3)}
     />
   );
 }
@@ -496,12 +513,13 @@ function pivotMark(
  */
 function valenceBadge(
   index: SceneIndex,
+  u: number,
   issue: ValenceIssue,
   at: number,
 ): ReactElement | null {
   const centre = index.atomCentre(issue.atomId);
   if (centre === undefined || !isFinitePoint(centre)) return null;
-  const reach = Math.max(index.atomRadiusPx(issue.atomId), MIN_ATOM_HALO_RADIUS_PX);
+  const reach = Math.max(index.atomRadiusPx(issue.atomId), MIN_ATOM_HALO_RADIUS_PX * u);
   return (
     <circle
       // The position in the list, not the atom id alone: an atom can carry
@@ -512,12 +530,12 @@ function valenceBadge(
       data-overlay="valence-issue"
       data-overlay-target={issue.atomId}
       data-overlay-severity={issue.severity}
-      cx={centre.x + reach + BADGE_OFFSET_PX * 0.5}
-      cy={centre.y - reach - BADGE_OFFSET_PX * 0.5}
-      r={BADGE_RADIUS_PX}
+      cx={centre.x + reach + BADGE_OFFSET_PX * 0.5 * u}
+      cy={centre.y - reach - BADGE_OFFSET_PX * 0.5 * u}
+      r={BADGE_RADIUS_PX * u}
       fill={issue.severity === "error" ? BADGE_COLOR : BADGE_WARNING_COLOR}
       stroke="#ffffff"
-      strokeWidth={1.5}
+      strokeWidth={1.5 * u}
     >
       <title>{issue.message}</title>
     </circle>
@@ -539,6 +557,7 @@ type BondRole = "hover-bond" | "selected-bond";
  */
 function atomHalo(
   index: SceneIndex,
+  u: number,
   id: AtomId,
   role: AtomRole,
 ): ReactElement | null {
@@ -546,8 +565,8 @@ function atomHalo(
   if (centre === undefined || !isFinitePoint(centre)) return null;
 
   const radius =
-    Math.max(index.atomRadiusPx(id), MIN_ATOM_HALO_RADIUS_PX) +
-    ATOM_HALO_PAD_PX;
+    Math.max(index.atomRadiusPx(id), MIN_ATOM_HALO_RADIUS_PX * u) +
+    ATOM_HALO_PAD_PX * u;
   const hovered = role === "hover-atom";
 
   return (
@@ -563,7 +582,7 @@ function atomHalo(
       fill={hovered ? HOVER_COLOR : "none"}
       fillOpacity={hovered ? 0.12 : undefined}
       stroke={hovered ? HOVER_COLOR : SELECTED_COLOR}
-      strokeWidth={hovered ? 1.5 : 2.5}
+      strokeWidth={(hovered ? 1.5 : 2.5) * u}
       strokeOpacity={hovered ? 0.55 : 1}
     />
   );
@@ -577,13 +596,12 @@ function atomHalo(
  * one of the other two would make the keyboard user lose track of what an
  * edit is about to act on.
  */
-function focusRing(index: SceneIndex, id: AtomId): ReactElement | null {
+function focusRing(index: SceneIndex, u: number, id: AtomId): ReactElement | null {
   const centre = index.atomCentre(id);
   if (centre === undefined || !isFinitePoint(centre)) return null;
   const radius =
-    Math.max(index.atomRadiusPx(id), MIN_ATOM_HALO_RADIUS_PX) +
-    ATOM_HALO_PAD_PX +
-    FOCUS_RING_PAD_PX;
+    Math.max(index.atomRadiusPx(id), MIN_ATOM_HALO_RADIUS_PX * u) +
+    (ATOM_HALO_PAD_PX + FOCUS_RING_PAD_PX) * u;
   return (
     <circle
       key={`focus-atom:${id}`}
@@ -594,8 +612,8 @@ function focusRing(index: SceneIndex, id: AtomId): ReactElement | null {
       r={radius}
       fill="none"
       stroke={FOCUS_COLOR}
-      strokeWidth={2}
-      strokeDasharray="4 3"
+      strokeWidth={2 * u}
+      strokeDasharray={dashes(u, 4, 3)}
     />
   );
 }
@@ -603,6 +621,7 @@ function focusRing(index: SceneIndex, id: AtomId): ReactElement | null {
 /** A thick translucent line along the bond, or nothing. Same staleness rule. */
 function bondHighlight(
   index: SceneIndex,
+  u: number,
   id: BondId,
   role: BondRole,
 ): ReactElement | null {
@@ -621,7 +640,7 @@ function bondHighlight(
       x2={segment.b.x}
       y2={segment.b.y}
       stroke={hovered ? HOVER_COLOR : SELECTED_COLOR}
-      strokeWidth={hovered ? HOVER_BOND_WIDTH_PX : SELECTED_BOND_WIDTH_PX}
+      strokeWidth={(hovered ? HOVER_BOND_WIDTH_PX : SELECTED_BOND_WIDTH_PX) * u}
       strokeOpacity={hovered ? 0.22 : 0.35}
       // Round caps so the band ends in line with the atom halos instead of
       // cutting a square corner across them.
@@ -645,6 +664,15 @@ function overlayAttrs(
   target: string,
 ): { readonly "data-overlay": string; readonly "data-overlay-target": string } {
   return { "data-overlay": role, "data-overlay-target": target };
+}
+
+/**
+ * A dash pattern at the reference bond, scaled like every other size here.
+ * At `u` 1 it is spelled exactly as the literal was, so a Screen canvas
+ * carries the same attribute it always did.
+ */
+function dashes(u: number, dash: number, gap: number): string {
+  return `${String(dash * u)} ${String(gap * u)}`;
 }
 
 /**

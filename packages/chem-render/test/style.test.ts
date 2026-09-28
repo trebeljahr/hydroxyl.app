@@ -19,7 +19,10 @@ import { describe, expect, it } from "vitest";
 
 import type { Vec2 } from "@starter/chem-core";
 
-import type { ScenePoint } from "../src/scene/types.js";
+import { FIXTURES } from "../src/fixtures.js";
+import { representation } from "../src/representation.js";
+import { buildScene } from "../src/scene/build.js";
+import type { CirclePrimitive, ScenePoint } from "../src/scene/types.js";
 import {
   modelToPx,
   PUBLICATION_STYLE,
@@ -169,5 +172,51 @@ describe("pxToModel", () => {
       expect(scene.x === 0).toBe(true);
       expect(scene.y === 0).toBe(true);
     }
+  });
+});
+
+/**
+ * THE CANVAS RELIES ON A PRESET SWITCH BEING ONE SCALE (decision 107).
+ *
+ * The editor keeps every atom on its screen pixel across a Screen/Publication
+ * switch by dividing its zoom by the ratio of the two bond lengths, and
+ * nothing else. That is exact only while an atom's scene position is
+ * `modelToPx` of its model position and the bond length is the only number in
+ * it — no per-style offset, no margin folded into a coordinate, no second
+ * scale. Every fixture's bare-vertex dots are checked, because a dot's centre
+ * is the one primitive whose position is the atom's own.
+ */
+describe("a preset switch moves every atom by the bond-length ratio alone", () => {
+  function dots(style: typeof SCREEN_STYLE, fixture: (typeof FIXTURES)[number]) {
+    const scene = buildScene(fixture.molecule, style, representation("skeletal"));
+    const byAtom = new Map<string, ScenePoint>();
+    for (const primitive of scene.primitives) {
+      // By id, not by "a circle from an atom": a radical's electron dot is
+      // one too, and it sits beside the label, where the glyph size puts it.
+      if (primitive.type !== "circle" || primitive.source.kind !== "atom") continue;
+      if (primitive.id !== `atom:${primitive.source.atomId}:dot`) continue;
+      byAtom.set(primitive.source.atomId, (primitive as CirclePrimitive).centre);
+    }
+    return byAtom;
+  }
+
+  it("scales every bare vertex by 24/44 and moves none of them otherwise", () => {
+    const ratio = pxPerModelUnit(PUBLICATION_STYLE) / pxPerModelUnit(SCREEN_STYLE);
+    let checked = 0;
+    for (const fixture of FIXTURES) {
+      const screen = dots(SCREEN_STYLE, fixture);
+      const publication = dots(PUBLICATION_STYLE, fixture);
+      // The label pass decides which atoms are bare from chemistry, not from
+      // the style, so both presets draw a dot on the same atoms.
+      expect([...publication.keys()].sort(), fixture.name).toEqual([...screen.keys()].sort());
+      for (const [atomId, centre] of screen) {
+        const other = publication.get(atomId)!;
+        expect(other.x, `${fixture.name} ${atomId}`).toBeCloseTo(centre.x * ratio, 9);
+        expect(other.y, `${fixture.name} ${atomId}`).toBeCloseTo(centre.y * ratio, 9);
+        checked += 1;
+      }
+    }
+    // Guards the loop: a fixture set with no bare vertex would pass vacuously.
+    expect(checked).toBeGreaterThan(50);
   });
 });

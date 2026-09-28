@@ -527,6 +527,34 @@ describe("viewport", () => {
     expect(store.getState().viewport.pan).toEqual({ x: 0, y: 0 });
     expect(store.getState().viewport.zoom).toBe(1);
   });
+
+  it("resets to the zoom it is given, which is how Publication reads 100%", () => {
+    const store = createEditorStore({ viewportSize: { width: 1024, height: 768 } });
+
+    store.getState().panBy({ x: 10, y: 10 });
+    store.getState().resetViewport(44 / 24);
+
+    expect(store.getState().viewport.pan).toEqual({ x: 0, y: 0 });
+    expect(store.getState().viewport.zoom).toBeCloseTo(44 / 24, 12);
+    // Already there: no new viewport, so nothing re-renders for it.
+    const settled = store.getState().viewport;
+    store.getState().resetViewport(44 / 24);
+    expect(store.getState().viewport).toBe(settled);
+  });
+
+  it("rescales for a redrawn scene without an undo entry (decision 107)", () => {
+    const store = makeStore();
+    store.getState().panBy({ x: 88, y: -44 });
+    store.getState().setZoom(2);
+    const past = store.getState().history.past.length;
+
+    store.getState().rescaleViewport(24 / 44);
+
+    expect(store.getState().viewport.zoom).toBeCloseTo(2 * (44 / 24), 12);
+    expect(store.getState().viewport.pan.x).toBeCloseTo(48, 12);
+    expect(store.getState().viewport.pan.y).toBeCloseTo(-24, 12);
+    expect(store.getState().history.past).toHaveLength(past);
+  });
 });
 
 describe("documents and panels", () => {

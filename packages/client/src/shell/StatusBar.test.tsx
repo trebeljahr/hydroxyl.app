@@ -191,6 +191,29 @@ describe("StatusBar — viewport chrome", () => {
     expect(statusText("zoom")).toBe(`${String(Math.round(zoom * 100))}%`);
   });
 
+  it("reads the same percentage for the same picture in either style (decision 107)", () => {
+    render(
+      <>
+        <EditorCanvas />
+        <StatusBar />
+      </>,
+    );
+    const before = statusText("zoom");
+    // The switch rescales the viewport so nothing moves on screen, which puts
+    // the viewport's own zoom at 44/24 of what it was. The readout is in
+    // on-screen bonds, so it does not move either.
+    act(() => editorStore.getState().setStylePreset("publication"));
+    expect(statusText("zoom")).toBe(before);
+    expect(editorStore.getState().viewport.zoom).not.toBeCloseTo(
+      Number.parseInt(before, 10) / 100,
+      2,
+    );
+
+    // And Reset lands on the readout's 100%, not on a viewport zoom of 1.
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    expect(statusText("zoom")).toBe("100%");
+  });
+
   it("keeps its chrome outside the <svg>, so the canvas root stays the only pointer target", () => {
     render(
       <>

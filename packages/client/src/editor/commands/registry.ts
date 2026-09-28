@@ -51,7 +51,9 @@ import {
   STYLE_PRESET_TITLES,
   buildCanvasScene,
   canvasPanelFor,
+  renderStyleFor,
 } from "@/canvas/scene-bridge";
+import { referenceZoom } from "@/canvas/view-scale";
 // From `machine`, not from the `@/editor/interaction` barrel: the barrel
 // re-exports the React adapter, and this registry has to stay importable by a
 // plain-node test.
@@ -976,7 +978,11 @@ const VIEW_COMMANDS: readonly Command[] = [
     group: "view",
     enabled: always,
     run: (store) => {
-      store.getState().resetViewport();
+      // 100% as the status bar reads it, which is a reference bond on screen
+      // in every style (decision 107). The viewport's own zoom 1 would be
+      // Screen's 100% but only 55% at Publication.
+      const state = store.getState();
+      state.resetViewport(referenceZoom(renderStyleFor(state.document)));
     },
   },
   {

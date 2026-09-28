@@ -32,7 +32,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { buildMolecule } from "@starter/chem-core";
 import type { Vec2 } from "@starter/chem-core";
-import { SCREEN_STYLE, modelToPx } from "@starter/chem-render";
+import { PUBLICATION_STYLE, SCREEN_STYLE, modelToPx } from "@starter/chem-render";
+import type { RenderStyle } from "@starter/chem-render";
 
 import { editorStore, toScreen } from "@/state";
 
@@ -661,6 +662,88 @@ describe("EditorCanvas — editing", () => {
 
     expect(editorStore.getState().viewport.zoom).toBe(viewport.zoom);
     expect(editorStore.getState().viewport.pan).toEqual(viewport.pan);
+  });
+});
+
+describe("EditorCanvas — a style switch changes the ink and nothing else (decision 107)", () => {
+  /** Where each atom is painted, given the style its scene is drawn at. */
+  function paintedAtoms(style: RenderStyle): Map<string, Vec2> {
+    const viewport = editorStore.getState().viewport;
+    return new Map(
+      MOL.atomIds.map((id) => [id, toScreen(viewport, modelToPx(style, MOL.atoms[id]!.pos))]),
+    );
+  }
+
+  function expectSamePoints(a: Map<string, Vec2>, b: Map<string, Vec2>): void {
+    for (const [id, point] of a) {
+      expect(b.get(id)!.x, id).toBeCloseTo(point.x, 6);
+      expect(b.get(id)!.y, id).toBeCloseTo(point.y, 6);
+    }
+  }
+
+  it("keeps every atom on its screen pixel, both ways and through undo", () => {
+    render(<EditorCanvas />);
+    editorStore.getState().panBy({ x: 37, y: -21 });
+    const screen = paintedAtoms(SCREEN_STYLE);
+
+    // The scene shrinks to 24/44 of its px; the viewport has to make that up.
+    act(() => editorStore.getState().setStylePreset("publication"));
+    expectSamePoints(screen, paintedAtoms(PUBLICATION_STYLE));
+
+    act(() => {
+      editorStore.getState().undo();
+    });
+    expect(editorStore.getState().document.stylePreset).toBe("screen");
+    expectSamePoints(screen, paintedAtoms(SCREEN_STYLE));
+
+    act(() => {
+      editorStore.getState().redo();
+    });
+    expectSamePoints(screen, paintedAtoms(PUBLICATION_STYLE));
+  });
+
+  it("paints the switched scene through the rescaled transform, and picks there too", () => {
+    render(<EditorCanvas />);
+    const before = atomPoint("a2");
+    act(() => editorStore.getState().setStylePreset("publication"));
+
+    const circle = canvasRoot().querySelector('[data-atom-id="a2"]')!;
+    const transform = canvasRoot().querySelector("g")!.getAttribute("transform")!;
+    const [tx, ty, scale, px, py] = [
+      ...transform.matchAll(/[-+]?\d[\d.]*(?:e[-+]?\d+)?/gi),
+    ].map((m) => Number(m[0]));
+    const cx = Number(circle.getAttribute("cx"));
+    const cy = Number(circle.getAttribute("cy"));
+    // The dot is written at the scene's precision, so this is as close as
+    // three decimals of a Publication px allow.
+    expect((cx + px!) * scale! + tx!).toBeCloseTo(before.x, 1);
+    expect((cy + py!) * scale! + ty!).toBeCloseTo(before.y, 1);
+
+    click(before);
+    expect(selection().atomIds).toEqual(["a2"]);
+  });
+
+  it("draws the selection ring the same size on screen in both styles", () => {
+    render(<EditorCanvas />);
+    act(() => editorStore.getState().selectAtoms(["a1"]));
+    const ringOnScreen = (): number =>
+      Number(document.querySelector('[data-overlay="selected-atom"]')!.getAttribute("r")) *
+      editorStore.getState().viewport.zoom;
+    const screen = ringOnScreen();
+
+    act(() => editorStore.getState().setStylePreset("publication"));
+    expect(ringOnScreen()).toBeCloseTo(screen, 6);
+  });
+
+  it("frames a newly opened document instead of rescaling it", () => {
+    render(<EditorCanvas />);
+    const other = { ...DOC, id: "doc_other", stylePreset: "publication" as const };
+    act(() => editorStore.getState().openDocument(other));
+    // Fitted, so benzene's origin is the viewport centre again. A rescale
+    // would have multiplied the old pan instead.
+    const centre = toScreen(editorStore.getState().viewport, { x: 0, y: 0 });
+    expect(centre.x).toBeCloseTo(400, 6);
+    expect(centre.y).toBeCloseTo(300, 6);
   });
 });
 

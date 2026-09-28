@@ -317,7 +317,12 @@ export interface ViewportSlice {
    *  chem-render's `RenderStyle`, so the store cannot derive the molecule's
    *  pixel extent on its own. */
   zoomToFit(bounds: Bounds, margin?: number): void;
-  resetViewport(): void;
+  /** Back to the origin at `zoom`, 1 when omitted. The view command passes
+   *  the zoom that reads 100% for the document's style (decision 107). */
+  resetViewport(zoom?: number): void;
+  /** The scene was redrawn `factor` times larger; keep it where it was on
+   *  screen. See `rescaleScene`. */
+  rescaleViewport(factor: number): void;
 }
 
 export interface UiSlice {

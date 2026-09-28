@@ -46,6 +46,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type { ReactElement } from "react";
+import { pxPerModelUnit } from "@starter/chem-render";
 import { moleculeIssues } from "@/editor/derived";
 import { movingAtomIds, useCanvasInteraction } from "@/editor/interaction";
 import { toolDef } from "@/editor/tools";
@@ -221,6 +222,33 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
     fittedDocumentIdRef.current = doc.id;
     fitToScene();
   }, [doc.id, viewport.size.width, viewport.size.height, fitToScene]);
+
+  // A STYLE SWITCH KEEPS THE PICTURE WHERE IT WAS (decision 107).
+  //
+  // The scene is in px at the style's bond length, so Screen -> Publication
+  // redraws every point at 24/44 of its coordinates. Without this the
+  // molecule shrank by 45% and slid towards the scene origin on the switch,
+  // with the zoom readout unchanged. Rescaling the viewport by the same ratio
+  // keeps every atom on its screen pixel, so only the ink changes.
+  //
+  // Keyed on the document id AND the bond length, and it runs for every way
+  // the preset can change: the top bar, the palette, and an undo or redo of
+  // either. A different document is framed by the fit above instead.
+  //
+  // A LAYOUT effect so the frame drawn at the new style with the old
+  // viewport is never painted: an update scheduled here is flushed before
+  // the browser gets control back.
+  const bondLengthPx = pxPerModelUnit(renderStyleFor(doc));
+  const drawnAtRef = useRef<{ readonly docId: string; readonly bondLengthPx: number } | null>(
+    null,
+  );
+  useLayoutEffect(() => {
+    const before = drawnAtRef.current;
+    drawnAtRef.current = { docId: doc.id, bondLengthPx };
+    if (before === null || before.docId !== doc.id) return;
+    if (before.bondLengthPx === bondLengthPx) return;
+    editorStore.getState().rescaleViewport(bondLengthPx / before.bondLengthPx);
+  }, [doc.id, bondLengthPx]);
 
   const { width, height } = viewport.size;
   const transform =

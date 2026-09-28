@@ -22,6 +22,7 @@ import { describe, expect, it } from "vitest";
 
 import { benzene } from "@starter/chem-core";
 import {
+  PUBLICATION_STYLE,
   SCREEN_STYLE,
   buildScene,
   representation,
@@ -485,5 +486,108 @@ describe("OverlayLayer — gesture marks", () => {
     // the handle are mutually exclusive in the real canvas — a sweep hides the
     // handle — so this fixture asks for the marquee and gets no handle.
     expect(container.querySelectorAll("[data-overlay]").length).toBeGreaterThan(3);
+  });
+});
+
+describe("OverlayLayer — sized in bonds, so it is the same in every style (decision 107)", () => {
+  // Every mark sized with the drawing: two halos and two bands, a focus
+  // ring, a badge, and the gesture marks. The rotate handle, its preview and
+  // the pivot are UI sized in SCREEN px, so they are checked apart below.
+  const SCREEN_SIZED = new Set(["rotate-handle", "rotate-preview", "rotate-pivot"]);
+
+  function everyMark(style: typeof SCREEN_STYLE, withMarquee: boolean): Element[] {
+    const scene = buildScene(MOL, style, representation("skeletal"));
+    const index = createSceneIndex(scene, MOL);
+    const { container } = render(
+      <svg>
+        <OverlayLayer
+          index={index}
+          selection={{ atomIds: ["a1"], bondIds: ["b7"] }}
+          hoveredAtomId="a3"
+          hoveredBondId="b10"
+          focusedAtomId="a5"
+          issues={[{ atomId: "a2", severity: "error", message: "x" }]}
+          rotateHandle={rotateHandleGeometry(index, ["a1", "a2", "a3"])}
+          interaction={{
+            ghost: { from: { x: 0, y: 0 }, to: { x: 1, y: 1 } },
+            target: { atomId: "a4", refused: true },
+            marquee: withMarquee ? { a: { x: -1, y: -1 }, b: { x: 1, y: 2 } } : null,
+            pivot: { x: 0.5, y: -0.5 },
+            angle: 0,
+            handleHovered: true,
+          }}
+        />
+      </svg>,
+    );
+    return [...container.querySelectorAll("[data-overlay]")];
+  }
+
+  const LENGTHS = ["cx", "cy", "r", "x", "y", "width", "height", "x1", "y1", "x2", "y2", "stroke-width"];
+
+  it("draws every mark at Publication as the Screen mark times 24/44", () => {
+    const ratio = PUBLICATION_STYLE.bondLengthPx / SCREEN_STYLE.bondLengthPx;
+    for (const withMarquee of [true, false]) {
+      const screen = everyMark(SCREEN_STYLE, withMarquee);
+      const publication = everyMark(PUBLICATION_STYLE, withMarquee);
+      expect(publication.map((el) => el.getAttribute("data-overlay"))).toEqual(
+        screen.map((el) => el.getAttribute("data-overlay")),
+      );
+      expect(screen.filter((el) => !SCREEN_SIZED.has(el.getAttribute("data-overlay")!)).length)
+        .toBe(withMarquee ? 9 : 8);
+
+      screen.forEach((mark, at) => {
+        const other = publication[at]!;
+        const what = mark.getAttribute("data-overlay")!;
+        if (SCREEN_SIZED.has(what)) return;
+        for (const name of LENGTHS) {
+          const value = mark.getAttribute(name);
+          if (value === null) continue;
+          expect(Number(other.getAttribute(name)), `${what} ${name}`).toBeCloseTo(
+            Number(value) * ratio,
+            6,
+          );
+        }
+        const dashes = mark.getAttribute("stroke-dasharray");
+        if (dashes !== null) {
+          const scaled = other.getAttribute("stroke-dasharray")!.split(" ").map(Number);
+          dashes
+            .split(" ")
+            .map(Number)
+            .forEach((dash, i) => expect(scaled[i], `${what} dash`).toBeCloseTo(dash * ratio, 9));
+        }
+      });
+    }
+  });
+
+  it("keeps the rotate handle's UI the same screen size in both styles", () => {
+    // The handle's own frame is `scale(1/zoom)`, whatever the style: it is a
+    // control, not part of the drawing, and the zoom already makes it constant
+    // on screen. Only the orbit's halo clearance is scene-sized, and it scales
+    // with the halo (see the orbit test in view-scale.test.ts).
+    const scale = (style: typeof SCREEN_STYLE): string | null =>
+      everyMark(style, false)
+        .find((el) => el.getAttribute("data-overlay") === "rotate-handle")!
+        .getAttribute("transform")!
+        .replace(/translate\([^)]*\)\s*/, "");
+    expect(scale(PUBLICATION_STYLE)).toBe(scale(SCREEN_STYLE));
+    const pivotR = (style: typeof SCREEN_STYLE): string | null =>
+      everyMark(style, false)
+        .find((el) => el.getAttribute("data-overlay") === "rotate-pivot")!
+        .getAttribute("r");
+    expect(pivotR(PUBLICATION_STYLE)).toBe(pivotR(SCREEN_STYLE));
+  });
+
+  it("leaves every Screen mark exactly as it was", () => {
+    // The reference bond IS Screen's, so the factor there is 1 and the
+    // attributes are the literals the marks were tuned with.
+    const halo = everyMark(SCREEN_STYLE, false).find(
+      (el) => el.getAttribute("data-overlay") === "selected-atom",
+    )!;
+    expect(halo.getAttribute("r")).toBe("13");
+    expect(halo.getAttribute("stroke-width")).toBe("2.5");
+    const focus = everyMark(SCREEN_STYLE, false).find(
+      (el) => el.getAttribute("data-overlay") === "focus-atom",
+    )!;
+    expect(focus.getAttribute("stroke-dasharray")).toBe("4 3");
   });
 });

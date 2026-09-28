@@ -19,7 +19,9 @@ import { castDraft } from "immer";
 import type { EditorSliceCreator, ViewportSlice } from "../types";
 import {
   createViewport,
+  clampZoom,
   panBy as vpPanBy,
+  rescaleScene as vpRescaleScene,
   setViewportSize as vpSetViewportSize,
   setZoom as vpSetZoom,
   zoomAt as vpZoomAt,
@@ -73,15 +75,20 @@ export function createViewportSlice(
         apply(vpZoomToFit(get().viewport, bounds, margin));
       },
 
-      resetViewport() {
+      resetViewport(zoom = 1) {
         const current = get().viewport;
-        if (current.pan.x === 0 && current.pan.y === 0 && current.zoom === 1) {
+        const target = clampZoom(zoom);
+        if (current.pan.x === 0 && current.pan.y === 0 && current.zoom === target) {
           return;
         }
         // The measured size is kept: a reset means "back to 100% at the
         // origin", not "forget how big the canvas is" — dropping the size
         // would blank the view until the next ResizeObserver callback.
-        apply(createViewport(current.size));
+        apply({ ...createViewport(current.size), zoom: target });
+      },
+
+      rescaleViewport(factor) {
+        apply(vpRescaleScene(get().viewport, factor));
       },
     };
   };

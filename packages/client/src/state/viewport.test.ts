@@ -8,6 +8,7 @@ import {
   MAX_ZOOM,
   MIN_ZOOM,
   panBy,
+  rescaleScene,
   setViewportSize,
   setZoom,
   toModel,
@@ -192,6 +193,56 @@ describe("zoomAt", () => {
     expect(Number.isFinite(after.pan.x)).toBe(true);
     expect(Number.isFinite(after.pan.y)).toBe(true);
     expect(after.zoom).toBe(2);
+  });
+});
+
+describe("rescaleScene", () => {
+  // Screen -> Publication and back: the two factors a style switch hands in.
+  const FACTORS = [24 / 44, 44 / 24];
+
+  it("paints every point of the redrawn scene on the pixel it had before", () => {
+    for (const factor of FACTORS) {
+      for (const size of SIZES) {
+        for (const pan of PANS) {
+          for (const zoom of [0.25, 1, 3.7]) {
+            const vp = makeViewport(pan, zoom, size);
+            const next = rescaleScene(vp, factor);
+            for (const p of POINTS) {
+              const before = toScreen(vp, p);
+              const after = toScreen(next, { x: p.x * factor, y: p.y * factor });
+              expect(after.x).toBeCloseTo(before.x, 6);
+              expect(after.y).toBeCloseTo(before.y, 6);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it("undoes itself: there and back is the viewport it started from", () => {
+    const vp = makeViewport({ x: -333.25, y: 901.75 }, 3.7, { width: 800, height: 600 });
+    const back = rescaleScene(rescaleScene(vp, 24 / 44), 44 / 24);
+    expect(back.zoom).toBeCloseTo(vp.zoom, 12);
+    expect(back.pan.x).toBeCloseTo(vp.pan.x, 9);
+    expect(back.pan.y).toBeCloseTo(vp.pan.y, 9);
+    expect(back.size).toEqual(vp.size);
+  });
+
+  it("returns the input for a factor of 1, and ignores one that is not a size", () => {
+    const vp = makeViewport({ x: 12.5, y: -40 }, 2, { width: 800, height: 600 });
+    for (const factor of [1, 0, -2, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(rescaleScene(vp, factor)).toBe(vp);
+    }
+  });
+
+  it("stays inside the zoom limits, and keeps the centre where it was", () => {
+    // At MAX_ZOOM a Publication scene would need 44/24 of the limit to keep
+    // its size. It changes size instead, and the scene point at the centre of
+    // the view stays at the centre.
+    const vp = makeViewport({ x: 44, y: -88 }, MAX_ZOOM, { width: 800, height: 600 });
+    const next = rescaleScene(vp, 24 / 44);
+    expect(next.zoom).toBe(MAX_ZOOM);
+    expect(toScreen(next, { x: 24, y: -48 })).toEqual({ x: 400, y: 300 });
   });
 });
 
