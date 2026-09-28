@@ -51,8 +51,12 @@ const iconButton =
 const inputClass =
   "border-input bg-background focus:ring-ring h-7 w-full rounded-md border px-2 text-xs focus:outline-none focus:ring-2";
 
-/** Availability as the list presents it: "nothing drawn yet" is not a fault. */
-function blocking(availability: ViewAvailability): string | null {
+/**
+ * Availability as the list presents it: "nothing drawn yet" is not a fault.
+ * Shared with `FigurePanelChooser`, so the two panel editors refuse the same
+ * views with the same sentence.
+ */
+export function blocking(availability: ViewAvailability): string | null {
   if (availability.available || availability.reason === "empty-molecule") return null;
   return availability.message;
 }

@@ -119,3 +119,38 @@ describe("RepresentationSwitcher view options", () => {
     expect(panel.representation.display.aromaticCircles).toBe(!before);
   });
 });
+
+describe("RepresentationSwitcher names the strip", () => {
+  it("opens the figure panel chooser from a labelled button at the head of the strip", () => {
+    render(<RepresentationSwitcher />);
+    const strip = document.querySelector('[data-shell="representation-switcher"]')!;
+    const trigger = document.querySelector<HTMLElement>('[data-shell="panel-chooser-trigger"]')!;
+    // First in the strip, so the row reads "Figure panels: (a) … (b) …".
+    expect(strip.firstElementChild).toBe(trigger);
+    expect(trigger.textContent).toBe("Figure panels");
+
+    expect(document.querySelector('[data-shell="panel-chooser"]')).toBeNull();
+    act(() => {
+      fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+      fireEvent.click(trigger);
+    });
+    expect(document.querySelector('[data-shell="panel-chooser"]')).not.toBeNull();
+
+    // Adding from the popover adds a button to the strip.
+    act(() => {
+      fireEvent.click(document.querySelector('[data-add-view="lewis"]')!);
+    });
+    expect(document.querySelectorAll("[data-switcher-panel]")).toHaveLength(3);
+  });
+
+  it("says in each panel button's title that the letter labels the exported figure", () => {
+    render(<RepresentationSwitcher />);
+    const titles = [...document.querySelectorAll("[data-switcher-panel]")].map((b) =>
+      b.getAttribute("title"),
+    );
+    expect(titles).toEqual([
+      "Panel (a) of the exported figure: Skeletal",
+      "Panel (b) of the exported figure: Sum formula",
+    ]);
+  });
+});

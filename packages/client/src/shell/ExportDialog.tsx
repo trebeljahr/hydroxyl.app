@@ -35,6 +35,13 @@
  * dialog states it in a sentence, because a file that silently changed
  * generation is a file an old reader rejects for no visible reason.
  *
+ * PANELS ARE CHOSEN HERE, BESIDE THE PREVIEW. The dialog used to send the
+ * reader to the properties panel to change which views the figure holds, and
+ * the "(a)", "(b)" in the preview went unexplained. `FigurePanelChooser` sits
+ * next to the preview, so its letters and the preview's are on screen together
+ * and a change shows up in the file at once. Captions and the column count
+ * stay in the properties panel.
+ *
  * Every button runs a registry command synchronously inside its click, which
  * is what keeps the clipboard and the save picker inside the user gesture.
  */
@@ -65,6 +72,8 @@ import { canvasCanHold } from "@/lib/export/png";
 import { cn } from "@/lib/utils";
 import { editorStore, useEditorStore } from "@/state";
 import type { FigureExportSettings } from "@/state/types";
+
+import { FigurePanelChooser } from "./FigurePanelChooser";
 
 const button =
   "hover:bg-accent focus-visible:ring-ring flex h-8 items-center justify-center rounded-md border px-3 text-xs focus-visible:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-40";
@@ -135,11 +144,17 @@ export function ExportDialog(): ReactElement {
 
   return (
     <Dialog open={open} onOpenChange={(next) => editorStore.getState().setExportDialogOpen(next)}>
-      <DialogContent className="top-[6%] max-w-2xl p-4" data-shell="export-dialog">
+      <DialogContent
+        // Wider than before and capped in height: the panel chooser now shares
+        // a row with the preview, and a tall figure must scroll inside the
+        // dialog rather than push the buttons off the screen.
+        className="top-[4%] max-h-[92vh] max-w-3xl overflow-y-auto p-4"
+        data-shell="export-dialog"
+      >
         <DialogTitle className="text-sm font-semibold">Export figure</DialogTitle>
         <DialogDescription className="text-muted-foreground mb-3 text-xs">
-          Every panel shows the same molecule at the same bond length. Edit the panels in the
-          properties panel.
+          Every panel shows the same molecule at the same bond length. Captions and the number of
+          columns are set in the properties panel.
         </DialogDescription>
 
         <div
@@ -172,18 +187,21 @@ export function ExportDialog(): ReactElement {
           )}
         </div>
 
-        <div className="mb-3 flex max-h-72 min-h-24 items-center justify-center overflow-auto rounded-md border bg-white p-2">
-          {preview instanceof Error ? (
-            <p className="text-destructive text-xs">{preview.message}</p>
-          ) : preview === null ? null : (
-            // eslint-disable-next-line @next/next/no-img-element -- a data: URI of the exact file, not an optimisable asset
-            <img
-              src={preview}
-              alt="Preview of the exported figure"
-              data-shell="figure-preview"
-              className="max-h-64 max-w-full"
-            />
-          )}
+        <div className="mb-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_15rem]">
+          <div className="flex max-h-80 min-h-24 items-center justify-center overflow-auto rounded-md border bg-white p-2">
+            {preview instanceof Error ? (
+              <p className="text-destructive text-xs">{preview.message}</p>
+            ) : preview === null ? null : (
+              // eslint-disable-next-line @next/next/no-img-element -- a data: URI of the exact file, not an optimisable asset
+              <img
+                src={preview}
+                alt="Preview of the exported figure"
+                data-shell="figure-preview"
+                className="max-h-72 max-w-full"
+              />
+            )}
+          </div>
+          <FigurePanelChooser className="max-h-80 overflow-y-auto rounded-md border p-2" />
         </div>
 
         <div className="mb-3 grid grid-cols-2 gap-3">

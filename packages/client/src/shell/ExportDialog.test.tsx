@@ -169,3 +169,37 @@ describe("ExportDialog wedgeless stereo group notice (decision 95)", () => {
     expect(notice()).toBeNull();
   });
 });
+
+describe("ExportDialog panel chooser", () => {
+  it("sits beside the preview, and a view added there reaches the preview at once", () => {
+    act(() => {
+      const state = editorStore.getState();
+      state.openDocument(createDocument({ molecule: butan2olWedged(), now: NOW }));
+      state.setFigureExport({ width: "single", dpi: 300, style: "publication" });
+      state.setExportDialogOpen(true);
+    });
+    render(<ExportDialog />);
+    const dialog = document.querySelector('[data-shell="export-dialog"]')!;
+    const chooser = dialog.querySelector('[data-shell="panel-chooser"]');
+    expect(chooser).not.toBeNull();
+    // The dialog no longer sends the reader elsewhere to choose panels.
+    expect(dialog.textContent).not.toMatch(/Edit the panels in the properties panel/);
+
+    const preview = (): string =>
+      dialog.querySelector<HTMLImageElement>('[data-shell="figure-preview"]')!.src;
+    const before = decodeURIComponent(preview());
+    expect(before).toContain('data-panel-label="(b)"');
+    expect(before).not.toContain('data-panel-label="(c)"');
+
+    act(() => {
+      (chooser!.querySelector('[data-add-view="lewis"]') as HTMLButtonElement).click();
+    });
+    const after = decodeURIComponent(preview());
+    expect(after).toContain('data-panel-label="(c)"');
+    expect([...after.matchAll(/data-view="([^"]+)"/g)].map((m) => m[1])).toEqual([
+      "skeletal",
+      "sumFormula",
+      "lewis",
+    ]);
+  });
+});

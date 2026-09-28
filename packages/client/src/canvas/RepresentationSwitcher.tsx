@@ -17,10 +17,16 @@
  * THE OPTIONS ACT ON THE PANEL ON SCREEN, through `updatePanel`, the same path
  * the view.* commands take, so the palette and this popover can never edit
  * different panels.
+ *
+ * THE STRIP NAMES ITSELF. "(a) Skeletal (b) Sum formula" on its own was read as
+ * unexplained "a/b stuff", so the strip opens with a "Figure panels" button:
+ * it says what the row is, and opens `FigurePanelChooser`, which explains the
+ * letters and adds, removes and reorders panels. Each panel button's `title`
+ * also says the letter is its label in the exported figure.
  */
 
 import type { ReactElement } from "react";
-import { SlidersHorizontalIcon } from "lucide-react";
+import { LayoutGridIcon, SlidersHorizontalIcon } from "lucide-react";
 
 import {
   VIEW_KIND_TITLES,
@@ -34,6 +40,7 @@ import type { DisplayFlagKey } from "@starter/shared";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { commandById, displayFlagCommandId } from "@/editor/commands/registry";
 import { cn } from "@/lib/utils";
+import { FigurePanelChooser } from "@/shell/FigurePanelChooser";
 import { editorStore, useEditorStore } from "@/state";
 import type { EditorState } from "@/state";
 
@@ -88,6 +95,30 @@ export function RepresentationSwitcher(): ReactElement {
       aria-label="Panels"
       className="bg-background flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b px-2"
     >
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            data-shell="panel-chooser-trigger"
+            title="What the panel letters mean, and which views go into the figure"
+            // Same ground-and-ink pair as the View options trigger.
+            className="bg-background text-foreground hover:bg-accent hover:text-accent-foreground focus-visible:ring-ring flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2"
+          >
+            <LayoutGridIcon className="size-3.5" />
+            Figure panels
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          // Scrolls rather than running off a short window: the planned
+          // projections make the chooser taller than the strip's popovers.
+          className="max-h-[min(36rem,var(--radix-popover-content-available-height))] w-80 overflow-y-auto"
+        >
+          <FigurePanelChooser />
+        </PopoverContent>
+      </Popover>
+      <span aria-hidden className="bg-border mx-1 h-4 w-px shrink-0" />
+
       {doc.panels.length === 0 ? (
         <span className="text-muted-foreground text-xs">No panels</span>
       ) : null}
@@ -102,7 +133,11 @@ export function RepresentationSwitcher(): ReactElement {
             type="button"
             data-switcher-panel={panel.id}
             aria-pressed={onCanvas}
-            title={blocked ? availability.message : VIEW_KIND_TITLES[kind]}
+            title={
+              blocked
+                ? availability.message
+                : `Panel (${panelLetter(index)}) of the exported figure: ${VIEW_KIND_TITLES[kind]}`
+            }
             onClick={() => editorStore.getState().setActivePanel(panel.id)}
             className={cn(
               "flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-xs transition-colors",
