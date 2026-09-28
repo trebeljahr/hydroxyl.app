@@ -11,7 +11,7 @@
  * received its end or its cancel, and the store transaction it held stayed
  * open.
  *
- * ── THE MAPPING (decision 101) ───────────────────────────────────────────────
+ * ── THE MAPPING (decision 106) ───────────────────────────────────────────────
  *
  * The rule is: ONE finger or the primary button does what the active tool
  * does, and navigating never needs the tool rail. Every device therefore has a

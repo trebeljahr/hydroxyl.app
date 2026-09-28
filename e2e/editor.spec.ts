@@ -434,7 +434,7 @@ test("Ctrl + wheel zooms about the cursor and keeps the page from scrolling", as
   const anchorAtom = nth(geometry.atoms, 0, "atoms");
   const anchor = anchorAtom.centre;
 
-  // Ctrl, because a plain wheel pans (decision 101) — and ctrl + wheel is
+  // Ctrl, because a plain wheel pans (decision 106) — and ctrl + wheel is
   // also what a trackpad pinch arrives as.
   await page.mouse.move(anchor.x, anchor.y);
   await page.keyboard.down("Control");

@@ -1,7 +1,7 @@
 /**
  * The gesture reducer, driven with synthetic input and no DOM.
  *
- * Every device's mapping is pinned here (decision 101): what a mouse, a pen, a
+ * Every device's mapping is pinned here (decision 106): what a mouse, a pen, a
  * trackpad and a finger each do on the canvas, and above all that navigating
  * never takes the primary drag away from the marquee. The last block states
  * the invariants that make a gesture safe to open a store transaction in —

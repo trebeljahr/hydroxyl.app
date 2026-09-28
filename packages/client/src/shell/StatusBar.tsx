@@ -332,7 +332,7 @@ export function StatusBar(): ReactElement {
       <ViewButton id="view.reset" label="Reset" />
       <ViewButton id="view.zoom-out" label="−" named />
       {/* The gestures are invisible, so the one place that shows the zoom
-          also says how to change it (decision 101). */}
+          also says how to change it (decision 106). */}
       <span
         data-status="zoom"
         title={ZOOM_HELP}

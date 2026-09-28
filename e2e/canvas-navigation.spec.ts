@@ -3,7 +3,7 @@ import type { CDPSession, Page } from "@playwright/test";
 
 /**
  * Pan, zoom and multi-select on the canvas, by mouse and by touch
- * (decision 101).
+ * (decision 106).
  *
  * The rule under test: a primary drag always belongs to the active tool — so
  * a drag over empty space stays a marquee — and every device has a way to pan
