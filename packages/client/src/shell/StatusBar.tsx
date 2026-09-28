@@ -64,6 +64,11 @@ import { moleculeErrors, moleculeMass, moleculeWarnings } from "@/editor/derived
 import { cn } from "@/lib/utils";
 import { editorStore, useEditorStore } from "@/state";
 
+/** How to move the view, for the zoom readout's tooltip. */
+const ZOOM_HELP =
+  "Scroll or two-finger drag to pan. Pinch, or Ctrl/⌘ + scroll, to zoom. " +
+  "Space-drag or middle-drag also pans. On a touch screen, use two fingers.";
+
 /** Four significant decimals: the precision a monoisotopic mass is quoted to. */
 function formatMass(value: number): string {
   return value.toFixed(4);
@@ -182,9 +187,15 @@ function StructureWarnings({
 function ViewButton({
   id,
   label,
+  named = false,
 }: {
   readonly id: string;
   readonly label: string;
+  /**
+   * Name the button after its command rather than its label. For the glyph
+   * buttons, whose label ("+", "−") would otherwise be read out as "plus".
+   */
+  readonly named?: boolean;
 }): ReactElement {
   const command = commandById(id);
   const enabled = useEditorStore((state) => command.enabled(state));
@@ -192,6 +203,8 @@ function ViewButton({
     <button
       type="button"
       data-command={id}
+      title={command.title}
+      aria-label={named ? command.title : undefined}
       disabled={!enabled}
       onClick={() => {
         void command.run(editorStore);
@@ -317,12 +330,17 @@ export function StatusBar(): ReactElement {
 
       <ViewButton id="view.fit" label="Fit" />
       <ViewButton id="view.reset" label="Reset" />
+      <ViewButton id="view.zoom-out" label="−" named />
+      {/* The gestures are invisible, so the one place that shows the zoom
+          also says how to change it (decision 101). */}
       <span
         data-status="zoom"
+        title={ZOOM_HELP}
         className="w-12 text-right font-mono tabular-nums"
       >
         {Math.round(zoom * 100)}%
       </span>
+      <ViewButton id="view.zoom-in" label="+" named />
 
       {isFileExportBuild() ? null : (
         <a

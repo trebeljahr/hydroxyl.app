@@ -423,7 +423,7 @@ test("paints the structure inside the viewport rather than an empty rectangle", 
   expect(errors).toEqual([]);
 });
 
-test("wheel zooms about the cursor and keeps the page from scrolling", async ({
+test("Ctrl + wheel zooms about the cursor and keeps the page from scrolling", async ({
   page,
 }) => {
   const errors = collectPageErrors(page);
@@ -434,20 +434,25 @@ test("wheel zooms about the cursor and keeps the page from scrolling", async ({
   const anchorAtom = nth(geometry.atoms, 0, "atoms");
   const anchor = anchorAtom.centre;
 
+  // Ctrl, because a plain wheel pans (decision 101) — and ctrl + wheel is
+  // also what a trackpad pinch arrives as.
   await page.mouse.move(anchor.x, anchor.y);
-  await page.mouse.wheel(0, -240);
+  await page.keyboard.down("Control");
+  await page.mouse.wheel(0, -120);
+  await page.mouse.wheel(0, -120);
+  await page.keyboard.up("Control");
   await settle(page);
 
   const after = parseViewTransform(await viewTransform(page));
-  // exp(240 * 0.002) is about 1.62; asserting only 1.2 leaves room for the
-  // wheel rate to be retuned without rewriting the spec, while still failing
+  // Two capped notches are about x1.49; asserting only 1.2 leaves room for
+  // the rate to be retuned without rewriting the spec, while still failing
   // outright if the wheel does nothing.
   expect(after.zoom).toBeGreaterThan(before.zoom * 1.2);
 
   // The page must not have scrolled. A wheel handler attached through React's
   // `onWheel` cannot preventDefault — React registers wheel passively at the
   // root — and the symptom is the document sliding out from under a user who
-  // was only trying to zoom.
+  // was only trying to zoom. (Or, for a real pinch, the whole page zooming.)
   const scroll = await page.evaluate(() => ({
     x: window.scrollX,
     y: window.scrollY,

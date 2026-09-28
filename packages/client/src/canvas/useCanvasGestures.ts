@@ -4,17 +4,18 @@
  * All of the canvas's browser-event plumbing, and none of its meaning.
  *
  * This hook knows nothing about chemistry, nothing about the store and nothing
- * about the scene. It turns raw pointer, wheel, key and resize events into six
- * semantic callbacks — hover, hover-end, select, zoom, pan, resize — and stops
- * there. That separation is the point: the editing FSM that comes next reuses
- * the same gestures with different callbacks, so anything it would have to
- * fight (a store write, a hit test, a tool mode) must not appear below.
+ * about the scene. It feeds raw pointer, wheel, key and resize events to the
+ * pure gesture reducer in `./gesture-reducer.ts` and turns the effects it
+ * returns into semantic callbacks — hover, select, drag, zoom, pan, resize.
+ * WHAT a pointer means (which device pans, which zooms, what a second finger
+ * does) is decided there and tested there; this file only listens and applies.
  *
- * DESKTOP-PRIMARY, DELIBERATELY. PointerEvents throughout, so a pen works and
- * a touch drag pans for free, but there is no bespoke touch gesture set: no
- * two-finger pinch handler, no long-press. The audience is someone preparing a
- * figure at a desk. (A trackpad pinch still zooms, because browsers deliver it
- * as ctrl+wheel and the wheel handler below neither knows nor cares.)
+ * EVERY DEVICE CAN NAVIGATE WITHOUT LEAVING THE CANVAS. The full mapping is in
+ * the reducer's header; in short, a primary drag always belongs to the active
+ * tool (so the marquee stays on a plain drag over empty space), and panning
+ * and zooming live on inputs that never collide with it: the wheel and
+ * two-finger scroll, Ctrl/Cmd + wheel and pinch, Space or the middle button,
+ * and two fingers on a touch screen.
  *
  * THREE CONVENTIONS THAT ARE EASY TO BREAK AND HARD TO DIAGNOSE:
  *
@@ -27,7 +28,7 @@
  *    cannot do this job — see the comment on the effect.
  *
  * 3. `onPan` receives the delta ALREADY NEGATED, ready to hand straight to the
- *    store's `panBy`. See the comment at the pan branch of `onPointerMove`.
+ *    store's `panBy`. The reducer does the negation.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -36,83 +37,47 @@ import type * as React from "react";
 import type { Vec2 } from "@starter/chem-core";
 import type { ViewportSize } from "@/state";
 
-/**
- * How far the pointer may travel between down and up and still count as a
- * click, in canvas px.
- *
- * Without this every pan that happens to end over empty space also reads as a
- * click on empty space, and empty space clears the selection — so the user
- * selects an atom, nudges the view, and watches the selection evaporate for no
- * reason they can see. 4px is below the wobble of a deliberate click and well
- * under any drag anyone means as a drag.
- */
-export const CLICK_SLOP_PX = 4;
+import {
+  GESTURE_IDLE,
+  gestureZoomStep,
+  isPanningState,
+  isTouchGesture,
+  reduceGesture,
+  wheelIntent,
+  type CanvasPointerModifiers,
+  type GestureEffect,
+  type GestureInput,
+  type GesturePointer,
+  type GestureState,
+} from "./gesture-reducer";
 
-/**
- * Wheel-delta-to-zoom rate, in inverse px.
- *
- * The factor is `exp(-delta * k)`, i.e. zoom is exponential in scroll distance.
- * That buys two properties worth having: scrolling back by the same distance
- * undoes the zoom exactly (exp(a)·exp(-a) = 1, no drift after a hundred
- * events), and a notch feels the same at every scale, which is what "zoom"
- * means perceptually.
- *
- * At k = 0.002 a 100px mouse notch gives ×1.22 — about 3.5 notches per
- * doubling — and a trackpad's few-px-per-frame deltas glide instead of
- * stepping.
- */
-const WHEEL_ZOOM_RATE = 0.002;
-
-/**
- * Per-event clamp on the resulting factor.
- *
- * Some mice report a whole page of delta per notch and some trackpads emit one
- * enormous event at the end of a flick; either can jump several octaves in a
- * single frame and leave the user staring at one bond or at nothing. Two
- * octaves per event is the most that can still be undone by one scroll back.
- */
-const MAX_WHEEL_FACTOR = 4;
-
-/**
- * `deltaMode` normalisation. A wheel event may quote its delta in pixels (0),
- * lines (1) or pages (2), and which one you get depends on the browser, the OS
- * and the device — Firefox on a mouse still reports lines. These are the
- * conventional px equivalents; they only have to be roughly right, since the
- * result is fed through an exponential and clamped.
- */
-const LINE_DELTA_PX = 16;
-const PAGE_DELTA_PX = 100;
-
-export interface CanvasPointerModifiers {
-  readonly shift: boolean;
-  readonly alt: boolean;
-}
+export {
+  CLICK_SLOP_PX,
+  TOUCH_CLICK_SLOP_PX,
+  type CanvasPointerModifiers,
+} from "./gesture-reducer";
 
 /**
  * THE DRAG TRIPLE IS SEPARATE FROM `onHover`, NOT A WIDENING OF IT.
  *
- * Hover is hard-suppressed while any button is down (see `onPointerMove`), and
- * that suppression is right: hover answers "what would I click", which is a
- * question about a pointer that is just sitting there. A drag frame asks a
- * different question — "what would I merge into" — and writes a different
- * highlight. Widening `onHover` to serve both would mean removing the
- * suppression and re-deriving the intent from the buttons bitmask on every
- * sample, in the consumer, on the one path where allocation shows.
+ * Hover is hard-suppressed while any button is down, and that suppression is
+ * right: hover answers "what would I click", which is a question about a
+ * pointer that is just sitting there. A drag frame asks a different question
+ * — "what would I merge into" — and writes a different highlight.
  *
- * `onDragStart` fires ONCE, at the instant the pointer crosses
- * `CLICK_SLOP_PX`, and carries the DOWN point as `origin` rather than that
- * sample's. A gesture anchors on what was under the button; four pixels later
- * the hit test would sometimes answer with the neighbouring bond.
+ * `onDragStart` fires ONCE, at the instant the pointer crosses the click
+ * slop, and carries the DOWN point as `origin` rather than that sample's.
  *
- * `onDragCancel` covers pointercancel, Escape, a revoked capture, a hidden tab
- * and unmount, and is NEVER followed by `onDragEnd`. Every one of those paths
- * has to be covered, because a gesture that opens a store transaction and
- * never closes it silently kills undo for the rest of the session.
+ * `onDragCancel` covers pointercancel, Escape, a revoked capture, a hidden tab,
+ * unmount and a second finger landing, and is NEVER followed by `onDragEnd`.
+ * Every one of those paths has to be covered, because a gesture that opens a
+ * store transaction and never closes it silently kills undo for the rest of
+ * the session.
  */
 export interface CanvasGestureHandlers {
   readonly onHover: (canvasPoint: Vec2) => void;
   readonly onHoverEnd: () => void;
-  /** Left button down, before it is known whether this is a click or a drag. */
+  /** Primary press, before it is known whether this is a click or a drag. */
   readonly onPress: (
     canvasPoint: Vec2,
     modifiers: CanvasPointerModifiers,
@@ -146,18 +111,17 @@ export interface CanvasGestureHandlers {
 /**
  * The one piece of editor state this hook is allowed to know about.
  *
- * `panTool` is a MODE, not a gesture: with the pan tool held, a plain left
- * drag pans instead of drawing. It arrives as a prop rather than being read
- * from the store because this file's whole contract is that it knows nothing
- * about the store, the scene or chemistry — the caller resolves the tool and
- * hands down the boolean.
+ * `panTool` is a MODE, not a gesture: with the pan tool held, a primary drag
+ * pans instead of drawing. It arrives as a prop rather than being read from
+ * the store because this file's whole contract is that it knows nothing about
+ * the store, the scene or chemistry.
  */
 export interface CanvasGestureOptions {
   readonly panTool?: boolean | undefined;
 }
 
 export interface CanvasGestures {
-  /** True only while a pan drag is actually in progress — for `cursor: grabbing`. */
+  /** True only while a pan or pinch is in progress — for `cursor: grabbing`. */
   readonly isPanning: boolean;
   readonly rootHandlers: {
     readonly onPointerDown: React.PointerEventHandler<SVGSVGElement>;
@@ -168,30 +132,14 @@ export interface CanvasGestures {
   };
 }
 
-interface PanDrag {
-  readonly pointerId: number;
-  /** Previous pointer position, canvas-local px. Deltas are per-move. */
-  last: Vec2;
-}
-
-interface PressTrack {
-  readonly pointerId: number;
-  readonly origin: Vec2;
-  /**
-   * Latched, not recomputed at pointerup: a drag that wanders out and comes
-   * back to where it started was still a drag, and must not fire a select.
-   */
-  moved: boolean;
-  /**
-   * Whether `onDragStart` has fired and `onDragEnd`/`onDragCancel` has not.
-   *
-   * SEPARATE FROM `moved` on purpose. A cancelled drag clears `dragging` so no
-   * further move or end callback goes out, but leaves `moved` latched so the
-   * pointerup that follows still does not fire a select — a gesture is a click
-   * or a drag, never both, and cancelling it does not turn it back into a
-   * click.
-   */
-  dragging: boolean;
+/**
+ * Safari's trackpad pinch. Not in TypeScript's DOM lib, because it is not a
+ * standard — only the fields read here are declared.
+ */
+interface SafariGestureEvent extends UIEvent {
+  readonly scale: number;
+  readonly clientX: number;
+  readonly clientY: number;
 }
 
 /**
@@ -200,9 +148,7 @@ interface PressTrack {
  * The rect is measured per event rather than cached because the canvas can
  * move under the user without any event this hook sees — a side panel opens,
  * the window scrolls, a layout settles — and a stale rect offsets every pick
- * by a constant nobody thinks to look for. `getBoundingClientRect` is cheap
- * enough at pointer rates; it is not cheap enough at wheel-storm rates either,
- * but correctness wins and profiling has never put it anywhere near the top.
+ * by a constant nobody thinks to look for.
  *
  * This assumes the element carries no CSS transform of its own. If one is ever
  * added, the rect is the TRANSFORMED box and these coordinates stop matching
@@ -216,30 +162,35 @@ function toCanvasPoint(
   return { x: event.clientX - rect.left, y: event.clientY - rect.top };
 }
 
+function readPointer(
+  svg: SVGSVGElement,
+  event: React.PointerEvent<SVGSVGElement>,
+): GesturePointer {
+  return {
+    pointerId: event.pointerId,
+    pointerType: event.pointerType,
+    button: event.button,
+    buttons: event.buttons,
+    point: toCanvasPoint(svg, event),
+    // Sampled PER EVENT: shift-to-constrain and the alt/spiro variant are
+    // routinely pressed after the button goes down.
+    modifiers: { shift: event.shiftKey, alt: event.altKey },
+  };
+}
+
 /**
- * Elements that already mean something by "space" or by a typed character.
+ * Elements that already mean something by "space".
  *
  * Space is the pan modifier, so it gets `preventDefault()` to stop the page
  * scrolling — but not when the user is typing into a field, and not when a
  * button has focus, where space is the activation key. Swallowing it there
- * would make the canvas chrome (Fit, Reset, and whatever the editing tasks add
- * beside them) unreachable from the keyboard, which is a worse bug than a page
- * that scrolls behind the canvas.
+ * would make the canvas chrome unreachable from the keyboard, which is a worse
+ * bug than a page that scrolls behind the canvas.
  */
 function consumesSpace(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
   return target.closest("input, textarea, select, button, a, [role='button']") !== null;
-}
-
-/** One place the modifier bag is built, so the drag and click paths cannot
- *  drift about which keys they read. Sampled PER EVENT: shift-to-constrain and
- *  the alt/spiro variant are routinely pressed after the button goes down. */
-function modifiersOf(event: {
-  readonly shiftKey: boolean;
-  readonly altKey: boolean;
-}): CanvasPointerModifiers {
-  return { shift: event.shiftKey, alt: event.altKey };
 }
 
 /** `setPointerCapture` throws if the pointer went away between events (a
@@ -270,60 +221,58 @@ export function useCanvasGestures(
    * THE LATEST-REF PATTERN, and why it is not premature.
    *
    * The consumer's callbacks close over store state, so they are new functions
-   * on every render — and the canvas re-renders on every hover change, which
-   * during a slow pointer sweep is every frame. If the native wheel and key
-   * listeners depended on them, every one of those renders would tear down and
-   * re-add a non-passive wheel listener, and adding a non-passive listener is
+   * on every render — and the canvas re-renders on every hover change. If the
+   * native wheel and key listeners depended on them, every one of those
+   * renders would tear down and re-add a non-passive wheel listener, which is
    * one of the few DOM calls that makes the browser recompute whether it can
-   * scroll on the compositor thread. Keeping the callbacks in a ref that an
-   * effect refreshes lets the listeners attach exactly once per mount.
+   * scroll on the compositor thread. Keeping the callbacks in a ref lets the
+   * listeners attach exactly once per mount.
    */
   const handlersRef = useRef(handlers);
   useEffect(() => {
     handlersRef.current = handlers;
   });
 
-  const panRef = useRef<PanDrag | null>(null);
-  const pressRef = useRef<PressTrack | null>(null);
-  const spaceRef = useRef(false);
-  // Read through a ref for the same reason the handler bag is: the pointerdown
-  // path must see the current tool, and it is reached from a callback with an
-  // empty dependency list. Refreshed in an effect rather than during render —
-  // writing a ref while rendering is the one thing the latest-ref pattern must
-  // not do, and a tool change is a click, never a per-frame value, so the one
-  // frame of lag an effect costs cannot be observed.
+  // Read through a ref for the same reason: the pointerdown path must see the
+  // current tool from a callback with an empty dependency list. Refreshed in
+  // an effect, never during render; a tool change is a click, so the one
+  // frame of lag cannot be observed.
   const panToolRef = useRef(options.panTool === true);
   useEffect(() => {
     panToolRef.current = options.panTool === true;
   });
-  const [isPanning, setIsPanning] = useState(false);
 
-  const endPan = useCallback((svg: SVGSVGElement | null): void => {
-    const pan = panRef.current;
-    if (!pan) return;
-    panRef.current = null;
-    if (svg) releasePointer(svg, pan.pointerId);
-    setIsPanning(false);
-    handlersRef.current.onPanEnd();
-  }, []);
+  const stateRef = useRef<GestureState>(GESTURE_IDLE);
+  const spaceRef = useRef(false);
+  const [isPanning, setIsPanning] = useState(false);
+  const panningRef = useRef(false);
 
   /**
-   * Ends a press, cancelling the drag it had become.
+   * Reduce one input and run its effects, in order. `event` is the DOM event
+   * being reduced, for the one effect that needs it (`preventDefault`).
    *
-   * THE ONE FUNCTION EVERY ABNORMAL EXIT GOES THROUGH — pointercancel, a
-   * revoked capture, Escape, a hidden tab, unmount. A gesture that opens a
-   * store transaction and never closes it is the worst failure mode this
-   * design has and it is completely silent: undo and redo go dead, every
-   * later edit is unrecorded, and the next Escape restores a base from
-   * whenever the leak happened.
+   * `svg` is passed in rather than read from the ref where it matters: an
+   * unmount cleanup runs after React has cleared the ref, and the releases it
+   * owes must still reach the element.
    */
-  const cancelPress = useCallback((svg: SVGSVGElement | null): void => {
-    const press = pressRef.current;
-    if (!press) return;
-    pressRef.current = null;
-    if (svg) releasePointer(svg, press.pointerId);
-    if (press.dragging) handlersRef.current.onDragCancel();
-  }, []);
+  const dispatch = useCallback(
+    (
+      input: GestureInput,
+      event?: { preventDefault(): void },
+      svg: SVGSVGElement | null = svgRef.current,
+    ): void => {
+      const { state, effects } = reduceGesture(stateRef.current, input);
+      stateRef.current = state;
+      const h = handlersRef.current;
+      for (const effect of effects) applyEffect(effect, h, svg, event);
+      const panning = isPanningState(state);
+      if (panning !== panningRef.current) {
+        panningRef.current = panning;
+        setIsPanning(panning);
+      }
+    },
+    [svgRef],
+  );
 
   /**
    * SPACE AS THE PAN MODIFIER, tracked on `window` rather than on the canvas
@@ -332,19 +281,16 @@ export function useCanvasGestures(
    *
    * The blur and visibilitychange resets are not defensive noise: a key held
    * while the window loses focus never delivers its keyup, so alt-tabbing away
-   * mid-hold would leave the canvas permanently convinced space is down, and
-   * every left click from then on would pan instead of select. There is no way
-   * for the user to clear that except reloading, because the fix requires a
-   * keyup that will never arrive.
+   * mid-hold would leave the canvas permanently convinced space is down. The
+   * same events end any gesture in flight, which will never get its pointerup
+   * either.
    */
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.code !== "Space") return;
       if (consumesSpace(event.target)) return;
-      // Suppressed on EVERY keydown, repeats included. Auto-repeat tells us
-      // nothing new about the STATE, but each repeat carries its own default
-      // action — scrolling the page — so returning before this line would let
-      // ~30 scrolls a second through for as long as the pan modifier is held.
+      // Suppressed on EVERY keydown, repeats included: each repeat carries its
+      // own default action — scrolling the page.
       event.preventDefault();
       if (event.repeat) return;
       spaceRef.current = true;
@@ -357,11 +303,7 @@ export function useCanvasGestures(
 
     const clear = (): void => {
       spaceRef.current = false;
-      // A gesture whose window just lost focus will never receive its
-      // pointerup either, so the same event that clears the modifier has to
-      // close the transaction the drag opened.
-      cancelPress(svgRef.current);
-      endPan(svgRef.current);
+      dispatch({ kind: "abort" });
     };
 
     window.addEventListener("keydown", onKeyDown);
@@ -374,36 +316,23 @@ export function useCanvasGestures(
       window.removeEventListener("blur", clear);
       document.removeEventListener("visibilitychange", clear);
     };
-  }, [cancelPress, endPan, svgRef]);
+  }, [dispatch]);
 
   /**
    * ESCAPE CANCELS THE GESTURE IN FLIGHT, and claims the key ONLY then.
    *
-   * On `window` rather than on the canvas because the `<svg>` carries no
-   * `tabIndex` and can never take focus, so a keydown would never reach it —
-   * the same reason the space modifier above is tracked here.
-   *
-   * The early return when nothing is in flight is the important half.
-   * `ToolSlice.escape()` — tool back to select, element buffer cleared,
-   * palette closed — belongs to `editor-shell-and-commands`, and swallowing
-   * Escape unconditionally would make all three unreachable. Two Escapes
-   * therefore mean two different things in sequence: cancel this drag, then
+   * On `window` because the key has to work whatever has focus. The early
+   * return when nothing is in flight is the important half: `ToolSlice.escape()`
+   * — tool back to select, element buffer cleared — belongs to the editor
+   * shell, and swallowing Escape unconditionally would make it unreachable.
+   * Two Escapes therefore mean two things in sequence: cancel this drag, then
    * put the tool down.
-   *
-   * Cancelling by NULLING the press rather than by setting a flag is what
-   * makes "and cannot resume" fall out for free: every downstream branch
-   * already early-returns on a null press, hover stays suppressed while the
-   * button is down, and the pointerup fires no select.
    */
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key !== "Escape") return;
-      const svg = svgRef.current;
-      const panning = panRef.current !== null;
-      const pressing = pressRef.current !== null;
-      if (!panning && !pressing) return;
-      endPan(svg);
-      cancelPress(svg);
+      if (stateRef.current.kind === "idle") return;
+      dispatch({ kind: "abort" });
       event.preventDefault();
       event.stopPropagation();
     };
@@ -411,45 +340,43 @@ export function useCanvasGestures(
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [cancelPress, endPan, svgRef]);
+  }, [dispatch]);
 
   /**
-   * A capture the browser took back.
-   *
-   * `lostpointercapture` arrives as neither a pointerup nor a pointercancel —
-   * the element was moved in the DOM, or the browser decided the gesture was
-   * over — so without this the drag would simply stop receiving events with a
-   * transaction still open.
+   * A capture the browser took back. `lostpointercapture` arrives as neither
+   * a pointerup nor a pointercancel — the element was moved in the DOM, or the
+   * browser decided the gesture was over — so without this the drag would
+   * stop receiving events with a transaction still open. It also fires after
+   * every ordinary release, which the reducer treats as a no-op.
    */
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg) return;
     const onLost = (event: Event): void => {
-      const pointerId = (event as PointerEvent).pointerId;
-      if (panRef.current?.pointerId === pointerId) endPan(svg);
-      if (pressRef.current?.pointerId === pointerId) cancelPress(svg);
+      dispatch({ kind: "lostCapture", pointerId: (event as PointerEvent).pointerId }, undefined, svg);
     };
     svg.addEventListener("lostpointercapture", onLost);
     return () => {
       svg.removeEventListener("lostpointercapture", onLost);
     };
-  }, [cancelPress, endPan, svgRef]);
+  }, [dispatch, svgRef]);
 
   /**
-   * WHEEL ZOOM, ATTACHED NATIVELY AND NON-PASSIVE. DO NOT REPLACE THIS WITH
-   * React's `onWheel` PROP.
+   * WHEEL AND TRACKPAD, ATTACHED NATIVELY AND NON-PASSIVE. DO NOT REPLACE THIS
+   * WITH React's `onWheel` PROP.
    *
-   * React registers `wheel` once at the root container as a PASSIVE listener,
-   * so `preventDefault()` inside an `onWheel` handler does nothing at all — no
-   * error, no warning, just a page that scrolls out from under the user while
-   * they zoom. The only way to get a cancellable wheel event is to add it to
-   * the element yourself with `{ passive: false }`, which is what this effect
-   * does. It looks like plumbing that could be simplified away. It cannot.
+   * React registers `wheel` once at the root as a PASSIVE listener, so
+   * `preventDefault()` inside `onWheel` does nothing at all — no error, just a
+   * page that scrolls, or on a trackpad pinch a whole page that zooms, out
+   * from under the user. The only way to get a cancellable wheel event is to
+   * add it to the element with `{ passive: false }`.
    *
-   * The zoom anchor is the cursor. This hook does NOT try to correct the pan to
-   * keep the anchor pinned — `zoomAt` in the store solves for the pan exactly,
-   * including when the zoom clamp truncates the requested factor, which a
-   * delta-nudge here could not do without drifting at the limits.
+   * The zoom anchor is the cursor. `zoomAt` in the store solves for the pan
+   * exactly, including when the zoom clamp truncates the factor.
+   *
+   * The `gesture*` listeners are Safari's trackpad pinch, which Safari does
+   * not report as ctrl + wheel. Cancelled unconditionally for the same reason
+   * as the wheel: left alone, Safari zooms the whole page.
    */
   useEffect(() => {
     const svg = svgRef.current;
@@ -459,28 +386,53 @@ export function useCanvasGestures(
       // Unconditional, and before any early return: the page must not scroll
       // even on the events we decide are no-ops.
       event.preventDefault();
+      const intent = wheelIntent({
+        deltaX: event.deltaX,
+        deltaY: event.deltaY,
+        deltaMode: event.deltaMode,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        shiftKey: event.shiftKey,
+        point: toCanvasPoint(svg, event),
+      });
+      if (intent === null) return;
+      if (intent.kind === "zoom") {
+        handlersRef.current.onZoom(intent.anchor, intent.factor);
+      } else {
+        handlersRef.current.onPan(intent.delta);
+      }
+    };
 
-      const unit =
-        event.deltaMode === 1
-          ? LINE_DELTA_PX
-          : event.deltaMode === 2
-            ? PAGE_DELTA_PX
-            : 1;
-      const delta = event.deltaY * unit;
-      if (!Number.isFinite(delta) || delta === 0) return;
-
-      // Negated so that scrolling up (deltaY < 0, "away from you") zooms in,
-      // matching every map and every drawing tool.
-      const raw = Math.exp(-delta * WHEEL_ZOOM_RATE);
-      const factor = Math.min(MAX_WHEEL_FACTOR, Math.max(1 / MAX_WHEEL_FACTOR, raw));
+    let gestureScale = 1;
+    const onGestureStart = (event: Event): void => {
+      event.preventDefault();
+      gestureScale = 1;
+    };
+    const onGestureChange = (event: Event): void => {
+      event.preventDefault();
+      const gesture = event as SafariGestureEvent;
+      const factor = gestureZoomStep(gestureScale, gesture.scale);
+      gestureScale = gesture.scale;
+      // On an iPad the same pinch also arrives as two touch pointers, which
+      // the reducer already turns into pan and zoom. Applying both would
+      // zoom at twice the speed of the fingers.
+      if (isTouchGesture(stateRef.current)) return;
       if (factor === 1) return;
-
-      handlersRef.current.onZoom(toCanvasPoint(svg, event), factor);
+      handlersRef.current.onZoom(toCanvasPoint(svg, gesture), factor);
+    };
+    const onGestureEnd = (event: Event): void => {
+      event.preventDefault();
     };
 
     svg.addEventListener("wheel", onWheel, { passive: false });
+    svg.addEventListener("gesturestart", onGestureStart, { passive: false });
+    svg.addEventListener("gesturechange", onGestureChange, { passive: false });
+    svg.addEventListener("gestureend", onGestureEnd, { passive: false });
     return () => {
       svg.removeEventListener("wheel", onWheel);
+      svg.removeEventListener("gesturestart", onGestureStart);
+      svg.removeEventListener("gesturechange", onGestureChange);
+      svg.removeEventListener("gestureend", onGestureEnd);
     };
   }, [svgRef]);
 
@@ -501,23 +453,18 @@ export function useCanvasGestures(
       handlersRef.current.onResize(size);
     };
 
-    // Seed immediately. In a real browser the observer's first callback lands
-    // on the same frame and makes this redundant, but without it a jsdom test
-    // — or any environment with no ResizeObserver — leaves the store on its
-    // 800x600 placeholder forever, and `zoomToFit` frames the document against
-    // a viewport that does not exist.
+    // Seed immediately. Without it a jsdom test — or any environment with no
+    // ResizeObserver — leaves the store on its 800x600 placeholder forever,
+    // and `zoomToFit` frames the document against a viewport that does not
+    // exist.
     //
     // BORDER box, and so is the observer below, and so is `toCanvasPoint`. One
     // box everywhere is the invariant that matters: pointer coordinates are
     // measured from the rect's origin, so a viewport sized from the CONTENT box
-    // while points are measured from the BORDER box would offset every pick by
-    // the padding, with nothing near the cause to point at. The canvas is
-    // therefore required to carry no padding and no border — the same
-    // requirement `toCanvasPoint` already states about CSS transforms.
+    // would offset every pick by the padding. The canvas is therefore required
+    // to carry no padding and no border.
     const rect = svg.getBoundingClientRect();
-    // A zero measurement means "not laid out yet", not "zero pixels wide". The
-    // 800x600 placeholder is a better answer than a degenerate viewport, so
-    // leave it standing and wait for the observer.
+    // A zero measurement means "not laid out yet", not "zero pixels wide".
     if (rect.width > 0 && rect.height > 0) {
       report({ width: rect.width, height: rect.height });
     }
@@ -526,9 +473,8 @@ export function useCanvasGestures(
 
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        // The BORDER box, matching the seed above and `toCanvasPoint`. Read off
-        // the element rather than the entry so there is exactly one measurement
-        // in this file and no way for the two to disagree.
+        // Read off the element rather than the entry so there is exactly one
+        // measurement in this file and no way for the two to disagree.
         const rect = entry.target.getBoundingClientRect();
         if (rect.width <= 0 || rect.height <= 0) continue;
         report({ width: rect.width, height: rect.height });
@@ -541,184 +487,66 @@ export function useCanvasGestures(
   }, [svgRef]);
 
   /**
-   * Releases capture for a gesture still in progress when the canvas unmounts.
-   *
-   * Cancelling the PRESS matters more than releasing the capture: a Fast
-   * Refresh in the middle of a drag would otherwise leave the store holding an
-   * open transaction that nothing will ever close.
+   * Ends a gesture still in progress when the canvas unmounts. Cancelling the
+   * DRAG matters more than releasing the capture: a Fast Refresh in the middle
+   * of a drag would otherwise leave the store holding an open transaction
+   * that nothing will ever close.
    */
   useEffect(() => {
     const svg = svgRef.current;
     return () => {
-      cancelPress(svg);
-      endPan(svg);
+      dispatch({ kind: "abort" }, undefined, svg);
     };
-  }, [cancelPress, endPan, svgRef]);
+  }, [dispatch, svgRef]);
 
   const onPointerDown = useCallback<React.PointerEventHandler<SVGSVGElement>>(
     (event) => {
       const svg = svgRef.current;
       if (!svg) return;
-      const point = toCanvasPoint(svg, event);
-
-      // Middle drag, or space-held left drag. Two bindings because the middle
-      // button is the one that works with no keyboard and space is the one
-      // that works on a trackpad with no middle button.
-      const wantsPan =
-        event.button === 1 ||
-        (event.button === 0 && (spaceRef.current || panToolRef.current));
-
-      if (wantsPan) {
-        // Suppresses the middle-click autoscroll widget on platforms that have
-        // one; without it the browser starts its own scroll gesture on top of
-        // ours.
-        event.preventDefault();
-        cancelPress(svg);
-        capturePointer(svg, event.pointerId);
-        panRef.current = { pointerId: event.pointerId, last: point };
-        setIsPanning(true);
-        // The hover answer is stale the moment the view starts moving.
-        handlersRef.current.onHoverEnd();
-        handlersRef.current.onPanStart();
-        return;
-      }
-
-      // Left button only. A right-press is the context menu's business, and
-      // tracking it here would fire a select on its release.
-      if (event.button !== 0) return;
-
-      // CAPTURE AT POINTERDOWN, not at the threshold crossing. By the time the
-      // pointer has travelled its four pixels a fast flick may already be
-      // outside the element, and `setPointerCapture` on a pointer whose events
-      // you no longer receive never happens — the drag then loses its
-      // pointerup and leaves a transaction open.
-      capturePointer(svg, event.pointerId);
-      pressRef.current = {
-        pointerId: event.pointerId,
-        origin: point,
-        moved: false,
-        dragging: false,
-      };
-      handlersRef.current.onPress(point, modifiersOf(event));
+      dispatch(
+        {
+          kind: "down",
+          pointer: readPointer(svg, event),
+          spaceHeld: spaceRef.current,
+          panTool: panToolRef.current,
+        },
+        event,
+        svg,
+      );
     },
-    [cancelPress, svgRef],
+    [dispatch, svgRef],
   );
 
   const onPointerMove = useCallback<React.PointerEventHandler<SVGSVGElement>>(
     (event) => {
       const svg = svgRef.current;
       if (!svg) return;
-      const point = toCanvasPoint(svg, event);
-
-      const pan = panRef.current;
-      if (pan && pan.pointerId === event.pointerId) {
-        /**
-         * THE SIGN. The pointer moved by (point - last); the DRAWING must
-         * follow the pointer, so the VIEWPORT moves the other way, and
-         * `panBy` moves the viewport by its argument. Hence the negation, and
-         * hence it happens here: viewport.ts states outright that this
-         * negation belongs to the gesture, so that the affine map underneath
-         * has no sign convention of its own to remember.
-         *
-         * Concretely: drag right (dx > 0) -> pan.x decreases -> `toScreen`
-         * yields a larger x -> the structure moves right, under the cursor.
-         *
-         * Per-move deltas, not since-drag-start: `panBy` is incremental, and
-         * a cumulative delta would apply the whole drag again on every event.
-         */
-        const delta = { x: -(point.x - pan.last.x), y: -(point.y - pan.last.y) };
-        pan.last = point;
-        if (delta.x !== 0 || delta.y !== 0) handlersRef.current.onPan(delta);
-        return;
-      }
-
-      const press = pressRef.current;
-      if (press && press.pointerId === event.pointerId) {
-        if (!press.moved) {
-          const dx = point.x - press.origin.x;
-          const dy = point.y - press.origin.y;
-          if (Math.hypot(dx, dy) > CLICK_SLOP_PX) {
-            press.moved = true;
-            press.dragging = true;
-            // The DOWN point, not this sample's: see the note on the handler
-            // interface.
-            handlersRef.current.onDragStart(
-              press.origin,
-              point,
-              modifiersOf(event),
-            );
-            return;
-          }
-        } else if (press.dragging) {
-          handlersRef.current.onDragMove(point, modifiersOf(event));
-          return;
-        }
-      }
-
-      // Hover is a question about what is under the cursor when the cursor is
-      // just sitting there. With a button down the user is mid-gesture and the
-      // answer is either irrelevant or about to change.
-      if (event.buttons === 0) handlersRef.current.onHover(point);
+      dispatch({ kind: "move", pointer: readPointer(svg, event) }, event, svg);
     },
-    [svgRef],
+    [dispatch, svgRef],
   );
 
   const onPointerUp = useCallback<React.PointerEventHandler<SVGSVGElement>>(
     (event) => {
       const svg = svgRef.current;
-      const pan = panRef.current;
-      if (pan && pan.pointerId === event.pointerId) {
-        endPan(svg);
-        pressRef.current = null;
-        return;
-      }
-
-      const press = pressRef.current;
-      if (!press || press.pointerId !== event.pointerId) return;
-      // A non-left release during a left drag (the user chords a second
-      // button) is not the end of the gesture and must not retire the press.
-      if (event.button !== 0) return;
-
-      pressRef.current = null;
-      if (svg) releasePointer(svg, press.pointerId);
       if (!svg) return;
-
-      const point = toCanvasPoint(svg, event);
-      const modifiers = modifiersOf(event);
-      if (press.dragging) {
-        handlersRef.current.onDragEnd(point, modifiers);
-        return;
-      }
-      // A press that crossed the threshold and was then cancelled: no drag to
-      // end, and not a click either.
-      if (press.moved) return;
-
-      // On pointerup rather than pointerdown so that a drag can still change
-      // its mind, and so the slop test above has something to measure.
-      handlersRef.current.onSelect(point, modifiers);
+      dispatch({ kind: "up", pointer: readPointer(svg, event) }, event, svg);
     },
-    [endPan, svgRef],
+    [dispatch, svgRef],
   );
 
   const onPointerCancel = useCallback<React.PointerEventHandler<SVGSVGElement>>(
     (event) => {
-      const svg = svgRef.current;
-      const pan = panRef.current;
-      if (pan && pan.pointerId === event.pointerId) endPan(svg);
-      if (pressRef.current?.pointerId === event.pointerId) cancelPress(svg);
-      handlersRef.current.onHoverEnd();
+      dispatch({ kind: "cancel", pointerId: event.pointerId }, event);
     },
-    [cancelPress, endPan, svgRef],
+    [dispatch],
   );
 
   const onPointerLeave = useCallback<React.PointerEventHandler<SVGSVGElement>>(
-    () => {
-      // Deliberately does NOT end a pan: capture keeps the drag alive outside
-      // the element, which is the whole reason for capturing it. Only the
-      // hover highlight goes, and during a pan there is none to go.
-      handlersRef.current.onHoverEnd();
+    (event) => {
+      dispatch({ kind: "leave" }, event);
     },
-    [],
+    [dispatch],
   );
 
   const rootHandlers = useMemo(
@@ -733,4 +561,59 @@ export function useCanvasGestures(
   );
 
   return { isPanning, rootHandlers };
+}
+
+function applyEffect(
+  effect: GestureEffect,
+  h: CanvasGestureHandlers,
+  svg: SVGSVGElement | null,
+  event: { preventDefault(): void } | undefined,
+): void {
+  switch (effect.kind) {
+    case "capture":
+      if (svg) capturePointer(svg, effect.pointerId);
+      return;
+    case "release":
+      if (svg) releasePointer(svg, effect.pointerId);
+      return;
+    case "preventDefault":
+      event?.preventDefault();
+      return;
+    case "hover":
+      h.onHover(effect.point);
+      return;
+    case "hoverEnd":
+      h.onHoverEnd();
+      return;
+    case "press":
+      h.onPress(effect.point, effect.modifiers);
+      return;
+    case "select":
+      h.onSelect(effect.point, effect.modifiers);
+      return;
+    case "dragStart":
+      h.onDragStart(effect.origin, effect.point, effect.modifiers);
+      return;
+    case "dragMove":
+      h.onDragMove(effect.point, effect.modifiers);
+      return;
+    case "dragEnd":
+      h.onDragEnd(effect.point, effect.modifiers);
+      return;
+    case "dragCancel":
+      h.onDragCancel();
+      return;
+    case "panStart":
+      h.onPanStart();
+      return;
+    case "pan":
+      h.onPan(effect.delta);
+      return;
+    case "zoom":
+      h.onZoom(effect.anchor, effect.factor);
+      return;
+    case "panEnd":
+      h.onPanEnd();
+      return;
+  }
 }

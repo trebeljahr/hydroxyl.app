@@ -6,7 +6,7 @@
  * no real wheel events through React, and `EditorCanvas` cannot see a device
  * that reports scroll in lines rather than pixels. Those branches are exactly
  * the ones with a failure mode nobody would attribute to this file — a
- * Firefox mouse zooming sixteen times too slowly, or a canvas stuck in pan
+ * Firefox mouse panning sixteen times too slowly, or a canvas stuck in pan
  * mode after the user alt-tabbed away mid-drag.
  *
  * Everything below drives the DOM the way a browser does: native `wheel` on
@@ -82,13 +82,26 @@ function mount(handlers: CanvasGestureHandlers): {
 /** A real, cancelable native wheel event, as a browser delivers it. */
 function wheel(
   svg: SVGSVGElement,
-  init: { deltaY: number; deltaMode?: number; clientX?: number; clientY?: number },
+  init: {
+    deltaY: number;
+    deltaX?: number;
+    deltaMode?: number;
+    clientX?: number;
+    clientY?: number;
+    ctrlKey?: boolean;
+    metaKey?: boolean;
+    shiftKey?: boolean;
+  },
 ): WheelEvent {
   const event = new WheelEvent("wheel", {
+    deltaX: init.deltaX ?? 0,
     deltaY: init.deltaY,
     deltaMode: init.deltaMode ?? 0,
     clientX: init.clientX ?? 400,
     clientY: init.clientY ?? 300,
+    ctrlKey: init.ctrlKey ?? false,
+    metaKey: init.metaKey ?? false,
+    shiftKey: init.shiftKey ?? false,
     bubbles: true,
     cancelable: true,
   });
@@ -99,7 +112,14 @@ function wheel(
 function pointer(
   svg: SVGSVGElement,
   type: string,
-  init: { x: number; y: number; button?: number; buttons?: number },
+  init: {
+    x: number;
+    y: number;
+    button?: number;
+    buttons?: number;
+    pointerId?: number;
+    pointerType?: "mouse" | "pen" | "touch";
+  },
 ): void {
   const event = new MouseEvent(type, {
     clientX: init.x,
@@ -111,12 +131,30 @@ function pointer(
   });
   // jsdom has no PointerEvent constructor in every version; React reads these
   // two fields off the native event and nothing else here needs the rest.
-  Object.defineProperty(event, "pointerId", { value: 1 });
-  Object.defineProperty(event, "pointerType", { value: "mouse" });
+  Object.defineProperty(event, "pointerId", { value: init.pointerId ?? 1 });
+  Object.defineProperty(event, "pointerType", { value: init.pointerType ?? "mouse" });
   // `act` because starting a pan sets `isPanning`; without it React warns on
   // every drag test and the warning drowns out a real one.
   act(() => {
     svg.dispatchEvent(event);
+  });
+}
+
+/** A finger, as a touch screen reports one. */
+function finger(
+  svg: SVGSVGElement,
+  type: "pointerdown" | "pointermove" | "pointerup" | "pointercancel",
+  pointerId: number,
+  x: number,
+  y: number,
+): void {
+  pointer(svg, type, {
+    x,
+    y,
+    pointerId,
+    pointerType: "touch",
+    button: type === "pointermove" ? -1 : 0,
+    buttons: type === "pointerup" || type === "pointercancel" ? 0 : 1,
   });
 }
 
@@ -140,92 +178,197 @@ beforeEach(() => {
   key("keyup");
 });
 
-describe("useCanvasGestures — wheel", () => {
+describe("useCanvasGestures — wheel and trackpad", () => {
   it("cancels the page scroll on every wheel event", () => {
     const { svg } = mount(handlers);
     // Non-passive, or the browser ignores the preventDefault and the page
-    // scrolls out from under the user while they zoom. React's onWheel prop
-    // is registered passively at the root, which is why this listener is
-    // attached by hand.
+    // scrolls — or on a pinch, zooms — out from under the user. React's
+    // onWheel prop is registered passively at the root, which is why this
+    // listener is attached by hand.
     expect(wheel(svg, { deltaY: -100 }).defaultPrevented).toBe(true);
+    expect(wheel(svg, { deltaY: -100, ctrlKey: true }).defaultPrevented).toBe(true);
     // Including the ones the hook decides are no-ops.
     expect(wheel(svg, { deltaY: 0 }).defaultPrevented).toBe(true);
   });
 
-  it("zooms in when the wheel scrolls away and out when it scrolls back", () => {
+  it("pans on a plain wheel, which is how a trackpad's two-finger scroll arrives", () => {
+    const { svg } = mount(handlers);
+    wheel(svg, { deltaX: 12, deltaY: 30 });
+
+    // The browser cannot tell a trackpad scroll from a mouse wheel. When the
+    // wheel zoomed, two fingers on a trackpad zoomed too, and a laptop had no
+    // way to pan at all without holding a key.
+    expect(handlers.onPan).toHaveBeenCalledWith({ x: 12, y: 30 });
+    expect(handlers.onZoom).not.toHaveBeenCalled();
+  });
+
+  it("turns Shift + a vertical wheel into a horizontal pan", () => {
+    const { svg } = mount(handlers);
+    wheel(svg, { deltaY: 100, shiftKey: true });
+    expect(handlers.onPan).toHaveBeenCalledWith({ x: 100, y: 0 });
+  });
+
+  it("zooms on Ctrl + wheel, which is also how a trackpad pinch arrives", () => {
     const { svg } = mount(handlers);
 
-    wheel(svg, { deltaY: -100 });
+    wheel(svg, { deltaY: -100, ctrlKey: true });
     const zoomIn = handlers.onZoom.mock.calls[0]?.[1] as number;
     expect(zoomIn).toBeGreaterThan(1);
 
-    wheel(svg, { deltaY: 100 });
+    wheel(svg, { deltaY: 100, ctrlKey: true });
     const zoomOut = handlers.onZoom.mock.calls[1]?.[1] as number;
     expect(zoomOut).toBeLessThan(1);
 
     // Exponential in scroll distance, so scrolling back exactly undoes it.
-    // A linear rate would not have this property and a user would drift.
     expect(zoomIn * zoomOut).toBeCloseTo(1, 10);
+    expect(handlers.onPan).not.toHaveBeenCalled();
   });
 
-  it("reads a line-mode delta as 16px, so a Firefox mouse zooms like a trackpad", () => {
+  it("zooms on Cmd + wheel as well, so nobody has to know which one this editor picked", () => {
+    const { svg } = mount(handlers);
+    wheel(svg, { deltaY: -100, metaKey: true });
+    expect(handlers.onZoom).toHaveBeenCalledTimes(1);
+    expect(handlers.onPan).not.toHaveBeenCalled();
+  });
+
+  it("reads a line-mode delta as 16px, so a Firefox mouse pans like a trackpad", () => {
     const { svg } = mount(handlers);
 
-    // deltaMode 1 is DOM_DELTA_LINE. Three lines must mean the same thing as
-    // 48 pixels; without the normalisation it would mean three pixels and the
-    // wheel would feel dead on every device that reports lines.
-    wheel(svg, { deltaY: -3, deltaMode: 1 });
-    wheel(svg, { deltaY: -48, deltaMode: 0 });
-
-    const [lines, pixels] = handlers.onZoom.mock.calls.map((c) => c[1] as number);
-    expect(lines).toBeCloseTo(pixels as number, 12);
+    // deltaMode 1 is DOM_DELTA_LINE. Three lines must mean 48 pixels; without
+    // the normalisation it would mean three and the wheel would feel dead.
+    wheel(svg, { deltaY: 3, deltaMode: 1 });
+    expect(handlers.onPan).toHaveBeenCalledWith({ x: 0, y: 48 });
   });
 
   it("reads a page-mode delta as 100px", () => {
     const { svg } = mount(handlers);
-
-    wheel(svg, { deltaY: -2, deltaMode: 2 });
-    wheel(svg, { deltaY: -200, deltaMode: 0 });
-
-    const [pages, pixels] = handlers.onZoom.mock.calls.map((c) => c[1] as number);
-    expect(pages).toBeCloseTo(pixels as number, 12);
+    wheel(svg, { deltaY: 2, deltaMode: 2 });
+    expect(handlers.onPan).toHaveBeenCalledWith({ x: 0, y: 200 });
   });
 
-  it("clamps one violent flick rather than jumping several octaves", () => {
+  it("caps one violent zoom flick rather than jumping several octaves", () => {
     const { svg } = mount(handlers);
 
-    wheel(svg, { deltaY: -10000 });
+    wheel(svg, { deltaY: -10000, ctrlKey: true });
     const factor = handlers.onZoom.mock.calls[0]?.[1] as number;
-    // Unclamped, exp(10000 * 0.002) is about 5e8: one flick of a free-spinning
+    // Uncapped, exp(10000 * 0.01) is 2.7e43: one flick of a free-spinning
     // wheel would take the canvas straight to MAX_ZOOM with nothing on screen.
-    expect(factor).toBeLessThanOrEqual(4);
-
-    wheel(svg, { deltaY: 10000 });
-    expect(handlers.onZoom.mock.calls[1]?.[1] as number).toBeGreaterThanOrEqual(
-      1 / 4,
-    );
+    expect(factor).toBeLessThanOrEqual(1.25);
   });
 
   it("anchors the zoom at the cursor, in canvas-local coordinates", () => {
     const { svg } = mount(handlers);
-    wheel(svg, { deltaY: -100, clientX: 123, clientY: 45 });
+    wheel(svg, { deltaY: -100, clientX: 123, clientY: 45, ctrlKey: true });
 
-    // The element's origin is (0,0) here, so client and canvas coordinates
-    // coincide; the point is that the ANCHOR is passed through at all — the
-    // store's zoomAt solves for the pan that pins it, and a hook that passed
-    // the centre instead would zoom about the middle and slide the structure.
+    // The store's zoomAt solves for the pan that pins the anchor; a hook that
+    // passed the centre instead would slide the structure out from under the
+    // cursor.
     expect(handlers.onZoom).toHaveBeenCalledWith({ x: 123, y: 45 }, expect.any(Number));
+  });
+
+  it("zooms on Safari's own pinch events, and cancels them", () => {
+    const { svg } = mount(handlers);
+    // Safari reports a trackpad pinch as gesture events carrying a CUMULATIVE
+    // scale, not as ctrl + wheel. Left uncancelled, it zooms the whole page.
+    const gesture = (type: string, scale: number): Event => {
+      const event = new UIEvent(type, { bubbles: true, cancelable: true });
+      Object.assign(event, { scale, clientX: 200, clientY: 100 });
+      svg.dispatchEvent(event);
+      return event;
+    };
+    expect(gesture("gesturestart", 1).defaultPrevented).toBe(true);
+    expect(gesture("gesturechange", 1.5).defaultPrevented).toBe(true);
+    gesture("gesturechange", 1.8);
+    expect(gesture("gestureend", 1.8).defaultPrevented).toBe(true);
+
+    const factors = handlers.onZoom.mock.calls.map((c) => c[1] as number);
+    expect(factors).toHaveLength(2);
+    // Incremental steps whose product is the gesture's total scale.
+    expect(factors[0]).toBeCloseTo(1.5, 10);
+    expect((factors[0] as number) * (factors[1] as number)).toBeCloseTo(1.8, 10);
+    expect(handlers.onZoom).toHaveBeenCalledWith({ x: 200, y: 100 }, expect.any(Number));
   });
 
   it("stops listening once unmounted", () => {
     const { svg, unmount } = mount(handlers);
     // A real unmount, not an emptied body: clearing innerHTML detaches the
     // node without running React's cleanup, so the listener would still be on
-    // it and this test would pass for the wrong reason. A non-passive wheel
-    // listener left attached to a detached node keeps the subtree alive.
+    // it and this test would pass for the wrong reason.
     unmount();
     svg.dispatchEvent(new WheelEvent("wheel", { deltaY: -100, cancelable: true }));
+    svg.dispatchEvent(
+      new WheelEvent("wheel", { deltaY: -100, ctrlKey: true, cancelable: true }),
+    );
     expect(handlers.onZoom).not.toHaveBeenCalled();
+    expect(handlers.onPan).not.toHaveBeenCalled();
+  });
+});
+
+describe("useCanvasGestures — touch", () => {
+  it("lets one finger do what the tool does, and a tap select", () => {
+    const { svg } = mount(handlers);
+    finger(svg, "pointerdown", 7, 100, 100);
+    // A fingertip wobbles more than a mouse. 6px is inside the touch slop.
+    finger(svg, "pointermove", 7, 106, 100);
+    finger(svg, "pointerup", 7, 106, 100);
+    expect(handlers.onSelect).toHaveBeenCalledTimes(1);
+    expect(handlers.onDragStart).not.toHaveBeenCalled();
+    expect(handlers.onPanStart).not.toHaveBeenCalled();
+  });
+
+  it("pans and pinch-zooms with two fingers, and never selects on the way out", () => {
+    const { svg } = mount(handlers);
+    finger(svg, "pointerdown", 7, 100, 100);
+    finger(svg, "pointerdown", 8, 200, 100);
+    expect(handlers.onPanStart).toHaveBeenCalledTimes(1);
+
+    // Spread symmetrically: the centroid stays put and the span doubles.
+    finger(svg, "pointermove", 7, 50, 100);
+    finger(svg, "pointermove", 8, 250, 100);
+    const factors = handlers.onZoom.mock.calls.map((c) => c[1] as number);
+    expect(factors.reduce((a, b) => a * b, 1)).toBeCloseTo(2, 10);
+
+    finger(svg, "pointerup", 7, 50, 100);
+    finger(svg, "pointerup", 8, 250, 100);
+    expect(handlers.onPanEnd).toHaveBeenCalledTimes(1);
+    expect(handlers.onSelect).not.toHaveBeenCalled();
+    expect(handlers.onDragStart).not.toHaveBeenCalled();
+  });
+
+  it("cancels a marquee the first finger had started when a second one lands", () => {
+    // The drag may hold an open store transaction. The second finger used to
+    // overwrite the first finger's press, and that transaction was never
+    // closed: undo went dead for the rest of the session.
+    const { svg } = mount(handlers);
+    finger(svg, "pointerdown", 7, 100, 100);
+    finger(svg, "pointermove", 7, 140, 100);
+    expect(handlers.onDragStart).toHaveBeenCalledTimes(1);
+
+    finger(svg, "pointerdown", 8, 300, 300);
+    expect(handlers.onDragCancel).toHaveBeenCalledTimes(1);
+    expect(handlers.onPanStart).toHaveBeenCalledTimes(1);
+    // Cancel strictly before the pan starts: see the reducer's header.
+    expect(handlers.onDragCancel.mock.invocationCallOrder[0]).toBeLessThan(
+      handlers.onPanStart.mock.invocationCallOrder[0] as number,
+    );
+
+    finger(svg, "pointerup", 7, 140, 100);
+    finger(svg, "pointerup", 8, 300, 300);
+    expect(handlers.onDragEnd).not.toHaveBeenCalled();
+    expect(handlers.onPanEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores Safari's pinch events while fingers already drive the pinch", () => {
+    const { svg } = mount(handlers);
+    finger(svg, "pointerdown", 7, 100, 100);
+    finger(svg, "pointerdown", 8, 200, 100);
+    const event = new UIEvent("gesturechange", { bubbles: true, cancelable: true });
+    Object.assign(event, { scale: 3, clientX: 150, clientY: 100 });
+    svg.dispatchEvent(event);
+    // An iPad reports the same pinch both ways; applying both would zoom at
+    // twice the speed of the fingers.
+    expect(handlers.onZoom).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(true);
   });
 });
 

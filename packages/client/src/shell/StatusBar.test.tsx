@@ -210,10 +210,18 @@ describe("StatusBar — the viewport buttons are registry entries", () => {
     // the one action in the shell with no command behind it: no palette row,
     // no shortcut, and reachable from this strip alone.
     render(<StatusBar />);
-    for (const id of ["view.fit", "view.reset"]) {
+    for (const id of ["view.fit", "view.reset", "view.zoom-in", "view.zoom-out"]) {
       const button = document.querySelector(`[data-command="${id}"]`);
       expect(button, id).toBeTruthy();
     }
+  });
+
+  it("names the glyph zoom buttons for what they do, not for their glyph", () => {
+    render(<StatusBar />);
+    expect(screen.getByRole("button", { name: "Zoom in" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Zoom out" })).toBeTruthy();
+    // The two word buttons keep their visible label as their name.
+    expect(screen.getByRole("button", { name: "Fit" })).toBeTruthy();
   });
 
   it("greys Fit out on an empty sketch, the same way the palette does", () => {

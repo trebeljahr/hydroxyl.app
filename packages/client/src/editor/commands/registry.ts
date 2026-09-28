@@ -59,6 +59,7 @@ import { documentBondLength } from "@/editor/interaction/machine";
 import { TOOLS } from "@/editor/tools";
 import { toggleTheme } from "@/shell/theme";
 import { guardedOps } from "@/state/chem-guard";
+import { MAX_ZOOM, MIN_ZOOM } from "@/state/viewport";
 import type { EditorState, EditorStore, Selection } from "@/state";
 
 import { cleanUpStructure } from "./cleanup";
@@ -904,7 +905,69 @@ const STRUCTURE_COMMANDS: readonly Command[] = [
   },
 ];
 
+/**
+ * One keyboard or button zoom step: two presses double the scale.
+ *
+ * Coarser than a wheel notch (x1.22) because a key press is a deliberate,
+ * countable act — nobody wants to press Mod+= seven times to get to 400% —
+ * and finer than Figma's x2, which jumps past the scale a crowded ring needed.
+ */
+export const KEY_ZOOM_STEP = Math.SQRT2;
+
+/**
+ * Zoom about the centre of the canvas. A key press has no cursor to anchor
+ * on, and the centre is where `pan` already points, so nothing slides.
+ */
+function zoomAboutCentre(store: EditorStore, factor: number): void {
+  const state = store.getState();
+  const { width, height } = state.viewport.size;
+  state.zoomAt({ x: width / 2, y: height / 2 }, factor);
+}
+
+const canZoomIn = (state: EditorState): boolean => state.viewport.zoom < MAX_ZOOM;
+const canZoomOut = (state: EditorState): boolean => state.viewport.zoom > MIN_ZOOM;
+
 const VIEW_COMMANDS: readonly Command[] = [
+  // Mod+= and Mod+- are the browser's page zoom, and are claimed here the way
+  // Figma, tldraw and Excalidraw claim them: page zoom rescales the tool rail
+  // and panels along with the drawing, and is never what someone looking at a
+  // structure means.
+  {
+    id: "view.zoom-in",
+    title: "Zoom in",
+    keywords: ["zoom", "in", "magnify", "enlarge", "bigger"],
+    shortcut: "Mod+=",
+    group: "view",
+    enabled: canZoomIn,
+    run: (store) => {
+      zoomAboutCentre(store, KEY_ZOOM_STEP);
+    },
+  },
+  {
+    // Where + is shift-= (US, UK) the event's key is "+", and where + has a
+    // key of its own (German, Nordic) it is "+" with no shift at all.
+    id: "view.zoom-in-plus",
+    title: "Zoom in",
+    keywords: ["zoom", "in"],
+    shortcut: "Mod++",
+    group: "view",
+    hidden: true,
+    enabled: canZoomIn,
+    run: (store) => {
+      zoomAboutCentre(store, KEY_ZOOM_STEP);
+    },
+  },
+  {
+    id: "view.zoom-out",
+    title: "Zoom out",
+    keywords: ["zoom", "out", "shrink", "smaller"],
+    shortcut: "Mod+-",
+    group: "view",
+    enabled: canZoomOut,
+    run: (store) => {
+      zoomAboutCentre(store, 1 / KEY_ZOOM_STEP);
+    },
+  },
   {
     id: "view.reset",
     title: "Reset view",

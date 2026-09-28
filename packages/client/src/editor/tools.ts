@@ -175,7 +175,7 @@ export const TOOLS: readonly ToolDef[] = Object.freeze([
     id: "pan",
     keywords: ["scroll", "move view", "hand", "grab"],
     title: "Pan",
-    hint: "Drag to move the view — the same as holding space",
+    hint: "Drag to move the view. Without it: hold space, middle-drag, or scroll",
     hotkey: "g",
     cursor: "grab",
     Icon: HandIcon,

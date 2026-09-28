@@ -328,9 +328,10 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
         aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight"
         aria-describedby="canvas-focus-help canvas-focus-status"
         onFocus={handleFocus}
-        // `touchAction: none` so a one-finger drag pans the canvas instead of
-        // scrolling the page — without it the browser claims the gesture
-        // before the first pointermove reaches us.
+        // `touchAction: none` so the canvas gets every finger: one finger is
+        // the tool (a marquee, a bond), two pan and pinch-zoom the VIEW (see
+        // gesture-reducer.ts). Without it the browser claims both as a page
+        // scroll or a page zoom before the first pointermove reaches us.
         style={{ touchAction: "none", cursor, outline: "none" }}
         className="focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-inset"
         {...rootHandlers}

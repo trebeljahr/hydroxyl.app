@@ -14,11 +14,12 @@ import { PUBLICATION_STYLE, serializeFigure } from "@starter/chem-render";
 import { createDocument } from "@starter/shared";
 
 import { documentFigure } from "@/lib/export/figure";
-import { createEditorStore } from "@/state";
+import { createEditorStore, MAX_ZOOM, MIN_ZOOM } from "@/state";
 import type { EditorStore } from "@/state";
 
 import {
   COMMANDS,
+  KEY_ZOOM_STEP,
   clipboardMolecule,
   commandById,
   commandForEvent,
@@ -424,6 +425,43 @@ describe("the surfaces the registry has to cover", () => {
     const before = store.getState().viewport.zoom;
     commandById("view.fit").run(store);
     expect(store.getState().viewport.zoom).not.toBe(before);
+  });
+
+  it("zooms in and out about the centre, one step each, and back exactly", () => {
+    const store = storeWith(benzene());
+    store.getState().setViewportSize({ width: 800, height: 600 });
+    store.getState().resetViewport();
+    const before = store.getState().viewport;
+
+    commandById("view.zoom-in").run(store);
+    const zoomed = store.getState().viewport;
+    expect(zoomed.zoom).toBeCloseTo(before.zoom * KEY_ZOOM_STEP, 12);
+    // About the centre, which is where `pan` points: nothing slides.
+    expect(zoomed.pan).toEqual(before.pan);
+
+    commandById("view.zoom-out").run(store);
+    expect(store.getState().viewport.zoom).toBeCloseTo(before.zoom, 12);
+  });
+
+  it("claims Mod+= and Mod+- from the browser's page zoom, and + where it has its own key", () => {
+    const plus = { key: "+", ctrlKey: false, metaKey: true, shiftKey: true, altKey: false };
+    const equals = { ...plus, key: "=", shiftKey: false };
+    const minus = { ...plus, key: "-", shiftKey: false };
+    const zoomIn = COMMANDS.filter((c) => c.shortcut !== undefined && matchesShortcut(c.shortcut, equals));
+    expect(zoomIn.map((c) => c.id)).toEqual(["view.zoom-in"]);
+    const zoomInPlus = COMMANDS.filter((c) => c.shortcut !== undefined && matchesShortcut(c.shortcut, plus));
+    expect(zoomInPlus.map((c) => c.id)).toEqual(["view.zoom-in-plus"]);
+    const zoomOut = COMMANDS.filter((c) => c.shortcut !== undefined && matchesShortcut(c.shortcut, minus));
+    expect(zoomOut.map((c) => c.id)).toEqual(["view.zoom-out"]);
+  });
+
+  it("greys zoom in out at one zoom limit, and zoom out at the other", () => {
+    const store = storeWith(benzene());
+    store.getState().setZoom(MAX_ZOOM);
+    expect(commandById("view.zoom-in").enabled(store.getState())).toBe(false);
+    expect(commandById("view.zoom-out").enabled(store.getState())).toBe(true);
+    store.getState().setZoom(MIN_ZOOM);
+    expect(commandById("view.zoom-out").enabled(store.getState())).toBe(false);
   });
 
   it("cannot fit an empty sketch", () => {
