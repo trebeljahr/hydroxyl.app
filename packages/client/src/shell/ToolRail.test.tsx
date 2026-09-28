@@ -152,3 +152,87 @@ describe("ToolRail", () => {
     expect(document.querySelector('[aria-label="Eraser options"]')).toBeNull();
   });
 });
+
+describe("the element picker's way to every other element", () => {
+  function openElementPicker(): void {
+    const trigger = document.querySelector<HTMLElement>('[aria-label="Element options"]');
+    if (trigger === null) throw new Error("no element options trigger");
+    act(() => {
+      fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+      fireEvent.click(trigger);
+    });
+  }
+
+  function showAll(): HTMLElement {
+    const node = document.querySelector<HTMLElement>('[data-option="element-show-all"]');
+    if (node === null) throw new Error("no Show all entry");
+    return node;
+  }
+
+  beforeEach(() => {
+    act(() => {
+      editorStore.getState().setRecentElements([]);
+      editorStore.getState().setPeriodicTableOpen(false);
+    });
+  });
+
+  it("offers Show all under the organic grid, as a button that opens a dialog", () => {
+    renderRail();
+    openElementPicker();
+    const entry = showAll();
+    expect(entry).toHaveAccessibleName("Show all elements (periodic table)");
+    expect(entry).toHaveAttribute("aria-haspopup", "dialog");
+    // An action, not an option: it is never "pressed", and saying "not
+    // pressed" would announce it as a toggle.
+    expect(entry).not.toHaveAttribute("aria-pressed");
+    act(() => {
+      fireEvent.click(entry);
+    });
+    expect(editorStore.getState().ui.periodicTableOpen).toBe(true);
+    // The popover closed on the pick, so the dialog is not opening behind it.
+    expect(document.querySelector('[data-option="element-show-all"]')).toBeNull();
+  });
+
+  it("has no Recent row until something outside the organic set is picked", () => {
+    renderRail();
+    openElementPicker();
+    expect(document.querySelector("[data-element-recent]")).toBeNull();
+  });
+
+  it("pins recent picks from the full table in the quick picker, newest first", () => {
+    act(() => {
+      editorStore.getState().noteRecentElement("Pd");
+      editorStore.getState().noteRecentElement("Pt");
+    });
+    renderRail();
+    openElementPicker();
+    const row = document.querySelector<HTMLElement>("[data-element-recent]");
+    expect(row).not.toBeNull();
+    const pinned = [...row!.querySelectorAll("[data-element]")].map((node) =>
+      node.getAttribute("data-element"),
+    );
+    expect(pinned).toEqual(["Pt", "Pd"]);
+    // The organic grid is untouched by it.
+    expect(document.querySelectorAll("[data-element]")).toHaveLength(13 + 2);
+
+    const platinum = row!.querySelector<HTMLElement>('[data-element="Pt"]')!;
+    expect(platinum).toHaveAccessibleName("Platinum (Pt)");
+    act(() => {
+      fireEvent.click(platinum);
+    });
+    expect(editorStore.getState().toolOptions.element).toBe("Pt");
+    expect(editorStore.getState().tool).toBe("element");
+  });
+
+  it("shows the armed recent element as pressed, like any other entry", () => {
+    act(() => {
+      editorStore.getState().noteRecentElement("Pt");
+      editorStore.getState().setToolOption("element", "Pt");
+    });
+    renderRail();
+    openElementPicker();
+    expect(
+      document.querySelector('[data-element-recent] [data-element="Pt"]'),
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+});

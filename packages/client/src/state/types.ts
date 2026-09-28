@@ -167,6 +167,8 @@ export interface UiState {
    */
   readonly activePanelId: PanelId | null;
   readonly exportDialogOpen: boolean;
+  /** The full periodic table behind the element picker's "Show all". */
+  readonly periodicTableOpen: boolean;
   readonly figureExport: FigureExportSettings;
 }
 
@@ -297,6 +299,14 @@ export interface SelectionSlice {
 export interface ToolSlice {
   readonly tool: ToolId;
   readonly toolOptions: ToolOptions;
+  /**
+   * Elements picked from OUTSIDE the quick picker's organic set, newest
+   * first, capped at one row. The quick picker pins them under its grid, so a
+   * chemist who reached for platinum through the full table finds it one
+   * click away the next time. Not undoable, like every other tool setting;
+   * kept across reloads by `usePersistedRecentElements`.
+   */
+  readonly recentElements: readonly ElementSymbol[];
 
   /** STICKY: the chosen tool stays chosen until another is picked. Drawing a
    *  bond does not drop you back into `select`. */
@@ -304,6 +314,10 @@ export interface ToolSlice {
   /** Escape: back to `select`, element buffer cleared, palette closed. */
   escape(): void;
   setToolOption<K extends keyof ToolOptions>(key: K, value: ToolOptions[K]): void;
+  /** Move `symbol` to the front of `recentElements`. See `withRecentElement`. */
+  noteRecentElement(symbol: ElementSymbol): void;
+  /** Replace the list wholesale — how a stored list is restored on mount. */
+  setRecentElements(symbols: readonly ElementSymbol[]): void;
 }
 
 export interface ViewportSlice {
@@ -337,6 +351,7 @@ export interface UiSlice {
   setElementInputBuffer(buffer: string): void;
   setActivePanel(id: PanelId | null): void;
   setExportDialogOpen(open: boolean): void;
+  setPeriodicTableOpen(open: boolean): void;
   setFigureExport(patch: Partial<FigureExportSettings>): void;
   clearElementInputBuffer(): void;
 }

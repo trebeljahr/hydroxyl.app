@@ -62,6 +62,8 @@ import { cn } from "@/lib/utils";
 import { editorStore, useEditorStore } from "@/state";
 import type { ToolId } from "@/state";
 
+import { pickerEntryClasses } from "./picker-entry";
+
 const RING_ICONS: Readonly<
   Record<RingTemplateName, (props: ChemIconProps) => ReactElement>
 > = {
@@ -196,73 +198,6 @@ function OptionsPopover({
 }
 
 /**
- * THE FOUR STATES A PICKER ENTRY CAN BE IN, EACH NAMING BOTH OF ITS COLOURS.
- *
- * WHY AN IDLE ENTRY STATES A GROUND AND AN INK IT APPEARS NOT TO NEED. It used
- * to state neither: the inactive branch was `hover:bg-accent
- * hover:text-accent-foreground` and nothing else, so an idle entry had no
- * background of its own and was legible only by INHERITING
- * `text-popover-foreground` from `PopoverContent`. The selected entry was the
- * one entry that named both a background and a foreground. So any hiccup in the
- * cascade — a stylesheet applied half-way, a token that failed to resolve, a
- * stale chunk served after a deploy — erased every entry EXCEPT the selected
- * one, which is exactly the "the pickers are weirdly transparent and the chain
- * numbers do not show" report this function answers. An entry that names its own
- * ground can lose only the token it names; it cannot take its siblings with it.
- *
- * NO STATE IS THE ABSENCE OF A CLASS. `bg-popover` on an entry inside a popover
- * paints the colour the entry would have inherited anyway, and that is the
- * point: the declaration IS the repair.
- *
- * DISABLED WINS OVER SELECTED. An armed option that has become unavailable has
- * to read as unavailable; painting it `bg-primary` would invite a click that
- * does nothing.
- */
-const PICKER_ENTRY_BASE = cn(
-  "rounded transition-colors",
-  // The element grid had no focus ring at all, so a keyboard user could not see
-  // where they stood among thirteen identical cells.
-  "focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-2",
-);
-
-function pickerEntryClasses({
-  active,
-  disabled,
-}: {
-  readonly active: boolean;
-  readonly disabled: boolean;
-}): string {
-  if (disabled) {
-    // Deliberately no hover pair: an entry that lights up under the cursor and
-    // then refuses the click is worse than one that never lights up.
-    //
-    // THE GROUND IS `bg-popover` AND NOT `bg-muted`, WHICH IS WHY IT LOOKS LIKE
-    // THE IDLE GROUND. `text-muted-foreground` on `bg-muted` measures 4.35:1 in
-    // light mode (hsl 45.1% ink on hsl 96.1% ground), under the 4.5:1 floor the
-    // e2e holds every other state to; on `bg-popover` the same ink measures
-    // 4.74:1. WCAG 1.4.3 would exempt an inactive control from the floor
-    // altogether, but "the one state we let fall below the bar is the one no
-    // test can reach" is how a bar stops meaning anything. It also lands the
-    // disabled entry on exactly the ink-and-ground pair this app already uses
-    // for a genuinely disabled control — the `showLocants` label in
-    // `RepresentationSwitcher` — so "refused" reads the same wherever it
-    // appears. The ground is still NAMED rather than inherited, which is the
-    // property that matters here.
-    return cn(
-      PICKER_ENTRY_BASE,
-      "bg-popover text-muted-foreground cursor-not-allowed",
-    );
-  }
-  if (active) {
-    return cn(PICKER_ENTRY_BASE, "bg-primary text-primary-foreground");
-  }
-  return cn(
-    PICKER_ENTRY_BASE,
-    "bg-popover text-popover-foreground hover:bg-accent hover:text-accent-foreground",
-  );
-}
-
-/**
  * Whether an option's COMMAND is refusing the click, asked of the registry the
  * way the palette asks it.
  *
@@ -299,6 +234,7 @@ export function OptionButton({
   commandId,
   disabled = false,
   className,
+  haspopup,
   onSelect,
   children,
 }: {
@@ -340,6 +276,12 @@ export function OptionButton({
    * different twMerge groups from the colour roles. Pinned by a test.
    */
   readonly className?: string;
+  /**
+   * Set on an entry that OPENS something rather than choosing an option — the
+   * element picker's "Show all". Such an entry is never "pressed", and saying
+   * `aria-pressed="false"` would announce it as a toggle that is off.
+   */
+  readonly haspopup?: "dialog";
   readonly onSelect: () => void;
   readonly children: ReactNode;
 }): ReactElement {
@@ -348,7 +290,9 @@ export function OptionButton({
   return (
     <button
       type="button"
-      aria-pressed={active}
+      {...(haspopup === undefined
+        ? { "aria-pressed": active }
+        : { "aria-haspopup": haspopup })}
       aria-label={label}
       title={label}
       disabled={isDisabled}
@@ -484,30 +428,74 @@ function RingOptions(): ReactElement {
  * colour — the same fragility the popovers had. Sharing `OptionButton` is what
  * makes "every picker entry has the same four states" a property of the code
  * rather than a claim in a comment.
+ *
+ * THE ORGANIC SET STAYS THE QUICK PICKER, AND EVERYTHING ELSE IS ONE CLICK
+ * FURTHER. The thirteen cells are what almost every figure is made of, so they
+ * are not diluted with the other 105; "Show all elements" opens the full table,
+ * and whatever is picked there is pinned in a "Recent" row under the grid, so
+ * the chemist drawing a platinum complex reaches for Pt the second time the
+ * way they reach for N.
  */
 function ElementOptions(): ReactElement {
   const current = useEditorStore((state) => state.toolOptions.element);
+  const recent = useEditorStore((state) => state.recentElements);
   return (
-    <div className="grid w-48 grid-cols-4 gap-1">
-      {COMMON_ORGANIC_ELEMENTS.map((element: ElementSymbol) => (
-        <OptionButton
-          key={element}
-          active={current === element}
-          commandId={`element.${element}`}
-          elementSymbol={element}
-          testId={`element-${element}`}
-          // "Carbon (C)", not "C". The symbol stays on screen; the name is for
-          // the tooltip and for anything reading the accessible name.
-          label={`${elementBySymbol(element)?.name ?? element} (${element})`}
-          onSelect={() => {
-            void commandById(`element.${element}`).run(editorStore);
-          }}
-          className="justify-center gap-0 text-center font-mono"
-        >
-          {element}
-        </OptionButton>
-      ))}
+    <div className="flex w-48 flex-col gap-2">
+      <div className="grid grid-cols-4 gap-1">
+        {COMMON_ORGANIC_ELEMENTS.map((element: ElementSymbol) => (
+          <ElementEntry key={element} symbol={element} current={current} />
+        ))}
+      </div>
+      {recent.length === 0 ? null : (
+        <div data-element-recent="">
+          <p className="text-muted-foreground mb-1 text-xs font-medium">Recent</p>
+          <div className="grid grid-cols-4 gap-1">
+            {recent.map((element) => (
+              <ElementEntry key={element} symbol={element} current={current} />
+            ))}
+          </div>
+        </div>
+      )}
+      <OptionButton
+        active={false}
+        haspopup="dialog"
+        commandId="element.table"
+        testId="element-show-all"
+        label="Show all elements (periodic table)"
+        className="justify-center"
+        onSelect={() => {
+          void commandById("element.table").run(editorStore);
+        }}
+      >
+        Show all elements…
+      </OptionButton>
     </div>
+  );
+}
+
+function ElementEntry({
+  symbol,
+  current,
+}: {
+  readonly symbol: ElementSymbol;
+  readonly current: ElementSymbol;
+}): ReactElement {
+  return (
+    <OptionButton
+      active={current === symbol}
+      commandId={`element.${symbol}`}
+      elementSymbol={symbol}
+      testId={`element-${symbol}`}
+      // "Carbon (C)", not "C". The symbol stays on screen; the name is for
+      // the tooltip and for anything reading the accessible name.
+      label={`${elementBySymbol(symbol)?.name ?? symbol} (${symbol})`}
+      onSelect={() => {
+        void commandById(`element.${symbol}`).run(editorStore);
+      }}
+      className="justify-center gap-0 text-center font-mono"
+    >
+      {symbol}
+    </OptionButton>
   );
 }
 

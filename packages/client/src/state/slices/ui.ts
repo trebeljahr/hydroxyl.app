@@ -28,6 +28,7 @@ export const INITIAL_UI_STATE: UiState = Object.freeze({
   elementInputBuffer: "",
   activePanelId: null,
   exportDialogOpen: false,
+  periodicTableOpen: false,
   figureExport: Object.freeze({ width: "single", customWidthCm: 12, dpi: 300, style: "publication" }),
 });
 
@@ -106,6 +107,13 @@ export function createUiSlice(
       if (get().ui.exportDialogOpen === open) return;
       set((draft) => {
         draft.ui.exportDialogOpen = open;
+      });
+    },
+
+    setPeriodicTableOpen(open) {
+      if (get().ui.periodicTableOpen === open) return;
+      set((draft) => {
+        draft.ui.periodicTableOpen = open;
       });
     },
 

@@ -32,6 +32,7 @@ import type { ReactElement } from "react";
 
 import { EditorCanvas } from "@/canvas";
 import { RepresentationSwitcher } from "@/canvas/RepresentationSwitcher";
+import { usePersistedRecentElements } from "@/editor/recent-elements";
 import { useKeyBindings } from "@/editor/useKeyBindings";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { flushEditorDocument } from "@/persistence/session";
@@ -39,6 +40,7 @@ import { flushEditorDocument } from "@/persistence/session";
 import { CanvasErrorBoundary } from "./CanvasErrorBoundary";
 import { CommandPalette } from "./CommandPalette";
 import { ExportDialog } from "./ExportDialog";
+import { PeriodicTableDialog } from "./PeriodicTableDialog";
 import { useFileDrop } from "./useFileDrop";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { StatusBar } from "./StatusBar";
@@ -56,6 +58,7 @@ export function EditorShell(): ReactElement {
   // `window`, both must exist exactly once, and the order they are registered
   // in is part of how Mod+V resolves. See useFileDrop's header.
   useFileDrop();
+  usePersistedRecentElements();
 
   return (
     <TooltipProvider delayDuration={400} skipDelayDuration={200}>
@@ -88,6 +91,7 @@ export function EditorShell(): ReactElement {
 
       <CommandPalette />
       <ExportDialog />
+      <PeriodicTableDialog />
     </TooltipProvider>
   );
 }

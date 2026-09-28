@@ -40,7 +40,7 @@ import type {
   RingTemplateName,
   Vec2,
 } from "@starter/chem-core";
-import { COMMON_ORGANIC_ELEMENTS } from "@starter/chem-core";
+import { ELEMENTS } from "@starter/chem-core";
 import { DISPLAY_FLAG_KEYS, STEREO_GROUP_KIND_VALUES, VIEW_KINDS } from "@starter/shared";
 import { VIEW_KIND_TITLES, panelLetter, representationAvailability } from "@starter/chem-render";
 import type { DisplayFlagKey } from "@starter/shared";
@@ -444,18 +444,46 @@ function chainLengthCommands(): Command[] {
   }));
 }
 
+/**
+ * One command per element chem-core knows — all 118, not only the organic set
+ * the quick picker shows.
+ *
+ * The full periodic table dispatches these, exactly as the quick picker's grid
+ * does, so a cell is a command like every other entry on the rail. They are
+ * also what makes the tool-letter casualties in tools.ts reachable from the
+ * keyboard: vanadium's `v` is the select tool, but "vanadium" typed into the
+ * palette finds `element.V`. The NAME is a keyword for exactly that reason;
+ * nobody searches for a metal by its symbol when its symbol is a tool letter.
+ */
 function elementCommands(): Command[] {
-  return COMMON_ORGANIC_ELEMENTS.map((element: ElementSymbol) => ({
-    id: `element.${element}`,
-    title: `Element: ${element}`,
-    keywords: ["element", "atom", element],
+  return ELEMENTS.map(({ symbol, name }) => ({
+    id: `element.${symbol}`,
+    title: `Element: ${symbol}`,
+    keywords: ["element", "atom", symbol, name],
     group: "element" as const,
     enabled: always,
     run: (store: EditorStore) => {
-      applyElement(store, element);
+      applyElement(store, symbol);
     },
   }));
 }
+
+/**
+ * The quick picker's "Show all" entry, and the palette's way to the same
+ * table. A command rather than a local `useState` in the rail so the table is
+ * reachable without the pointer, and so the popover that launches it can close
+ * without taking the dialog with it.
+ */
+const ELEMENT_TABLE_COMMAND: Command = {
+  id: "element.table",
+  title: "Show all elements…",
+  keywords: ["periodic table", "element", "atom", "metal", "show all", "more"],
+  group: "element",
+  enabled: always,
+  run: (store) => {
+    store.getState().setPeriodicTableOpen(true);
+  },
+};
 
 /**
  * One toggle per display flag, all of them saved.
@@ -589,6 +617,9 @@ const DISPLAY_FLAG_COMMANDS: readonly Command[] = DISPLAY_FLAG_KEYS.map((key) =>
 export function applyElement(store: EditorStore, element: ElementSymbol): void {
   const state = store.getState();
   state.setToolOption("element", element);
+  // Every route to an element — table, palette, typed symbol — passes here,
+  // so this is the one place the quick picker's recent row can learn of it.
+  state.noteRecentElement(element);
   const atomIds = state.selection.atomIds;
   if (atomIds.length === 0) {
     state.setTool("element");
@@ -1228,6 +1259,7 @@ export const COMMANDS: readonly Command[] = Object.freeze([
   ...bondStereoCommands(),
   ...ringTemplateCommands(),
   ...chainLengthCommands(),
+  ELEMENT_TABLE_COMMAND,
   ...elementCommands(),
   ...EDIT_COMMANDS,
   ...SELECT_COMMANDS,

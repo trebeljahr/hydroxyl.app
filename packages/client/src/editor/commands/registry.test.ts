@@ -8,7 +8,7 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { benzene, buildMolecule, elementCounts } from "@starter/chem-core";
+import { ELEMENTS, benzene, buildMolecule, elementCounts } from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
 import { PUBLICATION_STYLE, serializeFigure } from "@starter/chem-render";
 import { createDocument } from "@starter/shared";
@@ -279,6 +279,45 @@ describe("element commands", () => {
     expect(store.getState().tool).toBe("element");
     expect(store.getState().toolOptions.element).toBe("O");
     expect(elementCounts(store.getState().document.molecule)["O"]).toBeUndefined();
+  });
+
+  it("covers every element chem-core knows, not only the organic set", () => {
+    // The full table dispatches these, so an element with no command would be
+    // a cell that throws on click.
+    for (const element of ELEMENTS) {
+      const command = commandById(`element.${element.symbol}`);
+      expect(command.group, element.symbol).toBe("element");
+      // The NAME is a keyword: "vanadium" has to find `element.V`, whose
+      // symbol is the select tool's letter and so unreachable by typing it.
+      expect(command.keywords, element.symbol).toContain(element.name);
+    }
+  });
+
+  it("puts a metal on a selected atom: platinum retypes, and gets no hydrogens", () => {
+    const store = storeWith(benzene());
+    store.getState().selectAtoms(["a1"]);
+    commandById("element.Pt").run(store);
+    const counts = elementCounts(store.getState().document.molecule);
+    expect(counts["Pt"]).toBe(1);
+    // Benzene lost one C-H; a metal carries no implicit hydrogens to replace it.
+    expect(counts["H"]).toBe(5);
+  });
+
+  it("remembers a pick from outside the organic set for the quick picker", () => {
+    const store = storeWith(benzene());
+    commandById("element.Pt").run(store);
+    commandById("element.N").run(store);
+    commandById("element.Pd").run(store);
+    expect(store.getState().recentElements).toEqual(["Pd", "Pt"]);
+  });
+
+  it("opens the full periodic table from the palette", () => {
+    const store = storeWith(benzene());
+    const command = commandById("element.table");
+    expect(command.group).toBe("element");
+    expect(command.keywords).toContain("periodic table");
+    command.run(store);
+    expect(store.getState().ui.periodicTableOpen).toBe(true);
   });
 });
 

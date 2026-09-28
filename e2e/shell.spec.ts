@@ -821,4 +821,51 @@ async function runPickerColourChecks(
   // And the hover really is a different painting, so the check above is not
   // quietly re-measuring the resting state.
   expect(blockedHovered.background).not.toBe(blockedResting.background);
+
+  // ── 6. The full periodic table behind "Show all elements" ────────────────
+  //
+  // Its cells paint with the same shared picker states as the quick picker,
+  // and this is where that sharing is measured rather than assumed: every
+  // idle cell, the armed one, the group-3 markers, and the entry that opens
+  // the table.
+  await page.mouse.move(0, 0);
+  await page.click('[aria-label="Element options"]');
+  const showAll = '[data-option="element-show-all"]';
+  await expect(page.locator(showAll)).toBeVisible();
+  expect(await paintsOwnGround(page, showAll), "Show all has no ground").toBe(true);
+  const showAllPainted = await paintedText(page, showAll);
+  expect(showAllPainted.contrast, `Show all at ${showAllPainted.colour}`).toBeGreaterThanOrEqual(
+    4.5,
+  );
+  expectGroundMatchesScheme(showAllPainted, scheme, "Show all");
+  await page.click(showAll);
+  const table = '[data-shell="periodic-table"]';
+  await expect(page.locator(table)).toBeVisible();
+
+  const armedCell = `${table} [data-periodic-element][aria-pressed="true"]`;
+  await expect(page.locator(armedCell)).toHaveCount(1);
+  const armedPainted = await paintedText(page, armedCell);
+  expect(armedPainted.contrast, `armed cell at ${armedPainted.colour}`).toBeGreaterThanOrEqual(4.5);
+
+  const idleCells = await page.evaluate(
+    (sel) =>
+      [...document.querySelectorAll(`${sel} [data-periodic-element]`)]
+        .filter((node) => node.getAttribute("aria-pressed") !== "true")
+        .map((node) => node.getAttribute("data-periodic-element") ?? ""),
+    table,
+  );
+  expect(idleCells).toHaveLength(117);
+  for (const symbol of idleCells) {
+    const selector = `${table} [data-periodic-element="${symbol}"]`;
+    expect(await paintsOwnGround(page, selector), `${symbol} cell has no ground`).toBe(true);
+    const painted = await paintedText(page, selector);
+    expect(painted.contrast, `${symbol} cell at ${painted.colour} on ${painted.background}`)
+      .toBeGreaterThanOrEqual(4.5);
+    expectGroundMatchesScheme(painted, scheme, `${symbol} cell`);
+  }
+  for (const marker of ["57–71", "89–103"]) {
+    const painted = await paintedText(page, `${table} [data-periodic-marker="${marker}"]`);
+    expect(painted.contrast, `marker ${marker} at ${painted.colour}`).toBeGreaterThanOrEqual(4.5);
+  }
+  await page.keyboard.press("Escape");
 }

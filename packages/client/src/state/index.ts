@@ -19,5 +19,9 @@ export * from "./types";
 export * from "./viewport";
 export * from "./store";
 export { EMPTY_SELECTION, pruneSelection } from "./slices/selection";
-export { DEFAULT_TOOL_OPTIONS } from "./slices/tool";
+export {
+  DEFAULT_TOOL_OPTIONS,
+  RECENT_ELEMENT_LIMIT,
+  withRecentElement,
+} from "./slices/tool";
 export { INITIAL_UI_STATE } from "./slices/ui";

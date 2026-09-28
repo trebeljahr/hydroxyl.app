@@ -34,8 +34,10 @@
  *
  *     He Be Ne Cr Fe Kr Sr Pd Cd Ce Pr Nd Ir Hg Fr Sg Og
  *
- * Every one of them remains reachable through the element popover on the
- * rail, the properties panel, and the palette's `element.*` commands.
+ * Every one of them remains reachable through the element popover's "Show
+ * all elements" table, the properties panel, and the palette's `element.*`
+ * commands, which cover all 118 and match on the element's name — "vanadium"
+ * finds `element.V` although `v` is the select tool.
  *
  * WHAT IS NOT A CASUALTY, and why. A symbol whose first letter is NOT an
  * element (Al, Ar, Ag, Li, Mg, Mn, Ti, Te…) is safe: that letter applies

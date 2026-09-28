@@ -17,6 +17,9 @@
  */
 
 import { castDraft } from "immer";
+import { COMMON_ORGANIC_ELEMENTS, isKnownElement } from "@starter/chem-core";
+import type { ElementSymbol } from "@starter/chem-core";
+
 import type { EditorSliceCreator, ToolOptions, ToolSlice } from "../types";
 
 /**
@@ -36,6 +39,33 @@ export const DEFAULT_TOOL_OPTIONS: ToolOptions = Object.freeze({
   chargeDelta: 1,
 });
 
+/** One row of the quick picker's four-column grid. */
+export const RECENT_ELEMENT_LIMIT = 4;
+
+/**
+ * The recent list after `symbol` is chosen: moved to the front, deduplicated,
+ * capped at one row.
+ *
+ * AN ELEMENT THE QUICK PICKER ALREADY SHOWS IS LEFT OUT. The list exists to
+ * put an element from the full table one click away; pinning carbon beside
+ * carbon would spend a slot on nothing and push out the platinum it is for.
+ * An unknown symbol is left out too — the list is restored from storage, and a
+ * stale or hand-edited entry must not become a button that places nonsense.
+ */
+export function withRecentElement(
+  recent: readonly ElementSymbol[],
+  symbol: ElementSymbol,
+): readonly ElementSymbol[] {
+  if (COMMON_ORGANIC_ELEMENTS.includes(symbol) || !isKnownElement(symbol)) {
+    return recent;
+  }
+  if (recent[0] === symbol) return recent;
+  return [symbol, ...recent.filter((entry) => entry !== symbol)].slice(
+    0,
+    RECENT_ELEMENT_LIMIT,
+  );
+}
+
 export interface ToolSliceOptions {
   readonly tool?: ToolSlice["tool"] | undefined;
   readonly toolOptions?: ToolOptions | undefined;
@@ -47,6 +77,7 @@ export function createToolSlice(
   return (set, get) => ({
     tool: options.tool ?? "select",
     toolOptions: options.toolOptions ?? DEFAULT_TOOL_OPTIONS,
+    recentElements: [],
 
     setTool(id) {
       if (get().tool === id) return;
@@ -87,6 +118,32 @@ export function createToolSlice(
       next[key] = value;
       set((draft) => {
         draft.toolOptions = castDraft(next as ToolOptions);
+      });
+    },
+
+    noteRecentElement(symbol) {
+      const current = get().recentElements;
+      const next = withRecentElement(current, symbol);
+      if (next === current) return;
+      set((draft) => {
+        draft.recentElements = castDraft(next);
+      });
+    },
+
+    setRecentElements(symbols) {
+      // Folded through the same rule rather than assigned, oldest first so
+      // the newest ends up in front: a restored list obeys the cap, the
+      // dedupe and the organic-set exclusion exactly as a live one does.
+      let next: readonly ElementSymbol[] = [];
+      for (let i = symbols.length - 1; i >= 0; i--) {
+        next = withRecentElement(next, symbols[i]!);
+      }
+      const current = get().recentElements;
+      if (next.length === current.length && next.every((s, i) => s === current[i])) {
+        return;
+      }
+      set((draft) => {
+        draft.recentElements = castDraft(next);
       });
     },
   });
