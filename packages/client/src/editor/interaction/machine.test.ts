@@ -263,6 +263,20 @@ describe("hover", () => {
     });
   });
 
+  it("tracks the rotate handle in the state and leaves the store's hover ids alone", () => {
+    const driver = new Driver(benzene());
+    driver.send({ kind: "hover", sample: sample({ x: 5, y: 5 }) });
+    const writes = driver.count("setHover");
+
+    driver.send({ kind: "hover", sample: sample({ x: 0, y: 2 }, { kind: "handle" }) });
+    expect(driver.state).toEqual({ kind: "hovering", atomId: null, bondId: null, handle: true });
+    // Nothing for the store: no atom or bond is hovered, before or after.
+    expect(driver.count("setHover")).toBe(writes);
+
+    driver.send({ kind: "hover", sample: sample({ x: 5, y: 5 }) });
+    expect(driver.state).toEqual({ kind: "hovering", atomId: null, bondId: null, handle: false });
+  });
+
   it("is suppressed outright while a gesture is in flight", () => {
     const driver = new Driver(benzene());
     dragTo(driver, sample(pos(benzene(), "a1"), atomHit("a1")), { x: 0, y: -3 }, 4);
@@ -683,6 +697,36 @@ describe("rotating a selection", () => {
     dragTo(driver, sample({ x: 2, y: 0 }, { kind: "handle" }), { x: 0, y: 2 }, 30);
     driver.send({ kind: "cancel" });
     expect(driver.molecule).toBe(mol);
+  });
+
+  it("does not rotate a single atom, which is its own centroid", () => {
+    // Manual notes 3 asked what the dot above a lone selected atom was for.
+    // Nothing: the rotation it offered was the identity. The overlay no longer
+    // draws it, and the machine agrees, so a stale handle hit falls through
+    // and alt-drag — the other road into a rotation — moves the atom instead
+    // of opening a "Rotate selection" entry that changes nothing.
+    const mol = benzene();
+    const handle = new Driver(mol);
+    handle.selection = { atomIds: ["a1"], bondIds: [] };
+    dragTo(handle, sample({ x: 0, y: 1 }, { kind: "handle" }), { x: 1, y: 1 }, 3);
+    expect(handle.state.kind).not.toBe("rotating");
+    expect(handle.count("beginTransaction")).toBe(0);
+
+    const alt = new Driver(mol);
+    alt.selection = { atomIds: ["a1"], bondIds: [] };
+    const from = sample(pos(mol, "a1"), atomHit("a1"), { alt: true });
+    dragTo(alt, from, { x: 0.5, y: -1.5 }, 3);
+    alt.send({ kind: "dragEnd", sample: sample({ x: 0.5, y: -1.5 }) });
+    expect(alt.entries).toEqual(["Move selection"]);
+  });
+
+  it("rotates a selected bond about its midpoint", () => {
+    // Two atoms is the smallest selection with something to turn.
+    const mol = benzene();
+    const driver = new Driver(mol);
+    driver.selection = { atomIds: [], bondIds: ["b7"] };
+    dragTo(driver, sample({ x: 0, y: 2 }, { kind: "handle" }), { x: -2, y: 0 }, 6);
+    expect(driver.state.kind).toBe("rotating");
   });
 
   it("falls through to the other gestures when nothing is selected", () => {

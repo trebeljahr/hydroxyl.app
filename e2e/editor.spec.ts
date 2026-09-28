@@ -1004,9 +1004,10 @@ test("dragging a selected atom moves it instead of drawing from it", async ({
 
   await page.mouse.click(atom.centre.x, atom.centre.y);
   await expect(page.locator('[data-overlay="selected-atom"]')).toHaveCount(1);
-  // Selecting something offers the rotate handle, which is how a selection is
-  // turned without a modifier key.
-  await expect(page.locator('[data-overlay="rotate-handle"]')).toHaveCount(1);
+  // ONE atom gets no rotate handle: it is its own centroid, so there is
+  // nothing to turn — and the dot that used to sit above it was the "what is
+  // this for" of manual notes 3. The handle's own spec is below.
+  await expect(page.locator('[data-overlay="rotate-handle"]')).toHaveCount(0);
 
   await dragFromTo(page, atom.centre, {
     x: atom.centre.x + bond * 0.5,
@@ -1022,6 +1023,106 @@ test("dragging a selected atom moves it instead of drawing from it", async ({
   expect(moved).toBeDefined();
   if (moved === undefined) return;
   expect(distance(moved.centre, atom.centre)).toBeGreaterThan(bond * 0.3);
+
+  expect(errors).toEqual([]);
+});
+
+/**
+ * The rotate handle, as manual notes 3 met it: "a blue bubble/dot … confusing
+ * as to what it is doing there, and how to interact with it".
+ *
+ * A browser spec because two of the three answers are things jsdom cannot
+ * show: the cursor the page actually computes, and a drag that turns real
+ * pixels about the centre the preview marked.
+ */
+test("the rotate handle says what it does, then turns the selection about its centre", async ({
+  page,
+}) => {
+  const errors = collectPageErrors(page);
+  await openEditor(page);
+
+  const before = await readGeometry(page);
+  const centre = ringCentre(before.atoms);
+  const handle = page.locator('[data-overlay="rotate-handle"]');
+  const hint = page.locator('[data-canvas-hint="rotate"]');
+  const preview = page.locator('[data-overlay="rotate-preview"]');
+  const cursor = (): Promise<string> =>
+    page.locator(CANVAS).evaluate((el) => getComputedStyle(el).cursor);
+
+  // One atom: nothing to turn, so nothing offered.
+  const first = nth(before.atoms, 0, "atoms");
+  await page.mouse.click(first.centre.x, first.centre.y);
+  await expect(page.locator('[data-overlay="selected-atom"]')).toHaveCount(1);
+  await expect(handle).toHaveCount(0);
+
+  // The whole ring: a handle wearing a rotate arrow, and no words until the
+  // pointer asks for them.
+  await page.mouse.click(centre.x, centre.y);
+  await page.keyboard.press("ControlOrMeta+a");
+  await expect(page.locator('[data-overlay="selected-atom"]')).toHaveCount(RING_CARBONS);
+  await expect(handle).toHaveCount(1);
+  await expect(handle.locator('[data-overlay-glyph="rotate"]')).toHaveCount(1);
+  await expect(hint).toHaveCount(0);
+  await expect(preview).toHaveCount(0);
+
+  const box = await boxOf(page, '[data-overlay="rotate-handle"]');
+  const grab = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const canvasBox = await boxOf(page, CANVAS);
+  // On the canvas, whole. A fresh document is fitted tight, which can put
+  // "straight up" past the top edge — where the handle used to sit regardless,
+  // out of sight and out of reach.
+  expect(containsPoint(canvasBox, { x: box.x, y: box.y })).toBe(true);
+  expect(containsPoint(canvasBox, { x: box.x + box.width, y: box.y + box.height })).toBe(
+    true,
+  );
+  // Screen-sized: the same few px whatever zoom the fit chose.
+  expect(box.width).toBeLessThan(24);
+
+  await page.mouse.move(grab.x, grab.y);
+  await expect(hint).toBeVisible();
+  await expect(hint).toContainText("Drag to rotate");
+  await expect(hint).toContainText("Shift snaps to 15°");
+  await expect(preview).toHaveCount(1);
+  expect(await cursor()).toBe("grab");
+  // The words sit beside the handle, not over it, and inside the canvas.
+  const hintBox = await boxOf(page, '[data-canvas-hint="rotate"]');
+  const overlaps =
+    hintBox.x < box.x + box.width &&
+    box.x < hintBox.x + hintBox.width &&
+    hintBox.y < box.y + box.height &&
+    box.y < hintBox.y + hintBox.height;
+  expect(overlaps).toBe(false);
+  expect(containsPoint(canvasBox, { x: hintBox.x, y: hintBox.y })).toBe(true);
+  expect(
+    containsPoint(canvasBox, { x: hintBox.x + hintBox.width, y: hintBox.y + hintBox.height }),
+  ).toBe(true);
+
+  // A quarter turn clockwise on screen, about the centre: y-down, so the
+  // offset (dx, dy) goes to (-dy, dx).
+  const target = { x: centre.x - (grab.y - centre.y), y: centre.y + (grab.x - centre.x) };
+  await page.mouse.down();
+  await page.mouse.move(target.x, target.y, { steps: 16 });
+  expect(await cursor()).toBe("grabbing");
+  await expect(hint).toHaveCount(0);
+  // The handle came with the pointer rather than staying where it was.
+  const riding = await boxOf(page, '[data-overlay="rotate-handle"]');
+  expect(
+    distance({ x: riding.x + riding.width / 2, y: riding.y + riding.height / 2 }, target),
+  ).toBeLessThan(3);
+  await page.mouse.up();
+
+  // Every atom turned a quarter about the centre: y-down, so clockwise takes
+  // an offset (dx, dy) to (-dy, dx).
+  const after = await readGeometry(page);
+  expect(after.atoms).toHaveLength(RING_CARBONS);
+  for (const atom of before.atoms) {
+    const moved = after.atoms.find((candidate) => candidate.id === atom.id);
+    expect(moved).toBeDefined();
+    if (moved === undefined) continue;
+    const dx = atom.centre.x - centre.x;
+    const dy = atom.centre.y - centre.y;
+    expect(distance(moved.centre, { x: centre.x - dy, y: centre.y + dx })).toBeLessThan(3);
+  }
 
   expect(errors).toEqual([]);
 });

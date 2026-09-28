@@ -18,8 +18,8 @@
  *   drag from an unselected bond      move that bond's two atoms
  *   drag from empty space             marquee (shift extends)
  *   drag the rotate handle, or        rotate the selection about its centroid
- *     alt-drag inside the selection
- *   click                             select / extend / clear
+ *     alt-drag inside the selection     (two atoms or more)
+ *   click                            select / extend / clear
  *
  * The split between "drag from an atom draws" and "drag a selection moves" is
  * not arbitrary: it is what the two acceptance criteria say in their own
@@ -586,12 +586,17 @@ function onHover(state: InteractionState, sample: PointerSample): InteractionRes
 
   const atomId = sample.hit.kind === "atom" ? sample.hit.atomId : null;
   const bondId = sample.hit.kind === "bond" ? sample.hit.bondId : null;
-  if (state.kind === "hovering" && state.atomId === atomId && state.bondId === bondId) {
-    return result(state);
-  }
-  return result({ kind: "hovering", atomId, bondId }, [
-    { kind: "setHover", atomId, bondId },
-  ]);
+  const handle = sample.hit.kind === "handle";
+  const idsChanged =
+    state.kind !== "hovering" || state.atomId !== atomId || state.bondId !== bondId;
+  if (!idsChanged && state.handle === handle) return result(state);
+  // Onto or off the handle alone writes nothing: the store's hover ids did
+  // not change, and the handle flag is canvas-local — it reaches the overlay
+  // through the state, not through the store.
+  return result(
+    { kind: "hovering", atomId, bondId, handle },
+    idsChanged ? [{ kind: "setHover", atomId, bondId }] : NO_COMMANDS,
+  );
 }
 
 function onHoverEnd(state: InteractionState): InteractionResult {
@@ -649,14 +654,17 @@ function onDragStart(
   const hit = origin.hit;
 
   // The rotate handle, and the alt-drag shortcut for it, both need something
-  // to rotate. With nothing selected they fall through to the other rules.
+  // to rotate — and ONE atom is not something: it is its own centroid, so a
+  // rotation about it is the identity. With fewer than two they fall through
+  // to the other rules, which makes alt-drag on a lone selected atom a move,
+  // and matches `rotateHandleGeometry`, which offers no handle there either.
   const rotatable = movingAtomIds(mol, ctx.selection);
   const wantsRotate =
     hit.kind === "handle" ||
     (sample.modifiers.alt &&
       hit.kind === "atom" &&
       selectionHasAtom(ctx.selection, hit.atomId));
-  if (wantsRotate && rotatable.length > 0) {
+  if (wantsRotate && rotatable.length > 1) {
     const pivot = atomsCentroid(mol, rotatable);
     return result(
       {

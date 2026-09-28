@@ -45,5 +45,6 @@ export * from "./handles";
 export * from "./fixture";
 export * from "./SceneLayer";
 export * from "./OverlayLayer";
+export * from "./RotateHandleHint";
 export * from "./useCanvasGestures";
 export * from "./EditorCanvas";

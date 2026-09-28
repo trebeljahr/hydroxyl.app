@@ -200,6 +200,12 @@ export type InteractionState =
       readonly kind: "hovering";
       readonly atomId: AtomId | null;
       readonly bondId: BondId | null;
+      /**
+       * The pointer is on the rotate handle. Not a store field like the two
+       * ids above — nothing outside the canvas cares — but the overlay does:
+       * it is what turns on the handle's rotation preview and grab cursor.
+       */
+      readonly handle: boolean;
     }
   /** Button down, threshold not yet crossed. Nothing is committed here. */
   | { readonly kind: "pendingDrag"; readonly origin: PointerSample }

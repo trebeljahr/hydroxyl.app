@@ -207,7 +207,6 @@ describe("drag performance", () => {
             hoveredAtomId={null}
             hoveredBondId={null}
             issues={valenceIssues(document.molecule)}
-            handleAtomIds={[dragged]}
           />
         </svg>,
       );

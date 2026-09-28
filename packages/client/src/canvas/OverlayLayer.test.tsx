@@ -32,6 +32,9 @@ import type { RenderScene } from "@starter/chem-render";
 import { EMPTY_SELECTION } from "@/state";
 import type { Selection } from "@/state";
 
+import { NO_INTERACTION_OVERLAY } from "@/editor/interaction";
+
+import { ROTATE_HANDLE_RADIUS_PX, rotateHandleGeometry } from "./handles";
 import { createSceneIndex } from "./metrics";
 import { OverlayLayer } from "./OverlayLayer";
 import type { OverlayLayerProps } from "./OverlayLayer";
@@ -44,6 +47,17 @@ const SCENE: RenderScene = buildScene(
   representation("skeletal"),
 );
 const INDEX = createSceneIndex(SCENE, MOL);
+
+const RING_HANDLE = rotateHandleGeometry(INDEX, ["a1", "a2", "a3", "a4", "a5", "a6"])!;
+
+/** A `translate(x y) scale(s)` frame, as the rotate marks are drawn in. */
+function handleFrame(element: Element): { x: number; y: number; scale: number } {
+  const match = /translate\(([-\d.e]+) ([-\d.e]+)\) scale\(([-\d.e]+)\)/.exec(
+    element.getAttribute("transform") ?? "",
+  );
+  if (match === null) throw new Error("rotate mark has no screen frame");
+  return { x: Number(match[1]), y: Number(match[2]), scale: Number(match[3]) };
+}
 
 const SELECTION: Selection = {
   atomIds: ["a1", "a4"],
@@ -256,6 +270,8 @@ describe("OverlayLayer — gesture marks", () => {
         target: null,
         marquee: null,
         pivot: null,
+        angle: 0,
+        handleHovered: false,
       },
     });
     const ghost = container.querySelector('[data-overlay="ghost-bond"]')!;
@@ -274,6 +290,8 @@ describe("OverlayLayer — gesture marks", () => {
         target: { atomId: "a4", refused: false },
         marquee: null,
         pivot: null,
+        angle: 0,
+        handleHovered: false,
       },
     });
     expect(
@@ -286,6 +304,8 @@ describe("OverlayLayer — gesture marks", () => {
         target: { atomId: "a2", refused: true },
         marquee: null,
         pivot: null,
+        angle: 0,
+        handleHovered: false,
       },
     });
     const mark = refused.querySelector('[data-overlay="target-refused"]')!;
@@ -305,6 +325,8 @@ describe("OverlayLayer — gesture marks", () => {
         target: null,
         marquee: { a: { x: 1, y: 1 }, b: { x: -1, y: -1 } },
         pivot: null,
+        angle: 0,
+        handleHovered: false,
       },
     });
     const rect = upLeft.querySelector('[data-overlay="marquee"]')!;
@@ -374,17 +396,74 @@ describe("OverlayLayer — gesture marks", () => {
     expect(badges).toHaveLength(2);
   });
 
-  it("places the rotate handle above the atoms it turns, and only when there are some", () => {
-    const none = renderGesture({ handleAtomIds: [] });
+  it("draws the rotate handle it is given, and none when it is given none", () => {
+    const none = renderGesture({ rotateHandle: undefined });
     expect(none.querySelector('[data-overlay="rotate-handle"]')).toBeNull();
 
-    const some = renderGesture({ handleAtomIds: ["a1", "a2", "a3", "a4", "a5", "a6"] });
+    const some = renderGesture({ rotateHandle: RING_HANDLE });
     const handle = some.querySelector('[data-overlay="rotate-handle"]')!;
     expect(handle).not.toBeNull();
     // Benzene's centroid is the origin, which is scene (0, 0); the handle sits
     // above it, and scene px are y-down so "above" is negative.
-    expect(Number(handle.getAttribute("cx"))).toBeCloseTo(0, 6);
-    expect(Number(handle.getAttribute("cy"))).toBeLessThan(0);
+    const at = handleFrame(handle);
+    expect(at.x).toBeCloseTo(0, 6);
+    expect(at.y).toBeCloseTo(-RING_HANDLE.orbit, 6);
+  });
+
+  it("draws a rotate arrow inside the handle, so the dot says what it does", () => {
+    const container = renderGesture({ rotateHandle: RING_HANDLE });
+    const handle = container.querySelector('[data-overlay="rotate-handle"]')!;
+    const glyph = handle.querySelector('[data-overlay-glyph="rotate"]');
+    expect(glyph).not.toBeNull();
+    // An ARC — the circular arrow — not a second circle or a line.
+    expect(glyph!.getAttribute("d")).toMatch(/ A /);
+  });
+
+  it("keeps the handle one size on screen whatever the zoom", () => {
+    // At the ~500% a fitted benzene opens at, a scene-sized handle was a 77px
+    // disc. The handle is UI: its frame is scaled by 1/zoom so its ink is
+    // ROTATE_HANDLE_RADIUS_PX screen px at every zoom.
+    const zoomed = renderGesture({ rotateHandle: RING_HANDLE, zoom: 4 });
+    const at = handleFrame(zoomed.querySelector('[data-overlay="rotate-handle"]')!);
+    expect(at.scale).toBeCloseTo(0.25, 9);
+    const disc = zoomed.querySelector('[data-overlay="rotate-handle"] circle')!;
+    expect(Number(disc.getAttribute("r"))).toBe(ROTATE_HANDLE_RADIUS_PX);
+  });
+
+  it("previews the rotation only while the pointer rests on the handle", () => {
+    const resting = renderGesture({ rotateHandle: RING_HANDLE });
+    expect(resting.querySelector('[data-overlay="rotate-preview"]')).toBeNull();
+
+    const hovered = renderGesture({
+      rotateHandle: RING_HANDLE,
+      interaction: { ...NO_INTERACTION_OVERLAY, handleHovered: true },
+    });
+    const preview = hovered.querySelector('[data-overlay="rotate-preview"]');
+    expect(preview).not.toBeNull();
+    // Centred on the pivot the machine turns about — benzene's centroid, the
+    // origin — with the pivot dot drawn there.
+    const frame = handleFrame(preview!);
+    expect(frame.x).toBeCloseTo(0, 6);
+    expect(frame.y).toBeCloseTo(0, 6);
+    expect(preview!.querySelector("circle")).not.toBeNull();
+    // And the orbit arc passes through the handle: its radius is the
+    // pivot-to-handle distance.
+    const arc = preview!.querySelector("path")!.getAttribute("d")!;
+    const radius = Number(/ A ([\d.]+) /.exec(arc)![1]);
+    expect(radius).toBeCloseTo(RING_HANDLE.orbit, 6);
+  });
+
+  it("carries the handle round its orbit while a rotation is in flight", () => {
+    // A quarter turn anticlockwise in the model takes the handle from twelve
+    // o'clock to nine o'clock on screen — y-down flips the sign of the angle,
+    // not which way the drawing appears to turn.
+    const container = renderGesture({
+      rotateHandle: RING_HANDLE,
+      interaction: { ...NO_INTERACTION_OVERLAY, pivot: { x: 0, y: 0 }, angle: Math.PI / 2 },
+    });
+    const at = handleFrame(container.querySelector('[data-overlay="rotate-handle"]')!);
+    expect(at.x).toBeCloseTo(-RING_HANDLE.orbit, 6);
+    expect(at.y).toBeCloseTo(0, 6);
   });
 
   it("wears no model-entity attribute on any gesture mark", () => {
@@ -394,9 +473,11 @@ describe("OverlayLayer — gesture marks", () => {
         target: { atomId: "a4", refused: false },
         marquee: { a: { x: -1, y: -1 }, b: { x: 1, y: 1 } },
         pivot: { x: 0, y: 0 },
+        angle: 0,
+        handleHovered: false,
       },
       issues: [{ atomId: "a1", severity: "error", message: "x" }],
-      handleAtomIds: ["a1", "a2"],
+      rotateHandle: rotateHandleGeometry(INDEX, ["a1", "a2"]),
     });
     expect(container.querySelectorAll("[data-atom-id]")).toHaveLength(0);
     expect(container.querySelectorAll("[data-bond-id]")).toHaveLength(0);

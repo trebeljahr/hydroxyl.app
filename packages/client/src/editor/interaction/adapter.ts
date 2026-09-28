@@ -48,9 +48,9 @@ import type { AtomId, Molecule, Vec2 } from "@starter/chem-core";
 
 import { canvasPointToModel, pickAt } from "@/canvas/pick";
 import type { PickContext } from "@/canvas/pick";
-import { rotateHandlePoint, ROTATE_HANDLE_GRAB_PX } from "@/canvas/handles";
+import { rotateHandleGeometry, ROTATE_HANDLE_GRAB_PX } from "@/canvas/handles";
 import type { CanvasGestureHandlers, CanvasPointerModifiers } from "@/canvas/useCanvasGestures";
-import { editorStore, toModel } from "@/state";
+import { editorStore, toScreen } from "@/state";
 import type { Selection } from "@/state";
 
 import type {
@@ -82,6 +82,15 @@ export interface InteractionOverlayState {
   readonly marquee: { readonly a: Vec2; readonly b: Vec2 } | null;
   /** The centroid a rotation is turning about. */
   readonly pivot: Vec2 | null;
+  /**
+   * How far the rotation in flight has turned, radians, anticlockwise in
+   * MODEL space; 0 when nothing is turning. The handle rides its orbit by this
+   * much, so it stays with the pointer that is dragging it instead of sitting
+   * still above a structure that spins underneath it.
+   */
+  readonly angle: number;
+  /** The pointer is resting on the rotate handle: preview the rotation. */
+  readonly handleHovered: boolean;
 }
 
 export const NO_INTERACTION_OVERLAY: InteractionOverlayState = Object.freeze({
@@ -89,6 +98,8 @@ export const NO_INTERACTION_OVERLAY: InteractionOverlayState = Object.freeze({
   target: null,
   marquee: null,
   pivot: null,
+  angle: 0,
+  handleHovered: false,
 });
 
 export interface CanvasInteraction {
@@ -120,24 +131,28 @@ function projectOverlay(state: InteractionState): InteractionOverlayState {
         state.target.kind === "ring-closure"
           ? { atomId: state.target.atomId, refused: state.target.refused }
           : null;
-      return { ghost, target, marquee: null, pivot: null };
+      return { ...NO_INTERACTION_OVERLAY, ghost, target };
     }
     case "movingSelection":
-      return {
-        ghost: null,
-        target: state.merge,
-        marquee: null,
-        pivot: null,
-      };
+      return { ...NO_INTERACTION_OVERLAY, target: state.merge };
     case "marquee":
       return {
-        ghost: null,
-        target: null,
+        ...NO_INTERACTION_OVERLAY,
         marquee: { a: state.origin, b: state.point },
-        pivot: null,
       };
     case "rotating":
-      return { ghost: null, target: null, marquee: null, pivot: state.pivot };
+      return { ...NO_INTERACTION_OVERLAY, pivot: state.pivot, angle: state.angle };
+    // Held through the press too, until the drag threshold is crossed: the
+    // pointer has not left the handle, and dropping the preview and the grab
+    // cursor for those few pixels reads as the handle refusing the press.
+    case "hovering":
+    case "pendingDrag": {
+      const onHandle =
+        state.kind === "hovering" ? state.handle : state.origin.hit.kind === "handle";
+      return onHandle
+        ? { ...NO_INTERACTION_OVERLAY, handleHovered: true }
+        : NO_INTERACTION_OVERLAY;
+    }
     default:
       return NO_INTERACTION_OVERLAY;
   }
@@ -165,7 +180,14 @@ function overlaysEqual(
     a.marquee === null || b.marquee === null
       ? a.marquee === b.marquee
       : sameVec(a.marquee.a, b.marquee.a) && sameVec(a.marquee.b, b.marquee.b);
-  return ghostSame && targetSame && marqueeSame && sameVec(a.pivot, b.pivot);
+  return (
+    ghostSame &&
+    targetSame &&
+    marqueeSame &&
+    sameVec(a.pivot, b.pivot) &&
+    a.angle === b.angle &&
+    a.handleHovered === b.handleHovered
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -350,7 +372,8 @@ function currentContext(): InteractionContext {
  * The handle has to win: it is drawn beside the selection and will routinely
  * overlap a bond, and an affordance you cannot grab because the thing behind
  * it answers first is worse than no affordance. It is measured against the
- * LIVE index, so it stays under the pointer that is dragging it.
+ * LIVE index and viewport — the same `rotateHandleGeometry` call the overlay
+ * draws from — and in SCREEN px, because the handle is a screen-sized control.
  *
  * The chemistry pick runs against `pickMolecule`, which is the gesture's base
  * while one is in flight and the live molecule otherwise — see `gestureBase`.
@@ -362,10 +385,10 @@ function resolveHit(
   canvasPoint: Vec2,
   movingIds: readonly AtomId[],
 ): PointerHit {
-  const handle = rotateHandlePoint(ctx.index, movingIds);
+  const handle = rotateHandleGeometry(ctx.index, movingIds, ctx.viewport);
   if (handle !== undefined) {
-    const scenePoint = toModel(ctx.viewport, canvasPoint);
-    const reach = Math.hypot(scenePoint.x - handle.x, scenePoint.y - handle.y);
+    const at = toScreen(ctx.viewport, handle.handle);
+    const reach = Math.hypot(canvasPoint.x - at.x, canvasPoint.y - at.y);
     if (reach <= ROTATE_HANDLE_GRAB_PX) return { kind: "handle" };
   }
 

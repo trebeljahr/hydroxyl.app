@@ -27,7 +27,7 @@
  * and that repeating it does not shrink the figure).
  */
 
-import { fireEvent, render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { buildMolecule } from "@starter/chem-core";
@@ -400,6 +400,95 @@ describe("EditorCanvas — hover", () => {
     });
     expect(editorStore.getState().ui.hoveredAtomId).toBeNull();
     expect(editorStore.getState().ui.hoveredBondId).toBeNull();
+  });
+});
+
+/**
+ * The rotate handle, from the user's side (manual notes 3: "a blue bubble/dot
+ * above it … confusing as to what it is doing there, and how to interact with
+ * it"). The overlay tests pin its geometry; these pin the two things that
+ * live outside the `<svg>`'s scene space and only the real component wires —
+ * the cursor and the hint text — and that a lone atom gets no dot at all.
+ */
+describe("EditorCanvas — the rotate handle", () => {
+  function handle(): Element | null {
+    return document.querySelector('[data-overlay="rotate-handle"]');
+  }
+
+  /** Where the handle is drawn, in canvas px — read off the DOM, not re-derived. */
+  function handlePoint(): Vec2 {
+    const match = /translate\(([-\d.e]+) ([-\d.e]+)\)/.exec(
+      handle()?.getAttribute("transform") ?? "",
+    );
+    if (match === null) throw new Error("no rotate handle drawn");
+    const scene = { x: Number(match[1]), y: Number(match[2]) };
+    return toScreen(editorStore.getState().viewport, scene);
+  }
+
+  function hint(): Element | null {
+    return document.querySelector('[data-canvas-hint="rotate"]');
+  }
+
+  it("draws no handle for a single selected atom", () => {
+    render(<EditorCanvas />);
+    click(atomPoint("a2"));
+    expect(selection().atomIds).toEqual(["a2"]);
+    expect(document.querySelector('[data-overlay="selected-atom"]')).not.toBeNull();
+    expect(handle()).toBeNull();
+  });
+
+  it("says what it does when the pointer rests on it, and nowhere else", () => {
+    render(<EditorCanvas />);
+    act(() => {
+      editorStore.getState().selectAll();
+    });
+    expect(handle()).not.toBeNull();
+    // At rest: a dot with an arrow in it, and no words yet.
+    expect(hint()).toBeNull();
+    expect(canvasRoot().style.cursor).not.toBe("grab");
+
+    const at = handlePoint();
+    const svg = canvasRoot();
+    fireEvent.pointerMove(svg, { pointerId: 1, buttons: 0, clientX: at.x, clientY: at.y });
+
+    expect(canvasRoot().style.cursor).toBe("grab");
+    expect(document.querySelector('[data-overlay="rotate-preview"]')).not.toBeNull();
+    expect(hint()?.textContent).toContain("Drag to rotate");
+    // The snap step is read off the machine's constant, not typed twice.
+    expect(hint()?.textContent).toContain("15°");
+    // Hovering the handle is not hovering an atom: the store stays clean.
+    expect(editorStore.getState().ui.hoveredAtomId).toBeNull();
+
+    const away = canvasPointFor({ x: 0, y: 0 });
+    fireEvent.pointerMove(svg, { pointerId: 1, buttons: 0, clientX: away.x, clientY: away.y });
+    expect(hint()).toBeNull();
+    expect(document.querySelector('[data-overlay="rotate-preview"]')).toBeNull();
+    expect(canvasRoot().style.cursor).not.toBe("grab");
+  });
+
+  it("holds the grab through the press and switches to grabbing while it turns", () => {
+    render(<EditorCanvas />);
+    act(() => {
+      editorStore.getState().selectAll();
+    });
+    const at = handlePoint();
+    const svg = canvasRoot();
+    fireEvent.pointerMove(svg, { pointerId: 1, buttons: 0, clientX: at.x, clientY: at.y });
+    fireEvent.pointerDown(svg, { button: 0, pointerId: 1, clientX: at.x, clientY: at.y });
+    expect(canvasRoot().style.cursor).toBe("grab");
+
+    fireEvent.pointerMove(svg, {
+      pointerId: 1,
+      buttons: 1,
+      clientX: at.x + 60,
+      clientY: at.y + 20,
+    });
+    expect(canvasRoot().style.cursor).toBe("grabbing");
+    // The words have done their job once the drag is under way.
+    expect(hint()).toBeNull();
+
+    fireEvent.pointerUp(svg, { button: 0, pointerId: 1, clientX: at.x + 60, clientY: at.y + 20 });
+    expect(editorStore.getState().history.past.at(-1)?.label).toBe("Rotate selection");
   });
 });
 

@@ -58,6 +58,8 @@ import { createSceneIndex, fitBounds } from "./metrics";
 import { type PickContext } from "./pick";
 import { SceneLayer } from "./SceneLayer";
 import { OverlayLayer } from "./OverlayLayer";
+import { rotateHandleGeometry } from "./handles";
+import { RotateHandleHint } from "./RotateHandleHint";
 import {
   useCanvasGestures,
   type CanvasGestureHandlers,
@@ -245,6 +247,16 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
     () => movingAtomIds(doc.molecule, selection),
     [doc.molecule, selection],
   );
+  // Computed ONCE here and handed to the overlay, the cursor and the hint;
+  // the adapter's hit test makes the same call against the same index and
+  // viewport. The viewport is an input because the handle is screen-sized and
+  // moves to whichever side of the selection is on screen.
+  const rotateHandle = useMemo(
+    () => rotateHandleGeometry(index, handleAtomIds, viewport),
+    [index, handleAtomIds, viewport],
+  );
+  const onRotateHandle = overlay.handleHovered && rotateHandle !== undefined;
+  const rotating = overlay.pivot !== null;
 
   const hovering = hoveredAtomId !== null || hoveredBondId !== null;
   // The TOOL owns the resting cursor, and the transient states win over it: a
@@ -252,12 +264,19 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
   // the pointer is `pointer` unless the tool has said otherwise. The tool
   // cursor is what tells a user holding the eraser that the next click
   // deletes, before they find out by deleting.
+  //
+  // The rotate handle beats the tool as well: `grab` over it and `grabbing`
+  // while it turns, whatever is held, because every tool offers the handle
+  // and every tool rotates with it.
   const toolCursor = toolDef(tool).cursor;
-  const cursor = isPanning
-    ? "grabbing"
-    : hovering && toolCursor === "default"
-      ? "pointer"
-      : toolCursor;
+  const cursor =
+    isPanning || rotating
+      ? "grabbing"
+      : onRotateHandle
+        ? "grab"
+        : hovering && toolCursor === "default"
+          ? "pointer"
+          : toolCursor;
 
   // THE CANVAS PAINTS ITS OWN GROUND, and it is the render style's, not a
   // Tailwind class. `SCREEN_STYLE` draws near-black bonds on white; a dark UI
@@ -325,11 +344,16 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
             hoveredBondId={hoveredBondId}
             interaction={overlay}
             issues={issues}
-            handleAtomIds={handleAtomIds}
+            rotateHandle={rotateHandle}
+            zoom={viewport.zoom}
             focusedAtomId={focusedAtomId}
           />
         </g>
       </svg>
+
+      {onRotateHandle && !rotating ? (
+        <RotateHandleHint geometry={rotateHandle} viewport={viewport} />
+      ) : null}
 
       {/*
         WHAT A SCREEN READER HEARS when the arrow keys walk the structure.

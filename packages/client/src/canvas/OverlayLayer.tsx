@@ -31,10 +31,8 @@ import type { ScenePoint } from "@starter/chem-render";
 import type { Selection } from "@/state";
 import type { InteractionOverlayState } from "@/editor/interaction";
 
-import {
-  rotateHandlePoint,
-  ROTATE_HANDLE_RADIUS_PX,
-} from "./handles";
+import { ROTATE_HANDLE_RADIUS_PX } from "./handles";
+import type { RotateHandleGeometry } from "./handles";
 import type { SceneIndex } from "./metrics";
 
 export interface OverlayLayerProps {
@@ -46,8 +44,18 @@ export interface OverlayLayerProps {
   readonly interaction?: InteractionOverlayState | undefined;
   /** Atoms to badge. Never a refusal — see the note on `valenceBadge`. */
   readonly issues?: readonly ValenceIssue[] | undefined;
-  /** Atoms the rotate handle should be placed around; empty for none. */
-  readonly handleAtomIds?: readonly AtomId[] | undefined;
+  /**
+   * The rotate handle, from `rotateHandleGeometry` — computed by the caller
+   * because the adapter's hit test needs the very same value, and the two
+   * computing it apart is how a handle ends up drawn in one place and
+   * grabbable in another. `undefined` draws none.
+   */
+  readonly rotateHandle?: RotateHandleGeometry | undefined;
+  /**
+   * The view's zoom. Only the rotate handle's marks read it: they are UI
+   * sized in screen px, where everything else here is sized with the drawing.
+   */
+  readonly zoom?: number | undefined;
   /**
    * The atom the canvas's roving keyboard focus is on.
    *
@@ -143,14 +151,14 @@ export function OverlayLayer({
   hoveredBondId,
   interaction,
   issues,
-  handleAtomIds,
+  rotateHandle: handle,
+  zoom: zoomProp,
   focusedAtomId,
 }: OverlayLayerProps): ReactElement {
   const style = index.scene.style;
-  const handle =
-    handleAtomIds === undefined || handleAtomIds.length === 0
-      ? undefined
-      : rotateHandlePoint(index, handleAtomIds);
+  const zoom =
+    zoomProp !== undefined && Number.isFinite(zoomProp) && zoomProp > 0 ? zoomProp : 1;
+  const showHandle = handle !== undefined && interaction?.marquee == null;
   return (
     // Pointer-events off, as on the scene layer: the root <svg> is the only
     // element that handles pointers. A halo that ate its own clicks would make
@@ -176,9 +184,10 @@ export function OverlayLayer({
       */}
       {focusedAtomId == null ? null : focusRing(index, focusedAtomId)}
       {(issues ?? []).map((issue, at) => valenceBadge(index, issue, at))}
-      {handle === undefined || interaction?.marquee != null
-        ? null
-        : rotateHandle(handle)}
+      {showHandle && interaction?.handleHovered === true
+        ? rotatePreview(handle, zoom)
+        : null}
+      {showHandle ? rotateHandle(handle, interaction?.angle ?? 0, zoom) : null}
       {interaction?.target == null
         ? null
         : targetRing(index, interaction.target.atomId, interaction.target.refused)}
@@ -188,7 +197,7 @@ export function OverlayLayer({
       {interaction?.marquee == null
         ? null
         : marqueeRect(style, interaction.marquee.a, interaction.marquee.b)}
-      {interaction?.pivot == null ? null : pivotMark(style, interaction.pivot)}
+      {interaction?.pivot == null ? null : pivotMark(style, interaction.pivot, zoom)}
     </g>
   );
 }
@@ -299,27 +308,168 @@ function marqueeRect(
   );
 }
 
-/** The grab handle, which is also the pivot a rotation turns about. */
-function rotateHandle(point: ScenePoint): ReactElement | null {
-  if (!isFinitePoint(point)) return null;
+/**
+ * `translate(p) scale(1/zoom)`: a local frame whose origin is `p` and whose
+ * unit is one SCREEN px. Everything the rotate handle draws is UI rather than
+ * drawing, so it is built in that frame and keeps its size as the view zooms
+ * — see the header of handles.ts for what the scene-sized version did.
+ */
+function screenFrame(p: ScenePoint, zoom: number): string {
+  return `translate(${p.x} ${p.y}) scale(${1 / zoom})`;
+}
+
+/**
+ * The grab handle, wearing a rotate arrow.
+ *
+ * THE GLYPH IS THE POINT. The handle used to be a bare white disc with a blue
+ * ring, and a plain dot above a selection reads as a status light or a stray
+ * atom, not as a control (manual notes 3). The circular arrow is the rotate
+ * icon every drawing program uses, so it says what dragging the dot does
+ * before anyone tries — which matters most on touch, where there is no hover
+ * to reveal the preview below.
+ *
+ * `angle` is the rotation in flight, model-anticlockwise. The handle rides its
+ * orbit by that much, so it stays with the pointer dragging it instead of
+ * sitting still while the structure spins beneath it. Scene px are y-down,
+ * which turns a model-anticlockwise turn into a DECREASING scene angle.
+ */
+function rotateHandle(
+  geometry: RotateHandleGeometry,
+  angle: number,
+  zoom: number,
+): ReactElement | null {
+  const bearing = geometry.bearing - angle;
+  const centre = {
+    x: geometry.pivot.x + geometry.orbit * Math.cos(bearing),
+    y: geometry.pivot.y + geometry.orbit * Math.sin(bearing),
+  };
+  if (!isFinitePoint(centre)) return null;
   return (
-    <circle
-      key="rotate-handle"
-      data-overlay="rotate-handle"
-      cx={point.x}
-      cy={point.y}
-      r={ROTATE_HANDLE_RADIUS_PX}
-      fill="#ffffff"
-      stroke={SELECTED_COLOR}
-      strokeWidth={2}
-    />
+    <g key="rotate-handle" data-overlay="rotate-handle" transform={screenFrame(centre, zoom)}>
+      <circle r={ROTATE_HANDLE_RADIUS_PX} fill="#ffffff" stroke={SELECTED_COLOR} strokeWidth={2} />
+      <path
+        data-overlay-glyph="rotate"
+        d={ROTATE_GLYPH.arc}
+        fill="none"
+        stroke={SELECTED_COLOR}
+        strokeWidth={1.5}
+        strokeLinecap="round"
+      />
+      <path d={ROTATE_GLYPH.head} fill={SELECTED_COLOR} />
+    </g>
   );
 }
+
+/**
+ * The rotate glyph, in the handle's own frame (origin at its centre, y-down,
+ * screen px): 280 degrees of arc, clockwise from just right of twelve
+ * o'clock, with a filled arrowhead on the trailing end. Built once — it never
+ * changes.
+ */
+const GLYPH_ARC_RADIUS_PX = ROTATE_HANDLE_RADIUS_PX * 0.5;
+const GLYPH_HEAD_PX = GLYPH_ARC_RADIUS_PX * 0.55;
+const ROTATE_GLYPH = buildRotateGlyph();
+
+function buildRotateGlyph(): { readonly arc: string; readonly head: string } {
+  const r = GLYPH_ARC_RADIUS_PX;
+  const start = (-80 * Math.PI) / 180;
+  const end = (200 * Math.PI) / 180;
+  const at = (t: number, radius: number): ScenePoint => ({
+    x: radius * Math.cos(t),
+    y: radius * Math.sin(t),
+  });
+  const a = at(start, r);
+  const b = at(end, r);
+  // Tangent of travel at the end (increasing angle), and the arrowhead's
+  // three corners: two across the stroke, one ahead of it.
+  const tx = -Math.sin(end);
+  const ty = Math.cos(end);
+  const inner = at(end, r - GLYPH_HEAD_PX);
+  const outer = at(end, r + GLYPH_HEAD_PX);
+  const tip = { x: b.x + tx * GLYPH_HEAD_PX * 1.3, y: b.y + ty * GLYPH_HEAD_PX * 1.3 };
+  const n = (v: number): string => v.toFixed(2);
+  return {
+    arc: `M ${n(a.x)} ${n(a.y)} A ${n(r)} ${n(r)} 0 1 1 ${n(b.x)} ${n(b.y)}`,
+    head:
+      `M ${n(inner.x)} ${n(inner.y)} L ${n(outer.x)} ${n(outer.y)} ` +
+      `L ${n(tip.x)} ${n(tip.y)} Z`,
+  };
+}
+
+/**
+ * What dragging the handle will do, shown while the pointer rests on it.
+ *
+ * A HOVER PREVIEW, NOT A LABEL. Two marks: the pivot the selection will turn
+ * about, and a stretch of the orbit the handle will travel, arrowed both ways.
+ * Together they answer "what is this" and "which way does it go" without a
+ * word, and the words — "Drag to rotate", in `RotateHandleHint` — sit beside
+ * them in screen space, where text stays legible at any zoom.
+ *
+ * Dashed and translucent, like the ghost bond, so it never reads as ink.
+ * Built in the pivot's screen frame, so the orbit's radius there is
+ * `orbit * zoom` and every stroke and arrowhead is screen px.
+ */
+const PREVIEW_ARC_HALF_SPAN = (35 * Math.PI) / 180;
+const PREVIEW_HEAD_PX = 5;
+
+function rotatePreview(geometry: RotateHandleGeometry, zoom: number): ReactElement | null {
+  const { pivot, bearing } = geometry;
+  const radius = geometry.orbit * zoom;
+  if (!isFinitePoint(pivot) || !Number.isFinite(radius)) return null;
+  const at = (t: number): ScenePoint => ({
+    x: radius * Math.cos(t),
+    y: radius * Math.sin(t),
+  });
+  const first = bearing - PREVIEW_ARC_HALF_SPAN;
+  const last = bearing + PREVIEW_ARC_HALF_SPAN;
+  const from = at(first);
+  const to = at(last);
+  // An arrowhead at each end, pointing on along the circle: two short strokes
+  // back from the end, one to each side of the tangent.
+  const head = (t: number, direction: 1 | -1): string => {
+    const end = at(t);
+    const tx = -Math.sin(t) * direction;
+    const ty = Math.cos(t) * direction;
+    const back = { x: end.x - tx * PREVIEW_HEAD_PX, y: end.y - ty * PREVIEW_HEAD_PX };
+    const nx = Math.cos(t) * PREVIEW_HEAD_PX * 0.7;
+    const ny = Math.sin(t) * PREVIEW_HEAD_PX * 0.7;
+    return (
+      `M ${back.x + nx} ${back.y + ny} L ${end.x} ${end.y} ` +
+      `L ${back.x - nx} ${back.y - ny}`
+    );
+  };
+  return (
+    <g key="rotate-preview" data-overlay="rotate-preview" transform={screenFrame(pivot, zoom)}>
+      <path
+        d={`M ${from.x} ${from.y} A ${radius} ${radius} 0 0 1 ${to.x} ${to.y}`}
+        fill="none"
+        stroke={SELECTED_COLOR}
+        strokeWidth={1.5}
+        strokeOpacity={0.7}
+        strokeDasharray="5 4"
+      />
+      <path
+        d={`${head(first, -1)} ${head(last, 1)}`}
+        fill="none"
+        stroke={SELECTED_COLOR}
+        strokeWidth={1.5}
+        strokeOpacity={0.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle r={PIVOT_RADIUS_PX} fill={SELECTED_COLOR} />
+    </g>
+  );
+}
+
+/** The pivot dot, screen px, in the preview and during the turn alike. */
+const PIVOT_RADIUS_PX = 3;
 
 /** Where a rotation in progress is turning about. */
 function pivotMark(
   style: Parameters<typeof modelToPx>[0],
   pivot: Vec2,
+  zoom: number,
 ): ReactElement | null {
   const point = modelToPx(style, pivot);
   if (!isFinitePoint(point)) return null;
@@ -329,7 +479,7 @@ function pivotMark(
       data-overlay="rotate-pivot"
       cx={point.x}
       cy={point.y}
-      r={3}
+      r={PIVOT_RADIUS_PX / zoom}
       fill={SELECTED_COLOR}
     />
   );
