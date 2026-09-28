@@ -507,6 +507,59 @@ describe("annotations below 8 pt (decision 60)", () => {
     );
   });
 
+  it("names the rac- prefix beside the descriptors it is sized with (decision 98)", () => {
+    // Decision 98: the prefix is set at the DESCRIPTOR scale, so at Publication
+    // it starts at exactly 8 pt and any scale-to-fit takes it under the floor —
+    // the identical gap decision 60 exists to close, on the one group mark that
+    // reliably draws at Publication. Left out of the check only because it did
+    // not exist when 60 was ruled.
+    const doc = descriptorDoc();
+    // ONE AND group over the one centre, so coverage is `whole`: the figure
+    // prints `rac-` and the per-centre tag is omitted (decision 40). That is
+    // what isolates the prefix here — a tag would be small at every width and
+    // the notice would name it whatever the prefix did.
+    const racemic: SketchDocument = {
+      ...doc,
+      molecule: withStereoGroups(doc.molecule, [{ kind: "and", index: 1, atomIds: ["a2"] }]),
+    };
+    const drawsPrefix = (p: ReturnType<typeof prepared>): boolean =>
+      p.figure.cells.some(
+        (c) =>
+          c.content.kind === "scene" &&
+          c.content.scene.primitives.some((q) => q.id.endsWith(":stereoPrefix")),
+      );
+
+    // At the natural size the prefix prints at exactly 8 pt, so the check is
+    // silent — and it really is drawn, or the scaled case below proves nothing.
+    const full = prepared(racemic, custom(60));
+    expect(full.size.scaled).toBe(false);
+    expect(drawsPrefix(full)).toBe(true);
+    expect(
+      full.figure.cells.some(
+        (c) =>
+          c.content.kind === "scene" &&
+          c.content.scene.primitives.some((q) => q.id.endsWith(":stereoGroup")),
+      ),
+    ).toBe(false);
+    expect(annotationSizeNotice(full, custom(60))).toBeNull();
+
+    // Scaled to fit, the prefix goes under with the descriptors and is NAMED.
+    const settings = custom(full.size.naturalWidthCm * 0.9);
+    const p = prepared(racemic, settings);
+    expect(p.size.scaled).toBe(true);
+    expect(drawsPrefix(p)).toBe(true);
+    const notice = annotationSizeNotice(p, settings)!;
+    // Band order (decision 17): the descriptor sits above the prefix.
+    expect(notice.kinds).toEqual(["descriptor", "stereoPrefix"]);
+    expect(notice.fontSizePt).toBeCloseTo(7.2, 6);
+    expect(notice.summary).toBe(
+      `Stereo descriptors and stereo prefixes (rac-/rel-) print at ${formatPt(notice.fontSizePt)} pt, ` +
+        `below the 8 pt minimum ACS asks for in figures.`,
+    );
+    // A warning, not a refusal: the prefix is in the file.
+    expect(figureSvgForFile(p)).toContain("rac-");
+  });
+
   it("says nothing when the figure draws no annotation, flag on or off", () => {
     const settings = custom(2);
     // Flag on, but ethanol has no stereocentre: nothing is drawn.

@@ -40,19 +40,23 @@
  * what would bring them back — never a refusal, since a small figure can be
  * exactly what was wanted.
  *
- * The same check covers the stereo descriptors, the per-centre stereo group
- * tags and the locants a figure draws (decision 60): `annotationSizeNotice`
- * names which of them print small. Only descriptors and tags can reach it
- * today — nothing numbers atoms yet, so no figure draws a locant (decision 37)
- * and that part of the check is deliberately unexercised rather than untested.
- * Publication sets descriptors at exactly 8 pt (decision 54), so ANY scaling to
- * fit takes them under while the labels, at 10 pt, still have room — and it sets
- * a group tag at 6 pt (decision 93), so a tag is under the minimum at EVERY
- * width, which is why decision 93 required this check to name the kind.
+ * The same check covers every annotation a figure draws (decision 60):
+ * `annotationSizeNotice` names which of them print small, and
+ * `ANNOTATION_CHECKS` is total over `AnnotationKind` so a new one cannot ship
+ * outside the check. Descriptors, group tags and the `rac-`/`rel-` prefix can
+ * reach it today — nothing numbers atoms yet, so no figure draws a locant
+ * (decision 37) and that part of the check is deliberately unexercised rather
+ * than untested. Publication sets descriptors at exactly 8 pt (decision 54), so
+ * ANY scaling to fit takes them under while the labels, at 10 pt, still have
+ * room; it sets a group tag at 6 pt (decision 93), so a tag is under the
+ * minimum at EVERY width; and it sets the prefix at the descriptor's scale
+ * (decision 98), so the prefix goes under on exactly the same scaling that
+ * takes the descriptors under.
  */
 
 import { BOND_LENGTH_NORMALIZE_TOLERANCE, isEmpty } from "@starter/chem-core";
 import {
+  ANNOTATION_PRIORITY,
   JOURNAL_WIDTHS_CM,
   MIN_PRINTED_LABEL_PT,
   PRINTED_BOND_LENGTH_CM,
@@ -62,7 +66,12 @@ import {
   serializeFigure,
   unavailableCells,
 } from "@starter/chem-render";
-import type { Figure, PhysicalFigureSize, RenderStyle } from "@starter/chem-render";
+import type {
+  AnnotationKind,
+  Figure,
+  PhysicalFigureSize,
+  RenderStyle,
+} from "@starter/chem-render";
 import type { SketchDocument } from "@starter/shared";
 
 import { STYLE_PRESET_TITLES, renderStyleFor, toRenderRepresentation } from "@/canvas/scene-bridge";
@@ -240,25 +249,69 @@ function widthAdvice(
 }
 
 /**
- * The annotation kinds decision 60 checks, in the order a notice names them —
- * `ANNOTATION_PRIORITY`'s order, so the sentence reads down the band the way the
- * figure draws it.
+ * EVERY annotation kind, with either the name a notice gives it or the reason
+ * decision 60's 8 pt check leaves it out.
  *
- * `stereoGroup` IS HERE BECAUSE DECISION 93 PUT IT HERE. Its own scale is below
- * the descriptor's, so at Publication a tag prints at 6 pt — under the floor at
- * every width, not only a scaled-down one — and a check that named only the
- * descriptors would let a figure go out with an annotation nobody can read and
- * nothing said about it. The `stereoPrefix` is NOT here: it is sized at the
- * descriptor scale, so it is never small for a reason of its own.
+ * TOTAL BY CONSTRUCTION, which is the point. `CHECKED_ANNOTATION_KINDS` used to
+ * be a hand-written subset of three, so a kind added to `AnnotationKind`
+ * shipped outside the check with nothing to say so — and that is exactly what
+ * happened to `stereoPrefix`, which was ruled into the band by decision 88 and
+ * left out of the check until decision 98 noticed. `ANNOTATION_PRIORITY` in
+ * chem-render carries an `IsTotal` guard for the same reason; this is its
+ * counterpart on the export side, so a seventh kind is a COMPILE ERROR here
+ * rather than a silent omission from a figure's warning.
+ *
+ * `stereoGroup` is checked because decision 93 put it here: its own scale is
+ * below the descriptor's, so at Publication a tag prints at 6 pt — under the
+ * floor at every width, not only a scaled-down one.
+ *
+ * `stereoPrefix` is checked because decision 98 put it here: it is set at the
+ * DESCRIPTOR scale, which at Publication is exactly 8 pt, so any scale-to-fit
+ * takes it under the floor — the identical gap decision 60 exists to close, on
+ * the one group mark that reliably draws at Publication.
+ *
+ * `alphaBeta` and `torsion` are declared kinds with no producer: nothing
+ * requests them, so no figure draws one and the check cannot reach them. They
+ * say so here rather than being absent, so the day one gains a producer the
+ * choice is made deliberately.
  */
-export const CHECKED_ANNOTATION_KINDS = ["descriptor", "stereoGroup", "locant"] as const;
-export type CheckedAnnotationKind = (typeof CHECKED_ANNOTATION_KINDS)[number];
+type AnnotationCheck = { readonly name: string } | { readonly unchecked: string };
 
-const ANNOTATION_NAMES: Readonly<Record<CheckedAnnotationKind, string>> = {
-  descriptor: "Stereo descriptors",
-  stereoGroup: "Stereo group tags",
-  locant: "Locants",
-};
+const ANNOTATION_CHECKS = {
+  descriptor: { name: "Stereo descriptors" },
+  stereoGroup: { name: "Stereo group tags" },
+  stereoPrefix: { name: "Stereo prefixes (rac-/rel-)" },
+  alphaBeta: { unchecked: "no producer requests it, so no figure draws one" },
+  locant: { name: "Locants" },
+  torsion: { unchecked: "no producer requests it, so no figure draws one" },
+} as const satisfies Readonly<Record<AnnotationKind, AnnotationCheck>>;
+
+/** The kinds with a name above — derived, so the two cannot drift apart. */
+export type CheckedAnnotationKind = {
+  [K in AnnotationKind]: (typeof ANNOTATION_CHECKS)[K] extends { readonly name: string }
+    ? K
+    : never;
+}[AnnotationKind];
+
+function isChecked(kind: AnnotationKind): kind is CheckedAnnotationKind {
+  return "name" in ANNOTATION_CHECKS[kind];
+}
+
+/**
+ * The checked kinds in the order a notice names them — `ANNOTATION_PRIORITY`'s
+ * order, so the sentence reads down the band the way the figure draws it.
+ * Filtered from that table rather than spelled again, which is what keeps the
+ * order and the membership from disagreeing.
+ */
+export const CHECKED_ANNOTATION_KINDS: readonly CheckedAnnotationKind[] = Object.freeze(
+  ANNOTATION_PRIORITY.filter(isChecked),
+);
+
+const ANNOTATION_NAMES: Readonly<Record<CheckedAnnotationKind, string>> = Object.freeze(
+  Object.fromEntries(
+    CHECKED_ANNOTATION_KINDS.map((kind) => [kind, ANNOTATION_CHECKS[kind].name]),
+  ) as Record<CheckedAnnotationKind, string>,
+);
 
 export interface AnnotationSizeNotice extends LabelSizeNotice {
   /** The kinds that print under the minimum, in `CHECKED_ANNOTATION_KINDS` order. */
@@ -290,10 +343,11 @@ function drawnAnnotationSizesPx(prepared: PreparedFigure): Map<CheckedAnnotation
 }
 
 /**
- * Decision 60: decision 51's 8 pt check, for the stereo descriptors and
- * locants a figure draws. Null when none is drawn, or when every drawn one
- * prints at the minimum or above. Names the kinds that are small, and, like
- * `labelSizeNotice`, what would help; export stays enabled either way.
+ * Decision 60: decision 51's 8 pt check, for every checked annotation a figure
+ * draws — descriptors, group tags, the `rac-`/`rel-` prefix, locants. Null when
+ * none is drawn, or when every drawn one prints at the minimum or above. Names
+ * the kinds that are small, and, like `labelSizeNotice`, what would help;
+ * export stays enabled either way.
  */
 export function annotationSizeNotice(
   prepared: PreparedFigure,
