@@ -389,10 +389,14 @@ describe("view commands", () => {
     expect(JSON.stringify(store.getState().document.panels)).toBe(before);
   });
 
-  it("gives no other display toggle a disabled reason", () => {
+  it("gives no other display toggle a disabled reason while it can be used", () => {
+    // Asked of the STATE, not of whether the function exists: since the
+    // context menu shows a reason beside every greyed entry, the toggles carry
+    // one for the case where there is no structural panel to toggle on. What
+    // must never happen is a reason beside a toggle that works.
     const store = storeWith(benzene());
     for (const command of COMMANDS.filter((c) => c.id.startsWith("view.") && c.id !== "view.show-locants")) {
-      expect(command.disabledReason, command.id).toBeUndefined();
+      expect(command.disabledReason?.(store.getState()), command.id).toBeUndefined();
     }
     expect(commandById("view.aromatic-circles").enabled(store.getState())).toBe(true);
   });

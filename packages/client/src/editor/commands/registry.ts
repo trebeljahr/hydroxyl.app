@@ -28,22 +28,41 @@
  */
 
 import {
+  ALIGN_EDGES,
   DEFAULT_BOND_LENGTH,
+  DEG,
   FUNCTIONAL_GROUP_NAMES,
   FUNCTIONAL_GROUPS,
+  atomsCentroid,
+  horizontalMirror,
+  invertSelection,
+  invertStereocentre,
   isEmpty,
+  reachableFrom,
   RING_TEMPLATES,
+  selectFragment,
+  selection as coreSelection,
+  unionSelections,
+  verticalMirror,
 } from "@starter/chem-core";
 import type {
+  AlignEdge,
+  AtomId,
   BondOrder,
   BondStereo,
+  DoubleBondSide,
   ElementSymbol,
   Molecule,
   RingTemplateName,
   Vec2,
 } from "@starter/chem-core";
 import { ELEMENTS } from "@starter/chem-core";
-import { DISPLAY_FLAG_KEYS, STEREO_GROUP_KIND_VALUES, VIEW_KINDS } from "@starter/shared";
+import {
+  DISPLAY_FLAG_KEYS,
+  DOUBLE_BOND_SIDE_VALUES,
+  STEREO_GROUP_KIND_VALUES,
+  VIEW_KINDS,
+} from "@starter/shared";
 import { VIEW_KIND_TITLES, panelLetter, representationAvailability } from "@starter/chem-render";
 import type { DisplayFlagKey } from "@starter/shared";
 
@@ -59,7 +78,11 @@ import { referenceZoom } from "@/canvas/view-scale";
 // From `machine`, not from the `@/editor/interaction` barrel: the barrel
 // re-exports the React adapter, and this registry has to stay importable by a
 // plain-node test.
-import { documentBondLength } from "@/editor/interaction/machine";
+import {
+  documentBondLength,
+  movingAtomIds,
+  ringFuseRefusal,
+} from "@/editor/interaction/machine";
 import { TOOLS } from "@/editor/tools";
 import { toggleTheme } from "@/shell/theme";
 import { guardedOps } from "@/state/chem-guard";
@@ -262,6 +285,38 @@ function selectedBondIds(state: EditorState): readonly string[] {
   return state.selection.bondIds;
 }
 
+/**
+ * The reasons a greyed-out entry gives, shared so the palette and the context
+ * menu say the same thing about the same refusal. Decision 37: a command that
+ * is off for a reason the canvas does not make obvious says why rather than
+ * looking broken — and "why" is worth a sentence even when it is obvious,
+ * because the context menu shows it beside the entry, where a touch user has
+ * no tooltip to hover for.
+ */
+export const REASONS = Object.freeze({
+  nothingSelected: "Nothing is selected",
+  noAtomSelected: "Select at least one atom first",
+  noBondSelected: "Select a bond first",
+  emptyDrawing: "Nothing has been drawn yet",
+  nothingToUndo: "Nothing to undo",
+  nothingToRedo: "Nothing to redo",
+  nothingCopied:
+    "Nothing has been copied in the editor yet. The paste shortcut still takes a SMILES or molfile copied from another app",
+  noCanvasPanel: "The figure has no structural panel for the canvas to draw on",
+});
+
+/** `disabledReason` for a command whose only precondition is `enabled`. */
+function whenOff(
+  enabled: (state: EditorState) => boolean,
+  reason: string,
+): (state: EditorState) => string | undefined {
+  return (state) => (enabled(state) ? undefined : reason);
+}
+
+const hasAtoms = (state: EditorState): boolean => state.selection.atomIds.length > 0;
+const hasBonds = (state: EditorState): boolean => state.selection.bondIds.length > 0;
+const hasDrawing = (state: EditorState): boolean => !isEmpty(state.document.molecule);
+
 // ---------------------------------------------------------------------------
 // The clipboard
 // ---------------------------------------------------------------------------
@@ -396,6 +451,95 @@ function bondStereoCommands(): Command[] {
       );
     },
   }));
+}
+
+const SIDE_TITLES: Readonly<Record<DoubleBondSide, string>> = {
+  auto: "automatic",
+  centered: "centred",
+  left: "left",
+  right: "right",
+};
+
+const selectedDoubleBonds = (state: EditorState): readonly string[] => {
+  const mol = state.document.molecule;
+  return state.selection.bondIds.filter(
+    (id) => Object.hasOwn(mol.bonds, id) && mol.bonds[id]!.order === 2,
+  );
+};
+
+/**
+ * Where a double bond's second line goes: ChemDraw's Double ▸ Left / Centre /
+ * Right, which a figure needs whenever the automatic side puts the inner line
+ * outside a ring or across a label.
+ *
+ * `left` and `right` are relative to the bond's own from→to direction (see
+ * `mirrorDoubleBondSide` in chem-core), which is why the menu pairs these
+ * with "Flip direction" rather than calling them page sides.
+ *
+ * Only DOUBLE bonds in the selection are touched. The field is meaningless on
+ * a single or a triple, and writing it there would leave a hidden setting that
+ * springs back into effect the moment the bond is retyped.
+ */
+function bondSideCommands(): Command[] {
+  return DOUBLE_BOND_SIDE_VALUES.map((side) => {
+    const enabled = (state: EditorState): boolean => selectedDoubleBonds(state).length > 0;
+    return {
+      id: `bond.side.${side}`,
+      title: `Double bond position: ${SIDE_TITLES[side]}`,
+      keywords: ["double", "bond", "side", "position", "inner", "line", SIDE_TITLES[side]],
+      group: "bond" as const,
+      enabled,
+      disabledReason: whenOff(enabled, "Select a double bond first"),
+      run: (store: EditorStore) => {
+        const state = store.getState();
+        const bondIds = selectedDoubleBonds(state);
+        if (bondIds.length === 0) return;
+        state.applyMoleculeEdit(`Set double bond ${SIDE_TITLES[side]}`, (mol) =>
+          bondIds.reduce((m, id) => guardedOps.setDoubleBondSide(m, id, side), mol),
+        );
+      },
+    };
+  });
+}
+
+/**
+ * Fuse a template ring onto the ONE selected bond — the ring tool's
+ * click-a-bond gesture, reachable without changing tools.
+ *
+ * Exactly one bond, because a fusion is placed across a single bond's
+ * perpendicular bisector and there is no reading of "fuse a benzene onto
+ * these four bonds" that is not four separate edits. The refusals are the
+ * ring tool's own, through `ringFuseRefusal`, so both surfaces decline the
+ * same bonds in the same words.
+ */
+function ringFuseCommands(): Command[] {
+  return (Object.keys(RING_TEMPLATES) as RingTemplateName[]).map((name) => {
+    const reason = (state: EditorState): string | undefined => {
+      const bondIds = state.selection.bondIds;
+      if (bondIds.length !== 1) return "Select exactly one bond to fuse a ring onto";
+      const mol = state.document.molecule;
+      if (!Object.hasOwn(mol.bonds, bondIds[0]!)) return REASONS.noBondSelected;
+      return ringFuseRefusal(mol, bondIds[0]!);
+    };
+    return {
+      id: `ring.fuse.${name}`,
+      title: `Fuse ${name} onto bond`,
+      keywords: ["fuse", "ring", "annulate", "template", name],
+      group: "ring" as const,
+      enabled: (state: EditorState) => reason(state) === undefined,
+      disabledReason: reason,
+      run: (store: EditorStore) => {
+        const state = store.getState();
+        if (reason(state) !== undefined) return;
+        const bondId = state.selection.bondIds[0]!;
+        state.applyMoleculeEdit(`Fuse ${name}`, (mol) =>
+          guardedOps.fuseRingOnBond(mol, bondId, RING_TEMPLATES[name], {
+            bondLength: documentBondLength(mol),
+          }).molecule,
+        );
+      },
+    };
+  });
 }
 
 function ringTemplateCommands(): Command[] {
@@ -602,6 +746,10 @@ const DISPLAY_FLAG_COMMANDS: readonly Command[] = DISPLAY_FLAG_KEYS.map((key) =>
     keywords: [...label.keywords],
     group: "view",
     enabled: (state) => canvasPanelFor(state.document, state.ui.activePanelId) !== undefined,
+    disabledReason: (state) =>
+      canvasPanelFor(state.document, state.ui.activePanelId) === undefined
+        ? REASONS.noCanvasPanel
+        : undefined,
     run: (store) => {
       const state = store.getState();
       // The panel the CANVAS draws, resolved the same way the canvas resolves
@@ -645,8 +793,9 @@ const DISPLAY_FLAG_COMMANDS: readonly Command[] = DISPLAY_FLAG_KEYS.map((key) =>
 export function applyElement(store: EditorStore, element: ElementSymbol): void {
   const state = store.getState();
   state.setToolOption("element", element);
-  // Every route to an element — table, palette, typed symbol — passes here,
-  // so this is the one place the quick picker's recent row can learn of it.
+  // Every route to an element — table, palette, typed symbol, the canvas
+  // context menu — passes here, so this is the one place the recent rows
+  // (the quick picker's and the context menu's) can learn of it.
   state.noteRecentElement(element);
   const atomIds = state.selection.atomIds;
   if (atomIds.length === 0) {
@@ -670,6 +819,7 @@ const EDIT_COMMANDS: readonly Command[] = [
     shortcut: "Mod+z",
     group: "edit",
     enabled: (state) => state.canUndo(),
+    disabledReason: whenOff((state) => state.canUndo(), REASONS.nothingToUndo),
     run: (store) => {
       store.getState().undo();
     },
@@ -681,6 +831,7 @@ const EDIT_COMMANDS: readonly Command[] = [
     shortcut: "Mod+Shift+z",
     group: "edit",
     enabled: (state) => state.canRedo(),
+    disabledReason: whenOff((state) => state.canRedo(), REASONS.nothingToRedo),
     run: (store) => {
       store.getState().redo();
     },
@@ -704,6 +855,7 @@ const EDIT_COMMANDS: readonly Command[] = [
     shortcut: "Delete",
     group: "edit",
     enabled: hasSelection,
+    disabledReason: whenOff(hasSelection, REASONS.nothingSelected),
     run: (store) => {
       const state = store.getState();
       const { atomIds, bondIds } = state.selection;
@@ -738,7 +890,8 @@ const EDIT_COMMANDS: readonly Command[] = [
     keywords: ["copy", "clipboard", "fragment"],
     shortcut: "Mod+c",
     group: "edit",
-    enabled: (state) => state.selection.atomIds.length > 0,
+    enabled: hasAtoms,
+    disabledReason: whenOff(hasAtoms, REASONS.noAtomSelected),
     run: (store) => {
       const state = store.getState();
       const ids = state.selection.atomIds;
@@ -753,7 +906,8 @@ const EDIT_COMMANDS: readonly Command[] = [
     keywords: ["cut", "clipboard", "fragment"],
     shortcut: "Mod+x",
     group: "edit",
-    enabled: (state) => state.selection.atomIds.length > 0,
+    enabled: hasAtoms,
+    disabledReason: whenOff(hasAtoms, REASONS.noAtomSelected),
     run: (store) => {
       const state = store.getState();
       const ids = state.selection.atomIds;
@@ -776,6 +930,8 @@ const EDIT_COMMANDS: readonly Command[] = [
     // a structure someone copied out of a paper.
     passThroughWhenDisabled: true,
     enabled: () => clipboard !== null && clipboard.atomIds.length > 0,
+    disabledReason: () =>
+      clipboard !== null && clipboard.atomIds.length > 0 ? undefined : REASONS.nothingCopied,
     run: (store) => {
       const fragment = clipboard;
       if (fragment === null || fragment.atomIds.length === 0) return;
@@ -804,7 +960,8 @@ const EDIT_COMMANDS: readonly Command[] = [
     keywords: ["duplicate", "copy", "clone"],
     shortcut: "Mod+d",
     group: "edit",
-    enabled: (state) => state.selection.atomIds.length > 0,
+    enabled: hasAtoms,
+    disabledReason: whenOff(hasAtoms, REASONS.noAtomSelected),
     run: (store) => {
       const state = store.getState();
       const ids = state.selection.atomIds;
@@ -821,6 +978,27 @@ const EDIT_COMMANDS: readonly Command[] = [
       });
     },
   },
+  // The selection as text another program can read. The whole-structure pair
+  // lives under Figure; these cut the selected atoms out first, so a chemist
+  // can lift one reactant out of a scheme without deleting the rest.
+  {
+    id: "edit.copy-selection-smiles",
+    title: "Copy selection as SMILES",
+    keywords: ["copy", "clipboard", "smiles", "selection", "fragment", "text"],
+    group: "edit",
+    enabled: hasAtoms,
+    disabledReason: whenOff(hasAtoms, REASONS.noAtomSelected),
+    run: (store) => copySmiles(store, "selection"),
+  },
+  {
+    id: "edit.copy-selection-molfile",
+    title: "Copy selection as molfile",
+    keywords: ["copy", "clipboard", "molfile", "molblock", "mol", "selection", "fragment"],
+    group: "edit",
+    enabled: hasAtoms,
+    disabledReason: whenOff(hasAtoms, REASONS.noAtomSelected),
+    run: (store) => copyMolblock(store, "selection"),
+  },
 ];
 
 const SELECT_COMMANDS: readonly Command[] = [
@@ -830,7 +1008,8 @@ const SELECT_COMMANDS: readonly Command[] = [
     keywords: ["select", "all", "everything"],
     shortcut: "Mod+a",
     group: "select",
-    enabled: (state) => !isEmpty(state.document.molecule),
+    enabled: hasDrawing,
+    disabledReason: whenOff(hasDrawing, REASONS.emptyDrawing),
     run: (store) => {
       store.getState().selectAll();
     },
@@ -842,8 +1021,57 @@ const SELECT_COMMANDS: readonly Command[] = [
     shortcut: "Mod+Shift+a",
     group: "select",
     enabled: hasSelection,
+    disabledReason: whenOff(hasSelection, REASONS.nothingSelected),
     run: (store) => {
       store.getState().clearSelection();
+    },
+  },
+  {
+    id: "select.connected",
+    title: "Select connected structure",
+    keywords: ["select", "fragment", "connected", "molecule", "whole", "structure"],
+    group: "select",
+    // "Group" in ChemDraw's sense has no counterpart here: the document is one
+    // graph, and a connected structure is already the unit a drag moves. This
+    // is the handle on that unit — the whole molecule an atom belongs to.
+    enabled: hasSelection,
+    disabledReason: whenOff(hasSelection, REASONS.nothingSelected),
+    run: (store) => {
+      const state = store.getState();
+      const mol = state.document.molecule;
+      const grown = movingAtomIds(mol, state.selection).reduce(
+        (acc, id) => unionSelections(acc, selectFragment(mol, id)),
+        coreSelection(state.selection.atomIds, state.selection.bondIds),
+      );
+      // Any selected annotations stay selected: growing the molecule part
+      // says nothing about the arrows beside it.
+      state.setSelection({
+        atomIds: grown.atomIds,
+        bondIds: grown.bondIds,
+        annotationIds: state.selection.annotationIds,
+      });
+    },
+  },
+  {
+    id: "select.invert",
+    title: "Invert selection",
+    keywords: ["select", "invert", "inverse", "others", "rest"],
+    group: "select",
+    enabled: hasDrawing,
+    disabledReason: whenOff(hasDrawing, REASONS.emptyDrawing),
+    run: (store) => {
+      const state = store.getState();
+      const inverted = invertSelection(
+        state.document.molecule,
+        coreSelection(state.selection.atomIds, state.selection.bondIds),
+      );
+      // The molecule only, like `selectAll`: no command acts on an annotation
+      // yet, so inverting into one would select something nothing can use.
+      state.setSelection({
+        atomIds: inverted.atomIds,
+        bondIds: inverted.bondIds,
+        annotationIds: [],
+      });
     },
   },
 ];
@@ -855,7 +1083,8 @@ const STRUCTURE_COMMANDS: readonly Command[] = [
     keywords: ["clean", "tidy", "layout", "coordinates", "rdkit", "overlap"],
     shortcut: "Mod+Shift+l",
     group: "structure",
-    enabled: (state) => !isEmpty(state.document.molecule),
+    enabled: hasDrawing,
+    disabledReason: whenOff(hasDrawing, REASONS.emptyDrawing),
     run: (store) => cleanUpStructure(store),
   },
   {
@@ -889,7 +1118,8 @@ const STRUCTURE_COMMANDS: readonly Command[] = [
     keywords: ["charge", "cation", "plus", "positive"],
     shortcut: "+",
     group: "structure",
-    enabled: (state) => state.selection.atomIds.length > 0,
+    enabled: hasAtoms,
+    disabledReason: whenOff(hasAtoms, REASONS.noAtomSelected),
     run: (store) => {
       changeCharge(store, 1);
     },
@@ -901,7 +1131,8 @@ const STRUCTURE_COMMANDS: readonly Command[] = [
     shortcut: "=",
     group: "structure",
     hidden: true,
-    enabled: (state) => state.selection.atomIds.length > 0,
+    enabled: hasAtoms,
+    disabledReason: whenOff(hasAtoms, REASONS.noAtomSelected),
     run: (store) => {
       changeCharge(store, 1);
     },
@@ -912,7 +1143,8 @@ const STRUCTURE_COMMANDS: readonly Command[] = [
     keywords: ["charge", "anion", "minus", "negative"],
     shortcut: "-",
     group: "structure",
-    enabled: (state) => state.selection.atomIds.length > 0,
+    enabled: hasAtoms,
+    disabledReason: whenOff(hasAtoms, REASONS.noAtomSelected),
     run: (store) => {
       changeCharge(store, -1);
     },
@@ -922,7 +1154,8 @@ const STRUCTURE_COMMANDS: readonly Command[] = [
     title: "Cycle bond order",
     keywords: ["bond", "order", "cycle", "single", "double", "triple"],
     group: "structure",
-    enabled: (state) => state.selection.bondIds.length > 0,
+    enabled: hasBonds,
+    disabledReason: whenOff(hasBonds, REASONS.noBondSelected),
     run: (store) => {
       const state = store.getState();
       const bondIds = state.selection.bondIds;
@@ -937,7 +1170,8 @@ const STRUCTURE_COMMANDS: readonly Command[] = [
     title: "Flip wedge direction",
     keywords: ["flip", "wedge", "hash", "narrow", "stereo", "reverse"],
     group: "structure",
-    enabled: (state) => state.selection.bondIds.length > 0,
+    enabled: hasBonds,
+    disabledReason: whenOff(hasBonds, REASONS.noBondSelected),
     run: (store) => {
       const state = store.getState();
       const bondIds = state.selection.bondIds;
@@ -1014,6 +1248,198 @@ function zoomAboutCentre(store: EditorStore, factor: number): void {
 const canZoomIn = (state: EditorState): boolean => state.viewport.zoom < MAX_ZOOM;
 const canZoomOut = (state: EditorState): boolean => state.viewport.zoom > MIN_ZOOM;
 
+// ---------------------------------------------------------------------------
+// Arranging the selection: flip, rotate, align
+//
+// Layout commands. None of them changes what the drawing says — flipAtoms
+// swaps wedge and hash along with the positions precisely so the enantiomer
+// is preserved (see transform.ts) — so a figure can be re-posed to read left
+// to right without a stereocentre silently inverting.
+// ---------------------------------------------------------------------------
+
+/** What an arrangement moves: exactly what a drag over the selection would. */
+function arrangedAtomIds(state: EditorState): readonly AtomId[] {
+  return movingAtomIds(state.document.molecule, state.selection);
+}
+
+/** One atom has no shape to flip or turn about its own centroid. */
+const canArrange = (state: EditorState): boolean => arrangedAtomIds(state).length >= 2;
+const ARRANGE_REASON = "Select at least two atoms to move";
+
+function arrangeCommand(
+  id: string,
+  title: string,
+  keywords: readonly string[],
+  edit: (mol: Molecule, ids: readonly AtomId[], pivot: Vec2) => Molecule,
+): Command {
+  return {
+    id,
+    title,
+    keywords,
+    group: "structure",
+    enabled: canArrange,
+    disabledReason: whenOff(canArrange, ARRANGE_REASON),
+    run: (store) => {
+      const state = store.getState();
+      const ids = arrangedAtomIds(state);
+      if (ids.length < 2) return;
+      // About the selection's own centroid, so the structure turns in place
+      // rather than swinging round the page origin.
+      state.applyMoleculeEdit(title, (mol) => edit(mol, ids, atomsCentroid(mol, ids)));
+    },
+  };
+}
+
+/**
+ * How many separate structures `ids` touch, counting no further than `stop`.
+ * Stopping early keeps the enabled check cheap on a large drawing: the
+ * answer the commands need is only "fewer than two or not".
+ */
+function structuresTouched(mol: Molecule, ids: readonly AtomId[], stop: number): number {
+  const seen = new Set<AtomId>();
+  let count = 0;
+  for (const id of ids) {
+    if (seen.has(id) || !Object.hasOwn(mol.atoms, id)) continue;
+    count += 1;
+    if (count >= stop) return count;
+    for (const member of reachableFrom(mol, id)) seen.add(member);
+  }
+  return count;
+}
+
+const canAlign = (state: EditorState): boolean =>
+  structuresTouched(state.document.molecule, arrangedAtomIds(state), 2) >= 2;
+
+const ALIGN_TITLES: Readonly<Record<AlignEdge, string>> = {
+  left: "Align left edges",
+  centre: "Align centres",
+  right: "Align right edges",
+  top: "Align tops",
+  middle: "Align middles",
+  bottom: "Align bottoms",
+};
+
+/** The selected atoms carrying a wedge or hash of their own to invert. */
+function invertibleCentres(state: EditorState): readonly AtomId[] {
+  const mol = state.document.molecule;
+  // `invertStereocentre` returns its input when there is nothing to invert,
+  // so asking it IS the precondition — no second definition of "has a mark
+  // of its own" to drift from the op's.
+  return state.selection.atomIds.filter(
+    (id) => Object.hasOwn(mol.atoms, id) && invertStereocentre(mol, id) !== mol,
+  );
+}
+
+const ARRANGE_COMMANDS: readonly Command[] = [
+  arrangeCommand(
+    "structure.flip-horizontal",
+    "Flip horizontally",
+    ["flip", "mirror", "horizontal", "left", "right", "reflect"],
+    (mol, ids, pivot) => guardedOps.flipAtoms(mol, ids, verticalMirror(pivot)),
+  ),
+  arrangeCommand(
+    "structure.flip-vertical",
+    "Flip vertically",
+    ["flip", "mirror", "vertical", "up", "down", "reflect"],
+    (mol, ids, pivot) => guardedOps.flipAtoms(mol, ids, horizontalMirror(pivot)),
+  ),
+  // Model space is y-up, so a POSITIVE angle turns counter-clockwise on the
+  // page and clockwise is the negative one.
+  arrangeCommand(
+    "structure.rotate-cw",
+    "Rotate 90° clockwise",
+    ["rotate", "turn", "clockwise", "90"],
+    (mol, ids, pivot) => guardedOps.rotateAtoms(mol, ids, pivot, -90 * DEG),
+  ),
+  arrangeCommand(
+    "structure.rotate-ccw",
+    "Rotate 90° counter-clockwise",
+    ["rotate", "turn", "counterclockwise", "anticlockwise", "90"],
+    (mol, ids, pivot) => guardedOps.rotateAtoms(mol, ids, pivot, 90 * DEG),
+  ),
+  arrangeCommand(
+    "structure.rotate-180",
+    "Rotate 180°",
+    ["rotate", "turn", "180", "upside"],
+    (mol, ids, pivot) => guardedOps.rotateAtoms(mol, ids, pivot, 180 * DEG),
+  ),
+  ...ALIGN_EDGES.map(
+    (edge): Command => ({
+      id: `structure.align-${edge}`,
+      title: ALIGN_TITLES[edge],
+      keywords: ["align", "arrange", "line", "up", "scheme", edge],
+      group: "structure",
+      enabled: canAlign,
+      disabledReason: whenOff(canAlign, "Select atoms in two or more separate structures"),
+      run: (store) => {
+        const state = store.getState();
+        if (!canAlign(state)) return;
+        const ids = arrangedAtomIds(state);
+        state.applyMoleculeEdit(ALIGN_TITLES[edge], (mol) =>
+          guardedOps.alignFragments(mol, ids, edge),
+        );
+      },
+    }),
+  ),
+  {
+    id: "structure.invert-stereo",
+    title: "Invert stereocentre (R ⇄ S)",
+    keywords: ["invert", "configuration", "R", "S", "enantiomer", "epimer", "stereo", "wedge", "hash"],
+    group: "structure",
+    enabled: (state) => invertibleCentres(state).length > 0,
+    disabledReason: (state) =>
+      invertibleCentres(state).length > 0
+        ? undefined
+        : "Select a stereocentre drawn with its own wedge or hash bond",
+    run: (store) => {
+      const state = store.getState();
+      const ids = invertibleCentres(state);
+      if (ids.length === 0) return;
+      state.applyMoleculeEdit("Invert stereocentre", (mol) =>
+        ids.reduce((m, id) => guardedOps.invertStereocentre(m, id), mol),
+      );
+    },
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Per-atom values the context menu sets
+//
+// Functions rather than commands, for the reason `applyElement` is one: the
+// value is a parameter (which isotope, how many hydrogens), and a command per
+// value would put a dozen rows into the palette for settings the properties
+// panel already takes as a number. Each writes to every selected atom, as one
+// undo step, and does nothing with no atom selected.
+// ---------------------------------------------------------------------------
+
+function applyToSelectedAtoms(
+  store: EditorStore,
+  label: string,
+  edit: (mol: Molecule, id: AtomId) => Molecule,
+): void {
+  const state = store.getState();
+  const ids = state.selection.atomIds;
+  if (ids.length === 0) return;
+  state.applyMoleculeEdit(label, (mol) => ids.reduce(edit, mol));
+}
+
+/** `undefined` returns the atoms to natural isotopic abundance. */
+export function applyIsotope(store: EditorStore, mass: number | undefined): void {
+  applyToSelectedAtoms(store, "Set isotope", (m, id) => guardedOps.setIsotope(m, id, mass));
+}
+
+/** `undefined` hands the count back to valence to derive. */
+export function applyHydrogenCount(store: EditorStore, count: number | undefined): void {
+  applyToSelectedAtoms(store, "Set hydrogen count", (m, id) =>
+    guardedOps.setExplicitHydrogenCount(m, id, count),
+  );
+}
+
+/** `undefined` hands the count back to `lonePairCount` to derive (decision 4). */
+export function applyLonePairs(store: EditorStore, pairs: number | undefined): void {
+  applyToSelectedAtoms(store, "Set lone pairs", (m, id) => guardedOps.setLonePairs(m, id, pairs));
+}
+
 const VIEW_COMMANDS: readonly Command[] = [
   // Mod+= and Mod+- are the browser's page zoom, and are claimed here the way
   // Figma, tldraw and Excalidraw claim them: page zoom rescales the tool rail
@@ -1076,7 +1502,8 @@ const VIEW_COMMANDS: readonly Command[] = [
     keywords: ["fit", "zoom", "view", "all", "frame"],
     shortcut: "Mod+Shift+f",
     group: "view",
-    enabled: (state) => !isEmpty(state.document.molecule),
+    enabled: hasDrawing,
+    disabledReason: whenOff(hasDrawing, REASONS.emptyDrawing),
     run: (store) => {
       const state = store.getState();
       // The scene is built ON DEMAND rather than memoised on the document:
@@ -1265,6 +1692,12 @@ const FIGURE_COMMANDS: readonly Command[] = [
     keywords: ["copy", "clipboard", "figure", "svg", "png", "image"],
     group: "figure",
     enabled: hasPanels,
+    disabledReason: (state) =>
+      isEmpty(state.document.molecule)
+        ? REASONS.emptyDrawing
+        : state.document.panels.length === 0
+          ? "The figure has no panels. Add one in the Figure panels list"
+          : undefined,
     run: (store) => copyFigure(store),
   },
   {
@@ -1273,6 +1706,7 @@ const FIGURE_COMMANDS: readonly Command[] = [
     keywords: ["copy", "clipboard", "smiles", "rdkit", "text"],
     group: "figure",
     enabled: hasStructure,
+    disabledReason: whenOff(hasStructure, REASONS.emptyDrawing),
     run: (store) => copySmiles(store),
   },
   {
@@ -1281,6 +1715,7 @@ const FIGURE_COMMANDS: readonly Command[] = [
     keywords: ["copy", "clipboard", "molfile", "molblock", "mol", "v2000", "mdl"],
     group: "figure",
     enabled: hasStructure,
+    disabledReason: whenOff(hasStructure, REASONS.emptyDrawing),
     run: (store) => copyMolblock(store),
   },
   // One per view kind, gated by the availability function — the palette shows
@@ -1311,7 +1746,9 @@ export const COMMANDS: readonly Command[] = Object.freeze([
   ...toolCommands(),
   ...bondOrderCommands(),
   ...bondStereoCommands(),
+  ...bondSideCommands(),
   ...ringTemplateCommands(),
+  ...ringFuseCommands(),
   ...chainLengthCommands(),
   ELEMENT_TABLE_COMMAND,
   ...functionalGroupCommands(),
@@ -1319,6 +1756,7 @@ export const COMMANDS: readonly Command[] = Object.freeze([
   ...EDIT_COMMANDS,
   ...SELECT_COMMANDS,
   ...STRUCTURE_COMMANDS,
+  ...ARRANGE_COMMANDS,
   ...VIEW_COMMANDS,
 ]);
 

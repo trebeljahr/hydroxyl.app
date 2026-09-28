@@ -103,8 +103,15 @@ export const NO_INTERACTION_OVERLAY: InteractionOverlayState = Object.freeze({
 });
 
 export interface CanvasInteraction {
-  /** The chemistry-facing half of the gesture hook's handler bag. */
-  readonly handlers: Omit<CanvasGestureHandlers, "onZoom" | "onPan" | "onResize">;
+  /**
+   * The chemistry-facing half of the gesture hook's handler bag. The context
+   * menu is not part of it: opening a menu edits nothing, and the canvas that
+   * owns the menu handles the request itself.
+   */
+  readonly handlers: Omit<
+    CanvasGestureHandlers,
+    "onZoom" | "onPan" | "onResize" | "onContextMenu"
+  >;
   readonly overlay: InteractionOverlayState;
 }
 

@@ -32,6 +32,7 @@ import type {
   DoubleBondSide,
   Molecule,
 } from "./types.js";
+import { reachableFrom } from "./molecule.js";
 import {
   add,
   dot,
@@ -85,14 +86,14 @@ function resolveIds(mol: Molecule, ids: Iterable<AtomId>): Set<AtomId> {
 function repositionAtoms(
   mol: Molecule,
   ids: ReadonlySet<AtomId>,
-  move: (pos: Vec2) => Vec2,
+  move: (pos: Vec2, id: AtomId) => Vec2,
 ): Molecule {
   if (ids.size === 0) return mol;
   let atoms: Record<AtomId, Atom> | undefined;
   for (const id of ids) {
     const atom = mol.atoms[id];
     if (!atom) continue;
-    const pos = move(atom.pos);
+    const pos = move(atom.pos, id);
     if (pos.x === atom.pos.x && pos.y === atom.pos.y) continue;
     atoms ??= { ...mol.atoms };
     atoms[id] = { ...atom, pos };
@@ -264,6 +265,106 @@ export function atomsCentroid(mol: Molecule, ids: readonly AtomId[]): Vec2 {
     y += atom.pos.y;
   }
   return { x: x / present.size, y: y / present.size };
+}
+
+// ---------------------------------------------------------------------------
+// Aligning separate structures
+// ---------------------------------------------------------------------------
+
+/**
+ * The six edges a set of structures can be lined up on, named for the PAGE:
+ * `top` is the top of the drawing as a reader sees it.
+ */
+export type AlignEdge = "left" | "centre" | "right" | "top" | "middle" | "bottom";
+
+/** Below this, in bond lengths, two edges already coincide. */
+const ALIGN_TOLERANCE = 1e-9;
+
+export const ALIGN_EDGES: readonly AlignEdge[] = Object.freeze([
+  "left",
+  "centre",
+  "right",
+  "top",
+  "middle",
+  "bottom",
+]);
+
+/**
+ * Line up the separate structures that `ids` touch on one edge of their
+ * common bounding box — the reaction-scheme chore of making three molecules
+ * sit on one baseline.
+ *
+ * THE UNIT IS THE CONNECTED STRUCTURE, NOT THE LISTED ATOM. Each structure any
+ * listed atom belongs to moves as a whole, rigidly, including atoms that were
+ * not listed. Moving only the listed atoms of a half-selected structure would
+ * stretch the bonds to the other half, which is a distortion, not an
+ * alignment. So one atom of each molecule is enough to name it, and a
+ * rubber band over three molecules names all three.
+ *
+ * `top` IS THE LARGEST y. Model coordinates are y-up (see the package
+ * notes), so the top of the page is `max.y` and the bottom is `min.y`; only
+ * the SVG renderer flips. `centre` and `middle` are the midpoints of the
+ * common box, which is where a chemist expects a column of structures to
+ * centre on.
+ *
+ * ATOM CENTRES, NOT GLYPH EXTENTS. A label's width is chem-render's to know,
+ * and chem-core has no fonts; aligning on atom positions puts every
+ * skeleton's outermost atom on the line, which is what the eye reads on a
+ * skeletal drawing.
+ *
+ * Fewer than two structures is nothing to align against, and the input comes
+ * back unchanged. So does a set that is already aligned. Unknown ids are
+ * skipped, as everywhere in this file.
+ */
+export function alignFragments(
+  mol: Molecule,
+  ids: readonly AtomId[],
+  edge: AlignEdge,
+): Molecule {
+  const fragmentOf = new Map<AtomId, number>();
+  const fragments: AtomId[][] = [];
+  for (const id of resolveIds(mol, ids)) {
+    if (fragmentOf.has(id)) continue;
+    const members = reachableFrom(mol, id);
+    for (const member of members) fragmentOf.set(member, fragments.length);
+    fragments.push(members);
+  }
+  if (fragments.length < 2) return mol;
+
+  const horizontal = edge === "left" || edge === "centre" || edge === "right";
+  const coord = (pos: Vec2): number => (horizontal ? pos.x : pos.y);
+  const extents = fragments.map((members) => {
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const id of members) {
+      const value = coord(mol.atoms[id]!.pos);
+      if (value < lo) lo = value;
+      if (value > hi) hi = value;
+    }
+    return { lo, hi };
+  });
+  const lo = Math.min(...extents.map((e) => e.lo));
+  const hi = Math.max(...extents.map((e) => e.hi));
+  const pick = (e: { readonly lo: number; readonly hi: number }): number =>
+    edge === "left" || edge === "bottom"
+      ? e.lo
+      : edge === "right" || edge === "top"
+        ? e.hi
+        : (e.lo + e.hi) / 2;
+  const target = pick({ lo, hi });
+  // A shift of an ulp is float noise from the midpoint arithmetic, not a
+  // misalignment. Treating it as a move would make a second "align" on an
+  // aligned scheme hand back a new molecule — and with it an undo entry for
+  // nothing.
+  const shifts = extents.map((e) => {
+    const shift = target - pick(e);
+    return Math.abs(shift) < ALIGN_TOLERANCE ? 0 : shift;
+  });
+
+  return repositionAtoms(mol, new Set(fragmentOf.keys()), (pos, id) => {
+    const shift = shifts[fragmentOf.get(id)!]!;
+    return horizontal ? { x: pos.x + shift, y: pos.y } : { x: pos.x, y: pos.y + shift };
+  });
 }
 
 /**

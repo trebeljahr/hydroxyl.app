@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildMolecule, withStereoGroups } from "@starter/chem-core";
+import { buildMolecule, insertFragment, withStereoGroups } from "@starter/chem-core";
 import { benzylAlcoholAbbreviated, butan2olWedged, ethanol } from "@starter/chem-render";
 import { createDocument, createPanel, defaultPanelsFor } from "@starter/shared";
 
@@ -197,5 +197,44 @@ describe("Copy as molfile", () => {
     expect(message).toContain(labelled[0]!);
     expect(message).toContain('"Ph"');
     expect(store.getState().selection.atomIds).toEqual(labelled);
+  });
+});
+
+describe("Copy selection as molfile", () => {
+  it("writes only the selected atoms, and the bonds between them", async () => {
+    store.getState().selectAtoms(["a1", "a2"]);
+    await copyMolblock(store, "selection");
+    const text = await (await writes[0]![0]!.parts["text/plain"]!).text();
+    // The V2000 counts line: two atoms, one bond. Ethanol's oxygen and the
+    // C–O bond stayed behind.
+    expect(text).toMatch(/^\s*2\s+1\s/m);
+    expect(store.getState().ui.statusMessage).toBe("Copied the selection as a molfile");
+  });
+
+  it("names and selects the DOCUMENT's atom when a label refuses the copy", async () => {
+    // Benzyl alcohol drawn AFTER an ethanol, so its "Ph" atom is a6 on the
+    // canvas but a1 in the fragment the copy cuts out — extraction mints ids
+    // afresh. A refusal quoting the fragment's id would point at ethanol's
+    // methyl, and selecting it would highlight the wrong atom.
+    const pasted = insertFragment(ethanol(), benzylAlcoholAbbreviated());
+    store = editor(pasted.molecule);
+    const ph = pasted.atomIds.find((id) => pasted.molecule.atoms[id]?.label === "Ph")!;
+    expect(ph).not.toBe("a1");
+    store.getState().selectAtoms(pasted.atomIds);
+
+    await copyMolblock(store, "selection");
+
+    expect(writes).toHaveLength(0);
+    const message = store.getState().ui.statusMessage ?? "";
+    expect(message).toContain(`${ph} ("Ph")`);
+    expect(message).not.toMatch(/\ba1\b/);
+    expect(store.getState().selection.atomIds).toEqual([ph]);
+  });
+
+  it("refuses with nothing selected, without touching the clipboard", async () => {
+    store.getState().clearSelection();
+    await copyMolblock(store, "selection");
+    expect(writes).toHaveLength(0);
+    expect(store.getState().ui.statusMessage).toMatch(/No atoms are selected/);
   });
 });

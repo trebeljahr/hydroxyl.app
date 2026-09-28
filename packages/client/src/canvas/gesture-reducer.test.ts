@@ -19,7 +19,9 @@ import type { Viewport } from "@/state/viewport";
 import {
   CLICK_SLOP_PX,
   GESTURE_IDLE,
+  LONG_PRESS_MS,
   TOUCH_CLICK_SLOP_PX,
+  contextMenuSource,
   WHEEL_ZOOM_DELTA_CAP_PX,
   WHEEL_ZOOM_RATE,
   gestureZoomStep,
@@ -85,11 +87,15 @@ function run(
   return { state, effects };
 }
 
-/** The semantic effects only — capture bookkeeping is asserted separately. */
+/** The semantic effects only — capture and timer bookkeeping are asserted
+ *  separately. */
 function kinds(effects: readonly GestureEffect[]): string[] {
   return effects
     .map((e) => e.kind)
-    .filter((k) => k !== "capture" && k !== "release" && k !== "preventDefault");
+    .filter(
+      (k) =>
+        k !== "capture" && k !== "release" && k !== "preventDefault" && k !== "armLongPress",
+    );
 }
 
 function only<K extends GestureEffect["kind"]>(
@@ -468,7 +474,9 @@ function lcg(seed: number): () => number {
 }
 
 describe("gesture reducer — invariants under arbitrary input", () => {
-  it("opens and closes every drag and every pan bracket exactly once", () => {
+  // 3000 seeds of 40 steps each: seconds of work by design, so the default
+  // 5 s timeout is a flake on a machine running anything else.
+  it("opens and closes every drag and every pan bracket exactly once", { timeout: 30_000 }, () => {
     for (let seed = 1; seed <= 3000; seed++) {
       const rand = lcg(seed);
       const pick = <T,>(items: readonly T[]): T =>
@@ -488,15 +496,22 @@ describe("gesture reducer — invariants under arbitrary input", () => {
       let state: GestureState = GESTURE_IDLE;
       let dragOpen = false;
       let panOpen = false;
+      // Set by a context menu, cleared by the next press: the gesture that
+      // asked for a menu must not also click.
+      let menuSincePress = false;
       const captured = new Set<number>();
       const trace: string[] = [];
 
       const step = (input: GestureInput): void => {
         const result = reduceGesture(state, input);
         state = result.state;
+        // Joined once per STEP, not once per effect: the per-effect join was
+        // quadratic in the trace and, with the expects, took this test past
+        // the default timeout on a loaded machine. A failure still names the
+        // whole sequence up to and including the step that broke.
+        for (const effect of result.effects) trace.push(effect.kind);
+        const where = `seed ${String(seed)}: ${trace.join(" ")}`;
         for (const effect of result.effects) {
-          trace.push(effect.kind);
-          const where = `seed ${String(seed)}: ${trace.join(" ")}`;
           switch (effect.kind) {
             case "capture":
               captured.add(effect.pointerId);
@@ -520,6 +535,16 @@ describe("gesture reducer — invariants under arbitrary input", () => {
             case "select":
               expect(dragOpen, where).toBe(false);
               expect(panOpen, where).toBe(false);
+              expect(menuSincePress, where).toBe(false);
+              break;
+            case "press":
+              menuSincePress = false;
+              break;
+            case "contextMenu":
+              // Never over a structure that is still moving.
+              expect(dragOpen, where).toBe(false);
+              expect(panOpen, where).toBe(false);
+              menuSincePress = true;
               break;
             case "panStart":
               // A drag still open here would lose its transaction.
@@ -549,11 +574,20 @@ describe("gesture reducer — invariants under arbitrary input", () => {
         const p = ptr(id, type, at.x, at.y, {
           button: type === "touch" ? 0 : pick([0, 0, 0, 1, 2]),
         });
-        if (roll < 0.3) step(down(p, { space: rand() < 0.1, panTool: rand() < 0.1 }));
-        else if (roll < 0.7) step(move(p));
-        else if (roll < 0.9) step(up(p));
-        else if (roll < 0.95) step({ kind: "cancel", pointerId: id });
-        else if (roll < 0.98) step({ kind: "lostCapture", pointerId: id });
+        if (roll < 0.28) step(down(p, { space: rand() < 0.1, panTool: rand() < 0.1 }));
+        else if (roll < 0.62) step(move(p));
+        else if (roll < 0.8) step(up(p));
+        else if (roll < 0.85) step({ kind: "cancel", pointerId: id });
+        else if (roll < 0.88) step({ kind: "lostCapture", pointerId: id });
+        // The hold timer can fire for any pointer at any moment — including
+        // one whose press is long gone — and so can a native contextmenu.
+        else if (roll < 0.93) step({ kind: "longPress", pointerId: id });
+        else if (roll < 0.98)
+          step({
+            kind: "contextMenu",
+            point: at,
+            source: type === "mouse" ? "pointer" : "touch",
+          });
         else step({ kind: "abort" });
       }
       step({ kind: "abort" });
@@ -657,5 +691,116 @@ describe("gestureZoomStep", () => {
     expect(gestureZoomStep(0, 2)).toBe(1);
     expect(gestureZoomStep(1, 0)).toBe(1);
     expect(gestureZoomStep(1, Number.NaN)).toBe(1);
+  });
+});
+
+describe("gesture reducer — the context menu", () => {
+  const at = { x: 50, y: 60 };
+
+  it("arms the hold timer for a finger and a pen, never for a mouse", () => {
+    expect(only(run([down(touch(4, 10, 10))]).effects, "armLongPress")).toEqual([
+      { kind: "armLongPress", pointerId: 4 },
+    ]);
+    expect(only(run([down(ptr(5, "pen", 10, 10))]).effects, "armLongPress")).toHaveLength(1);
+    expect(only(run([down(mouse(10, 10))]).effects, "armLongPress")).toEqual([]);
+  });
+
+  it("opens the menu at the DOWN point when the hold runs out, and the lift clicks nothing", () => {
+    const f = touch(4, 100, 100);
+    const held = run([down(f), move(touch(4, 103, 101)), { kind: "longPress", pointerId: 4 }]);
+    expect(held.state).toEqual({ kind: "held", pointerId: 4 });
+    expect(only(held.effects, "contextMenu")).toEqual([
+      { kind: "contextMenu", point: { x: 100, y: 100 }, source: "touch" },
+    ]);
+    // The tremor stayed inside the finger's slop, so no drag either.
+    expect(kinds(held.effects)).not.toContain("dragStart");
+
+    const lifted = run([move(touch(4, 104, 102)), up(touch(4, 104, 102))], held.state);
+    expect(kinds(lifted.effects)).toEqual([]);
+    expect(lifted.effects).toContainEqual({ kind: "release", pointerId: 4 });
+    expect(lifted.state).toEqual(GESTURE_IDLE);
+  });
+
+  it("ignores a hold timer its press outlived", () => {
+    const f = touch(4, 100, 100);
+    // Lifted as a tap first.
+    const tapped = run([down(f), up(f), { kind: "longPress", pointerId: 4 }]);
+    expect(kinds(tapped.effects)).toEqual(["press", "select"]);
+    // Travelled past the slop: a drag, not a hold.
+    const dragged = run([
+      down(f),
+      move(touch(4, 100 + TOUCH_CLICK_SLOP_PX * 3, 100)),
+      { kind: "longPress", pointerId: 4 },
+    ]);
+    expect(kinds(dragged.effects)).toEqual(["press", "dragStart"]);
+    // A second finger made it a pinch.
+    const pinched = run([down(f), down(touch(5, 200, 200)), { kind: "longPress", pointerId: 4 }]);
+    expect(only(pinched.effects, "contextMenu")).toEqual([]);
+    expect(pinched.state.kind).toBe("pinch");
+  });
+
+  it("ignores a second finger while the menu's finger is held, and a pen ends the hold cleanly", () => {
+    const held = run([down(touch(4, 100, 100)), { kind: "longPress", pointerId: 4 }]).state;
+    expect(run([down(touch(5, 10, 10))], held)).toEqual({ state: held, effects: [] });
+    const pen = run([down(ptr(6, "pen", 10, 10))], held);
+    expect(pen.effects[0]).toEqual({ kind: "release", pointerId: 4 });
+    expect(pen.state.kind).toBe("press");
+  });
+
+  it("opens on a right-click, and always keeps the browser's own menu shut", () => {
+    const { state, effects } = run([{ kind: "contextMenu", point: at, source: "pointer" }]);
+    expect(effects[0]).toEqual({ kind: "preventDefault" });
+    expect(only(effects, "contextMenu")).toEqual([{ kind: "contextMenu", point: at, source: "pointer" }]);
+    expect(state).toEqual(GESTURE_IDLE);
+  });
+
+  it("ends a macOS ctrl-click's press, so its release selects nothing", () => {
+    const m = mouse(50, 60);
+    const { effects, state } = run([
+      down(m),
+      { kind: "contextMenu", point: at, source: "pointer" },
+      up(m),
+    ]);
+    expect(kinds(effects)).toEqual(["press", "hoverEnd", "contextMenu"]);
+    expect(state).toEqual(GESTURE_IDLE);
+  });
+
+  it("opens nothing mid-drag, mid-pan or mid-pinch, but still suppresses the browser's", () => {
+    const menu: GestureInput = { kind: "contextMenu", point: at, source: "pointer" };
+    const dragging = run([down(mouse(0, 0)), move(mouse(40, 0))]).state;
+    const panning = run([down(mouse(0, 0, 1))]).state;
+    const pinching = run([down(touch(4, 0, 0)), down(touch(5, 50, 50))]).state;
+    for (const from of [dragging, panning, pinching]) {
+      const result = run([menu], from);
+      expect(result.effects, from.kind).toEqual([{ kind: "preventDefault" }]);
+      expect(result.state, from.kind).toBe(from);
+    }
+  });
+
+  it("swallows Android's own contextmenu for a hold that already opened the menu", () => {
+    const held = run([down(touch(4, 100, 100)), { kind: "longPress", pointerId: 4 }]).state;
+    const again = run([{ kind: "contextMenu", point: { x: 103, y: 100 }, source: "touch" }], held);
+    expect(again.effects).toEqual([{ kind: "preventDefault" }]);
+    expect(again.state).toBe(held);
+  });
+
+  it("holds a finger for the platforms' own 500 ms", () => {
+    expect(LONG_PRESS_MS).toBe(500);
+  });
+});
+
+describe("contextMenuSource", () => {
+  it("reads Chromium's pointerType where it is given", () => {
+    expect(contextMenuSource({ pointerType: "mouse", button: 2, ctrlKey: false })).toBe("pointer");
+    expect(contextMenuSource({ pointerType: "touch", button: 0, ctrlKey: false })).toBe("touch");
+    expect(contextMenuSource({ pointerType: "pen", button: 0, ctrlKey: false })).toBe("touch");
+    expect(contextMenuSource({ pointerType: "", button: 0, ctrlKey: false })).toBe("keyboard");
+  });
+
+  it("falls back on the button and ctrl for a bare MouseEvent", () => {
+    expect(contextMenuSource({ pointerType: undefined, button: 2, ctrlKey: false })).toBe("pointer");
+    // macOS ctrl-click reports the LEFT button.
+    expect(contextMenuSource({ pointerType: undefined, button: 0, ctrlKey: true })).toBe("pointer");
+    expect(contextMenuSource({ pointerType: undefined, button: 0, ctrlKey: false })).toBe("keyboard");
   });
 });

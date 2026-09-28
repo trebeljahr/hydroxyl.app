@@ -15,7 +15,8 @@
  * tool (so the marquee stays on a plain drag over empty space), and panning
  * and zooming live on inputs that never collide with it: the wheel and
  * two-finger scroll, Ctrl/Cmd + wheel and pinch, Space or the middle button,
- * and two fingers on a touch screen.
+ * and two fingers on a touch screen. The context menu is the reducer's too: a
+ * right-click, a held finger or pen, or the keyboard's menu key.
  *
  * THREE CONVENTIONS THAT ARE EASY TO BREAK AND HARD TO DIAGNOSE:
  *
@@ -39,12 +40,15 @@ import type { ViewportSize } from "@/state";
 
 import {
   GESTURE_IDLE,
+  LONG_PRESS_MS,
+  contextMenuSource,
   gestureZoomStep,
   isPanningState,
   isTouchGesture,
   reduceGesture,
   wheelIntent,
   type CanvasPointerModifiers,
+  type ContextMenuSource,
   type GestureEffect,
   type GestureInput,
   type GesturePointer,
@@ -53,8 +57,10 @@ import {
 
 export {
   CLICK_SLOP_PX,
+  LONG_PRESS_MS,
   TOUCH_CLICK_SLOP_PX,
   type CanvasPointerModifiers,
+  type ContextMenuSource,
 } from "./gesture-reducer";
 
 /**
@@ -106,6 +112,12 @@ export interface CanvasGestureHandlers {
   readonly onPanStart: () => void;
   readonly onPanEnd: () => void;
   readonly onResize: (size: ViewportSize) => void;
+  /**
+   * A right-click, a long-press, or the keyboard's context-menu key. Whatever
+   * press was in flight has already been ended — no click follows it and no
+   * drag commits — so the consumer only has to open a menu.
+   */
+  readonly onContextMenu: (canvasPoint: Vec2, source: ContextMenuSource) => void;
 }
 
 /**
@@ -129,6 +141,7 @@ export interface CanvasGestures {
     readonly onPointerUp: React.PointerEventHandler<SVGSVGElement>;
     readonly onPointerCancel: React.PointerEventHandler<SVGSVGElement>;
     readonly onPointerLeave: React.PointerEventHandler<SVGSVGElement>;
+    readonly onContextMenu: React.MouseEventHandler<SVGSVGElement>;
   };
 }
 
@@ -243,6 +256,13 @@ export function useCanvasGestures(
   });
 
   const stateRef = useRef<GestureState>(GESTURE_IDLE);
+  const longPressRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /**
+   * What a hold timer calls when it runs out. A ref, filled once `dispatch`
+   * exists, because the timer is armed from INSIDE `dispatch` and a callback
+   * cannot name itself in its own initialiser.
+   */
+  const longPressFiredRef = useRef<(pointerId: number) => void>(() => undefined);
   const spaceRef = useRef(false);
   const [isPanning, setIsPanning] = useState(false);
   const panningRef = useRef(false);
@@ -263,8 +283,26 @@ export function useCanvasGestures(
     ): void => {
       const { state, effects } = reduceGesture(stateRef.current, input);
       stateRef.current = state;
+      // A hold timer belongs to one press and dies with it. The reducer would
+      // ignore a stale one anyway; clearing it keeps an unmounted canvas from
+      // being called back at all.
+      if (state.kind !== "press" && longPressRef.current !== undefined) {
+        clearTimeout(longPressRef.current);
+        longPressRef.current = undefined;
+      }
       const h = handlersRef.current;
-      for (const effect of effects) applyEffect(effect, h, svg, event);
+      for (const effect of effects) {
+        if (effect.kind === "armLongPress") {
+          if (longPressRef.current !== undefined) clearTimeout(longPressRef.current);
+          const pointerId = effect.pointerId;
+          longPressRef.current = setTimeout(() => {
+            longPressRef.current = undefined;
+            longPressFiredRef.current(pointerId);
+          }, LONG_PRESS_MS);
+          continue;
+        }
+        applyEffect(effect, h, svg, event);
+      }
       const panning = isPanningState(state);
       if (panning !== panningRef.current) {
         panningRef.current = panning;
@@ -273,6 +311,11 @@ export function useCanvasGestures(
     },
     [svgRef],
   );
+  useEffect(() => {
+    longPressFiredRef.current = (pointerId) => {
+      dispatch({ kind: "longPress", pointerId });
+    };
+  }, [dispatch]);
 
   /**
    * SPACE AS THE PAN MODIFIER, tracked on `window` rather than on the canvas
@@ -549,6 +592,34 @@ export function useCanvasGestures(
     [dispatch],
   );
 
+  /**
+   * The browser's `contextmenu`, from a right-click, a macOS ctrl-click, the
+   * keyboard's menu key or Android's own long-press. The reducer decides; its
+   * first effect is always the `preventDefault` that keeps the browser's menu
+   * shut.
+   */
+  const onContextMenu = useCallback<React.MouseEventHandler<SVGSVGElement>>(
+    (event) => {
+      const svg = svgRef.current;
+      if (!svg) return;
+      const native = event.nativeEvent as MouseEvent & { readonly pointerType?: string };
+      dispatch(
+        {
+          kind: "contextMenu",
+          point: toCanvasPoint(svg, event),
+          source: contextMenuSource({
+            pointerType: native.pointerType,
+            button: event.button,
+            ctrlKey: event.ctrlKey,
+          }),
+        },
+        event,
+        svg,
+      );
+    },
+    [dispatch, svgRef],
+  );
+
   const rootHandlers = useMemo(
     () => ({
       onPointerDown,
@@ -556,8 +627,9 @@ export function useCanvasGestures(
       onPointerUp,
       onPointerCancel,
       onPointerLeave,
+      onContextMenu,
     }),
-    [onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onPointerLeave],
+    [onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onPointerLeave, onContextMenu],
   );
 
   return { isPanning, rootHandlers };
@@ -614,6 +686,12 @@ function applyEffect(
       return;
     case "panEnd":
       h.onPanEnd();
+      return;
+    case "contextMenu":
+      h.onContextMenu(effect.point, effect.source);
+      return;
+    case "armLongPress":
+      // Run by `dispatch`, which owns the timer.
       return;
   }
 }

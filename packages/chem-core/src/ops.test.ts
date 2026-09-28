@@ -6,6 +6,7 @@ import type { AtomId, Molecule } from "./types.js";
 import {
   cycleBondOrder,
   flipBond,
+  invertStereocentre,
   mergeAtoms,
   removeAtom,
   removeAtoms,
@@ -24,8 +25,10 @@ import {
   updateAtom,
   updateBond,
 } from "./ops.js";
+import { cipDescriptor } from "./stereo.js";
 import { implicitHydrogenCount } from "./valence.js";
-import { vec } from "./vec.js";
+import { DEG, fromPolar, ORIGIN, vec } from "./vec.js";
+import type { Vec2 } from "./vec.js";
 
 /** Ethanol, CH3-CH2-OH. */
 function ethanol(): Molecule {
@@ -380,6 +383,106 @@ describe("flipBond", () => {
     expect(flipped.atoms).toBe(mol.atoms);
     expect(flipped.bondIds).toEqual(mol.bondIds);
     expect(M.ringCount(flipped)).toBe(1);
+  });
+});
+
+/** One unit step from `from`, `degrees` counter-clockwise from +x. */
+function step(from: Vec2, degrees: number): Vec2 {
+  const d = fromPolar(degrees * DEG, 1);
+  return { x: from.x + d.x, y: from.y + d.y };
+}
+
+/**
+ * Butan-2-ol with the C2–O bond wedged OUT OF C2, so C2 carries a drawn
+ * configuration. Atoms and bonds share one id counter, so the atoms are
+ * a1–a5 (C1, C2, C3, C4, O) and the bonds b6–b9, with b7 the wedge.
+ */
+function butan2olWedged(): Molecule {
+  return buildMolecule((b) => {
+    const c1 = b.atom("C", ORIGIN);
+    const c2Pos = step(ORIGIN, 30);
+    const c2 = b.atom("C", c2Pos);
+    const c3Pos = step(c2Pos, -30);
+    const c3 = b.atom("C", c3Pos);
+    const c4 = b.atom("C", step(c3Pos, 30));
+    const oxygen = b.atom("O", step(c2Pos, 90));
+    b.bond(c1, c2, 1);
+    b.bond(c2, oxygen, 1, "wedge");
+    b.bond(c2, c3, 1);
+    b.bond(c3, c4, 1);
+  });
+}
+
+/**
+ * Bromochlorofluoroiodomethane drawn the textbook way for a four-coordinate
+ * centre: I and Cl in the plane, Br wedged and F hashed between them. TWO
+ * marks on the one centre, so an inversion that swapped only the first one it
+ * met would leave a drawing claiming both faces for the same side. Each
+ * substituent is minted just before the bond that carries it, so the wedge is
+ * b5 and the hash b9.
+ */
+function bromochlorofluoroiodomethane(): Molecule {
+  return buildMolecule((b) => {
+    const carbon = b.atom("C", ORIGIN);
+    b.bond(carbon, b.atom("I", step(ORIGIN, 90)), 1);
+    b.bond(carbon, b.atom("Br", step(ORIGIN, 350)), 1, "wedge");
+    b.bond(carbon, b.atom("Cl", step(ORIGIN, 210)), 1);
+    b.bond(carbon, b.atom("F", step(ORIGIN, 290)), 1, "hash");
+  });
+}
+
+describe("invertStereocentre", () => {
+  it("turns (R)-butan-2-ol into (S), and back again", () => {
+    const mol = butan2olWedged();
+    const before = cipDescriptor(mol, "a2");
+    expect(before?.kind).toMatch(/^[RS]$/);
+
+    const inverted = invertStereocentre(mol, "a2");
+    expect(M.requireBond(inverted, "b7").stereo).toBe("hash");
+    const after = cipDescriptor(inverted, "a2");
+    expect(after?.kind).toMatch(/^[RS]$/);
+    expect(after?.kind).not.toBe(before?.kind);
+
+    // An involution: the second inversion is the drawing the chemist started
+    // from, mark for mark.
+    expect(invertStereocentre(inverted, "a2")).toEqual(mol);
+  });
+
+  it("swaps every mark on the centre, wedge and hash alike", () => {
+    const mol = bromochlorofluoroiodomethane();
+    const before = cipDescriptor(mol, "a1");
+    expect(before?.kind).toMatch(/^[RS]$/);
+
+    const inverted = invertStereocentre(mol, "a1");
+    expect(M.requireBond(inverted, "b5").stereo).toBe("hash");
+    expect(M.requireBond(inverted, "b9").stereo).toBe("wedge");
+    expect(cipDescriptor(inverted, "a1")?.kind).not.toBe(before?.kind);
+  });
+
+  it("leaves a wedge that only ARRIVES at the atom alone", () => {
+    // The wedge's narrow end is on C2, so it says nothing about the oxygen.
+    // Inverting the oxygen must not reach across and invert C2.
+    const mol = butan2olWedged();
+    expect(invertStereocentre(mol, "a5")).toBe(mol);
+  });
+
+  it("returns the input when the centre carries only a wavy mark", () => {
+    // Wavy states that the configuration is unknown; it has no opposite.
+    const wavy = setBondStereo(butan2olWedged(), "b7", "wavy");
+    expect(invertStereocentre(wavy, "a2")).toBe(wavy);
+  });
+
+  it("does not touch positions or any other bond", () => {
+    const mol = butan2olWedged();
+    const inverted = invertStereocentre(mol, "a2");
+    expect(inverted.atoms).toBe(mol.atoms);
+    for (const id of ["b6", "b8", "b9"]) {
+      expect(inverted.bonds[id]).toBe(mol.bonds[id]);
+    }
+  });
+
+  it("throws on an atom that is not there", () => {
+    expect(() => invertStereocentre(butan2olWedged(), "a99")).toThrow(/No such atom/);
   });
 });
 

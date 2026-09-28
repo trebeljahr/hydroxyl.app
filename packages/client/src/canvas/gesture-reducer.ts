@@ -30,6 +30,17 @@
  *                                              gesture the first had started
  *   Any          Pan tool (G)                  a primary drag pans
  *
+ * ── AND THE CONTEXT MENU ──────────────────────────────────────────────────────
+ *
+ *   Mouse        right-click, macOS ctrl-click the canvas context menu
+ *   Touch, pen   hold still for LONG_PRESS_MS    the same menu; the release
+ *                                                afterwards clicks nothing
+ *   Keyboard     context-menu key, Shift+F10   the same menu, on the focused atom
+ *
+ * The browser's own menu never opens on the canvas. A request mid-drag or
+ * mid-pan opens nothing: a menu about a structure still moving under it would
+ * describe the wrong thing.
+ *
  * Wheel = pan and Ctrl/Cmd + wheel = zoom is what Figma, tldraw, Excalidraw
  * and Ketcher do, and it is the only mapping under which a trackpad can pan at
  * all without a modifier: the browser cannot tell a trackpad scroll from a
@@ -108,6 +119,47 @@ export const PAGE_DELTA_PX = 100;
  */
 const MIN_PINCH_SPAN_PX = 1;
 
+/**
+ * How long a finger or pen must be held, inside its click slop, before the
+ * press becomes a context-menu request instead of a click.
+ *
+ * 500 ms is the long-press threshold iOS and Android both ship with, so a
+ * finger trained on either lands on the same beat. Radix's own ContextMenu
+ * waits 700 ms and gives up on ANY pointermove — and under `touch-action:
+ * none` a resting finger reports a move for every pixel of tremor, so a hold
+ * there fails more often than it opens. Holding it to the click slop instead
+ * makes "a press that did not move" mean one thing for the tap and the hold.
+ */
+export const LONG_PRESS_MS = 500;
+
+/**
+ * How a context menu was asked for. The point means something for the first
+ * two; a KEYBOARD request carries whatever coordinates the browser invented,
+ * so its consumer places the menu itself.
+ */
+export type ContextMenuSource = "pointer" | "touch" | "keyboard";
+
+/**
+ * Which of the three a native `contextmenu` event is.
+ *
+ * `pointerType` tells them apart where the browser says: Chromium dispatches
+ * `contextmenu` as a PointerEvent, with "" for the keyboard. Where it does not
+ * (a bare MouseEvent), a keyboard request is the one with no right button and
+ * no ctrl — a right-click reports button 2 and a macOS ctrl-click ctrlKey.
+ */
+export function contextMenuSource(event: {
+  readonly pointerType: string | undefined;
+  readonly button: number;
+  readonly ctrlKey: boolean;
+}): ContextMenuSource {
+  if (event.pointerType === "touch" || event.pointerType === "pen") return "touch";
+  if (event.pointerType === "") return "keyboard";
+  if (event.pointerType === undefined && event.button !== 2 && !event.ctrlKey) {
+    return "keyboard";
+  }
+  return "pointer";
+}
+
 export interface CanvasPointerModifiers {
   readonly shift: boolean;
   readonly alt: boolean;
@@ -149,7 +201,11 @@ export type GestureInput =
   | { readonly kind: "lostCapture"; readonly pointerId: number }
   /** Escape, a lost window focus, a hidden tab, an unmount: end everything. */
   | { readonly kind: "abort" }
-  | { readonly kind: "leave" };
+  | { readonly kind: "leave" }
+  /** The timer an `armLongPress` asked for has run out. */
+  | { readonly kind: "longPress"; readonly pointerId: number }
+  /** A native `contextmenu` event on the canvas. */
+  | { readonly kind: "contextMenu"; readonly point: Vec2; readonly source: ContextMenuSource };
 
 export type GestureEffect =
   | { readonly kind: "capture"; readonly pointerId: number }
@@ -189,7 +245,14 @@ export type GestureEffect =
   /** Already negated: pass it straight to the store's `panBy`. */
   | { readonly kind: "pan"; readonly delta: Vec2 }
   | { readonly kind: "zoom"; readonly anchor: Vec2; readonly factor: number }
-  | { readonly kind: "panEnd" };
+  | { readonly kind: "panEnd" }
+  /**
+   * Start a `LONG_PRESS_MS` timer that reports back as a `longPress` input.
+   * The reducer re-checks the press when it does, so a timer that outlives
+   * its press is harmless.
+   */
+  | { readonly kind: "armLongPress"; readonly pointerId: number }
+  | { readonly kind: "contextMenu"; readonly point: Vec2; readonly source: ContextMenuSource };
 
 interface Contact {
   readonly pointerId: number;
@@ -208,6 +271,10 @@ interface Contact {
  * `pan` and `pinch` share one `panStart`/`panEnd` bracket. A touch pan becomes
  * a pinch when a second finger lands, and a pinch falls back to a one-finger
  * pan when a finger lifts, without closing and reopening the bracket.
+ *
+ * `held` is a press a long-press has turned into a context-menu request. The
+ * finger is still down and still captured; everything it does until it lifts
+ * is ignored, so its release neither clicks nor ends a drag.
  */
 export type GestureState =
   | { readonly kind: "idle" }
@@ -227,7 +294,8 @@ export type GestureState =
       readonly touch: boolean;
       readonly last: Vec2;
     }
-  | { readonly kind: "pinch"; readonly a: Contact; readonly b: Contact };
+  | { readonly kind: "pinch"; readonly a: Contact; readonly b: Contact }
+  | { readonly kind: "held"; readonly pointerId: number };
 
 export const GESTURE_IDLE: GestureState = Object.freeze({ kind: "idle" });
 
@@ -248,7 +316,7 @@ export function isPanningState(state: GestureState): boolean {
  * ignored while this holds, so an iPad pinch is not applied twice.
  */
 export function isTouchGesture(state: GestureState): boolean {
-  if (state.kind === "pinch") return true;
+  if (state.kind === "pinch" || state.kind === "held") return true;
   if (state.kind === "press" || state.kind === "pan") return state.touch;
   return false;
 }
@@ -290,6 +358,76 @@ export function reduceGesture(
       // Deliberately does NOT end a gesture: capture keeps a drag alive
       // outside the element, which is the reason for capturing it.
       return { state, effects: [{ kind: "hoverEnd" }] };
+    case "longPress":
+      return onLongPress(state, input.pointerId);
+    case "contextMenu":
+      return onContextMenu(state, input.point, input.source);
+  }
+}
+
+/**
+ * The hold timer ran out. Only a press that is still this pointer's, and has
+ * not travelled past its slop, becomes a menu; anything else — a tap already
+ * lifted, a drag, a second finger's pinch — ignores a timer it outlived.
+ */
+function onLongPress(state: GestureState, pointerId: number): GestureResult {
+  if (state.kind !== "press" || state.pointerId !== pointerId || state.moved) {
+    return { state, effects: NO_EFFECTS };
+  }
+  return {
+    // Still captured: the release has to reach `held` to be swallowed.
+    state: { kind: "held", pointerId },
+    effects: [
+      { kind: "hoverEnd" },
+      { kind: "contextMenu", point: state.origin, source: "touch" },
+    ],
+  };
+}
+
+/**
+ * A native `contextmenu`. Its default — the browser's own menu — is ALWAYS
+ * cancelled on the canvas; whether ours opens depends on what is in flight.
+ */
+function onContextMenu(
+  state: GestureState,
+  point: Vec2,
+  source: ContextMenuSource,
+): GestureResult {
+  const suppressOnly: GestureResult = { state, effects: [{ kind: "preventDefault" }] };
+  switch (state.kind) {
+    case "held":
+      // Android fires its own contextmenu for the same hold, a beat after the
+      // timer. The menu is already open; a second request would re-aim it
+      // under a finger that may have slid onto the neighbouring bond.
+      return suppressOnly;
+    case "pan":
+    case "pinch":
+      return suppressOnly;
+    case "press": {
+      if (state.moved) return suppressOnly;
+      // A press that has not moved: a macOS ctrl-click (a LEFT press, then
+      // this), or Android's own long-press arriving before our timer. End the
+      // press first, so its release clicks nothing.
+      const ended = abort(state);
+      return {
+        state: ended.state,
+        effects: [
+          { kind: "preventDefault" },
+          ...ended.effects,
+          { kind: "hoverEnd" },
+          { kind: "contextMenu", point, source },
+        ],
+      };
+    }
+    case "idle":
+      return {
+        state,
+        effects: [
+          { kind: "preventDefault" },
+          { kind: "hoverEnd" },
+          { kind: "contextMenu", point, source },
+        ],
+      };
   }
 }
 
@@ -326,6 +464,11 @@ function abort(state: GestureState): GestureResult {
           { kind: "release", pointerId: state.b.pointerId },
           { kind: "panEnd" },
         ],
+      };
+    case "held":
+      return {
+        state: GESTURE_IDLE,
+        effects: [{ kind: "release", pointerId: state.pointerId }],
       };
   }
 }
@@ -436,6 +579,11 @@ function start(
       // and the drag would then lose its release with a transaction open.
       { kind: "capture", pointerId: pointer.pointerId },
       { kind: "press", point: pointer.point, modifiers: pointer.modifiers },
+      // A finger and a pen have no right button: holding still is how they
+      // ask for the context menu. A mouse never arms the timer.
+      ...(pointer.pointerType === "touch" || pointer.pointerType === "pen"
+        ? [{ kind: "armLongPress", pointerId: pointer.pointerId } as const]
+        : []),
     ],
   };
 }
@@ -535,6 +683,11 @@ function pinchMove(
 }
 
 function onUp(state: GestureState, pointer: GesturePointer): GestureResult {
+  if (state.kind === "held" && state.pointerId === pointer.pointerId) {
+    // The finger that opened the menu lifts. Nothing else: not a click on the
+    // atom under it, which with the element tool held would retype it.
+    return { state: GESTURE_IDLE, effects: [{ kind: "release", pointerId: state.pointerId }] };
+  }
   if (state.kind === "press" && state.pointerId === pointer.pointerId) {
     // A non-primary release during a primary drag (a chorded second button)
     // is not the end of the gesture. Fingers only ever report button 0.
@@ -566,6 +719,7 @@ function endPointer(state: GestureState, pointerId: number): GestureResult {
       if (state.pointerId !== pointerId) return { state, effects: NO_EFFECTS };
       return abort(state);
     case "pan":
+    case "held":
       if (state.pointerId !== pointerId) return { state, effects: NO_EFFECTS };
       return abort(state);
     case "pinch": {

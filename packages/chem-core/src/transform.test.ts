@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { benzene, buildMolecule, carbocycle, linearChain } from "./builders.js";
 import * as M from "./molecule.js";
 import type { AtomId, Molecule } from "./types.js";
+import { insertFragment } from "./fragment.js";
 import {
+  alignFragments,
   atomsCentroid,
   flipAtoms,
   horizontalMirror,
@@ -503,5 +505,85 @@ describe("bond-length normalisation", () => {
 
   it("refuses a target that is not a positive length", () => {
     expect(() => normalizeBondLength(benzene(), 0)).toThrow(RangeError);
+  });
+});
+
+describe("alignFragments", () => {
+  /**
+   * A two-structure scheme: benzene centred on the origin, and propane — a
+   * three-carbon zig-zag — parked to its right and well below it. Benzene's
+   * atoms are a1–a6; propane's are inserted after them.
+   */
+  function scheme(): { mol: Molecule; ring: readonly AtomId[]; chain: readonly AtomId[] } {
+    const ring = benzene();
+    const inserted = insertFragment(ring, linearChain(3), { offset: vec(4, -3) });
+    return { mol: inserted.molecule, ring: ring.atomIds, chain: inserted.atomIds };
+  }
+
+  function extent(mol: Molecule, ids: readonly AtomId[], axis: "x" | "y") {
+    const values = ids.map((id) => posOf(mol, id)[axis]);
+    return { lo: Math.min(...values), hi: Math.max(...values) };
+  }
+
+  /** Every pairwise distance inside a structure, which a rigid move keeps. */
+  function shape(mol: Molecule, ids: readonly AtomId[]): number[] {
+    const out: number[] = [];
+    for (const a of ids) for (const b of ids) out.push(distance(posOf(mol, a), posOf(mol, b)));
+    return out;
+  }
+
+  it("puts both tops on one line, and top means the LARGEST y", () => {
+    const { mol, ring, chain } = scheme();
+    // Model space is y-up: benzene sits above propane on the page, so its top
+    // edge is the higher of the two and is the line propane moves up to.
+    const ringTop = extent(mol, ring, "y").hi;
+    expect(ringTop).toBeGreaterThan(extent(mol, chain, "y").hi);
+
+    // ONE atom of each structure names it.
+    const aligned = alignFragments(mol, [ring[0]!, chain[1]!], "top");
+    expect(extent(aligned, chain, "y").hi).toBeCloseTo(ringTop, 12);
+    expect(extent(aligned, ring, "y").hi).toBe(ringTop);
+    // The structure already on the line did not move at all.
+    for (const id of ring) expect(aligned.atoms[id]).toBe(mol.atoms[id]);
+  });
+
+  it("moves every atom of a named structure, rigidly and along one axis", () => {
+    const { mol, ring, chain } = scheme();
+    const aligned = alignFragments(mol, [ring[0]!, chain[0]!], "bottom");
+    // Propane was named by its first atom only, yet all three moved together:
+    // moving the named atom alone would have stretched its bonds.
+    expect(shape(aligned, chain)).toEqual(shape(mol, chain).map((d) => expect.closeTo(d, 12)));
+    expect(shape(aligned, ring)).toEqual(shape(mol, ring).map((d) => expect.closeTo(d, 12)));
+    // A vertical alignment never slides anything sideways.
+    for (const id of [...ring, ...chain]) expect(posOf(aligned, id).x).toBe(posOf(mol, id).x);
+    expect(extent(aligned, ring, "y").lo).toBeCloseTo(extent(aligned, chain, "y").lo, 12);
+    // The bond count and every bond record are untouched: a layout change.
+    expect(aligned.bonds).toBe(mol.bonds);
+  });
+
+  it("lines up left edges and centres on x", () => {
+    const { mol, ring, chain } = scheme();
+    const left = alignFragments(mol, [ring[0]!, chain[0]!], "left");
+    expect(extent(left, chain, "x").lo).toBeCloseTo(extent(left, ring, "x").lo, 12);
+    for (const id of [...ring, ...chain]) expect(posOf(left, id).y).toBe(posOf(mol, id).y);
+
+    const centred = alignFragments(mol, [ring[0]!, chain[0]!], "centre");
+    const mid = (e: { lo: number; hi: number }) => (e.lo + e.hi) / 2;
+    const all = extent(mol, [...ring, ...chain], "x");
+    expect(mid(extent(centred, ring, "x"))).toBeCloseTo(mid(all), 12);
+    expect(mid(extent(centred, chain, "x"))).toBeCloseTo(mid(all), 12);
+  });
+
+  it("returns the input when only one structure is named", () => {
+    const { mol, ring } = scheme();
+    // All six benzene atoms are still ONE structure: nothing to align against.
+    expect(alignFragments(mol, ring, "top")).toBe(mol);
+    expect(alignFragments(benzene(), ["a1", "a404"], "left")).toEqual(benzene());
+  });
+
+  it("returns the input when the structures already share the edge", () => {
+    const { mol, ring, chain } = scheme();
+    const once = alignFragments(mol, [ring[0]!, chain[0]!], "middle");
+    expect(alignFragments(once, [ring[0]!, chain[0]!], "middle")).toBe(once);
   });
 });

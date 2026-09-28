@@ -17,8 +17,8 @@
  * See `writeClipboardParts` and `writeBlobFile`.
  */
 
-import { isEmpty } from "@starter/chem-core";
-import type { AtomId } from "@starter/chem-core";
+import { extractFragment, isEmpty } from "@starter/chem-core";
+import type { AtomId, Molecule } from "@starter/chem-core";
 
 import {
   annotationSizeNotice,
@@ -144,53 +144,124 @@ function refuseLabelled(store: EditorStore, message: string, atomIds: readonly A
   report(store, message);
 }
 
-export async function copyMolblock(store: EditorStore): Promise<void> {
+/**
+ * What a text copy covers: the whole structure, or the selected atoms cut out
+ * as a molecule of their own.
+ */
+export type CopyScope = "structure" | "selection";
+
+interface CopySource {
+  readonly molecule: Molecule;
+  /** "structure" or "selection", for the sentence that reports the copy. */
+  readonly noun: string;
+  /**
+   * A refusal restated in the document's ids. `extractFragment` MINTS NEW
+   * IDS (a1, a2, …), so an atom the writer names in the fragment is not the
+   * atom of that name on the canvas: selecting it would highlight the wrong
+   * one, and the sentence would point at it too.
+   */
+  readonly refusal: (
+    message: string,
+    ids: readonly AtomId[] | undefined,
+  ) => { readonly message: string; readonly atomIds: readonly AtomId[] | undefined };
+}
+
+function copySource(store: EditorStore, scope: CopyScope): CopySource | null {
+  const state = store.getState();
+  const mol = state.document.molecule;
+  if (scope === "structure") {
+    return {
+      molecule: mol,
+      noun: "structure",
+      refusal: (message, atomIds) => ({ message, atomIds }),
+    };
+  }
+  if (state.selection.atomIds.length === 0) return null;
+  const fragment = extractFragment(mol, state.selection.atomIds);
+  const back = new Map<AtomId, AtomId>();
+  for (const [source, copied] of fragment.atomIdMap) back.set(copied, source);
+  return {
+    molecule: fragment.molecule,
+    noun: "selection",
+    refusal: (message, atomIds) => ({
+      // ONE pass over the sentence, so a fragment a1 that maps to document a5
+      // is never rewritten a second time by a fragment a5's own entry.
+      message: message.replace(/\b[a-z]+\d+\b/g, (id) =>
+        atomIds?.includes(id) === true ? (back.get(id) ?? id) : id,
+      ),
+      atomIds: atomIds?.flatMap((id) => back.get(id) ?? []),
+    }),
+  };
+}
+
+export async function copyMolblock(
+  store: EditorStore,
+  scope: CopyScope = "structure",
+): Promise<void> {
   const doc = store.getState().document;
-  if (isEmpty(doc.molecule)) {
-    report(store, "Nothing has been drawn yet, so there is no molfile to copy.");
+  const source = copySource(store, scope);
+  if (source === null || isEmpty(source.molecule)) {
+    report(
+      store,
+      scope === "selection"
+        ? "No atoms are selected, so there is no molfile to copy."
+        : "Nothing has been drawn yet, so there is no molfile to copy.",
+    );
     return;
   }
-  const written = moleculeToMolblock(doc.molecule, doc.metadata.title);
+  const written = moleculeToMolblock(source.molecule, doc.metadata.title);
   if (!written.ok) {
-    refuseLabelled(store, written.error.message, written.error.atomIds);
+    const refused = source.refusal(written.error.message, written.error.atomIds);
+    refuseLabelled(store, refused.message, refused.atomIds);
     return;
   }
   // Decision 49: the generation was chosen from the molecule, so the line that
   // says the copy happened says which generation it was. The dialog shows the
   // same sentence before the click; it is repeated because the copy may have
   // been made from the palette, with no dialog on screen.
-  const versionNote = molblockVersionNotice(doc.molecule);
+  const versionNote = molblockVersionNotice(source.molecule);
   const { done } = writeClipboardParts({ "text/plain": Promise.resolve(textBlob(written.value)) });
   try {
     await done;
     report(
       store,
       versionNote === null
-        ? "Copied the structure as a molfile"
-        : `Copied the structure as a molfile. ${versionNote}`,
+        ? `Copied the ${source.noun} as a molfile`
+        : `Copied the ${source.noun} as a molfile. ${versionNote}`,
     );
   } catch (error) {
     report(store, `The molfile could not be copied: ${describe(error)}`);
   }
 }
 
-export async function copySmiles(store: EditorStore): Promise<void> {
+export async function copySmiles(
+  store: EditorStore,
+  scope: CopyScope = "structure",
+): Promise<void> {
   const doc = store.getState().document;
-  if (isEmpty(doc.molecule)) {
-    report(store, "Nothing has been drawn yet, so there is no SMILES to copy.");
+  const source = copySource(store, scope);
+  if (source === null || isEmpty(source.molecule)) {
+    report(
+      store,
+      scope === "selection"
+        ? "No atoms are selected, so there is no SMILES to copy."
+        : "Nothing has been drawn yet, so there is no SMILES to copy.",
+    );
     return;
   }
+  const molecule = source.molecule;
   // Checked synchronously first: the same molblock gate `toSmiles` applies,
   // so a labelled atom is reported and selected before the clipboard or the
   // wasm is touched at all.
-  const gate = moleculeToMolblock(doc.molecule, doc.metadata.title);
+  const gate = moleculeToMolblock(molecule, doc.metadata.title);
   if (!gate.ok) {
-    refuseLabelled(store, gate.error.message, gate.error.atomIds);
+    const refused = source.refusal(gate.error.message, gate.error.atomIds);
+    refuseLabelled(store, refused.message, refused.atomIds);
     return;
   }
   // Dynamic, like clean-up: /editor must not fetch RDKit until asked.
   const smiles = import("@/lib/rdkit/client").then(async ({ toSmiles }) => {
-    const result = await toSmiles(doc.molecule, doc.metadata.title);
+    const result = await toSmiles(molecule, doc.metadata.title);
     if (!result.ok) throw new Error(result.error.message);
     return result.value;
   });

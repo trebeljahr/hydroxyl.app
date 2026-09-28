@@ -140,6 +140,26 @@ const MESSAGE_ALREADY_BONDED = "These atoms are already bonded";
 const MESSAGE_FUSED_BOTH_SIDES = "That bond already has a ring on each side";
 const MESSAGE_ZERO_LENGTH_BOND = "That bond has zero length; move its atoms apart first";
 
+/**
+ * Why a ring cannot be fused onto `bondId`, or undefined when it can.
+ *
+ * ONE answer for the two surfaces that fuse: the ring tool's click below and
+ * the context menu's "Fuse ring" commands. Both are pre-checks rather than a
+ * catch, because `fuseRingOnBond` THROWS on either condition, and a refusal
+ * that names the reason is better than a rolled-back edit.
+ *
+ * `isFusionBond` covers a bond that already carries a ring on each side.
+ * `isDegenerateBond` covers the other geometric impossibility: two coincident
+ * atoms have no perpendicular bisector to place a ring across. A drawing
+ * reaches that through an import with duplicate coordinates, or by a fragment
+ * drag that parked one of its atoms on a neighbour.
+ */
+export function ringFuseRefusal(mol: Molecule, bondId: BondId): string | undefined {
+  if (isFusionBond(mol, bondId)) return MESSAGE_FUSED_BOTH_SIDES;
+  if (isDegenerateBond(mol, bondId)) return MESSAGE_ZERO_LENGTH_BOND;
+  return undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Geometry helpers
 // ---------------------------------------------------------------------------
@@ -485,20 +505,14 @@ function ringClick(
 
   if (hit.kind === "bond") {
     // Pre-checked rather than caught: `fuseRingOnBond` throws on a bond that
-    // already carries a ring on each side, and a throw out of a pointer
-    // handler aborts the transaction AND propagates, taking the canvas down.
-    if (isFusionBond(mol, hit.bondId)) {
-      return [{ kind: "status", message: MESSAGE_FUSED_BOTH_SIDES }];
-    }
-    // The other geometric impossibility `fuseRingOnBond` throws on, and one
-    // `isFusionBond` does not cover: a bond whose two atoms are coincident has
-    // no perpendicular bisector to place a ring across. A drawing reaches that
-    // state through an import with duplicate coordinates, or by a fragment
-    // drag that parked one of its atoms on a neighbour. The adapter would
-    // catch the throw, but a refusal that names the reason is a better answer
-    // than a rolled-back gesture with a stack trace behind it.
-    if (isDegenerateBond(mol, hit.bondId)) {
-      return [{ kind: "status", message: MESSAGE_ZERO_LENGTH_BOND }];
+    // already carries a ring on each side or has zero length, and a throw out
+    // of a pointer handler aborts the transaction AND propagates, taking the
+    // canvas down. The adapter would catch it, but a refusal that names the
+    // reason is a better answer than a rolled-back gesture with a stack trace
+    // behind it. See `ringFuseRefusal`.
+    const refusal = ringFuseRefusal(mol, hit.bondId);
+    if (refusal !== undefined) {
+      return [{ kind: "status", message: refusal }];
     }
     return [
       {

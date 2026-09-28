@@ -28,6 +28,7 @@ import {
   addAtom as coreAddAtom,
   applyIssueFix as coreApplyIssueFix,
   addBond as coreAddBond,
+  alignFragments as coreAlignFragments,
   appendChain as coreAppendChain,
   attachGroupToAtom as coreAttachGroupToAtom,
   attachRingToAtom as coreAttachRingToAtom,
@@ -38,6 +39,7 @@ import {
   fuseRingOnBond as coreFuseRingOnBond,
   flipAtoms as coreFlipAtoms,
   insertFragment as coreInsertFragment,
+  invertStereocentre as coreInvertStereocentre,
   mergeAtoms as coreMergeAtoms,
   removeAtoms as coreRemoveAtoms,
   removeBonds as coreRemoveBonds,
@@ -52,6 +54,7 @@ import {
   setExplicitHydrogenCount as coreSetExplicitHydrogenCount,
   setIsotope as coreSetIsotope,
   setLabel as coreSetLabel,
+  setLonePairs as coreSetLonePairs,
   spiroRingAtAtom as coreSpiroRingAtAtom,
   sprout as coreSprout,
   sproutTo as coreSproutTo,
@@ -155,6 +158,17 @@ export const guardedOps = {
 
   /** The issue list's one-click fixes: a charge, a bond order, a wedge. */
   applyIssueFix: guard("applyIssueFix", coreApplyIssueFix),
+
+  /**
+   * The canvas context menu's edits that no other surface reached before it:
+   * the Lewis pin, the R/S inversion, and lining separate structures up. Added
+   * with the menu that calls them, per the rule in the header. `flipAtoms`
+   * above had been wrapped with no caller; the menu's flip commands are its
+   * first.
+   */
+  setLonePairs: guard("setLonePairs", coreSetLonePairs),
+  invertStereocentre: guard("invertStereocentre", coreInvertStereocentre),
+  alignFragments: guard("alignFragments", coreAlignFragments),
 
   /**
    * The ABS/AND/OR statement, written by decision 89's selection commands.

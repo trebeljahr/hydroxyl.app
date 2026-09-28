@@ -17,12 +17,14 @@
 import { act, render } from "@testing-library/react";
 import { useRef } from "react";
 import type { ReactElement } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import {
   useCanvasGestures,
   CLICK_SLOP_PX,
+  LONG_PRESS_MS,
+  TOUCH_CLICK_SLOP_PX,
   type CanvasGestureHandlers,
 } from "./useCanvasGestures";
 
@@ -53,6 +55,7 @@ function makeHandlers(): HandlerSpies {
     onPanStart: vi.fn<CanvasGestureHandlers["onPanStart"]>(),
     onPanEnd: vi.fn<CanvasGestureHandlers["onPanEnd"]>(),
     onResize: vi.fn<CanvasGestureHandlers["onResize"]>(),
+    onContextMenu: vi.fn<CanvasGestureHandlers["onContextMenu"]>(),
   };
 }
 
@@ -691,5 +694,160 @@ describe("useCanvasGestures — dragging", () => {
     pointer(svg, "pointermove", { x: 150, y: 100, buttons: 4 });
     pointer(svg, "pointerup", { x: 150, y: 100, button: 1 });
     expect(handlers.onPanEnd).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * A native `contextmenu`, as each source delivers it. `pointerType` is only
+ * defined when given: Chromium sends a PointerEvent ("" for the keyboard),
+ * other engines a bare MouseEvent with no such field at all.
+ */
+function contextMenu(
+  svg: SVGSVGElement,
+  init: { x: number; y: number; button?: number; ctrlKey?: boolean; pointerType?: string },
+): MouseEvent {
+  const event = new MouseEvent("contextmenu", {
+    clientX: init.x,
+    clientY: init.y,
+    button: init.button ?? 2,
+    ctrlKey: init.ctrlKey ?? false,
+    bubbles: true,
+    cancelable: true,
+  });
+  if (init.pointerType !== undefined) {
+    Object.defineProperty(event, "pointerType", { value: init.pointerType });
+  }
+  act(() => {
+    svg.dispatchEvent(event);
+  });
+  return event;
+}
+
+describe("useCanvasGestures — the context menu", () => {
+  it("opens on a right-click, at the click, and keeps the browser's menu shut", () => {
+    const { svg } = mount(handlers);
+    const event = contextMenu(svg, { x: 120, y: 80 });
+    expect(event.defaultPrevented).toBe(true);
+    expect(handlers.onContextMenu).toHaveBeenCalledExactlyOnceWith({ x: 120, y: 80 }, "pointer");
+  });
+
+  it("ends a macOS ctrl-click's press, so its release selects nothing", () => {
+    // Ctrl-click arrives as a LEFT pointerdown, then the contextmenu.
+    const { svg } = mount(handlers);
+    pointer(svg, "pointerdown", { x: 100, y: 100, buttons: 1 });
+    contextMenu(svg, { x: 100, y: 100, button: 0, ctrlKey: true });
+    pointer(svg, "pointerup", { x: 100, y: 100 });
+    expect(handlers.onContextMenu).toHaveBeenCalledExactlyOnceWith({ x: 100, y: 100 }, "pointer");
+    expect(handlers.onSelect).not.toHaveBeenCalled();
+  });
+
+  it("reads the keyboard's context-menu key as a keyboard request, in either spelling", () => {
+    const { svg } = mount(handlers);
+    contextMenu(svg, { x: 0, y: 0, button: 0 });
+    contextMenu(svg, { x: 0, y: 0, button: 0, pointerType: "" });
+    expect(handlers.onContextMenu.mock.calls.map(([, source]) => source)).toEqual([
+      "keyboard",
+      "keyboard",
+    ]);
+  });
+
+  it("opens nothing in the middle of a drag, but still keeps the browser's menu shut", () => {
+    const { svg } = mount(handlers);
+    pointer(svg, "pointerdown", { x: 100, y: 100, buttons: 1 });
+    pointer(svg, "pointermove", { x: 100 + CLICK_SLOP_PX * 4, y: 100, buttons: 1 });
+    expect(handlers.onDragStart).toHaveBeenCalledTimes(1);
+    const event = contextMenu(svg, { x: 116, y: 100 });
+    expect(event.defaultPrevented).toBe(true);
+    expect(handlers.onContextMenu).not.toHaveBeenCalled();
+    expect(handlers.onDragCancel).not.toHaveBeenCalled();
+  });
+});
+
+describe("useCanvasGestures — long-press", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function hold(ms: number): void {
+    act(() => {
+      vi.advanceTimersByTime(ms);
+    });
+  }
+
+  it("opens the menu at the DOWN point after the threshold, and the lift clicks nothing", () => {
+    const { svg } = mount(handlers);
+    finger(svg, "pointerdown", 7, 200, 150);
+    hold(LONG_PRESS_MS - 1);
+    expect(handlers.onContextMenu).not.toHaveBeenCalled();
+    hold(1);
+    expect(handlers.onContextMenu).toHaveBeenCalledExactlyOnceWith({ x: 200, y: 150 }, "touch");
+    finger(svg, "pointerup", 7, 200, 150);
+    // The finger was still down when the menu opened. Its lift must not
+    // select the atom under it, nor retype it with the element tool held.
+    expect(handlers.onSelect).not.toHaveBeenCalled();
+    expect(handlers.onDragEnd).not.toHaveBeenCalled();
+  });
+
+  it("survives finger tremor inside the touch slop", () => {
+    const { svg } = mount(handlers);
+    finger(svg, "pointerdown", 7, 200, 150);
+    finger(svg, "pointermove", 7, 200 + TOUCH_CLICK_SLOP_PX - 2, 151);
+    hold(LONG_PRESS_MS);
+    expect(handlers.onContextMenu).toHaveBeenCalledTimes(1);
+  });
+
+  it("works for a pen as for a finger", () => {
+    const { svg } = mount(handlers);
+    pointer(svg, "pointerdown", { x: 10, y: 10, buttons: 1, pointerId: 9, pointerType: "pen" });
+    hold(LONG_PRESS_MS);
+    expect(handlers.onContextMenu).toHaveBeenCalledExactlyOnceWith({ x: 10, y: 10 }, "touch");
+  });
+
+  it("is a drag, not a long-press, once the finger travels", () => {
+    const { svg } = mount(handlers);
+    finger(svg, "pointerdown", 7, 200, 150);
+    finger(svg, "pointermove", 7, 200 + TOUCH_CLICK_SLOP_PX * 4, 150);
+    hold(LONG_PRESS_MS * 2);
+    expect(handlers.onDragStart).toHaveBeenCalledTimes(1);
+    expect(handlers.onContextMenu).not.toHaveBeenCalled();
+  });
+
+  it("leaves a quick tap a click", () => {
+    const { svg } = mount(handlers);
+    finger(svg, "pointerdown", 7, 200, 150);
+    hold(LONG_PRESS_MS / 2);
+    finger(svg, "pointerup", 7, 200, 150);
+    hold(LONG_PRESS_MS * 2);
+    expect(handlers.onSelect).toHaveBeenCalledTimes(1);
+    expect(handlers.onContextMenu).not.toHaveBeenCalled();
+  });
+
+  it("never arms for a mouse, which has a right button for this", () => {
+    const { svg } = mount(handlers);
+    pointer(svg, "pointerdown", { x: 200, y: 150, buttons: 1 });
+    hold(LONG_PRESS_MS * 4);
+    expect(handlers.onContextMenu).not.toHaveBeenCalled();
+  });
+
+  it("swallows Android's own contextmenu for the same hold instead of opening twice", () => {
+    const { svg } = mount(handlers);
+    finger(svg, "pointerdown", 7, 200, 150);
+    hold(LONG_PRESS_MS);
+    const native = contextMenu(svg, { x: 203, y: 150, button: 0, pointerType: "touch" });
+    expect(native.defaultPrevented).toBe(true);
+    expect(handlers.onContextMenu).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not call back after the canvas unmounts", () => {
+    const { svg, unmount } = mount(handlers);
+    finger(svg, "pointerdown", 7, 200, 150);
+    act(() => {
+      unmount();
+    });
+    hold(LONG_PRESS_MS * 2);
+    expect(handlers.onContextMenu).not.toHaveBeenCalled();
   });
 });

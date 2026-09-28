@@ -44,19 +44,26 @@
  * into chem-core — chem-guard.ts would throw.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
-import { pxPerModelUnit } from "@starter/chem-render";
+import { modelToPx, pxPerModelUnit } from "@starter/chem-render";
+import {
+  keyboardContextTarget,
+  resolveContextTarget,
+  selectionFor,
+  type ContextTarget,
+} from "@/editor/context-menu";
 import { editorIssues } from "@/editor/issues";
 import { movingAtomIds, useCanvasInteraction } from "@/editor/interaction";
 import { toolDef } from "@/editor/tools";
 import { describeAtom } from "@/editor/traversal";
-import { editorStore, useEditorStore } from "@/state";
+import { editorStore, toScreen, useEditorStore } from "@/state";
 
+import { CanvasContextMenu, type ContextMenuRequest } from "./CanvasContextMenu";
 import { consumeCanvasCrash } from "./crash";
 import { buildCanvasScene, renderStyleFor } from "./scene-bridge";
 import { createSceneIndex, fitBounds } from "./metrics";
-import { type PickContext } from "./pick";
+import { pickAt, type PickContext } from "./pick";
 import { SceneLayer } from "./SceneLayer";
 import { OverlayLayer } from "./OverlayLayer";
 import { rotateHandleGeometry } from "./handles";
@@ -175,14 +182,54 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
   const { handlers: interactionHandlers, overlay } =
     useCanvasInteraction(pickContextRef);
 
+  // THE CONTEXT MENU. The gesture hook has already cancelled whatever press
+  // was in flight; what is left is to work out what the request is ABOUT,
+  // select it — every registry command acts on the selection, so this is what
+  // aims the menu — and open the menu there. The decisions are the pure
+  // model's (`editor/context-menu.ts`); this only supplies the pick.
+  const [menu, setMenu] = useState<ContextMenuRequest | null>(null);
+  const handleContextMenu = useCallback<CanvasGestureHandlers["onContextMenu"]>(
+    (point, source) => {
+      const state = editorStore.getState();
+      const ctx = pickContextRef.current;
+      const mol = state.document.molecule;
+      let target: ContextTarget;
+      let anchor = point;
+      if (source === "keyboard") {
+        // The browser's coordinates for a keyboard request are its own guess.
+        // The keyboard is pointing at the atom the arrow keys walked to, so the
+        // menu opens there — or mid-canvas when it is pointing at nothing.
+        target = keyboardContextTarget(state.selection, state.ui.focusedAtomId, mol);
+        const focused = state.ui.focusedAtomId;
+        anchor =
+          focused !== null && Object.hasOwn(mol.atoms, focused)
+            ? toScreen(ctx.viewport, modelToPx(ctx.index.scene.style, mol.atoms[focused]!.pos))
+            : { x: ctx.viewport.size.width / 2, y: ctx.viewport.size.height / 2 };
+      } else {
+        target = resolveContextTarget(state.selection, pickAt(ctx, point));
+      }
+      const selection = selectionFor(target, state.selection);
+      if (selection !== state.selection) state.setSelection(selection);
+      setMenu({ target, anchor });
+    },
+    [],
+  );
+  const closeMenu = useCallback(() => {
+    setMenu(null);
+  }, []);
+  const focusCanvas = useCallback(() => {
+    svgRef.current?.focus();
+  }, []);
+
   const gestureHandlers = useMemo<CanvasGestureHandlers>(
     () => ({
       ...interactionHandlers,
       onZoom: handleZoom,
       onPan: handlePan,
       onResize: handleResize,
+      onContextMenu: handleContextMenu,
     }),
-    [interactionHandlers, handleZoom, handlePan, handleResize],
+    [interactionHandlers, handleZoom, handlePan, handleResize, handleContextMenu],
   );
 
   const { isPanning, rootHandlers } = useCanvasGestures(svgRef, gestureHandlers, {
@@ -360,8 +407,18 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
         // `touchAction: none` so the canvas gets every finger: one finger is
         // the tool (a marquee, a bond), two pan and pinch-zoom the VIEW (see
         // gesture-reducer.ts). Without it the browser claims both as a page
-        // scroll or a page zoom before the first pointermove reaches us.
-        style={{ touchAction: "none", cursor, outline: "none" }}
+        // scroll or a page zoom before the first pointermove reaches us. No
+        // callout and no text selection either: a held finger is the
+        // long-press that opens the context menu, and iOS would otherwise
+        // answer it with its own magnifier and "Copy" bubble over the top.
+        style={{
+          touchAction: "none",
+          cursor,
+          outline: "none",
+          WebkitTouchCallout: "none",
+          WebkitUserSelect: "none",
+          userSelect: "none",
+        }}
         className="focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-inset"
         {...rootHandlers}
       >
@@ -384,6 +441,8 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
       {onRotateHandle && !rotating ? (
         <RotateHandleHint geometry={rotateHandle} viewport={viewport} />
       ) : null}
+
+      <CanvasContextMenu request={menu} onClose={closeMenu} returnFocus={focusCanvas} />
 
       {/*
         WHAT A SCREEN READER HEARS when the arrow keys walk the structure.

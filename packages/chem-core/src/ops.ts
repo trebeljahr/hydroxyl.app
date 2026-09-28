@@ -366,6 +366,44 @@ export function flipBond(mol: Molecule, id: BondId): Molecule {
   return updateBond(mol, id, { from: bond.to, to: bond.from });
 }
 
+/**
+ * Inverts the configuration drawn at `atomId`: every wedge whose narrow end
+ * sits on this atom becomes a hash, and every hash a wedge. R becomes S.
+ *
+ * ONLY THE BONDS THAT START HERE. By the convention in types.ts a wedge makes
+ * its claim about the atom at its narrow end, `from`. A wedge that merely
+ * ARRIVES at this atom from a neighbour is a statement about the neighbour's
+ * centre, and swapping it would invert a stereocentre nobody pointed at.
+ * Exchanging wedge and hash on every bond out of one centre negates the depth
+ * of each of its drawn ligands — a reflection through the page, restricted to
+ * that centre — which is an inversion of it and of nothing else.
+ *
+ * Contrast `flipAtoms` in transform.ts, which mirrors the positions AND swaps
+ * the marks, and therefore PRESERVES configuration; and `flipBond`, which
+ * moves the narrow end to the other atom and so moves the claim rather than
+ * inverting it.
+ *
+ * `wavy` and `either` say the configuration is unknown or mixed. They have no
+ * opposite and are left alone. An atom with no wedge or hash of its own has
+ * no configuration on the page to invert, and the INPUT molecule comes back —
+ * callers read that identity as "nothing to invert here", which is how the
+ * editor decides whether to offer the command at all.
+ *
+ * Throws on an unknown id, like every other update in this file.
+ */
+export function invertStereocentre(mol: Molecule, atomId: AtomId): Molecule {
+  requireAtom(mol, atomId);
+  let bonds: Record<BondId, Bond> | undefined;
+  for (const bondId of mol.bondIds) {
+    const bond = requireBond(mol, bondId);
+    if (bond.from !== atomId) continue;
+    if (bond.stereo !== "wedge" && bond.stereo !== "hash") continue;
+    bonds ??= { ...mol.bonds };
+    bonds[bondId] = { ...bond, stereo: bond.stereo === "wedge" ? "hash" : "wedge" };
+  }
+  return bonds === undefined ? mol : { ...mol, bonds };
+}
+
 export function setAtomPosition(mol: Molecule, id: AtomId, pos: Vec2): Molecule {
   return updateAtom(mol, id, { pos });
 }

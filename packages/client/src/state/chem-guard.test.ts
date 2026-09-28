@@ -121,6 +121,10 @@ describe("guardedOps", () => {
       setBondStereo: (d) => void guardedOps.setBondStereo(d, firstBond, "wedge"),
       setDoubleBondSide: (d) => void guardedOps.setDoubleBondSide(d, firstBond, "left"),
       flipBond: (d) => void guardedOps.flipBond(d, firstBond),
+      setLonePairs: (d) => void guardedOps.setLonePairs(d, firstAtom, 1),
+      invertStereocentre: (d) => void guardedOps.invertStereocentre(d, firstAtom),
+      alignFragments: (d) =>
+        void guardedOps.alignFragments(d, [firstAtom], "top"),
       // Benzene has no stereocentre, and deliberately none is needed: the group
       // record layer validates ids against the molecule and never asks whether
       // an atom is stereogenic, so the draft has to be refused before

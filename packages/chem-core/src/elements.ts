@@ -303,6 +303,46 @@ export const COMMON_ORGANIC_ELEMENTS: readonly ElementSymbol[] = Object.freeze([
 ]);
 
 /**
+ * The isotope labels a figure actually uses, as mass numbers, per element of
+ * the organic set.
+ *
+ * CURATED, NOT EXHAUSTIVE. Carbon has fifteen known isotopes and a structure
+ * editor that offered them all would bury ¹³C among ⁸C and ²²C. What is here
+ * is what turns up in schemes: the NMR and mechanistic labels (²H, ¹³C, ¹⁵N,
+ * ¹⁷O, ¹⁸O, ²⁹Si, ⁷⁷Se), the PET and radiotracer ones (¹¹C, ¹³N, ¹⁵O, ¹⁸F,
+ * ⁷⁶Br, ¹²³I, ¹²⁴I, ¹²⁵I, ¹³¹I, ³H, ¹⁴C, ³²P, ³³P, ³⁵S), and both halves of the
+ * near-even natural pairs a mass spectrum is annotated with (³⁵Cl/³⁷Cl,
+ * ⁷⁹Br/⁸¹Br, ¹⁰B/¹¹B). The most abundant isotope of an element with no such
+ * pair is left out: writing ¹²C on a carbon says nothing the bare symbol
+ * does not. Any other mass number is still one field away in the properties
+ * panel; this list only decides what is offered without typing.
+ *
+ * Ascending, so a menu reads lightest first. An element outside the table
+ * gets the empty list rather than an error — "no curated labels" is an
+ * ordinary answer for platinum.
+ */
+const LABELLING_ISOTOPES: Readonly<Record<ElementSymbol, readonly number[]>> =
+  Object.freeze({
+    H: Object.freeze([2, 3]),
+    B: Object.freeze([10, 11]),
+    C: Object.freeze([11, 13, 14]),
+    N: Object.freeze([13, 15]),
+    O: Object.freeze([15, 17, 18]),
+    F: Object.freeze([18]),
+    Si: Object.freeze([29, 30]),
+    P: Object.freeze([32, 33]),
+    S: Object.freeze([33, 34, 35]),
+    Cl: Object.freeze([35, 36, 37]),
+    Se: Object.freeze([75, 77]),
+    Br: Object.freeze([76, 79, 81]),
+    I: Object.freeze([123, 124, 125, 131]),
+  });
+
+export function labellingIsotopes(symbol: ElementSymbol): readonly number[] {
+  return Object.hasOwn(LABELLING_ISOTOPES, symbol) ? LABELLING_ISOTOPES[symbol]! : [];
+}
+
+/**
  * Carbon is drawn as a bare vertex in skeletal mode; everything else gets a
  * label. Hydrogen is handled separately since it is usually implicit.
  */
