@@ -1041,6 +1041,57 @@ describe("property lines say only what will be read back", () => {
     const atom = requireAtom(molecule, molecule.atomIds[0] ?? "");
     expect(Object.hasOwn(atom, "isotope")).toBe(false);
   });
+
+  it("ignores an unreadable M  CHG line and keeps the atom's legacy charge", () => {
+    // Decision 76: a warning the header names gets a test that reaches it. This
+    // arm was unreached. An `M  CHG` line whose pairs do not parse cannot be
+    // repaired — the reader has no way to know which atom was meant — so it is
+    // ignored, and ignoring it means the legacy ccc column is NOT superseded.
+    // The atom keeps the charge its own row states. (A line that parses to an
+    // EMPTY pair list is a different case: presence supersedes the columns, so
+    // that one is not this warning and does not keep the legacy charge.)
+    const text = molblock(
+      "ammonium",
+      "  chemcore          2D",
+      "",
+      "  1  0  0  0  0  0  0  0  0  0999 V2000",
+      "    0.0000    0.0000    0.0000 N   0  3  0  0  0  0  0  0  0  0  0  0",
+      "M  CHG  none of this is a number",
+      "M  END",
+    );
+    const { molecule, warnings } = readMolblock(text);
+    expect(warnings.map((w) => w.kind)).toEqual(["bad-property-line"]);
+    expect(warnings[0]?.message).toContain("M  CHG");
+    // ccc 3 is +1 in the legacy column's own encoding, and it survives.
+    expect(requireAtom(molecule, molecule.atomIds[0] ?? "").charge).toBe(1);
+  });
+});
+
+describe("an aromatic record no Kekule structure resolves", () => {
+  it("keeps the flags, says which atoms, and does not throw", () => {
+    // Decision 76 again: the `unkekulized` warning was reachable and unreached.
+    // A type-4 bond on an ACYCLIC bond is a request to kekulise something that
+    // is not a ring, so the flags stay on and the molecule comes back carrying
+    // a perception the storage form does not allow. The reader's job is to say
+    // so — the CLIENT is what refuses the import (`molblockToMolecule`), because
+    // only it knows the model may not hold flags.
+    const text = molblock(
+      "acyclic aromatic",
+      "  chemcore          2D",
+      "",
+      "  3  2  0  0  0  0  0  0  0  0999 V2000",
+      "    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0",
+      "    1.5000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0",
+      "    2.2500    1.2990    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0",
+      "  1  2  4  0  0  0  0",
+      "  2  3  2  0  0  0  0",
+      "M  END",
+    );
+    const { molecule, warnings } = readMolblock(text);
+    expect(warnings.map((w) => w.kind)).toEqual(["unkekulized"]);
+    expect(warnings[0]).toMatchObject({ atomIds: ["a1", "a2"] });
+    expect(hasAromaticFlags(molecule)).toBe(true);
+  });
 });
 
 describe("aromatic records that do not assert their hydrogens", () => {
