@@ -9,7 +9,7 @@
  */
 
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildMolecule } from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
@@ -361,5 +361,27 @@ describe("StatusBar — annotations not shown (decisions 62, 66 and 70)", () => 
     const first = canvasAnnotatedScene(doc, null);
     expect(canvasAnnotatedScene(doc, null)).toBe(first);
     expect(buildCanvasScene(doc, null)).toBe(first.scene);
+  });
+});
+
+describe("StatusBar — the Donate link", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("points at the shared donate page and opens a new tab", () => {
+    vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "0");
+    render(<StatusBar />);
+    const link = screen.getByRole("link", { name: "Donate" });
+    expect(link).toHaveAttribute("href", "https://ricos.site/donate?from=chemistry-sketcher");
+    // A new tab, so the drawing is never navigated away from.
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("is left out of the static export an app-store shell would package", () => {
+    vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "1");
+    render(<StatusBar />);
+    expect(screen.queryByRole("link", { name: "Donate" })).toBeNull();
   });
 });

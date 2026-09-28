@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import "@/styles/globals.css";
 
+import { DonationReturn } from "@/components/DonationReturn";
+
 export const metadata: Metadata = {
   title: {
     default: "Chemistry Sketcher",
@@ -17,6 +19,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="min-h-screen bg-background font-sans antialiased">
+        <DonationReturn />
         {children}
       </body>
     </html>

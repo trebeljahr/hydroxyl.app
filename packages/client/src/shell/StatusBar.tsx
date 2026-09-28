@@ -39,6 +39,14 @@
  * and nowhere else — and Reset duplicated `view.reset` rather than dispatching
  * it. Two code paths for one behaviour is exactly what the single registry is
  * meant to make impossible.
+ *
+ * ── THE DONATE LINK OPENS A NEW TAB ────────────────────────────────────────
+ *
+ * The editor has no site footer, so the link sits at the end of this strip.
+ * A new tab, so the drawing stays open where it was and nothing depends on
+ * the leave-page save path. It is left out of the static export: that build
+ * is what an app-store shell would package, and the store rules forbid a
+ * link to an outside payment page.
  */
 
 import type { ReactElement } from "react";
@@ -49,6 +57,8 @@ import type { UnplacedAnnotation } from "@starter/chem-render";
 
 import { canvasAnnotatedScene } from "@/canvas/scene-bridge";
 import { commandById } from "@/editor/commands/registry";
+import { isFileExportBuild } from "@/lib/deployment";
+import { DONATE_URL } from "@/lib/donation";
 import { useSaveState } from "@/persistence/save-state";
 import { moleculeErrors, moleculeMass, moleculeWarnings } from "@/editor/derived";
 import { cn } from "@/lib/utils";
@@ -300,6 +310,18 @@ export function StatusBar(): ReactElement {
       >
         {Math.round(zoom * 100)}%
       </span>
+
+      {isFileExportBuild() ? null : (
+        <a
+          href={DONATE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          data-status="donate"
+          className="hover:bg-muted hover:text-foreground rounded px-2 py-0.5"
+        >
+          Donate
+        </a>
+      )}
     </footer>
   );
 }
