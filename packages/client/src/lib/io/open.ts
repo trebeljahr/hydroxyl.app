@@ -61,6 +61,7 @@ import { molblockToMolecule } from "@/lib/rdkit/translate";
 import type { ChemIoResult, ImportedStructure } from "@/lib/rdkit/types";
 import { migrateStored } from "@/persistence/migrate";
 
+import { isLibraryFile, libraryFailureNote, readLibrary } from "./library";
 import { sniffFormat, splitSdfRecords, type SniffedFormat } from "./sniff";
 
 /**
@@ -163,6 +164,9 @@ function openJson(text: string, now: string | undefined): OpenResult {
       message: `That file is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
+  // A whole-library backup is JSON too, and reads into N documents the way an
+  // SDF does: dropped on the editor, the first opens and the rest are saved.
+  if (isLibraryFile(parsed)) return openLibrary(parsed);
   // Through the migration ladder, exactly as a stored row is: a document
   // exported by an older build is the same problem as one read out of
   // IndexedDB, and solving it twice is how the two answers drift.
@@ -183,6 +187,21 @@ function openJson(text: string, now: string | undefined): OpenResult {
       documents: [decoded.document],
       format: { kind: "json" },
       warnings: [],
+      needsLayout: false,
+    },
+  };
+}
+
+function openLibrary(parsed: unknown): OpenResult {
+  const read = readLibrary(parsed);
+  if (!read.ok) return { ok: false, message: read.message };
+  const note = libraryFailureNote(read.failures, read.entries);
+  return {
+    ok: true,
+    value: {
+      documents: read.documents,
+      format: { kind: "json" },
+      warnings: note === null ? [] : [note],
       needsLayout: false,
     },
   };

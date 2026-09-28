@@ -10,3 +10,4 @@ export * from "./sniff";
 export * from "./open";
 export * from "./save";
 export * from "./file-system";
+export * from "./library";

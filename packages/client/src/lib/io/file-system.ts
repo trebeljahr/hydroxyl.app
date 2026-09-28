@@ -169,6 +169,10 @@ export async function writeBlobFile(
   }
 }
 
+/** What a chemist's file manager will offer, plus the wildcard: the whole
+ *  point of content sniffing is that the extension is not trusted. */
+export const OPEN_ACCEPT = ".mol,.sdf,.sd,.json,.txt,.smi,.smiles,*";
+
 export interface PickedFile {
   readonly name: string;
   readonly text: string;

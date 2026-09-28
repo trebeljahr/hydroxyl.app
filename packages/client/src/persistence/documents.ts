@@ -155,3 +155,128 @@ export async function duplicateDocument(
   announceDocumentChange({ kind: "put", id: copy.id });
   return storeOk(copy);
 }
+
+/**
+ * Re-id any incoming document that would OVERWRITE a newer stored one.
+ *
+ * A native `.chemsketch.json` carries its own `doc.id` — `openJson` returns
+ * the decoded document verbatim, and it has to, or reopening an exported
+ * sketch on a fresh machine would not be the same sketch. But all three object
+ * stores key on that id, so importing a file whose stored counterpart has
+ * moved on REPLACES the newer rows: export a sketch, keep drawing, drag the
+ * exported file back in to check that it opens, and the newer copy is gone.
+ * Undo puts the canvas back but nothing rolls the database back, and the
+ * undone state has a different id, so no later autosave repairs it.
+ *
+ * The recents grid already states the rule for Duplicate — "a copy that kept the
+ * original's id would overwrite its own source" — and this is the same rule
+ * on the import path.
+ *
+ * THE COMPARISON IS `modifiedAt`, not existence. Reopening a file that is at
+ * least as new as the stored row loses nothing and should keep its identity,
+ * which is the ordinary "open my own sketch" case; only a stored document that
+ * has moved on since the file was written gets forked away from.
+ *
+ * Reads the META store only, in one call. The recents grid's whole design is
+ * that a listing costs no molecules, and an import must not be the one place
+ * that quietly deserializes the library.
+ */
+export async function forkOverStoredDocuments(
+  documents: readonly SketchDocument[],
+): Promise<{ readonly documents: readonly SketchDocument[]; readonly note: string | null }> {
+  const listed = await documentStore().listMeta();
+  // A listing that failed is not a reason to refuse an import: without it the
+  // worst case is the behaviour this function replaced, and the alternative is
+  // losing the drop entirely.
+  if (!listed.ok) return { documents, note: null };
+
+  const newer = new Map<string, string>();
+  for (const meta of listed.value) newer.set(meta.id, meta.modifiedAt);
+
+  let forked = 0;
+  const next = documents.map((doc) => {
+    const storedAt = newer.get(doc.id);
+    if (storedAt === undefined || storedAt <= doc.metadata.modifiedAt) return doc;
+    forked += 1;
+    return copyOf(doc, { title: doc.metadata.title });
+  });
+
+  return {
+    documents: next,
+    note:
+      forked === 0
+        ? null
+        : forked === 1
+          ? "imported as a new sketch, because the saved one has been edited since this file was written"
+          : `${String(forked)} were imported as new sketches, because the saved ones have been edited since this file was written`,
+  };
+}
+
+/** What an import into the library did. */
+export interface ImportReceipt {
+  /** The documents now in storage, under the ids they were saved with. */
+  readonly saved: readonly SketchDocument[];
+  /** How many arrived under a NEW id, because the stored document with their
+   *  id had been edited after the file was written. */
+  readonly forked: number;
+  /** One message per document that could not be written. */
+  readonly failures: readonly string[];
+}
+
+/**
+ * Write imported documents straight into the library, with the same
+ * fork-over-newer rule the editor's import applies.
+ *
+ * The recents grid's Import, which opens nothing: a restored library is forty
+ * cards, not forty tabs. The editor's `applyImport` keeps its own loop because
+ * it opens the first document and has to baseline it for autosave.
+ *
+ * A failed write does not stop the loop. A quota error on document 12 will
+ * almost certainly repeat on 13, but a document too big for a transaction may
+ * not, and trying costs one rejected write each.
+ */
+export async function importDocuments(
+  documents: readonly SketchDocument[],
+): Promise<ImportReceipt> {
+  const forked = await forkOverStoredDocuments(documents);
+  const saved: SketchDocument[] = [];
+  const failures: string[] = [];
+  for (const doc of forked.documents) {
+    const result = await saveDocument(doc);
+    if (result.ok) saved.push(doc);
+    else failures.push(result.error.message);
+  }
+  const renamed = forked.documents.filter((doc, index) => doc.id !== documents[index]?.id);
+  return { saved, forked: renamed.length, failures };
+}
+
+/** Every stored sketch that decodes, and a sentence for each that does not. */
+export interface LoadedLibrary {
+  readonly documents: readonly SketchDocument[];
+  readonly failures: readonly string[];
+}
+
+/**
+ * Decode the WHOLE library.
+ *
+ * The one deliberate exception to the rule that the recents grid never calls
+ * `get`: a library export is the user asking for every document, so every
+ * document has to be read. It runs on a click and never on a page load.
+ *
+ * A row that does not decode is NAMED and skipped rather than failing the
+ * export. A backup missing one sketch, with a sentence saying which, is worth
+ * more than no backup.
+ */
+export async function loadAllDocuments(): Promise<StoreResult<LoadedLibrary>> {
+  const store = documentStore();
+  const listed = await store.listMeta();
+  if (!listed.ok) return listed;
+  const documents: SketchDocument[] = [];
+  const failures: string[] = [];
+  for (const meta of listed.value) {
+    const loaded = await store.get(meta.id);
+    if (loaded.ok) documents.push(loaded.value);
+    else failures.push(`“${meta.title}”: ${loaded.error.message}`);
+  }
+  return storeOk({ documents, failures });
+}

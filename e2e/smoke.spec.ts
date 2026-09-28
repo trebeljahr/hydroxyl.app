@@ -1,10 +1,11 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * The landing page is the recents grid now. It used to be a placeholder
- * printing benzene's formula from chem-core, and this spec pinned that — the
- * placeholder is what `persistence-and-file-io` replaces, so the spec was
- * rewritten rather than deleted.
+ * `/` is the recents grid. It used to be a placeholder printing benzene's
+ * formula from chem-core, and this spec pinned that — the placeholder is what
+ * `persistence-and-file-io` replaced, so the spec was rewritten rather than
+ * deleted. With no sketches the grid shows the landing page (decision 109),
+ * whose headline is the page's h1; `landing.spec.ts` covers that page.
  *
  * Each Playwright test gets its own browser context and therefore its own
  * empty IndexedDB, so "no sketches yet" is the correct first state here.
@@ -12,9 +13,8 @@ import { expect, test } from "@playwright/test";
 test("the landing page is the recents grid, and it starts empty", async ({ page }) => {
   await page.goto("/");
 
-  await expect(
-    page.getByRole("heading", { name: "Chemistry Sketcher", level: 1 }),
-  ).toBeVisible();
+  await expect(page.getByText("Chemistry Sketcher").first()).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
   await expect(page.locator('[data-recents="empty"]')).toBeVisible();
   // A regex, because `trailingSlash` is true for the standalone build and
   // false for the static export — see next.config.ts — so the same Link emits

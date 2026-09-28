@@ -12,7 +12,7 @@ import { setDocumentStore } from "@/persistence/documents";
 import { recordFor } from "@/persistence/record";
 import { documentThumbnail } from "@/persistence/thumbnail";
 
-import RecentsPage, { copyOf } from "./page";
+import RecentsPage, { copyOf } from "./RecentsPage";
 
 /**
  * The landing page used to be a synchronous server component printing
@@ -194,6 +194,35 @@ describe("the recents grid", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/no room left/i);
     // And the card still says what it actually says in storage.
     expect(screen.getByText("Benzene")).toBeInTheDocument();
+  });
+});
+
+describe("the landing page and the library controls", () => {
+  it("shows the landing page in place of an empty grid", async () => {
+    render(<RecentsPage landing={<p>What the editor is for</p>} />);
+    expect(await screen.findByText("What the editor is for")).toBeInTheDocument();
+    // The landing carries its own h1; the header must not add a second.
+    expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
+    // Nothing to export yet, but a library file from another computer can
+    // still come in.
+    expect(screen.queryByText("Export all sketches")).not.toBeInTheDocument();
+    expect(screen.getByText("Import")).toBeInTheDocument();
+  });
+
+  it("shows the grid, and links the landing page, once a sketch exists", async () => {
+    await store.put(seed("doc_1", "Benzene", "2024-01-01T00:00:00.000Z"));
+    render(<RecentsPage landing={<p>What the editor is for</p>} />);
+    await screen.findByText("Benzene");
+    expect(screen.queryByText("What the editor is for")).not.toBeInTheDocument();
+    expect(screen.getByText("About").closest("a")).toHaveAttribute("href", "/about");
+    expect(screen.getByText("Export all sketches")).toBeInTheDocument();
+  });
+
+  it("says where the sketches are stored", async () => {
+    await store.put(seed("doc_1", "Benzene", "2024-01-01T00:00:00.000Z"));
+    render(<RecentsPage />);
+    await screen.findByText("Benzene");
+    expect(screen.getByText(/stored in this browser only/)).toBeInTheDocument();
   });
 });
 

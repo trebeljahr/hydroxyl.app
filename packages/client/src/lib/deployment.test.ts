@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { deploymentRoot, editorHref, isFileExportBuild, recentsHref } from "./deployment";
+import {
+  aboutHref,
+  deploymentRoot,
+  editorHref,
+  isFileExportBuild,
+  recentsHref,
+  thirdPartyNoticesHref,
+} from "./deployment";
 
 /**
  * The link that used to be `next/link href="/editor?doc=…"` and was runtime
@@ -32,6 +39,10 @@ describe("the standalone / dev build", () => {
     expect(editorHref()).toBe("/editor");
     expect(editorHref("doc_1")).toBe("/editor?doc=doc_1");
     expect(recentsHref()).toBe("/");
+    expect(aboutHref()).toBe("/about");
+    // Origin-absolute: `/about` is served as `/about/`, and a relative path
+    // would resolve under it.
+    expect(thirdPartyNoticesHref()).toBe("/rdkit/THIRD-PARTY-NOTICES.txt");
   });
 
   it("escapes an id rather than pasting it into the query", () => {
@@ -50,6 +61,8 @@ describe("the static export", () => {
     // directory with no assets in it.
     expect(editorHref("doc_1")).toBe("editor.html?doc=doc_1");
     expect(recentsHref()).toBe("index.html");
+    expect(aboutHref()).toBe("about.html");
+    expect(thirdPartyNoticesHref()).toBe("rdkit/THIRD-PARTY-NOTICES.txt");
   });
 
   it("needs no DOM to answer, because the grid is PRERENDERED", () => {

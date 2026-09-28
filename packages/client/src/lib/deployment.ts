@@ -115,3 +115,20 @@ export function editorHref(docId?: string | null): string {
 export function recentsHref(): string {
   return isFileExportBuild() ? "index.html" : "/";
 }
+
+/** A link to the page that explains what the editor is for. Flat in the
+ *  export for the same reason `editor.html` is. */
+export function aboutHref(): string {
+  return isFileExportBuild() ? "about.html" : "/about";
+}
+
+/**
+ * The licence notice for the redistributed RDKit build, which
+ * `scripts/copy-rdkit.mjs` stages beside the wasm.
+ *
+ * Origin-absolute outside the export, because `/about` is served as
+ * `/about/` there and a relative `rdkit/…` would resolve under it.
+ */
+export function thirdPartyNoticesHref(): string {
+  return isFileExportBuild() ? "rdkit/THIRD-PARTY-NOTICES.txt" : "/rdkit/THIRD-PARTY-NOTICES.txt";
+}

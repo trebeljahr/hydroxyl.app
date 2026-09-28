@@ -8,7 +8,9 @@ export const metadata: Metadata = {
     default: "Chemistry Sketcher",
     template: "%s | Chemistry Sketcher",
   },
-  description: "Chemical structure editor for publication figures",
+  description:
+    "A chemical structure editor for publication figures. Draw a molecule once and " +
+    "export skeletal, Lewis and formula views as one figure, sized for a journal column.",
 };
 
 export default function RootLayout({
