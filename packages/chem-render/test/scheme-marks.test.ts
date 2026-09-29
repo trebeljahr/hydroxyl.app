@@ -22,8 +22,12 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
+  chemistryIssues,
   cipDescriptor,
+  composition,
   insertFragment,
+  lonePairCount,
+  molecularFormulaUnicode,
   project,
   readMolblock,
   species,
@@ -805,6 +809,46 @@ describe("a transition state's partial bonds and deltas (decisions 205, 214)", (
       [`atom:${fixture.tsOxygen}:partialCharge`, "δ−", [0x3b4]],
       [`atom:${fixture.tsBromine}:partialCharge`, "δ−", [0x3b4]],
     ]);
+  });
+
+  it("pins what chem-core reads off the SN2 transition state's unbonded fragments, until valence counts a partial bond", () => {
+    // Open for Rico (decision 201): the partial bonds are annotations, not
+    // bond orders, so chem-core sees HO, CH3 and Br with no bond between
+    // them. What it says about them today is pinned here, so a ruling either
+    // way changes a test rather than a silence.
+    const fixture = sn2TransitionState();
+    const mol = fixture.molecule;
+    const fragments = [fixture.tsOxygen, fixture.tsCarbon, fixture.tsBromine];
+    expect(new Set(fragments.map((id) => species(mol).findIndex((s) => s.atomIds.includes(id)))).size).toBe(1);
+    const bonded = new Set(fragments);
+    expect(mol.bondIds.filter((id) => bonded.has(mol.bonds[id]!.from) || bonded.has(mol.bonds[id]!.to))).toEqual([]);
+    // No issue: each pinned hydrogen count is a valence chem-core accepts, so
+    // nothing on the canvas calls the carbon under-valent.
+    expect(chemistryIssues(mol)).toEqual([]);
+    // Each fragment is counted as carrying one unpaired electron, HO·, ·CH3
+    // and Br·, the electrons each partial bond shares...
+    expect(fragments.map((id) => lonePairCount(mol, id))).toEqual([
+      { kind: "counted", pairs: 2, unpaired: 1 },
+      { kind: "counted", pairs: 0, unpaired: 1 },
+      { kind: "counted", pairs: 3, unpaired: 1 },
+    ]);
+    // ...though the Lewis view draws their pairs and no radical dot, since
+    // none is stored.
+    const lewis = buildScene(mol, PUBLICATION_STYLE, representation("lewis")).primitives;
+    const onFragments = (part: string) =>
+      lewis.filter((p) => fragments.some((id) => p.id.startsWith(`atom:${id}:${part}:`))).length;
+    expect(onFragments("lonepair")).toBe(2 * (2 + 3));
+    expect(onFragments("radical")).toBe(0);
+    // And none of the bracket's −1 is on an atom (decision 212): the
+    // fragments together are CH4BrO, neutral, and the sum formula of the
+    // whole scheme counts only the hydroxide's and the bromide's charges.
+    expect(composition(mol, fragments)).toEqual({
+      heavyAtoms: { O: 1, C: 1, Br: 1 },
+      hydrogenAtoms: 0,
+      implicitHydrogens: 4,
+      netCharge: 0,
+    });
+    expect(molecularFormulaUnicode(mol)).toBe("C₃H₁₂Br₃O₃²⁻");
   });
 });
 
