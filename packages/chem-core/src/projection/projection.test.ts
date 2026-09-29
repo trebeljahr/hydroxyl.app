@@ -433,6 +433,23 @@ describe("the Fischer template", () => {
     expect(layout.depth[bondBetween(mol, "a3", "a4")!.id]).toBe("front");
   });
 
+  it("reads each synthetic hydrogen where it is drawn, not in whatever arm is left (decision 179)", () => {
+    const mol = load("d-glucose-open.mol");
+    const layout = layoutOf(project(mol, stereoConfig(mol), fischer(GLUCOSE_BACKBONE)));
+    const moved = (to: { x: number; y: number }): ProjectedLayout => ({
+      ...layout,
+      positions: { ...layout.positions, "a5.H": to },
+    });
+    const c3 = layout.positions["a5"]!;
+    const oxygen = layout.positions[layoutNodeOf(layout, "a6")!]!;
+    // Onto the oxygen's own arm: two ligands on one slot state nothing.
+    const stacked = readBack(mol, moved({ x: 2 * oxygen.x - c3.x, y: c3.y }));
+    expect(stacked.centres.find((c) => c.atomId === "a5")!.reading.kind).toBe("undetermined");
+    // Tilted off the axis: the cross refuses, as for an off-axis bond.
+    const tilted = readProjection(mol, moved({ x: layout.positions["a5.H"]!.x, y: c3.y + 0.2 }));
+    expect(tilted.kind === "unavailable" && tilted.reason).toBe("off-axis");
+  });
+
   it("draws a two-hydrogen carbon of 2-deoxy-D-ribose with two synthetic hydrogens and no claim", () => {
     const mol = load("2-deoxy-d-ribose-open.mol");
     const config = stereoConfig(mol);
@@ -1163,6 +1180,7 @@ function accessOf(layout: ProjectedLayout): LayoutAccess {
     nodeOf: (atomId) => layout.drawnAs[atomId],
     bondFor: (bondId) => layout.bonds.find((b) => b.sourceBondId === bondId),
     mark: (bondId) => layout.marks[bondId],
+    hydrogenNodes: () => layout.derivedNodes.filter((node) => node.kind === "hydrogen"),
   };
 }
 

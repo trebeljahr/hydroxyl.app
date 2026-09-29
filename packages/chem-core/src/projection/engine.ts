@@ -619,5 +619,6 @@ function layoutAccess(layout: ProjectedLayout): LayoutAccess {
     nodeOf: (atomId) => (Object.hasOwn(layout.drawnAs, atomId) ? layout.drawnAs[atomId] : undefined),
     bondFor: (bondId) => bySource.get(bondId),
     mark: (bondId) => (Object.hasOwn(layout.marks, bondId) ? layout.marks[bondId] : undefined),
+    hydrogenNodes: () => layout.derivedNodes.filter((node) => node.kind === "hydrogen"),
   };
 }

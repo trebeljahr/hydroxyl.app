@@ -678,6 +678,82 @@ describe("haworth convention", () => {
   });
 });
 
+describe("a drawn hydrogen (decision 179, the atom-plus-direction seam)", () => {
+  // (R)-CHBrClF: Br wedged at 90 degrees, Cl at -30, F at 210, H implicit.
+  // The gap between Cl and F, straight down, is where a chemist draws the H.
+  const mol = bromochlorofluoromethaneR();
+  const carbon = "a1";
+  const bromine = "a2";
+  const bare = setBondStereo(mol, mol.bondIds[0]!, "none");
+  const down = step(ORIGIN, 270);
+  const read = (placed: Molecule, stereo: "wedge" | "hash" | "none" | "wavy", at: Vec2 = down) =>
+    readOk(readConfig({ mol: placed, hydrogens: { [carbon]: { position: at, stereo } } }, { kind: "wedgeHash" }));
+
+  it("reads a hashed hydrogen behind three plain bonds as the drawing with its wedge", () => {
+    expect(letter(mol, stereoConfig(mol), carbon)).toBe("R");
+    // Without the H the bare drawing states nothing; with it hashed, the same
+    // compound; wedged, the enantiomer.
+    expect(parities(stereoConfig(bare))).toEqual({ [carbon]: "no-stereo-bond" });
+    expect(letter(bare, read(bare, "hash"), carbon)).toBe("R");
+    expect(letter(bare, read(bare, "wedge"), carbon)).toBe("S");
+    expect(centre(read(bare, "none"), carbon).reading).toEqual({ kind: "undetermined", reason: "no-stereo-bond" });
+    expect(centre(read(bare, "wavy"), carbon).reading).toEqual({ kind: "mixture", of: "epimers" });
+  });
+
+  it("applies decision 42 to it: a hashed H opposite a wedge is ambiguous", () => {
+    // Br wedged up and H hashed straight down: the X pattern RDKit refuses.
+    expect(centre(read(mol, "hash"), carbon).reading).toEqual({ kind: "undetermined", reason: "ambiguous-geometry" });
+  });
+
+  it("changes nothing for an atom with no implicit hydrogen, or a placement without the field", () => {
+    const stray = readOk(
+      readConfig({ mol, hydrogens: { [bromine]: { position: down, stereo: "wedge" } } }, { kind: "wedgeHash" }),
+    );
+    expect(parities(stray)).toEqual(parities(stereoConfig(mol)));
+    // Zero length: no direction, so no claim.
+    expect(centre(read(bare, "hash", ORIGIN), carbon).reading.kind).toBe("undetermined");
+  });
+
+  it("is read on the Fischer arm it is drawn on, and refused off the axes", () => {
+    // The same compound as a bare cross: Br north, F south, Cl east, H west.
+    const cross = buildMolecule((b) => {
+      const c = b.atom("C", ORIGIN);
+      b.bond(c, b.atom("Br", vec(0, 1)));
+      b.bond(c, b.atom("Cl", vec(1, 0)));
+      b.bond(c, b.atom("F", vec(0, -1)));
+    });
+    const fischer = { kind: "fischer" } as const;
+    const implicit = readOk(readConfig({ mol: cross }, fischer));
+    const west = readOk(readConfig({ mol: cross, hydrogens: { a1: { position: vec(-1, 0), stereo: "none" } } }, fischer));
+    expect(parities(west)).toEqual(parities(implicit));
+    expect(letter(cross, west, "a1")).toMatch(/^[RS]$/);
+    // Drawn ON the chlorine's arm, the vacant arm is not the H's: two ligands
+    // on one slot is no configuration.
+    const doubled = readOk(readConfig({ mol: cross, hydrogens: { a1: { position: vec(2, 0), stereo: "none" } } }, fischer));
+    expect(centre(doubled, "a1").reading).toEqual({ kind: "undetermined", reason: "ambiguous-geometry" });
+    const tilted = readConfig({ mol: cross, hydrogens: { a1: { position: step(ORIGIN, 170), stereo: "none" } } }, fischer);
+    expect(tilted.kind === "unavailable" && tilted.reason).toBe("off-axis");
+  });
+
+  it("must be vertical on a Haworth, like every substituent", () => {
+    const haworth = betaGlucopyranose("haworth");
+    const convention = { kind: "haworth", ringAtomIds: haworth.ringIds } as const;
+    const c1 = haworth.ids.C1!;
+    const at = requireAtom(haworth.mol, c1).pos;
+    const implicit = readOk(readConfig({ mol: haworth.mol }, convention));
+    // C1's OH is up, so its H is down: drawn there, the same reading.
+    const below = readOk(
+      readConfig({ mol: haworth.mol, hydrogens: { [c1]: { position: vec(at.x, at.y - 0.8), stereo: "none" } } }, convention),
+    );
+    expect(parities(below)).toEqual(parities(implicit));
+    const slanted = readConfig(
+      { mol: haworth.mol, hydrogens: { [c1]: { position: vec(at.x + 0.3, at.y - 0.8), stereo: "none" } } },
+      convention,
+    );
+    expect(slanted.kind === "unavailable" && slanted.reason).toBe("non-vertical-substituent");
+  });
+});
+
 describe("pseudo3d convention", () => {
   it("agrees with the wedge reading when the depths say the same thing", () => {
     const mol = bromochlorofluoromethaneR();

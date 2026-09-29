@@ -119,6 +119,12 @@
  * every convention (decision 39). A crossed or wavy-ended double bond stays
  * `unspecified`.
  *
+ * A DRAWN HYDROGEN (`Placement.hydrogens`, decision 179) is a centre's
+ * implicit hydrogen given a position and a mark by the placement: a steroid
+ * panel's hashed 5α-H, a Fischer's synthetic H arm. Every convention reads it
+ * as an explicit ligand in the implicit hydrogen's slot; the model still
+ * stores no hydrogen atom.
+ *
  * CACHING (decision 19), split by what each half reads:
  *
  *   TOPOLOGY means which units are stereogenic, their ligand orders and their
@@ -269,11 +275,35 @@ export interface PlacedMark {
  * drew NO mark on a bond says so with `stereo: "none"` rather than leaving it
  * out — otherwise the author's wedge would leak into the reading of a Fischer
  * that never drew it.
+ *
+ * `hydrogens` is the ATOM-PLUS-DIRECTION SEAM (decision 179): a centre's
+ * implicit hydrogen drawn at a position, keyed by the centre. See
+ * `PlacedHydrogen`. A centre with no entry reads exactly as it always has.
  */
 export interface Placement {
   readonly mol: Molecule;
   readonly positions?: Readonly<Record<AtomId, Vec2>> | undefined;
   readonly marks?: Readonly<Record<BondId, PlacedMark>> | undefined;
+  readonly hydrogens?: Readonly<Record<AtomId, PlacedHydrogen>> | undefined;
+}
+
+/**
+ * A centre's IMPLICIT hydrogen, drawn: where its line ends, and the mark on
+ * that line, whose narrow end is the centre by definition (decision 179).
+ *
+ * The model stores no hydrogen atom, so a mark on a C–H direction has no bond
+ * to live on: a steroid's 5α-H is drawn as a hashed line to an "H" that exists
+ * only in the picture, and a Fischer's synthetic H sits on one arm of the
+ * cross. Readers take a drawn hydrogen as an explicit ligand in the implicit
+ * hydrogen's slot of decision 15's order: the wedge/hash and pseudo3d readers
+ * read its offset and its mark (a wedge toward the viewer, a hash away), the
+ * Fischer reader its axis slot, the Haworth reader its vertical, and a wavy
+ * mark on it is a mixture as on any bond. An entry for an atom that is not a
+ * centre, or has no implicit hydrogen, is ignored.
+ */
+export interface PlacedHydrogen {
+  readonly position: Vec2;
+  readonly stereo: BondStereo;
 }
 
 /**
@@ -482,6 +512,33 @@ interface ReadContext {
   readonly mol: Molecule;
   readonly positions: Readonly<Record<AtomId, Vec2>> | undefined;
   readonly marks: Readonly<Record<BondId, PlacedMark>> | undefined;
+  readonly hydrogens: Readonly<Record<AtomId, PlacedHydrogen>> | undefined;
+}
+
+/** The centre's implicit hydrogen as the placement draws it, if it does (decision 179). */
+function drawnHydrogen(ctx: ReadContext, centre: CentreLigands): PlacedHydrogen | undefined {
+  const hydrogens = ctx.hydrogens;
+  if (!centre.implicitHydrogen || hydrogens === undefined || !Object.hasOwn(hydrogens, centre.atomId)) {
+    return undefined;
+  }
+  return hydrogens[centre.atomId];
+}
+
+/** A drawn hydrogen's depth: its mark's, narrow end at the centre by definition. */
+function hydrogenDepth(hydrogen: PlacedHydrogen): number {
+  if (hydrogen.stereo === "wedge") return 1;
+  if (hydrogen.stereo === "hash") return -1;
+  return 0;
+}
+
+/** The unit direction from the centre to its drawn hydrogen, undefined if it has no length. */
+function hydrogenDirection(ctx: ReadContext, centre: AtomId, hydrogen: PlacedHydrogen): Vec2 | undefined {
+  const a = positionOf(ctx, centre);
+  const dx = hydrogen.position.x - a.x;
+  const dy = hydrogen.position.y - a.y;
+  const length = Math.hypot(dx, dy);
+  if (!(length > 0) || !Number.isFinite(length)) return undefined;
+  return { x: dx / length, y: dy / length };
 }
 
 function positionOf(ctx: ReadContext, atomId: AtomId): Vec2 {
@@ -533,6 +590,12 @@ function markAt(bond: Bond, centre: AtomId): number {
 }
 
 function hasWavyAt(ctx: ReadContext, atomId: AtomId): boolean {
+  // A wavy line to a drawn hydrogen blurs its atom like any other wavy line
+  // at it (decision 179).
+  const hydrogens = ctx.hydrogens;
+  if (hydrogens !== undefined && Object.hasOwn(hydrogens, atomId) && hydrogens[atomId]!.stereo === "wavy") {
+    return true;
+  }
   return bondsAt(ctx.mol, atomId).some((bond) => {
     const mark = drawnMark(ctx, bond);
     return bond.order === 1 && mark.narrowEnd === atomId && mark.stereo === "wavy";
@@ -547,6 +610,10 @@ function implicitCount(centre: CentreLigands): number {
  * wedgeHash and pseudo3d: raw offsets and a depth sign per explicit ligand,
  * handed to parity.ts with the implicit ligands, which places them and
  * applies the ambiguity guard. Returns the reading directly.
+ *
+ * A DRAWN hydrogen (decision 179) takes the implicit hydrogen's slot as a
+ * drawn ligand, at its offset and with its mark's depth, so the lift places
+ * only what is still undrawn (a lone pair).
  */
 function readDrawn(
   ctx: ReadContext,
@@ -568,7 +635,16 @@ function readDrawn(
       depth: depthOf(neighbour, bond),
     });
   }
-  for (let k = 0; k < implicitCount(centre); k++) ligands.push({ kind: "implicit" });
+  const hydrogen = drawnHydrogen(ctx, centre);
+  if (hydrogen !== undefined) {
+    ligands.push({
+      kind: "drawn",
+      offset: { x: hydrogen.position.x - origin.x, y: hydrogen.position.y - origin.y },
+      depth: hydrogenDepth(hydrogen),
+    });
+  }
+  const undrawn = implicitCount(centre) - (hydrogen === undefined ? 0 : 1);
+  for (let k = 0; k < undrawn; k++) ligands.push({ kind: "implicit" });
   return fromLift(liftParity(ligands, options), silentReason);
 }
 
@@ -616,8 +692,24 @@ function liftFischer(ctx: ReadContext, centre: CentreLigands): Lift {
     used.add(slot);
     points.push(FISCHER_POINT[slot]);
   }
+  // A drawn hydrogen (decision 179) is read on the arm it is drawn on, under
+  // the same axis rule as a bond: a synthetic H off the axes refuses the
+  // placement exactly as an off-axis bond does.
+  const hydrogen = drawnHydrogen(ctx, centre);
+  if (hydrogen !== undefined) {
+    const dir = hydrogenDirection(ctx, centre.atomId, hydrogen);
+    if (dir === undefined) {
+      ambiguous = true;
+    } else {
+      const slot = axisSlot(dir);
+      if (slot === undefined) return { kind: "unavailable", reason: "off-axis" };
+      if (used.has(slot)) ambiguous = true;
+      used.add(slot);
+      points.push(FISCHER_POINT[slot]);
+    }
+  }
   if (ambiguous) return { kind: "undetermined", reason: "ambiguous-geometry" };
-  const implicit = implicitCount(centre);
+  const implicit = implicitCount(centre) - (hydrogen === undefined ? 0 : 1);
   if (implicit > 0) {
     // The implicit hydrogen sits in the one empty arm of the cross.
     const vacant = AXIS_SLOTS.filter((slot) => !used.has(slot));
@@ -653,8 +745,24 @@ function liftHaworth(ctx: ReadContext, centre: CentreLigands, ring: ReadonlySet<
       points.push({ x: 0, y: up, z: 0 });
     }
   }
+  // A drawn hydrogen (decision 179) is an exocyclic substituent like any
+  // other, and must be vertical.
+  const hydrogen = drawnHydrogen(ctx, centre);
+  if (hydrogen !== undefined) {
+    const dir = hydrogenDirection(ctx, centre.atomId, hydrogen);
+    if (dir === undefined) {
+      ambiguous = true;
+    } else {
+      if (Math.abs(dir.x) > AXIS_EPSILON) {
+        return { kind: "unavailable", reason: "non-vertical-substituent" };
+      }
+      const up = Math.sign(dir.y);
+      verticalSum += up;
+      points.push({ x: 0, y: up, z: 0 });
+    }
+  }
   if (ambiguous) return { kind: "undetermined", reason: "ambiguous-geometry" };
-  const implicit = implicitCount(centre);
+  const implicit = implicitCount(centre) - (hydrogen === undefined ? 0 : 1);
   if (implicit > 0) {
     if (implicit !== 1 || verticalSum === 0) {
       return { kind: "undetermined", reason: "ambiguous-geometry" };
@@ -835,6 +943,7 @@ export function readConfig(
   const cacheable =
     placement.positions === undefined &&
     placement.marks === undefined &&
+    placement.hydrogens === undefined &&
     scope === undefined &&
     (convention.kind === "wedgeHash" || convention.kind === "fischer");
   let reads: Map<string, ConfigRead> | undefined;
@@ -848,7 +957,7 @@ export function readConfig(
     if (cached !== undefined) return cached;
   }
   const result = computeRead(
-    { mol, positions: placement.positions, marks: placement.marks },
+    { mol, positions: placement.positions, marks: placement.marks, hydrogens: placement.hydrogens },
     convention,
     scope,
   );

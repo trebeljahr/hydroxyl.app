@@ -20,9 +20,16 @@
  */
 
 import { medianBondLength } from "../transform.js";
-import type { PlacedMark, Placement, DepthConvention, StereoConfig } from "../stereo-config.js";
+import type {
+  PlacedHydrogen,
+  PlacedMark,
+  Placement,
+  DepthConvention,
+  StereoConfig,
+} from "../stereo-config.js";
 import type { AtomId, BondId, Molecule } from "../types.js";
 import type { Vec2 } from "../vec.js";
+import { derivedBondId } from "./nodes.js";
 import type {
   BondDepth,
   DerivedNode,
@@ -154,6 +161,12 @@ export interface ProjectionTemplateImplementation<V extends ProjectionView, S> {
  * would refuse the whole placement over a centre nobody projected; every
  * layout read is therefore scoped to the units the layout draws (decision
  * 171), whose ligands are all drawn, and never sees them.
+ *
+ * A SYNTHETIC HYDROGEN IS READ WHERE IT IS DRAWN (decision 179): each derived
+ * `hydrogen` node is handed to `readConfig` as its host's drawn hydrogen,
+ * with the mark on its `<node>.bond` when that mark's narrow end is the host.
+ * A Fischer's H arm and a planar panel's revealed 5α-H are both read this
+ * way, so neither is inferred from the empty slot the other ligands leave.
  */
 export interface LayoutAccess {
   readonly convention: DepthConvention;
@@ -161,6 +174,8 @@ export interface LayoutAccess {
   nodeOf(atomId: AtomId): LayoutNodeId | undefined;
   bondFor(sourceBondId: BondId): LayoutBond | undefined;
   mark(layoutBondId: LayoutBondId): LayoutMark | undefined;
+  /** Every derived hydrogen node, in any order. */
+  hydrogenNodes(): Iterable<DerivedNode>;
 }
 
 export function placementOfLayout(mol: Molecule, layout: LayoutAccess): Placement {
@@ -169,6 +184,25 @@ export function placementOfLayout(mol: Molecule, layout: LayoutAccess): Placemen
     const node = layout.nodeOf(atomId);
     const pos = node === undefined ? undefined : layout.position(node);
     if (pos !== undefined) positions[atomId] = pos;
+  }
+  // One drawn hydrogen per host. A host with two (the CH2 of 2-deoxyribose on
+  // a Fischer) is no stereocentre and would be ignored by every reader; it is
+  // left out rather than handed over as one of its two hydrogens.
+  const byHost = new Map<AtomId, DerivedNode[]>();
+  for (const node of layout.hydrogenNodes()) {
+    if (node.kind !== "hydrogen") continue;
+    const list = byHost.get(node.host);
+    if (list === undefined) byHost.set(node.host, [node]);
+    else list.push(node);
+  }
+  const hydrogens: Record<AtomId, PlacedHydrogen> = {};
+  for (const [host, nodes] of byHost) {
+    const node = nodes[0]!;
+    const position = nodes.length === 1 ? layout.position(node.id) : undefined;
+    if (position === undefined) continue;
+    const mark = layout.mark(derivedBondId(node.id));
+    const stereo = mark !== undefined && mark.narrowEnd === layout.nodeOf(host) ? mark.stereo : "none";
+    hydrogens[host] = { position, stereo };
   }
   const marks: Record<BondId, PlacedMark> = {};
   for (const bondId of mol.bondIds) {
@@ -186,7 +220,7 @@ export function placementOfLayout(mol: Molecule, layout: LayoutAccess): Placemen
     }
     marks[bondId] = placed;
   }
-  return { mol, positions, marks };
+  return { mol, positions, marks, hydrogens };
 }
 
 /** `LayoutAccess` over a draft. */
@@ -201,5 +235,6 @@ export function draftLayoutAccess(draft: PlacedLayout): LayoutAccess {
     nodeOf: (atomId) => draft.drawnAs.get(atomId),
     bondFor: (bondId) => bySource.get(bondId),
     mark: (bondId) => draft.marks.get(bondId),
+    hydrogenNodes: () => [...draft.derivedNodes.values()].filter((node) => node.kind === "hydrogen"),
   };
 }
