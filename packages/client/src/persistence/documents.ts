@@ -83,6 +83,11 @@ export async function saveDocument(
  * its own source the first time either was saved. Used by the grid's
  * Duplicate and by the import path, which forks rather than clobbering a
  * stored document that is newer than the file being read.
+ *
+ * FIELD BY FIELD THROUGH `createDocument`, so a new document-level field has
+ * to be named here or a Duplicate silently drops it — which is how a
+ * reaction scheme's arrows went missing from every copy. documents.test.ts
+ * lists every key of `SketchDocument` and fails on one this does not carry.
  */
 export function copyOf(
   doc: SketchDocument,
@@ -90,11 +95,16 @@ export function copyOf(
 ): SketchDocument {
   return createDocument({
     molecule: doc.molecule,
+    annotations: doc.annotations,
+    // The counter as well as the list. After a deletion the counter is past
+    // the highest surviving id; left to `createDocument` it is recomputed from
+    // the list, and the next arrow drawn gets the deleted one's id.
+    nextAnnotationId: doc.nextAnnotationId,
     title: options.title ?? `${doc.metadata.title} copy`,
+    author: doc.metadata.author,
+    notes: doc.metadata.notes,
     stylePreset: doc.stylePreset,
     panels: doc.panels,
-    // Field by field through `createDocument`, so a new document-level field
-    // has to be named here or a Duplicate silently drops it.
     figure: doc.figure,
     now: options.now,
   });

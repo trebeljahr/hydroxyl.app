@@ -418,6 +418,10 @@ export function createPanel(
 export interface CreateDocumentInit {
   readonly id?: string | undefined;
   readonly title?: string | undefined;
+  /** Nothing in the editor writes these; a document carries them in from a
+   *  file, and a copy of that document has to keep them. */
+  readonly author?: string | undefined;
+  readonly notes?: string | undefined;
   readonly molecule?: Molecule | undefined;
   /** With their ids already chosen — the injectable path a fixture takes, so
    *  a document holding an arrow is byte-stable across runs. */
@@ -456,6 +460,8 @@ export function createDocument(init: CreateDocumentInit = {}): SketchDocument {
       title: init.title ?? "Untitled",
       createdAt: now,
       modifiedAt: now,
+      author: init.author,
+      notes: init.notes,
     }),
   };
   // Assigned only when present, so a document with no layout has no key.
