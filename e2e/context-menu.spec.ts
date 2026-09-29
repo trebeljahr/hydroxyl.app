@@ -87,9 +87,8 @@ test("right-click a single bond, choose Double: that bond is redrawn double", as
   await dropMolfile(page, "butan2ol-wedge.mol", MOLFILE);
   await expect(page.locator(`${SCENE} [data-atom-id]`)).toHaveCount(5);
 
-  // The LONGEST single line: one no label trims. In Publication, where an
-  // import opens (decision 135), C2's "HC" cuts C1-C2 down to a stub whose
-  // middle is inside C1's own pick radius, so a click there is on the atom.
+  // The LONGEST single line: one no label trims. The stub a label cuts short
+  // is the next test's subject.
   const single = (await drawnBonds(page))
     .filter((bond) => bond.lines === 1)
     .sort((a, b) => b.length - a.length)[0];
@@ -130,6 +129,34 @@ test("right-click a single bond, choose Double: that bond is redrawn double", as
   // Only that bond: the others kept their line counts.
   const after = await drawnBonds(page);
   expect(after.filter((bond) => bond.id !== single.id && bond.lines !== 1)).toEqual([]);
+});
+
+test("right-click the middle of a bond stub cut short by a label: the bond menu opens", async ({ page }) => {
+  await openEditor(page);
+  await dropMolfile(page, "butan2ol-wedge.mol", MOLFILE);
+  await expect(page.locator(`${SCENE} [data-atom-id]`)).toHaveCount(5);
+
+  // An import opens in Publication (decision 135), where C2's "HC" trims
+  // C1-C2 to the SHORTEST single line, well under half the untrimmed ones.
+  // Its middle is inside bare C1's 0.18-bond radius plus the grab slack, and
+  // before decision 198 a right-click there opened the atom menu for C1.
+  const singles = (await drawnBonds(page))
+    .filter((bond) => bond.lines === 1)
+    .sort((a, b) => a.length - b.length);
+  const stub = singles[0];
+  const full = singles[singles.length - 1];
+  if (stub === undefined || full === undefined) throw new Error("butan-2-ol drew no single bond as a line");
+  expect(stub.length / full.length).toBeLessThan(0.5);
+
+  await page.mouse.click(stub.midpoint.x, stub.midpoint.y, { button: "right" });
+
+  const menu = page.locator(MENU);
+  await expect(menu).toBeVisible();
+  await expect(menu).toHaveAttribute("data-context-menu", "bond");
+  await expect(page.locator("[data-context-menu-title]")).toHaveText("Single bond, C–C");
+
+  await page.locator('[data-menu-entry="bond.order.2"]').click();
+  await expect.poll(() => linesOf(page, stub.id)).toBe(2);
 });
 
 interface PaintedText {

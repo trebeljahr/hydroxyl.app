@@ -23,6 +23,14 @@
  * the middle of a wide "OCH3" label grabs the bond underneath, or large
  * enough that a bare-vertex carbon eats the first third of every bond it
  * touches. The per-atom radius is the only thing that separates those cases.
+ *
+ * A per-atom radius is still not enough on its own, because a big label cuts
+ * the bond INTO it short. At the publication preset "HC" trims butan-2-ol's
+ * C1-C2 to under 0.4 of a bond, and the middle of that stub sits inside bare
+ * C1's target: the line the user sees is not clickable as a bond. So the
+ * renderer also reports each bond's DRAWN span, `drawnSpan(bondId)`, and the
+ * middle of what is drawn belongs to the bond whatever its endpoints' radii
+ * say (decision 198).
  */
 
 import type { AtomId, BondId, Molecule } from "./types.js";
@@ -51,10 +59,23 @@ export function rectFromCorners(a: Vec2, b: Vec2): Rect {
  *
  * Chosen so it stays well clear of a bond's midpoint: at 0.18 plus the atom
  * tolerance the target reaches 0.30 along a standard bond, leaving the whole
- * middle 40% of every bond clickable. That is the property the "click a bond
- * to make it a double" gesture depends on.
+ * middle 40% of a bond between two bare vertices clickable. That is the
+ * property the "click a bond to make it a double" gesture depends on. A bond
+ * into a big label is drawn shorter than that, and `DRAWN_BOND_MIDDLE` is
+ * what keeps the promise there.
  */
 export const DEFAULT_LABEL_RADIUS = 0.18;
+
+/**
+ * The fraction of a bond's DRAWN span, centred on its middle, where the bond
+ * beats both of its endpoint atoms.
+ *
+ * 0.4 is the figure `DEFAULT_LABEL_RADIUS` already gives a bond between bare
+ * vertices, measured on the ink instead of the axis: a 0.39-bond stub into an
+ * "HC" keeps its middle 40% too, where a bare vertex's fixed radius would
+ * otherwise cover half of it.
+ */
+export const DRAWN_BOND_MIDDLE = 0.4;
 
 /** Extra grab slack outside the label box, so a near miss still selects. */
 export const DEFAULT_ATOM_TOLERANCE = 0.12;
@@ -62,8 +83,24 @@ export const DEFAULT_ATOM_TOLERANCE = 0.12;
 /** Half-width of a bond's grab band, measured perpendicular to its axis. */
 export const DEFAULT_BOND_TOLERANCE = 0.12;
 
+/**
+ * The part of a bond the renderer drew, as fractions of its axis from `from`
+ * (0) to `to` (1). A bond into a label is trimmed back to clear the glyph, so
+ * `end` is below 1 there.
+ */
+export interface BondSpan {
+  readonly start: number;
+  readonly end: number;
+}
+
 export interface HitOptions {
   readonly labelRadius?: (atomId: AtomId) => number;
+  /**
+   * The drawn span of a bond. Omitted, or `undefined` for a bond, the span is
+   * estimated as the axis minus each endpoint's label radius, which is the
+   * best a caller without a renderer can say about where a label trims.
+   */
+  readonly drawnSpan?: (bondId: BondId) => BondSpan | undefined;
   readonly atomTolerance?: number;
   readonly bondTolerance?: number;
 }
@@ -161,7 +198,9 @@ export function nearestBond(
 }
 
 /**
- * What the pointer is over, with atoms beating bonds wherever both qualify.
+ * What the pointer is over, with atoms beating bonds wherever both qualify —
+ * except on the middle of a bond's drawn span, where that bond's two
+ * endpoints drop out of the running (see `DRAWN_BOND_MIDDLE`).
  *
  * Atoms are scanned against their OWN radius rather than "nearest atom, then
  * check it" — with per-atom label sizes the nearest centre is not
@@ -187,11 +226,13 @@ export function hitTest(mol: Molecule, point: Vec2, options: HitOptions = {}): H
   const atomTolerance = options.atomTolerance ?? DEFAULT_ATOM_TOLERANCE;
   const bondTolerance = options.bondTolerance ?? DEFAULT_BOND_TOLERANCE;
 
+  const yielding = atomsYieldingToBond(mol, point, labelRadius, options.drawnSpan, bondTolerance);
+
   let bestAtom: AtomHit | undefined;
   let bestPenetration = Infinity;
   for (const atomId of mol.atomIds) {
     const atom = mol.atoms[atomId];
-    if (!atom) continue;
+    if (!atom || yielding.has(atomId)) continue;
     const d = distance(point, atom.pos);
     const radius = labelRadius(atomId);
     if (d > radius + atomTolerance) continue;
@@ -206,6 +247,50 @@ export function hitTest(mol: Molecule, point: Vec2, options: HitOptions = {}): H
   if (bestAtom !== undefined) return bestAtom;
 
   return nearestBond(mol, point, bondTolerance) ?? NO_HIT;
+}
+
+/**
+ * The endpoints of every bond whose drawn middle the pointer is on.
+ *
+ * Only the bond's OWN endpoints yield. An unrelated atom whose label happens
+ * to reach over the bond keeps its priority: the user is pointing at ink that
+ * belongs to that label, and the endpoints are the only atoms whose target a
+ * stub is cut short for.
+ *
+ * Skipped where the span is empty or inverted — two labels that overlap draw
+ * no line between them, and there is nothing of the bond's to click.
+ */
+function atomsYieldingToBond(
+  mol: Molecule,
+  point: Vec2,
+  labelRadius: (atomId: AtomId) => number,
+  drawnSpan: ((bondId: BondId) => BondSpan | undefined) | undefined,
+  bondTolerance: number,
+): Set<AtomId> {
+  const yielding = new Set<AtomId>();
+  for (const bondId of mol.bondIds) {
+    const bond = mol.bonds[bondId];
+    if (!bond) continue;
+    const from = mol.atoms[bond.from];
+    const to = mol.atoms[bond.to];
+    if (!from || !to) continue;
+    const length = distance(from.pos, to.pos);
+    if (!(length > 0)) continue;
+    const closest = closestPointOnSegment(point, from.pos, to.pos);
+    if (distance(point, closest.point) > bondTolerance) continue;
+    const span = drawnSpan?.(bondId) ?? {
+      start: labelRadius(bond.from) / length,
+      end: 1 - labelRadius(bond.to) / length,
+    };
+    const drawn = span.end - span.start;
+    if (!(drawn > 0)) continue;
+    const margin = (drawn * (1 - DRAWN_BOND_MIDDLE)) / 2;
+    if (closest.t >= span.start + margin && closest.t <= span.end - margin) {
+      yielding.add(bond.from);
+      yielding.add(bond.to);
+    }
+  }
+  return yielding;
 }
 
 function containsPoint(rect: Rect, p: Vec2): boolean {

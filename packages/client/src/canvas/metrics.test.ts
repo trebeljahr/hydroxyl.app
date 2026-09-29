@@ -303,3 +303,28 @@ describe("fitBounds + zoomToFit", () => {
     expect(centre.y).toBeCloseTo(size.height / 2, 6);
   });
 });
+
+describe("createSceneIndex — drawnSpan", () => {
+  it("reports a bare C-C whole and the C-O trimmed at the oxygen's label", () => {
+    // Ethanol: C1-C2 joins two bare vertices and is drawn centre to centre;
+    // C2-O stops short of the "OH". The span is what chem-core's hitTest
+    // takes the bond's clickable middle from (decision 198).
+    const mol = ethanol();
+    const index = createSceneIndex(buildScene(mol, PUBLICATION_STYLE, SKELETAL), mol);
+    const [cc, co] = mol.bondIds;
+    const ccSpan = index.drawnSpan(cc!);
+    const coSpan = index.drawnSpan(co!);
+    expect(mol.bonds[co!]!.to).toBe("a3");
+
+    expect(ccSpan?.start).toBeCloseTo(0, 2);
+    expect(ccSpan?.end).toBeCloseTo(1, 2);
+    expect(coSpan?.start).toBeCloseTo(0, 2);
+    expect(coSpan?.end).toBeLessThan(0.9);
+    expect(coSpan?.end).toBeGreaterThan(0.3);
+  });
+
+  it("answers undefined for a bond the molecule does not have", () => {
+    const index = createSceneIndex(sceneFor(SCREEN_STYLE), MOL);
+    expect(index.drawnSpan("b99")).toBeUndefined();
+  });
+});

@@ -121,6 +121,9 @@ export function pickAt(
     // strips its receiver, and an index that ever becomes a class would fail
     // at run time with a `this` error deep inside chem-core.
     labelRadius: (atomId) => ctx.index.labelRadius(atomId),
+    // What the renderer inked of each bond, so the middle of a stub cut short
+    // by a big label stays the bond's to click (decision 198).
+    drawnSpan: (bondId) => ctx.index.drawnSpan(bondId),
     // The SAME converted tolerance to both. They are one grab radius expressed
     // once; letting them drift would mean a click that misses an atom by a
     // pixel could still fail to reach the bond directly under it.

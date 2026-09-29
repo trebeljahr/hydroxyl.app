@@ -25,7 +25,7 @@
  */
 
 import { getAtom, getBond, DEFAULT_LABEL_RADIUS } from "@starter/chem-core";
-import type { AtomId, BondId, Molecule } from "@starter/chem-core";
+import type { AtomId, BondId, BondSpan, Molecule } from "@starter/chem-core";
 import {
   atomLabelPlacement,
   isStructural,
@@ -54,6 +54,11 @@ export interface SceneIndex {
   bondSegment(id: BondId): { readonly a: ScenePoint; readonly b: ScenePoint } | undefined;
   /** MODEL UNITS (bond lengths), for chem-core's `hitTest`. */
   labelRadius(id: AtomId): number;
+  /**
+   * The drawn part of the bond as fractions of its axis, for chem-core's
+   * `hitTest`; `undefined` when nothing measurable was drawn.
+   */
+  drawnSpan(id: BondId): BondSpan | undefined;
 }
 
 /**
@@ -224,7 +229,53 @@ export function createSceneIndex(
     return Math.max(DEFAULT_LABEL_RADIUS, atomRadiusPx(id) / scale(style));
   }
 
-  return { scene, atomCentre, atomRadiusPx, bondSegment, labelRadius };
+  const spanCache = new Map<BondId, BondSpan | undefined>();
+
+  /**
+   * How much of the bond's axis the renderer actually inked, from `from` (0)
+   * to `to` (1).
+   *
+   * Measured on the bond's own lines and polygons, projected onto the atom-
+   * to-atom axis: that is where the renderer trimmed a line back to clear a
+   * label. It cannot be derived from `labelRadius` — "HC" hangs its hydrogen
+   * toward the incoming bond and trims it far past the symbol block's radius,
+   * which is how the middle of butan-2-ol's C1-C2 stub ended up inside C1's
+   * pick target (decision 198). Paths (a hashed wedge, a wavy bond) carry no
+   * points to project and are left out; a bond with nothing else answers
+   * `undefined`, and chem-core estimates the span from the label radii.
+   */
+  function drawnSpan(id: BondId): BondSpan | undefined {
+    if (spanCache.has(id)) return spanCache.get(id);
+    const measured = measureDrawnSpan(id);
+    spanCache.set(id, measured);
+    return measured;
+  }
+
+  function measureDrawnSpan(id: BondId): BondSpan | undefined {
+    const bond = lookupBond(molecule, id);
+    if (bond === undefined) return undefined;
+    const a = atomCentre(bond.from);
+    const b = atomCentre(bond.to);
+    if (a === undefined || b === undefined) return undefined;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const lengthSq = dx * dx + dy * dy;
+    if (!(lengthSq > 0)) return undefined;
+
+    let start = Infinity;
+    let end = -Infinity;
+    for (const primitive of bondPrimitives.get(id) ?? []) {
+      for (const point of inkedPoints(primitive)) {
+        const t = ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSq;
+        start = Math.min(start, t);
+        end = Math.max(end, t);
+      }
+    }
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return undefined;
+    return { start: Math.max(0, start), end: Math.min(1, end) };
+  }
+
+  return { scene, atomCentre, atomRadiusPx, bondSegment, labelRadius, drawnSpan };
 }
 
 /**
@@ -262,6 +313,13 @@ function scale(style: RenderStyle): number {
 
 function isLine(primitive: ScenePrimitive): primitive is LinePrimitive {
   return primitive.type === "line";
+}
+
+/** The corner points of a straight-edged primitive; none for anything else. */
+function inkedPoints(primitive: ScenePrimitive): readonly ScenePoint[] {
+  if (primitive.type === "line") return [primitive.a, primitive.b];
+  if (primitive.type === "polyline" || primitive.type === "polygon") return primitive.points;
+  return [];
 }
 
 /**

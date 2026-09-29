@@ -3,6 +3,7 @@ import { benzene, buildMolecule, linearChain } from "./builders.js";
 import {
   DEFAULT_ATOM_TOLERANCE,
   DEFAULT_LABEL_RADIUS,
+  DRAWN_BOND_MIDDLE,
   atomsInRect,
   bondsInRect,
   hitTest,
@@ -120,6 +121,77 @@ describe("hitTest with per-atom label sizes", () => {
     expect(hit.kind).toBe("atom");
     if (hit.kind !== "atom") return;
     expect(hit.atomId).toBe("a1");
+  });
+});
+
+describe("hitTest on a bond cut short by a label (decision 198)", () => {
+  /**
+   * Butan-2-ol as e2e/fixtures/butan2ol-wedge.mol lays it out, scaled to unit
+   * bonds. At the publication preset the wedged stereocentre C2 draws "HC",
+   * and the renderer trims C1-C2 to the first 0.39 of its axis (91 px of a
+   * 234 px bond, measured 2026-09-29). C1 is a bare vertex.
+   */
+  const butan2ol = buildMolecule((b) => {
+    const c1 = b.atom("C", vec(0, 0));
+    const c2 = b.atom("C", vec(0.866, 0.5));
+    const c3 = b.atom("C", vec(1.732, 0));
+    const c4 = b.atom("C", vec(2.598, 0.5));
+    const o = b.atom("O", vec(0.866, 1.5));
+    b.bond(c1, c2, 1);
+    b.bond(c2, o, 1);
+    b.bond(c2, c3, 1);
+    b.bond(c3, c4, 1);
+  });
+  const c1c2 = butan2ol.bondIds[0]!;
+  const c1 = butan2ol.atoms["a1"]!.pos;
+  const c2 = butan2ol.atoms["a2"]!.pos;
+  // C2's symbol block: smaller than the trim, because "HC" hangs its H toward
+  // C1 and the pick radius is measured on the C alone.
+  const labelRadius = (id: string): number => (id === "a2" ? 0.43 : DEFAULT_LABEL_RADIUS);
+  const drawnSpan = (id: string) => (id === c1c2 ? { start: 0, end: 0.39 } : undefined);
+  // The same 6 px grab the canvas uses, at the fitted 533% zoom.
+  const tolerance = 6 / 234;
+
+  it("picks the bond on the middle of the visible stub", () => {
+    const p = lerp(c1, c2, 0.39 / 2);
+    // The premise: without the drawn span, C1's target covers that point.
+    expect(distance(p, c1)).toBeLessThan(DEFAULT_LABEL_RADIUS + tolerance);
+    const before = hitTest(butan2ol, p, { labelRadius, atomTolerance: tolerance, bondTolerance: tolerance });
+    expect(before).toMatchObject({ kind: "atom", atomId: "a1" });
+
+    const hit = hitTest(butan2ol, p, {
+      labelRadius,
+      drawnSpan,
+      atomTolerance: tolerance,
+      bondTolerance: tolerance,
+    });
+    expect(hit).toMatchObject({ kind: "bond", bondId: c1c2 });
+  });
+
+  it("still picks C1 on its vertex and just past the middle band", () => {
+    const options = { labelRadius, drawnSpan, atomTolerance: tolerance, bondTolerance: tolerance };
+    expect(hitTest(butan2ol, c1, options)).toMatchObject({ kind: "atom", atomId: "a1" });
+    const edge = (0.39 * (1 - DRAWN_BOND_MIDDLE)) / 2;
+    expect(hitTest(butan2ol, lerp(c1, c2, edge * 0.9), options)).toMatchObject({
+      kind: "atom",
+      atomId: "a1",
+    });
+  });
+
+  it("keeps C2's glyph for C2 on the trimmed end of the axis", () => {
+    const options = { labelRadius, drawnSpan, atomTolerance: tolerance, bondTolerance: tolerance };
+    expect(hitTest(butan2ol, lerp(c1, c2, 0.7), options)).toMatchObject({ kind: "atom", atomId: "a2" });
+  });
+
+  it("does not hand an unrelated atom's glyph to the bond under it", () => {
+    // O's label made wide enough to reach over the C1-C2 stub's middle: the
+    // pointer is on O's ink, and O is not an endpoint of that bond.
+    const wide = (id: string): number => (id === "a5" ? 1.8 : labelRadius(id));
+    const p = lerp(c1, c2, 0.39 / 2);
+    expect(distance(p, butan2ol.atoms["a5"]!.pos)).toBeLessThan(1.8);
+    expect(
+      hitTest(butan2ol, p, { labelRadius: wide, drawnSpan, atomTolerance: tolerance, bondTolerance: tolerance }),
+    ).toMatchObject({ kind: "atom", atomId: "a5" });
   });
 });
 
