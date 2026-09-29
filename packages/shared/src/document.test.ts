@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import {
   atomNumbering,
   benzene,
@@ -13,7 +15,7 @@ import {
 } from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
 import { dictionaryEntryById } from "@starter/chem-core/dictionary";
-import { DEFAULT_DISPLAY_FLAGS } from "@starter/chem-render";
+import { DEFAULT_DISPLAY_FLAGS, prolineAldol, sn2TransitionState } from "@starter/chem-render";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PANELS,
@@ -1444,6 +1446,21 @@ describe("reaction arrows, conditions, brackets and TS marks (decisions 193, 194
     expect(() => addSchemeAnnotation(doc, { kind: "partialBond", atoms: [s.tsCarbon, "toString"] })).toThrow(
       /toString/,
     );
+  });
+
+  it("keeps the e2e scheme fixtures what chem-render's scheme fixtures build", () => {
+    // e2e/reaction-arrows.spec.ts drops these files; they were written once
+    // through encodeDocument, and this is what stops them drifting.
+    for (const [file, scheme] of [
+      ["proline-aldol-scheme.json", prolineAldol()],
+      ["sn2-transition-state-scheme.json", sn2TransitionState()],
+    ] as const) {
+      const text = readFileSync(new URL(`../../../e2e/fixtures/${file}`, import.meta.url), "utf8");
+      const decoded = decodeDocument(JSON.parse(text));
+      expect(decoded.molecule, file).toEqual(scheme.molecule);
+      expect(decoded.annotations, file).toEqual(scheme.annotations);
+      expect(JSON.stringify(encodeDocument(decoded), null, 2) + "\n", file).toBe(text);
+    }
   });
 
   it("reads an unknown annotation kind, condition kind or key as a newer build's file", () => {

@@ -9,7 +9,9 @@ import {
   butan2olWedged,
   cyanideAdditionToAcetone,
   ethanol,
+  prolineAldol,
   serializeFigure,
+  sn2TransitionState,
 } from "@starter/chem-render";
 import {
   benzene,
@@ -104,6 +106,34 @@ describe("the figure a document exports", () => {
     const svg = serializeFigure(documentFigure(doc, "publication"));
     // Two arrows, shaft and head each, in the skeletal panel only.
     expect(svg.match(/data-annotation="ann_\d"/g)).toHaveLength(4);
+  });
+
+  it("draws a scheme's arrows, conditions, plus signs, bracket and deltas too, sized into the viewBox (decision 213)", () => {
+    for (const scheme of [sn2TransitionState(), prolineAldol()]) {
+      const doc = createDocument({
+        molecule: scheme.molecule,
+        annotations: scheme.annotations,
+        panels: [createPanel("skeletal"), createPanel("sumFormula")],
+        now: NOW,
+      });
+      const svg = serializeFigure(documentFigure(doc, "publication"));
+      for (const annotation of scheme.annotations) {
+        if (annotation.kind === "partialCharge") {
+          expect(svg).toMatch(new RegExp(`id="p-[^"]*atom:${annotation.atomId}:partialCharge" data-annotation="${annotation.id}"`));
+        } else {
+          expect(svg, annotation.id).toContain(`data-annotation="${annotation.id}"`);
+        }
+      }
+    }
+    const aldol = prolineAldol();
+    const svg = serializeFigure(
+      documentFigure(
+        createDocument({ molecule: aldol.molecule, annotations: aldol.annotations, panels: [createPanel("skeletal")], now: NOW }),
+        "publication",
+      ),
+    );
+    expect(svg).toContain(">L-proline (30 mol%)</tspan>");
+    expect(svg).toContain(">DMSO, rt</tspan>");
   });
 
   it("composes the document's panels in order, with its column count", () => {
@@ -617,6 +647,32 @@ describe("annotations below 8 pt (decision 60)", () => {
     );
     // A warning, not a refusal: the locants are in the file.
     expect(figureSvgForFile(p)).toMatch(/:locant"[^>]*><tspan>1</);
+  });
+
+  it("names the transition state's deltas when scaling takes them under 8 pt (decision 205)", () => {
+    // The deltas share the descriptor's scale, so they print at exactly
+    // 8 pt at Publication's natural size and under it scaled to fit, with no
+    // stereo flag switched on: the author drew them.
+    const scheme = sn2TransitionState();
+    const doc = createDocument({
+      molecule: scheme.molecule,
+      annotations: scheme.annotations,
+      stylePreset: "publication",
+      panels: [createPanel("skeletal", undefined, "publication")],
+      now: NOW,
+    });
+    const full = prepared(doc, custom(60));
+    expect(full.size.scaled).toBe(false);
+    expect(annotationSizeNotice(full, custom(60))).toBeNull();
+    const settings = custom(full.size.naturalWidthCm * 0.9);
+    const p = prepared(doc, settings);
+    expect(p.size.scaled).toBe(true);
+    const notice = annotationSizeNotice(p, settings)!;
+    expect(notice.kinds).toEqual(["partialCharge"]);
+    expect(notice.fontSizePt).toBeCloseTo(7.2, 6);
+    expect(notice.summary).toBe(
+      `Partial charges (δ+/δ−) print at ${formatPt(notice.fontSizePt)} pt, below the 8 pt minimum ACS asks for in figures.`,
+    );
   });
 
   it("says nothing when the figure draws no annotation, flag on or off", () => {

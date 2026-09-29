@@ -1,0 +1,462 @@
+{
+  "schemaVersion": 2,
+  "id": "e2e-prolineAldol",
+  "molecule": {
+    "atoms": {
+      "a1": {
+        "id": "a1",
+        "element": "C",
+        "pos": {
+          "x": 0,
+          "y": 0
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a2": {
+        "id": "a2",
+        "element": "C",
+        "pos": {
+          "x": 0.8660254037844387,
+          "y": 0.49999999999999994
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a4": {
+        "id": "a4",
+        "element": "O",
+        "pos": {
+          "x": 0.8660254037844388,
+          "y": 1.5
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a6": {
+        "id": "a6",
+        "element": "C",
+        "pos": {
+          "x": 1.7320508075688774,
+          "y": 0
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a8": {
+        "id": "a8",
+        "element": "C",
+        "pos": {
+          "x": 3.5,
+          "y": 0
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a9": {
+        "id": "a9",
+        "element": "C",
+        "pos": {
+          "x": 4.366025403784438,
+          "y": 0.49999999999999994
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a11": {
+        "id": "a11",
+        "element": "C",
+        "pos": {
+          "x": 4.366025403784438,
+          "y": 1.5
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a13": {
+        "id": "a13",
+        "element": "C",
+        "pos": {
+          "x": 5.232050807568877,
+          "y": 0
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a15": {
+        "id": "a15",
+        "element": "O",
+        "pos": {
+          "x": 6.098076211353315,
+          "y": 0.49999999999999994
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a17": {
+        "id": "a17",
+        "element": "C",
+        "pos": {
+          "x": 15,
+          "y": 0
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a18": {
+        "id": "a18",
+        "element": "C",
+        "pos": {
+          "x": 15.86602540378444,
+          "y": 0.49999999999999994
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a20": {
+        "id": "a20",
+        "element": "O",
+        "pos": {
+          "x": 15.86602540378444,
+          "y": 1.5
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a22": {
+        "id": "a22",
+        "element": "C",
+        "pos": {
+          "x": 16.73205080756888,
+          "y": 0
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a24": {
+        "id": "a24",
+        "element": "C",
+        "pos": {
+          "x": 17.598076211353316,
+          "y": 0.49999999999999994
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a26": {
+        "id": "a26",
+        "element": "O",
+        "pos": {
+          "x": 17.598076211353316,
+          "y": 1.5
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a28": {
+        "id": "a28",
+        "element": "C",
+        "pos": {
+          "x": 18.464101615137753,
+          "y": 0
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a30": {
+        "id": "a30",
+        "element": "C",
+        "pos": {
+          "x": 19.33012701892219,
+          "y": 0.49999999999999994
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a32": {
+        "id": "a32",
+        "element": "C",
+        "pos": {
+          "x": 18.464101615137753,
+          "y": -1
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      }
+    },
+    "bonds": {
+      "b3": {
+        "id": "b3",
+        "from": "a1",
+        "to": "a2",
+        "order": 1,
+        "stereo": "none",
+        "doubleBondSide": "auto",
+        "aromatic": false
+      },
+      "b5": {
+        "id": "b5",
+        "from": "a2",
+        "to": "a4",
+        "order": 2,
+        "stereo": "none",
+        "doubleBondSide": "auto",
+        "aromatic": false
+      },
+      "b7": {
+        "id": "b7",
+        "from": "a2",
+        "to": "a6",
+        "order": 1,
+        "stereo": "none",
+        "doubleBondSide": "auto",
+        "aromatic": false
+      },
+      "b10": {
+        "id": "b10",
+        "from": "a8",
+        "to": "a9",
+        "order": 1,
+        "stereo": "none",
+        "doubleBondSide": "auto",
+        "aromatic": false
+      },
+      "b12": {
+        "id": "b12",
+        "from": "a9",
+        "to": "a11",
+        "order": 1,
+        "stereo": "none",
+        "doubleBondSide": "auto",
+        "aromatic": false
+      },
+      "b14": {
+        "id": "b14",
+        "from": "a9",
+        "to": "a13",
+        "order": 1,
+        "stereo": "none",
+        "doubleBondSide": "auto",
+        "aromatic": false
+      },
+      "b16": {
+        "id": "b16",
+        "from": "a13",
+        "to": "a15",
+        "order": 2,
+        "stereo": "none",
+        "doubleBondSide": "auto",
+        "aromatic": false
+      },
+      "b19": {
+        "id": "b19",
+        "from": "a17",
+        "to": "a18",
+        "order": 1,
+        "stereo": "none",
+        "doubleBondSide": "auto",
+        "aromatic": false
+      },
+      "b21": {
+        "id": "b21",
+        "from": "a18",
+        "to": "a20",
+        "order": 2,
+        "stereo": "none",
+        "doubleBondSide": "auto",
+        "aromatic": false
+      },
+      "b23": {
+        "id": "b23",
+        "from": "a18",
+        "to": "a22",
+        "order": 1,
+        "stereo": "none",
+        "doubleBondSide": "auto",
+        "aromatic": false
+      },
+      "b25": {
+        "id": "b25",
+        "from": "a22",
+        "to": "a24",
+        "order": 1,
+        "stereo": "none",
+        "doubleBondSide": "auto",
+        "aromatic": false
+      },
+      "b27": {
+        "id": "b27",
+        "from": "a24",
+        "to": "a26",
+        "order": 1,
+        "stereo": "wedge",
+        "doubleBondSide": "auto",
+        "aromatic": false
+      },
+      "b29": {
+        "id": "b29",
+        "from": "a24",
+        "to": "a28",
+        "order": 1,
+        "stereo": "none",
+        "doubleBondSide": "auto",
+        "aromatic": false
+      },
+      "b31": {
+        "id": "b31",
+        "from": "a28",
+        "to": "a30",
+        "order": 1,
+        "stereo": "none",
+        "doubleBondSide": "auto",
+        "aromatic": false
+      },
+      "b33": {
+        "id": "b33",
+        "from": "a28",
+        "to": "a32",
+        "order": 1,
+        "stereo": "none",
+        "doubleBondSide": "auto",
+        "aromatic": false
+      }
+    },
+    "atomIds": [
+      "a1",
+      "a2",
+      "a4",
+      "a6",
+      "a8",
+      "a9",
+      "a11",
+      "a13",
+      "a15",
+      "a17",
+      "a18",
+      "a20",
+      "a22",
+      "a24",
+      "a26",
+      "a28",
+      "a30",
+      "a32"
+    ],
+    "bondIds": [
+      "b3",
+      "b5",
+      "b7",
+      "b10",
+      "b12",
+      "b14",
+      "b16",
+      "b19",
+      "b21",
+      "b23",
+      "b25",
+      "b27",
+      "b29",
+      "b31",
+      "b33"
+    ],
+    "nextId": 34
+  },
+  "annotations": [
+    {
+      "id": "ann_1",
+      "kind": "plus",
+      "between": [
+        "a1",
+        "a13"
+      ]
+    },
+    {
+      "id": "ann_2",
+      "kind": "reactionArrow",
+      "from": [
+        "a1",
+        "a13"
+      ],
+      "to": [
+        "a17"
+      ],
+      "conditions": {
+        "steps": [
+          [
+            {
+              "kind": "reagent",
+              "text": "L-proline (30 mol%)"
+            },
+            {
+              "kind": "solvent",
+              "text": "DMSO"
+            },
+            {
+              "kind": "text",
+              "text": "rt"
+            }
+          ]
+        ],
+        "numbered": false
+      }
+    }
+  ],
+  "nextAnnotationId": 3,
+  "stylePreset": "publication",
+  "panels": [
+    {
+      "id": "panel-skeletal",
+      "representation": {
+        "kind": "skeletal",
+        "display": {
+          "showCarbonLabels": false,
+          "showImplicitHydrogens": false,
+          "showLonePairs": false,
+          "showCharges": true,
+          "showStereoBonds": true,
+          "showLocants": false,
+          "aromaticCircles": true,
+          "showStereoDescriptors": false
+        }
+      }
+    },
+    {
+      "id": "panel-sum-formula",
+      "representation": {
+        "kind": "sumFormula",
+        "display": {
+          "showCarbonLabels": false,
+          "showImplicitHydrogens": false,
+          "showLonePairs": false,
+          "showCharges": true,
+          "showStereoBonds": true,
+          "showLocants": false,
+          "aromaticCircles": false,
+          "showStereoDescriptors": false
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "title": "Proline aldol",
+    "createdAt": "2026-09-30T00:00:00.000Z",
+    "modifiedAt": "2026-09-30T00:00:00.000Z"
+  }
+}

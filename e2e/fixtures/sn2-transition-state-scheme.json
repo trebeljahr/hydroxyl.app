@@ -1,0 +1,273 @@
+{
+  "schemaVersion": 2,
+  "id": "e2e-sn2TransitionState",
+  "molecule": {
+    "atoms": {
+      "a1": {
+        "id": "a1",
+        "element": "O",
+        "pos": {
+          "x": 0,
+          "y": 0
+        },
+        "charge": -1,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a2": {
+        "id": "a2",
+        "element": "C",
+        "pos": {
+          "x": 2.5,
+          "y": 0
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a3": {
+        "id": "a3",
+        "element": "Br",
+        "pos": {
+          "x": 3.5,
+          "y": 0
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a5": {
+        "id": "a5",
+        "element": "O",
+        "pos": {
+          "x": 8,
+          "y": 0
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false,
+        "explicitHydrogenCount": 1
+      },
+      "a6": {
+        "id": "a6",
+        "element": "C",
+        "pos": {
+          "x": 10,
+          "y": 0
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false,
+        "explicitHydrogenCount": 3
+      },
+      "a7": {
+        "id": "a7",
+        "element": "Br",
+        "pos": {
+          "x": 12,
+          "y": 0
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false,
+        "explicitHydrogenCount": 0
+      },
+      "a8": {
+        "id": "a8",
+        "element": "C",
+        "pos": {
+          "x": 17.5,
+          "y": 0
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a9": {
+        "id": "a9",
+        "element": "O",
+        "pos": {
+          "x": 18.5,
+          "y": 0
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a11": {
+        "id": "a11",
+        "element": "Br",
+        "pos": {
+          "x": 21,
+          "y": 0
+        },
+        "charge": -1,
+        "radicalElectrons": 0,
+        "aromatic": false
+      }
+    },
+    "bonds": {
+      "b4": {
+        "id": "b4",
+        "from": "a2",
+        "to": "a3",
+        "order": 1,
+        "stereo": "none",
+        "doubleBondSide": "auto",
+        "aromatic": false
+      },
+      "b10": {
+        "id": "b10",
+        "from": "a8",
+        "to": "a9",
+        "order": 1,
+        "stereo": "none",
+        "doubleBondSide": "auto",
+        "aromatic": false
+      }
+    },
+    "atomIds": [
+      "a1",
+      "a2",
+      "a3",
+      "a5",
+      "a6",
+      "a7",
+      "a8",
+      "a9",
+      "a11"
+    ],
+    "bondIds": [
+      "b4",
+      "b10"
+    ],
+    "nextId": 12,
+    "speciesJoins": [
+      {
+        "atomIds": [
+          "a5",
+          "a6",
+          "a7"
+        ]
+      }
+    ]
+  },
+  "annotations": [
+    {
+      "id": "ann_1",
+      "kind": "plus",
+      "between": [
+        "a1",
+        "a2"
+      ]
+    },
+    {
+      "id": "ann_2",
+      "kind": "reactionArrow",
+      "from": [
+        "a1",
+        "a2"
+      ],
+      "to": [
+        "a5"
+      ]
+    },
+    {
+      "id": "ann_3",
+      "kind": "partialBond",
+      "atoms": [
+        "a5",
+        "a6"
+      ]
+    },
+    {
+      "id": "ann_4",
+      "kind": "partialBond",
+      "atoms": [
+        "a6",
+        "a7"
+      ]
+    },
+    {
+      "id": "ann_5",
+      "kind": "partialCharge",
+      "atomId": "a5",
+      "sign": "-"
+    },
+    {
+      "id": "ann_6",
+      "kind": "partialCharge",
+      "atomId": "a7",
+      "sign": "-"
+    },
+    {
+      "id": "ann_7",
+      "kind": "bracket",
+      "species": [
+        "a5"
+      ],
+      "charge": -1,
+      "transitionState": true
+    },
+    {
+      "id": "ann_8",
+      "kind": "reactionArrow",
+      "from": [
+        "a5"
+      ],
+      "to": [
+        "a8",
+        "a11"
+      ]
+    },
+    {
+      "id": "ann_9",
+      "kind": "plus",
+      "between": [
+        "a8",
+        "a11"
+      ]
+    }
+  ],
+  "nextAnnotationId": 10,
+  "stylePreset": "publication",
+  "panels": [
+    {
+      "id": "panel-skeletal",
+      "representation": {
+        "kind": "skeletal",
+        "display": {
+          "showCarbonLabels": false,
+          "showImplicitHydrogens": false,
+          "showLonePairs": false,
+          "showCharges": true,
+          "showStereoBonds": true,
+          "showLocants": false,
+          "aromaticCircles": true,
+          "showStereoDescriptors": false
+        }
+      }
+    },
+    {
+      "id": "panel-sum-formula",
+      "representation": {
+        "kind": "sumFormula",
+        "display": {
+          "showCarbonLabels": false,
+          "showImplicitHydrogens": false,
+          "showLonePairs": false,
+          "showCharges": true,
+          "showStereoBonds": true,
+          "showLocants": false,
+          "aromaticCircles": false,
+          "showStereoDescriptors": false
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "title": "SN2 transition state",
+    "createdAt": "2026-09-30T00:00:00.000Z",
+    "modifiedAt": "2026-09-30T00:00:00.000Z"
+  }
+}
