@@ -37,6 +37,13 @@ export const SCHEME_LAYOUT = Object.freeze({
   conditionsPadEm: 0.5,
   /** From the shaft to the nearest line of conditions, em. */
   conditionsGapEm: 0.3,
+  /**
+   * From the outermost reach of the heads to the nearest line of conditions,
+   * em (decision 218): the label pass's 1 px ink clearance (decision 64) as a
+   * scheme length. The shaft gap is the larger at Publication; at Screen the
+   * heads, sized in its 2 px line width, reach past it.
+   */
+  conditionsHeadClearanceEm: 0.1,
   /** Baseline to baseline of stacked conditions lines, em. */
   conditionsLineEm: 1.2,
   /** A vertical arrow's widest conditions line before it wraps, bond lengths. */

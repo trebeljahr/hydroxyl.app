@@ -40,6 +40,6 @@
   <path id="annotation:ann_1:plus" data-annotation="ann_1" d="M106.31 -33.41 L123.91 -33.41 M115.11 -42.21 L115.11 -24.61" fill="none" stroke="#1f2937" stroke-width="2"/>
   <line id="annotation:ann_2:shaft" data-annotation="ann_2" x1="388.08" y1="-23.33" x2="526.19" y2="-23.33" stroke="#1f2937" stroke-width="2"/>
   <polygon id="annotation:ann_2:head" data-annotation="ann_2" points="543.69,-23.33 523.69,-28.33 526.19,-23.33 523.69,-18.33" fill="#1f2937"/>
-  <text id="annotation:ann_2:conditions-above-0" data-annotation="ann_2" x="465.89" y="-31.52" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="middle"><tspan>L-proline (30 mol%)</tspan></text>
-  <text id="annotation:ann_2:conditions-below-0" data-annotation="ann_2" x="465.89" y="-7.52" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="middle"><tspan>DMSO, rt</tspan></text>
+  <text id="annotation:ann_2:conditions-above-0" data-annotation="ann_2" x="465.89" y="-33.32" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="middle"><tspan>L-proline (30 mol%)</tspan></text>
+  <text id="annotation:ann_2:conditions-below-0" data-annotation="ann_2" x="465.89" y="-5.72" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="middle"><tspan>DMSO, rt</tspan></text>
 </svg>

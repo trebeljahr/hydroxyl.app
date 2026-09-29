@@ -68,7 +68,7 @@ import type { RenderStyle } from "../src/style.js";
 import { serializeFigure } from "../src/svg/figure.js";
 import { serializeScene } from "../src/svg/serialize.js";
 import { EM_CAP_HEIGHT } from "../src/text/metrics.js";
-import { BUNDLED_MEASURER, measureTextRun, textRunInkRect } from "../src/text/measurer.js";
+import { BUNDLED_MEASURER, glyphInkRects, measureTextRun, textRunInkRect } from "../src/text/measurer.js";
 import { unmeasuredTextRuns } from "../src/text/typography.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -449,6 +449,63 @@ describe("a straight arrow is drawn geometry whose shaft stretches to its text (
     expect(head.points[1]!.x).toBeGreaterThan(testosteroneBox.maxX);
     expect(arrow.tip.x).toBeGreaterThan(arrow.tail.x);
     expect(materialFlow(retro)).toEqual({ reactants: [precursor], products: [target], reversible: false });
+  });
+
+  it("sets every conditions glyph clear of its own arrow's heads, a retro chevron's included (decision 218)", () => {
+    // Testosterone => cholesterol with its disconnection notes: side-chain
+    // cleavage at C17 above, the Oppenauer at C3 below. Each note ends in a
+    // bracket, the glyph that reaches furthest down above the shaft and
+    // furthest up below it, and each is long enough to set the arrow's
+    // length, so it runs out to half an em from the chevron.
+    const testosterone = load("steroid/testosterone.mol");
+    const cholesterol = load("steroid/cholesterol.mol");
+    const inserted = insertFragment(testosterone, cholesterol, { offset: { x: 20, y: 0 } });
+    const target = [testosterone.atomIds[0]!];
+    const precursors = [inserted.atomIdMap.get(cholesterol.atomIds[0]!)!];
+    const notes = {
+      steps: [[{ kind: "text" as const, text: "side-chain cleavage (C17)" }], [{ kind: "text" as const, text: "Oppenauer, FGI (C3)" }]],
+      numbered: false,
+    };
+    const steroidArrows = [
+      mark(1, { kind: "retrosynthesisArrow", target, precursors, conditions: notes }),
+      mark(1, { kind: "reactionArrow", from: target, to: precursors, conditions: notes }),
+      mark(1, { kind: "reactionArrow", from: target, to: precursors, conditions: notes, equilibrium: {} }),
+    ];
+    const cases = [
+      ...SCHEME_FIXTURES.map((fixture) => ({ name: fixture.name, molecule: fixture.molecule, annotations: fixture.annotations })),
+      ...steroidArrows.map((arrow) => ({ name: `steroid ${arrow.kind}`, molecule: inserted.molecule, annotations: [arrow] })),
+    ];
+    let lines = 0;
+    for (const { name, molecule, annotations } of cases) {
+      for (const style of STYLES) {
+        const { schemeAnnotations } = build(molecule, annotations, style);
+        for (const arrow of schemeAnnotations.straightArrows) {
+          if (arrow.annotationId === "ann_1" && name.startsWith("steroid")) {
+            expect(arrow.findings, `${name} ${style.name}`).toEqual([]);
+            // Non-vacuous: the notes set the length, so they reach the heads.
+            expect(arrow.lengthPx).toBeGreaterThan(SCHEME_LAYOUT.minArrowBonds * pxPerModelUnit(style));
+          }
+          const marks = arrow.primitives.filter((p) => p.type !== "textRun");
+          for (const run of arrow.primitives.filter((p): p is TextRunPrimitive => p.type === "textRun")) {
+            lines++;
+            const box = measureTextRun(
+              run.spans,
+              { fontFamily: run.fontFamily, fontSizePx: run.fontSizePx, subscriptScale: style.subscriptScale, anchor: run.anchor, baseline: "alphabetic" },
+              BUNDLED_MEASURER,
+            );
+            for (const ink of glyphInkRects(box, run.origin, BUNDLED_MEASURER, run.fontFamily)) {
+              for (const part of marks) {
+                const partBox = primitivesBox([part], style);
+                const apart =
+                  ink.maxX <= partBox.minX || partBox.maxX <= ink.minX || ink.maxY <= partBox.minY || partBox.maxY <= ink.minY;
+                expect(apart, `${name} ${style.name} ${run.id} on ${part.id}`).toBe(true);
+              }
+            }
+          }
+        }
+      }
+    }
+    expect(lines).toBeGreaterThan(12);
   });
 
   it("draws the allyl cation's resonance arrow with a head at each end, and reports a pair that is not one compound", () => {

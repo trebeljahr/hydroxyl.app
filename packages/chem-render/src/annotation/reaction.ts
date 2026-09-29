@@ -209,6 +209,44 @@ function shaftHalfSpan(arrow: StraightArrowKind, style: RenderStyle): number {
 }
 
 /**
+ * How far the heads reach off the scheme line, stroke included: a forward or
+ * resonance head's half-width, an equilibrium's barbs outside its two shafts,
+ * a retro chevron's arms and half their stroke.
+ */
+function headHalfSpan(arrow: StraightArrowKind, style: RenderStyle): number {
+  const width = style.bondLineWidthPx;
+  const barb = arrowheadLengths(width, STRAIGHT_ARROWHEAD).halfWidth;
+  switch (arrow) {
+    case "forward":
+    case "resonance":
+      return barb;
+    case "equilibrium":
+      return style.doubleBondGapPx / 2 + barb;
+    case "retrosynthesis":
+      return style.doubleBondGapPx / 2 + barb + width / 2;
+    default: {
+      const unreachable: never = arrow;
+      return unreachable;
+    }
+  }
+}
+
+/**
+ * From the scheme line to the nearest edge of a conditions line (decision
+ * 218): a gap past the outermost shaft (decision 203), or a smaller clearance
+ * past the heads, whichever is further. A line is centred on the shaft and
+ * may run out to half an em from the tip, over a head, so it has to clear the
+ * head as well as the shaft.
+ */
+function conditionsOffset(arrow: StraightArrowKind, style: RenderStyle): number {
+  const size = style.fontSizePx;
+  return Math.max(
+    shaftHalfSpan(arrow, style) + SCHEME_LAYOUT.conditionsGapEm * size,
+    headHalfSpan(arrow, style) + SCHEME_LAYOUT.conditionsHeadClearanceEm * size,
+  );
+}
+
+/**
  * The arrow laid out in the panel, or undefined when the panel draws none of
  * its species on one side.
  */
@@ -263,7 +301,7 @@ export function layoutStraightArrow(
   const tip = along(line.middle, line.direction, length / 2);
 
   // The conditions, around the shaft's middle.
-  const offset = shaftHalfSpan(ends.arrow, style) + SCHEME_LAYOUT.conditionsGapEm * fontSizePx;
+  const offset = conditionsOffset(ends.arrow, style);
   const conditions: ConditionsLineLayout[] = [];
   const place = (spans: readonly TextSpan[], side: "above" | "below", origin: ScenePoint, anchor: ConditionsLineLayout["anchor"]): void => {
     conditions.push({ side, spans, origin, anchor, fontSizePx, advanceWidthPx: measure(spans) });

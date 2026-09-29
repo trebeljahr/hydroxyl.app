@@ -35,6 +35,6 @@
   <circle id="atom:a29:dot" data-atom="a29" cx="560.21" cy="-44" r="2" fill="#111827"/>
   <line id="annotation:ann_1:shaft" data-annotation="ann_1" x1="159.9" y1="-23.83" x2="306.6" y2="-23.83" stroke="#1f2937" stroke-width="2"/>
   <polygon id="annotation:ann_1:head" data-annotation="ann_1" points="324.1,-23.83 304.1,-28.83 306.6,-23.83 304.1,-18.83" fill="#1f2937"/>
-  <text id="annotation:ann_1:conditions-above-0" data-annotation="ann_1" x="242" y="-32.02" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="middle"><tspan>(i) LDA, THF, −78 °C</tspan></text>
-  <text id="annotation:ann_1:conditions-below-0" data-annotation="ann_1" x="242" y="-8.03" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="middle"><tspan>(ii) MeI</tspan></text>
+  <text id="annotation:ann_1:conditions-above-0" data-annotation="ann_1" x="242" y="-33.82" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="middle"><tspan>(i) LDA, THF, −78 °C</tspan></text>
+  <text id="annotation:ann_1:conditions-below-0" data-annotation="ann_1" x="242" y="-6.23" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="middle"><tspan>(ii) MeI</tspan></text>
 </svg>

@@ -32,7 +32,7 @@
   <polygon id="annotation:ann_2:forward-head" data-annotation="ann_2" points="418.04,-35.54 398.04,-40.54 400.54,-35.54" fill="#1f2937"/>
   <line id="annotation:ann_2:reverse-shaft" data-annotation="ann_2" x1="438.92" y1="-28.54" x2="352.04" y2="-28.54" stroke="#1f2937" stroke-width="2"/>
   <polygon id="annotation:ann_2:reverse-head" data-annotation="ann_2" points="334.54,-28.54 354.54,-23.54 352.04,-28.54" fill="#1f2937"/>
-  <text id="annotation:ann_2:conditions-above-0" data-annotation="ann_2" x="386.73" y="-46.78" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="middle" xml:space="preserve"><tspan>H</tspan><tspan font-size="11.52" dy="4">2</tspan><tspan dy="-4">SO</tspan><tspan font-size="11.52" dy="4">4</tspan><tspan dy="-4"> (cat.)</tspan></text>
-  <text id="annotation:ann_2:conditions-below-0" data-annotation="ann_2" x="386.73" y="-12.74" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="middle"><tspan>reflux</tspan></text>
+  <text id="annotation:ann_2:conditions-above-0" data-annotation="ann_2" x="386.73" y="-48.58" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="middle" xml:space="preserve"><tspan>H</tspan><tspan font-size="11.52" dy="4">2</tspan><tspan dy="-4">SO</tspan><tspan font-size="11.52" dy="4">4</tspan><tspan dy="-4"> (cat.)</tspan></text>
+  <text id="annotation:ann_2:conditions-below-0" data-annotation="ann_2" x="386.73" y="-10.94" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="middle"><tspan>reflux</tspan></text>
   <path id="annotation:ann_3:plus" data-annotation="ann_3" d="M641.54 -21.09 L659.14 -21.09 M650.34 -29.89 L650.34 -12.29" fill="none" stroke="#1f2937" stroke-width="2"/>
 </svg>
