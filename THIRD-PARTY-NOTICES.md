@@ -98,6 +98,46 @@ symbols, digits, `+`, the real minus sign U+2212, parentheses and brackets, and
 the middle dot. Radical electrons are drawn as circle primitives rather than
 glyphs, so no label depends on a bullet character being present.
 
+### The subset and scheme text (decisions 191, 192 and 206)
+
+Reaction conditions, coefficients and a bracket's charge are set in this same
+subset, and **the subset was deliberately not changed** for them. The plan
+asked for a re-subset adding lowercase and capital delta, alpha, beta, mu and
+the double dagger; decision 192 defers that until Rico approves downloading
+Arimo's Greek range and Arimo Italic. So the licence reasoning above is the
+reasoning for the subset that ships, re-read for this change rather than
+assumed: the WOFF, its sha256 and the generated metrics table are byte for
+byte what they were, and the regeneration test still reproduces the table
+from the WOFF.
+
+- **Covered and pinned.** Every Latin string a conditions line prints — the
+  real minus, the degree sign, the en dash of a range, the middle dot of a
+  hydrate, the prime, the micro sign U+00B5, and reagent formulas such as
+  `Pd(PPh3)4` and `H3O+` — measures with no `.notdef`
+  (`packages/chem-render/test/typography.test.ts`).
+- **Drawn, never set.** Every arrow, the scheme `+` and the transition state's
+  double dagger are geometry (decisions 191 and 204), so the font never needs
+  U+2192, U+21CC or U+2021.
+- **Not covered, reported.** α, β, γ, δ, μ (U+03B1-U+03BC) and Δ (U+0394) are measured
+  at `.notdef`'s advance and drawn from the next face in the stack; resvg, the
+  social-card rasteriser, draws a box for each. Each is a row in
+  `unmeasuredTextRuns(scene)` and a finding on the annotation that carries it.
+  Every Greek letter and every italic run goes through
+  `packages/chem-render/src/text/typography.ts`, so vendoring is an asset
+  change.
+- **Size.** Measured, not assumed: this change adds 0 bytes to an exported
+  SVG. Embedding the font costs 20,041 bytes per SVG (a test pins the number).
+
+**What a Greek or italic subset must re-check before it ships.** That the new
+files carry the same OFL 1.1 text and copyright line as `OFL.txt` (Arimo
+Italic is a separate font file from the same project, and a Greek range from
+a different packaging is a different file); that no Reserved Font Name
+appears in either; that the files are taken verbatim as published, so OFL
+section 3 stays unengaged; that the Greek advances are still Arial's, glyph by
+glyph, since metric compatibility is the guarantee most likely to break
+quietly there; then the regenerated table, the new sha256, the re-measured SVG
+size and this section.
+
 ### Obligations this project meets
 
 - The OFL text ships next to the font, unmodified.

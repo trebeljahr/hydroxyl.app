@@ -25,7 +25,7 @@ import {
   stereoGroupCoverage,
   stereoGroupTag,
 } from "@starter/chem-core";
-import type { FormulaPart } from "@starter/chem-core";
+import type { FormulaPart, StereoDescriptor } from "@starter/chem-core";
 import type { AtomId, BondId, BondStereo, DerivedNode, Molecule, ProjectedLayout } from "@starter/chem-core";
 
 import {
@@ -107,6 +107,7 @@ import type {
 import { modelToPx } from "../style.js";
 import type { RenderStyle } from "../style.js";
 import { measurerFor, measureTextRun, textRunRect } from "../text/measurer.js";
+import { greek, italic } from "../text/typography.js";
 import { sceneBounds } from "./bounds.js";
 import {
   derivedNodeLabel,
@@ -1274,6 +1275,17 @@ function pushProjectedHydrogens(
 }
 
 /**
+ * A descriptor's run: chem-core decides WHICH descriptors print (none for an
+ * undetermined centre or a mixture), and the letter goes through the one
+ * italic hook (decision 192), which sets it upright until an italic face is
+ * vendored — byte-identical to chem-core's own `descriptorText` today.
+ */
+function descriptorRun(descriptor: StereoDescriptor | undefined): string | undefined {
+  if (descriptor === undefined || descriptorText(descriptor) === undefined) return undefined;
+  return `(${italic(descriptor.kind)})`;
+}
+
+/**
  * Every annotation the representation asks for, as requests — unordered.
  *
  * `placeAnnotations` sorts them (decision 17), so the order built here decides
@@ -1385,7 +1397,9 @@ function annotationRequests(
   const faces = new Map<AtomId, string[]>();
   if (descriptors && layout !== undefined) {
     for (const label of layout.faceLabels) {
-      const text = `${label.locant}${label.face === "alpha" ? "α" : "β"}${label.group === undefined ? "" : `-${label.group}`}`;
+      // Greek through the one style hook (decision 192): alpha and beta are
+      // outside the vendored Latin subset, measured at .notdef until vendored.
+      const text = `${label.locant}${greek(label.face)}${label.group === undefined ? "" : `-${label.group}`}`;
       faces.set(label.atomId, [...(faces.get(label.atomId) ?? []), text]);
     }
   }
@@ -1414,7 +1428,7 @@ function annotationRequests(
       faceText === undefined &&
       (statedCentres === undefined || statedCentres.has(atomId))
     ) {
-      const text = descriptorText(cipDescriptor(mol, atomId));
+      const text = descriptorRun(cipDescriptor(mol, atomId));
       if (text !== undefined) {
         requests.push({
           kind: "descriptor",
@@ -1461,7 +1475,7 @@ function annotationRequests(
   if (descriptors) {
     for (const bondId of mol.bondIds) {
       if (statedBonds !== undefined && !statedBonds.has(bondId)) continue;
-      const text = descriptorText(doubleBondDescriptor(mol, bondId));
+      const text = descriptorRun(doubleBondDescriptor(mol, bondId));
       if (text === undefined) continue;
       const corridor = corridors.get(bondId);
       if (corridor === undefined) continue;
