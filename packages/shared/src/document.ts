@@ -331,6 +331,44 @@ function assemblePanel(id: PanelId, init: PanelInit): Panel {
   return panel;
 }
 
+/**
+ * Whether two plain JSON values are the same value: key order ignored, and a
+ * key holding `undefined` NOT the same as an absent one, which is the
+ * difference the assemblers exist to erase.
+ */
+function sameJsonValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every(
+    (key) =>
+      Object.hasOwn(b, key) &&
+      sameJsonValue((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]),
+  );
+}
+
+/**
+ * A caller's panels in their stored spelling, through `assemblePanel`: a view
+ * turned 370 is stored as 10, and a `caption: undefined` leaves no key. So a
+ * document built from them equals its own save/load round trip.
+ *
+ * A panel already in that spelling comes back ITSELF, and the list comes
+ * back itself when every panel does, so `copyOf` still shares its source's
+ * panels and a cache keyed on a panel object still hits.
+ */
+function assembledPanels(panels: readonly Panel[]): readonly Panel[] {
+  let changed = false;
+  const next = panels.map((panel) => {
+    const assembled = assemblePanel(panel.id, panel);
+    if (sameJsonValue(assembled, panel)) return panel;
+    changed = true;
+    return assembled;
+  });
+  return changed ? next : panels;
+}
+
 export interface DocumentMetadataInit {
   readonly title: string;
   readonly createdAt: string;
@@ -497,6 +535,8 @@ export interface CreateDocumentInit {
   /** Defaults to one past the highest `ann_<n>` among `annotations`. */
   readonly nextAnnotationId?: number | undefined;
   readonly stylePreset?: StylePresetId | undefined;
+  /** Stored as `assemblePanel` would write them (a view canonical, no key
+   *  holding `undefined`); a panel already in that form is kept by reference. */
   readonly panels?: readonly Panel[] | undefined;
   readonly figure?: FigureLayout | undefined;
   /** Explicit locants, keyed on atoms of `molecule`. */
@@ -524,8 +564,11 @@ export function createDocument(init: CreateDocumentInit = {}): SketchDocument {
     // Seeded from the preset, so a display default the preset owns — the
     // aromatic circle — reaches the panels a document opens with.
     panels:
-      init.panels ??
-      (stylePreset === NEW_DOCUMENT_PRESET ? DEFAULT_PANELS : defaultPanelsFor(stylePreset)),
+      init.panels === undefined
+        ? stylePreset === NEW_DOCUMENT_PRESET
+          ? DEFAULT_PANELS
+          : defaultPanelsFor(stylePreset)
+        : assembledPanels(init.panels),
     metadata: assembleMetadata({
       title: init.title ?? "Untitled",
       createdAt: now,
@@ -650,8 +693,12 @@ export function pruneLocants(
  * dropped rather than saved into a file the strict codec would then refuse.
  * The flip side: a field added to one of chem-core's params types survives a
  * save only once `canonicalProjectionView` copies it AND the schema below
- * reads it. The guard beside the schema catches the second; the round-trip
- * test that carries every optional key catches the first.
+ * reads it. The guard beside the schema catches the second at compile time.
+ * The first compiles, because a view missing an optional key is still a
+ * `ProjectionView`; panel-view.test.ts catches it by walking the schema's
+ * own shape, building a view that holds every key the schema declares, and
+ * asserting this function keeps each one. A new key is covered the moment
+ * the schema reads it, with no fixture to remember.
  *
  * @throws for an angle that is not a finite number: a caller holding one has
  * a bug, and the codec reports the same thing in a file as an issue.
@@ -682,9 +729,16 @@ export function projectionViewsEqual(a: ProjectionView, b: ProjectionView): bool
  * place a `view` key is written outside the assembler (decision 176).
  *
  * Returns `panel` ITSELF when the view it already stores draws the same
- * picture, so re-choosing the chair a panel shows, or a torsion drag that
- * ends where it began, is not an undo step (decision 159): the history's
- * no-op test is reference identity.
+ * picture, so re-choosing the chair a panel shows is not an undo step
+ * (decision 159): the history's no-op test is reference identity.
+ *
+ * THAT IS ONE CALL AGAINST THE PANEL AS IT IS NOW, NOT A WHOLE GESTURE. In a
+ * transaction each pointer frame is compared with the frame before it, and
+ * the store commits a transaction by document identity. So a torsion drag
+ * that ends at the angle it began from still commits ONE entry, with no net
+ * change, as an atom dragged back to its pixel does (history.ts). The gesture
+ * decides that: it aborts, rather than commits, when
+ * `projectionViewsEqual(base, final)`.
  *
  * A spread of `panel` is safe for the reason `touchDocument`'s spread is:
  * nothing in this module stores an `undefined`-valued key, so absent
@@ -2108,9 +2162,39 @@ export const DOCUMENT_UPGRADES: Readonly<Record<number, (value: unknown) => unkn
  * True when a failed decode failed because the input carries keys this build
  * does not know — the signature of a document written by a newer build, which
  * the caller should say in those words rather than calling the file corrupt.
+ *
+ * Or a RING CONFORMER FORM it does not know. The conformer union is the one
+ * value union a ruling names as growing on v2 (decision 154: a boat, a
+ * half-chair and a twist-boat arrive as new arms, each pinning more atoms),
+ * and a new arm is refused on its discriminator, before any key is looked
+ * at, so the file shows no unknown key. This has to be known by the build
+ * that MEETS such a file, which is every build before the chair task, so it
+ * lives here now rather than arriving with the forms.
+ *
+ * `some`, not `every`: a newer build's file routinely carries several new
+ * things at once, a new key beside a new annotation sink kind, and the
+ * second must not turn the first's "newer version" into "corrupt". The cost
+ * is that a hand-damaged file that ALSO holds an unknown key (a ring frame
+ * `{ringIndex: 0}`, missing `ringAtomIds`) is called newer; telling that
+ * apart would need the parsed input, not the issue list.
  */
 export function isFromNewerBuild(error: z.ZodError): boolean {
-  return error.issues.some((issue) => issue.code === "unrecognized_keys");
+  return error.issues.some(
+    (issue) => issue.code === "unrecognized_keys" || isUnknownRingConformerForm(issue),
+  );
+}
+
+/** The issue zod raises when no arm of the view's conformer union has the
+ *  file's `form`: `panels.<n>.view.params.conformer.form`. */
+function isUnknownRingConformerForm(issue: z.core.$ZodIssue): boolean {
+  if (issue.code !== "invalid_union" || issue.discriminator !== "form") return false;
+  const path = issue.path;
+  const tail = ["view", "params", "conformer", "form"];
+  return (
+    path.length === tail.length + 2 &&
+    path[0] === "panels" &&
+    tail.every((key, index) => path[index + 2] === key)
+  );
 }
 
 /** Throws a `ZodError` listing every problem with the input. */

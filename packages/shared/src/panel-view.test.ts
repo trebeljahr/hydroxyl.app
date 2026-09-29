@@ -35,6 +35,7 @@ import {
 import { dictionaryEntryById } from "@starter/chem-core/dictionary";
 import { projectedViewAvailability } from "@starter/chem-render";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import {
   CHAIN_TOP_VALUES,
@@ -49,6 +50,7 @@ import {
   encodeDocument,
   isFromNewerBuild,
   panelWithView,
+  projectionViewSchema,
   projectionViewsEqual,
   prunePanelViews,
   safeDecodeDocument,
@@ -269,22 +271,56 @@ describe("angles are canonical", () => {
   });
 
   it("draws cholesterol rotated by 370 exactly as by 10, every centre still lettered", () => {
-    const mol = cholesterol();
     const turned = (rotationDeg: number): ProjectionView => ({
       kind: "planar",
       template: "wedgeDash",
       frame: {},
       params: { rotationDeg, mirror: false },
     });
-    const a = layoutOf(mol, assembleProjectionView(turned(370)));
-    const b = layoutOf(mol, assembleProjectionView(turned(10)));
+    // The RAW angles, each on its own reading of cholesterol: the engine's
+    // result cache is per molecule instance, so neither layout is the other
+    // one fetched back, and only the engine's own canonical angle makes them
+    // byte-identical. Turned by 370° and by 10° as floating-point rotations,
+    // they would differ in the last bits.
+    const mol = cholesterol();
+    const a = layoutOf(mol, turned(370));
+    const b = layoutOf(cholesterol(), turned(10));
     expect(a.unplaced).toEqual([]);
     const letters = lettersReadBack(mol, a);
     expect(Object.keys(letters)).toHaveLength(8);
     expect(Object.values(letters).every((l) => l === "R" || l === "S")).toBe(true);
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+    // Turned 11°, the picture does move: the comparison can fail.
+    expect(JSON.stringify(layoutOf(cholesterol(), turned(11)))).not.toBe(JSON.stringify(b));
     expect(projectionViewsEqual(turned(370), turned(10))).toBe(true);
     expect(projectionViewsEqual(turned(370), turned(11))).toBe(false);
+  });
+
+  it("stores a caller's panels canonical in createDocument, and keeps canonical ones by reference", () => {
+    // A fixture writing its panel by hand, not through panelWithView: the
+    // Newman at 370 and a caption key holding undefined.
+    const handWritten = {
+      id: "panel-newman",
+      representation: defaultRepresentation("skeletal"),
+      caption: undefined,
+      view: newmanOfC2C3(370, -60),
+    } as unknown as Panel;
+    const doc = documentWith(glucose(), [handWritten]);
+    expect(doc.panels[0]!.view).toEqual(newmanOfC2C3(10, 300));
+    expect(Object.hasOwn(doc.panels[0]!, "caption")).toBe(false);
+    expect(undefinedValuedPaths(doc)).toEqual([]);
+    expect(roundTrip(doc)).toEqual(doc);
+    expect(JSON.stringify(roundTrip(doc))).toBe(JSON.stringify(doc));
+
+    // Already canonical: the same list and the same panel objects, so a copy
+    // of a document shares its panels.
+    const copy = createDocument({ molecule: doc.molecule, panels: doc.panels, now: NOW });
+    expect(copy.panels).toBe(doc.panels);
+    const mixed = [doc.panels[0]!, handWritten];
+    const assembled = createDocument({ molecule: doc.molecule, panels: mixed, now: NOW }).panels;
+    expect(assembled).not.toBe(mixed);
+    expect(assembled[0]).toBe(doc.panels[0]);
+    expect(assembled[1]).toEqual(doc.panels[0]);
   });
 
   it("refuses to assemble an angle that is not a finite number", () => {
@@ -391,6 +427,37 @@ describe("the codec refuses what is malformed and decodes what is merely stale",
       const result = safeDecodeDocument(withView(add, id));
       expect(result.ok, String(add)).toBe(false);
       if (!result.ok) expect(isFromNewerBuild(result.error), String(add)).toBe(true);
+    }
+  });
+
+  it("calls a chair panel's unknown conformer form a newer build's, and nothing else a view gets wrong", () => {
+    // Decision 154: a boat arrives as a new arm of the conformer union, which
+    // zod refuses on its discriminator with no unknown key in sight. It is
+    // THIS build, meeting a file from the chair task's, that has to say
+    // "newer version".
+    const boat = safeDecodeDocument(
+      withView(
+        (view) => (view.params.conformer = { form: "boat", frontAtomId: "a6", backAtomId: "a3" }),
+        "panel-chair",
+      ),
+    );
+    expect(boat.ok).toBe(false);
+    if (!boat.ok) expect(isFromNewerBuild(boat.error)).toBe(true);
+
+    // Everything else is damage, not a newer build: a frame kind or a
+    // template no build lists, a face that is neither, a chair missing its
+    // pinned atom, an index for a ring.
+    const corrupt: [string, (view: Record<string, any>) => void][] = [
+      ["panel-haworth", (view) => (view.kind = "helix")],
+      ["panel-haworth", (view) => (view.template = "fischer")],
+      ["panel-haworth", (view) => (view.params.face = "up")],
+      ["panel-chair", (view) => (view.params.conformer = { form: "chair" })],
+      ["panel-haworth", (view) => (view.frame.ringAtomIds = [0, 1, 2, 3, 4, 5])],
+    ];
+    for (const [id, breakIt] of corrupt) {
+      const result = safeDecodeDocument(withView(breakIt, id));
+      expect(result.ok, String(breakIt)).toBe(false);
+      if (!result.ok) expect(isFromNewerBuild(result.error), String(breakIt)).toBe(false);
     }
   });
 
@@ -511,7 +578,78 @@ describe("schema v2 carries the view with no second bump", () => {
   });
 });
 
+/**
+ * Every value the schema's SHAPE admits, one per arm of every union at every
+ * depth, with every optional key PRESENT: the fixture for "the assembler
+ * keeps what the schema reads". Built from the schema rather than written
+ * out, so a key the schema starts reading is in it with no fixture to add.
+ * A zod type this does not know throws, so a schema grown a new kind of
+ * field makes the test ask for it rather than skip it.
+ */
+function everyKeySamples(schema: z.ZodType, path = "view"): unknown[] {
+  if (schema instanceof z.ZodOptional) return everyKeySamples(schema.unwrap() as z.ZodType, path);
+  if (schema instanceof z.ZodDiscriminatedUnion || schema instanceof z.ZodUnion) {
+    return (schema.options as z.ZodType[]).flatMap((option) => everyKeySamples(option, path));
+  }
+  if (schema instanceof z.ZodObject) {
+    let samples: Record<string, unknown>[] = [{}];
+    for (const [key, child] of Object.entries(schema.shape as Record<string, z.ZodType>)) {
+      const values = everyKeySamples(child, `${path}.${key}`);
+      samples = samples.flatMap((sample) => values.map((value) => ({ ...sample, [key]: value })));
+    }
+    return samples;
+  }
+  if (schema instanceof z.ZodArray) return everyKeySamples(schema.element as z.ZodType, `${path}[]`).map((v) => [v]);
+  if (schema instanceof z.ZodTuple) {
+    let samples: unknown[][] = [[]];
+    (schema.def.items as z.ZodType[]).forEach((item, index) => {
+      const values = everyKeySamples(item, `${path}[${index}]`);
+      samples = samples.flatMap((sample) => values.map((value) => [...sample, value]));
+    });
+    return samples;
+  }
+  if (schema instanceof z.ZodLiteral) return [...schema.values];
+  if (schema instanceof z.ZodEnum) return [schema.options[0]];
+  if (schema instanceof z.ZodString) return ["a1"];
+  if (schema instanceof z.ZodNumber) return [10];
+  if (schema instanceof z.ZodBoolean) return [true];
+  throw new Error(`everyKeySamples: no sample for ${schema.def.type} at ${path}`);
+}
+
+/** Every key path in a JSON value, array elements folded to `[]`. */
+function keyPaths(value: unknown, at = ""): string[] {
+  if (Array.isArray(value)) return value.flatMap((item) => keyPaths(item, `${at}[]`));
+  if (value === null || typeof value !== "object") return [];
+  return Object.entries(value).flatMap(([key, child]) => [`${at}.${key}`, ...keyPaths(child, `${at}.${key}`)]);
+}
+
 describe("the projection value lists and chem-core stay in step", () => {
+  it("keeps, through the assembler, every key the schema reads, optional keys included", () => {
+    // `projectionViewSchema` is the shape piped into the canonicalising
+    // transform; the shape is what a file may hold.
+    const shape = projectionViewSchema.in as z.ZodType;
+    const samples = everyKeySamples(shape) as ProjectionView[];
+    // Non-vacuous: every frame kind, and today's optional keys, are in it.
+    expect(new Set(samples.map((s) => s.kind))).toEqual(new Set(FRAME_KINDS));
+    const covered = new Set(samples.flatMap((s) => keyPaths(s).map((p) => `${s.kind}${p}`)));
+    for (const optional of [
+      "ring.frame.referenceAtomId",
+      "ring.params.conformer.frontAtomId",
+      "sightedBond.frame.frontReference",
+      "sightedBond.frame.backReference",
+    ]) {
+      expect(covered, optional).toContain(optional);
+    }
+    for (const sample of samples) {
+      const label = `${sample.kind}/${sample.template}`;
+      // The shape's own verdict first, so a sample is a value a file may hold.
+      expect(shape.safeParse(sample).success, label).toBe(true);
+      expect(keyPaths(assembleProjectionView(sample)).sort(), label).toEqual(keyPaths(sample).sort());
+      const stored = panel("p", "skeletal", sample).view;
+      expect(keyPaths(stored).sort(), label).toEqual(keyPaths(sample).sort());
+    }
+  });
+
   it("decodes every listed template of every frame kind, and no template under another kind", () => {
     expect([...CHAIN_TOP_VALUES]).toEqual(["first", "last"]);
     expect([...RING_FACE_VALUES]).toEqual(["front", "back"]);
