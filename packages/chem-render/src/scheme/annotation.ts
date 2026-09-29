@@ -57,6 +57,10 @@ import {
   speciesOf,
   type AtomId,
   type BondId,
+  type ElectronCount,
+  type ElectronMove,
+  type ElectronSink,
+  type ElectronSource,
   type Molecule,
   type Vec2,
 } from "@starter/chem-core";
@@ -85,32 +89,47 @@ export const SCHEME_ANNOTATION_KINDS = [
 ] as const;
 export type SchemeAnnotationKind = (typeof SCHEME_ANNOTATION_KINDS)[number];
 
+/*
+ * ONE ELECTRON VOCABULARY, chem-core's (decision 149). A curly arrow's
+ * `electrons`, `source` and `sink` ARE chem-core's `ElectronCount`,
+ * `ElectronSource` and `ElectronSink`: the electron-movement topology that
+ * `applyArrows` applies. The names below are aliases, not copies, so the two
+ * cannot drift, and `CurlyArrowIsAnElectronMove` further down makes a drawn
+ * arrow pass straight into `applyArrows`. What stays here is the drawing: the
+ * record's id, its bulge and skew, anchoring, visibility and pruning.
+ */
+
 /** `pair`: double-barbed, two electrons. `single`: single-barbed fishhook. */
 export const CURLY_ARROW_ELECTRONS = ["pair", "single"] as const;
-export type CurlyArrowElectrons = (typeof CURLY_ARROW_ELECTRONS)[number];
+export type CurlyArrowElectrons = ElectronCount;
 
 /**
  * Where a curly arrow's electrons come from: a lone pair on an atom, a bond,
  * or a radical's electron on an atom. Never a bare atom — an arrow starts at
  * electrons, not at a nucleus.
  */
-export type CurlyArrowSource =
-  | { readonly kind: "lonePair"; readonly atomId: AtomId }
-  | { readonly kind: "bond"; readonly bondId: BondId }
-  | { readonly kind: "radical"; readonly atomId: AtomId };
+export type CurlyArrowSource = ElectronSource;
 
 /**
  * Where they go: an atom, a bond, or a lone pair on a named atom. Never
  * "nothing": a departing pair always lands on some atom, and a sink with no
  * source mirror would leave the reversed arrow undefined for heterolysis.
  */
-export type CurlyArrowSink =
-  | { readonly kind: "atom"; readonly atomId: AtomId }
-  | { readonly kind: "bond"; readonly bondId: BondId }
-  | { readonly kind: "lonePair"; readonly atomId: AtomId };
+export type CurlyArrowSink = ElectronSink;
 
+// The lists the document codec builds its enums from, checked in both
+// directions against chem-core's unions: a fourth source kind added there is
+// a compile error here rather than an arrow the codec cannot open.
 export const CURLY_ARROW_SOURCE_KINDS = ["lonePair", "bond", "radical"] as const;
 export const CURLY_ARROW_SINK_KINDS = ["atom", "bond", "lonePair"] as const;
+
+type ElectronsListIsTotal = CurlyArrowElectrons extends (typeof CURLY_ARROW_ELECTRONS)[number]
+  ? (typeof CURLY_ARROW_ELECTRONS)[number] extends CurlyArrowElectrons
+    ? true
+    : never
+  : never;
+const ELECTRONS_LIST_IS_TOTAL: ElectronsListIsTotal = true;
+void ELECTRONS_LIST_IS_TOTAL;
 
 type SourceKindsAreTotal =
   CurlyArrowSource["kind"] extends (typeof CURLY_ARROW_SOURCE_KINDS)[number]
@@ -197,6 +216,16 @@ type KindListIsTotal = SchemeAnnotation["kind"] extends SchemeAnnotationKind
   : never;
 const KIND_LIST_IS_TOTAL: KindListIsTotal = true;
 void KIND_LIST_IS_TOTAL;
+
+/**
+ * A drawn curly arrow IS an electron move, plus its id and shape: a list of
+ * them goes straight into chem-core's `applyArrows`, `reverseArrows` and
+ * `mechanismIssues` with no adapter (decision 149). The guard fails the build
+ * the day a field of either side stops lining up.
+ */
+type CurlyArrowIsAnElectronMove = CurlyArrowAnnotation extends ElectronMove ? true : never;
+const CURLY_ARROW_IS_AN_ELECTRON_MOVE: CurlyArrowIsAnElectronMove = true;
+void CURLY_ARROW_IS_AN_ELECTRON_MOVE;
 
 /**
  * An annotation as a caller or a parser hands it over: the one optional key

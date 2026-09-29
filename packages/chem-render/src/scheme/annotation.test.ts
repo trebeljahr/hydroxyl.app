@@ -1,9 +1,12 @@
 import {
+  applyArrows,
   benzene,
   buildMolecule,
   insertFragment,
+  mechanismIssues,
   removeAtoms,
   removeBonds,
+  reverseArrows,
   species,
   type AtomId,
   type Molecule,
@@ -205,5 +208,49 @@ describe("pruning with the molecule edit", () => {
     expect(species(pasted)).toHaveLength(3);
     const list = [bracket];
     expect(pruneSchemeAnnotations(list, mol, pasted)).toBe(list);
+  });
+});
+
+describe("a drawn curly arrow is chem-core's electron move (decision 149)", () => {
+  it("passes a document's curly arrows straight into applyArrows and reverseArrows", () => {
+    // Hydroxide and bromomethane, with the two arrows of an SN2 drawn on them.
+    let c = "";
+    let br = "";
+    let cBr = "";
+    let o = "";
+    const mol = buildMolecule((b) => {
+      c = b.atom("C", { x: 0, y: 0 });
+      br = b.atom("Br", { x: 1, y: 0 });
+      cBr = b.bond(c, br);
+      o = b.atom("O", { x: -2, y: 0 }, { charge: -1 });
+    });
+    const annotations: readonly SchemeAnnotation[] = [
+      assembleSchemeAnnotation({
+        id: schemeAnnotationId(1),
+        kind: "curlyArrow",
+        electrons: "pair",
+        source: { kind: "lonePair", atomId: o },
+        sink: { kind: "atom", atomId: c },
+        bulge: 0.3,
+        skew: 0,
+      }),
+      assembleSchemeAnnotation({
+        id: schemeAnnotationId(2),
+        kind: "curlyArrow",
+        electrons: "pair",
+        source: { kind: "bond", bondId: cBr },
+        sink: { kind: "atom", atomId: br },
+        bulge: -0.2,
+        skew: 0.1,
+      }),
+    ];
+    const arrows = annotations.filter((a): a is CurlyArrowAnnotation => a.kind === "curlyArrow");
+
+    // No adapter: the annotation records are the arrows.
+    const product = applyArrows(mol, arrows);
+    expect([product.atoms[br]!.charge, product.atoms[o]!.charge]).toEqual([-1, 0]);
+    expect(mechanismIssues(mol, arrows)).toEqual([]);
+    const back = applyArrows(product, reverseArrows(mol, arrows));
+    expect(back.atoms).toEqual(mol.atoms);
   });
 });
