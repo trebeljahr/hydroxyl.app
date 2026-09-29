@@ -28,7 +28,9 @@ import type { EditorSliceCreator, ToolOptions, ToolSlice } from "../types";
  * cyclohexane for exactly that reason — an arene is the ring that turns up in
  * most papers, and the saturated ring is one click away in the template
  * popover. `chargeDelta` is +1 because the charge tool's plain click adds a
- * proton's worth and the modifier subtracts.
+ * proton's worth and the modifier subtracts. Hydroxy is the default group for
+ * the same reason benzene is the default ring: it is the substituent drawn
+ * most, and the first entry of the palette.
  */
 export const DEFAULT_TOOL_OPTIONS: ToolOptions = Object.freeze({
   bondOrder: 1,
@@ -36,6 +38,7 @@ export const DEFAULT_TOOL_OPTIONS: ToolOptions = Object.freeze({
   element: "C",
   ringTemplate: "benzene",
   chainLength: 4,
+  functionalGroup: "OH",
   chargeDelta: 1,
 });
 

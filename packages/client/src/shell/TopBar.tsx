@@ -24,6 +24,7 @@ import type { MouseEvent, ReactElement } from "react";
 import {
   ChevronLeftIcon,
   CommandIcon,
+  FlaskConicalIcon,
   ImageDownIcon,
   MoonIcon,
   Redo2Icon,
@@ -237,6 +238,12 @@ export function TopBar(): ReactElement {
 
       <div className="ml-auto flex items-center gap-1">
         <StylePresetSwitch />
+        <CommandButton id="structure.insert" label="Insert a structure">
+          <>
+            <FlaskConicalIcon className="size-4" />
+            <span aria-hidden="true">Insert</span>
+          </>
+        </CommandButton>
         <CommandButton id="structure.clean-up">
           <>
             <SparklesIcon className="size-4" />

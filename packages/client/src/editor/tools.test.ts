@@ -25,6 +25,7 @@ const TOOL_IDS = [
   "chain",
   "eraser",
   "charge",
+  "group",
 ] as const;
 
 describe("the tool registry", () => {

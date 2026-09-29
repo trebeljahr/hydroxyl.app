@@ -64,6 +64,7 @@ import {
   DEFAULT_ANGLE_STEP,
   DEFAULT_BOND_LENGTH,
   DEFAULT_MERGE_RADIUS,
+  FUNCTIONAL_GROUPS,
   RING_TEMPLATES,
 } from "@starter/chem-core";
 import type {
@@ -128,6 +129,7 @@ const LABEL_ROTATE = "Rotate selection";
 const LABEL_MERGE = "Merge atoms";
 const LABEL_RING = "Add ring";
 const LABEL_CHAIN = "Add chain";
+const LABEL_GROUP = "Add functional group";
 const LABEL_ERASE = "Erase";
 const LABEL_CHARGE = "Change charge";
 const LABEL_SET_ELEMENT = "Set element";
@@ -687,8 +689,8 @@ function onDragStart(
     // The tools that draw when dragged off an atom. `element` is here because
     // dragging from a carbon with nitrogen selected is how a chemist adds an
     // amine — the tool names what the new atom is, not what the old one
-    // becomes. The eraser, charge and chain tools deliberately are not: all
-    // three are click gestures, and a drag with one of them held falls
+    // becomes. The eraser, charge, chain and group tools deliberately are not:
+    // all four are click gestures, and a drag with one of them held falls
     // through to move/marquee.
     const drawingTool = ctx.tool === "bond" || ctx.tool === "element";
     const drawing = drawingTool || !selectionHasAtom(ctx.selection, hit.atomId);
@@ -1237,6 +1239,44 @@ function chainClick(
 }
 
 /**
+ * The functional-group tool: stamp the armed group onto the clicked atom
+ * through a new single bond.
+ *
+ * AN ATOM OR NOTHING. A group is a substituent and needs something to
+ * substitute. Dropped on empty canvas, "COOH" would have to mean formic acid
+ * and "NO₂" the nitro tautomer of nitrous acid — the drawing taken literally,
+ * and never what was meant — so a miss says what the tool wants instead of
+ * guessing. A bond is refused the same way: there is no bond-shaped version
+ * of a substituent, and the ring tool already owns "click a bond".
+ */
+function groupClick(
+  ctx: InteractionContext,
+  sample: PointerSample,
+): readonly InteractionCommand[] {
+  const name = ctx.toolOptions.functionalGroup;
+  const hit = sample.hit;
+  if (hit.kind !== "atom") {
+    return [
+      {
+        kind: "status",
+        message: `Click an atom to attach ${FUNCTIONAL_GROUPS[name].label}`,
+      },
+    ];
+  }
+  const atomId = hit.atomId;
+  const bondLength = documentBondLength(ctx.molecule);
+  return [
+    {
+      kind: "edit",
+      label: LABEL_GROUP,
+      edit: (m) =>
+        guardedOps.attachGroupToAtom(m, atomId, name, { bondLength }).molecule,
+    },
+    { kind: "status", message: null },
+  ];
+}
+
+/**
  * Clicking an EXISTING bond with the bond tool SETS it to the tool's current
  * order and stereo. It does not cycle.
  *
@@ -1277,6 +1317,8 @@ function onClick(
       return clickTransaction(LABEL_RING, ringClick(ctx, sample));
     case "chain":
       return clickTransaction(LABEL_CHAIN, chainClick(ctx, sample));
+    case "group":
+      return clickTransaction(LABEL_GROUP, groupClick(ctx, sample));
     case "eraser":
       return clickTransaction(LABEL_ERASE, eraseClick(sample));
     case "charge":

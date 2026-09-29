@@ -29,6 +29,7 @@ import {
   applyIssueFix as coreApplyIssueFix,
   addBond as coreAddBond,
   appendChain as coreAppendChain,
+  attachGroupToAtom as coreAttachGroupToAtom,
   attachRingToAtom as coreAttachRingToAtom,
   cycleBondOrder as coreCycleBondOrder,
   duplicateFragment as coreDuplicateFragment,
@@ -183,6 +184,9 @@ export const guardedOps = {
   attachRingToAtom: guard("attachRingToAtom", coreAttachRingToAtom),
   spiroRingAtAtom: guard("spiroRingAtAtom", coreSpiroRingAtAtom),
   appendChain: guard("appendChain", coreAppendChain),
+  /** The functional-group tool's one edit. Mints the group's atoms and the
+   *  linking bond, so it belongs to the same class as the ring gestures. */
+  attachGroupToAtom: guard("attachGroupToAtom", coreAttachGroupToAtom),
 
   /**
    * Written out rather than wrapped, because BOTH arguments are molecules —

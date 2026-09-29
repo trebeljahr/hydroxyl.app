@@ -251,6 +251,18 @@ export function SkeletalModeIcon(props: ChemIconProps): ReactElement {
   );
 }
 
+/**
+ * The functional-group tool: a trigonal carbon on a stem, one arm doubled —
+ * the carbonyl that most of the palette's groups are built around.
+ */
+export function FunctionalGroupIcon(props: ChemIconProps): ReactElement {
+  return (
+    <Glyph viewBox="0 0 40 40" strokeWidth={3} className={props.className}>
+      <path d="M3 30 18 21.5 33 30M18 21.5V4M23.5 18.5V7" />
+    </Glyph>
+  );
+}
+
 /** The charge tool: a plus and a minus, which is what one click of it does. */
 export function ChargeIcon(props: ChemIconProps): ReactElement {
   return (

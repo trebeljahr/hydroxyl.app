@@ -41,6 +41,7 @@ import { CanvasErrorBoundary } from "./CanvasErrorBoundary";
 import { CommandPalette } from "./CommandPalette";
 import { ExportDialog } from "./ExportDialog";
 import { PeriodicTableDialog } from "./PeriodicTableDialog";
+import { InsertDialog } from "./InsertDialog";
 import { useFileDrop } from "./useFileDrop";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { StatusBar } from "./StatusBar";
@@ -92,6 +93,7 @@ export function EditorShell(): ReactElement {
       <CommandPalette />
       <ExportDialog />
       <PeriodicTableDialog />
+      <InsertDialog />
     </TooltipProvider>
   );
 }

@@ -26,6 +26,7 @@ import type {
   BondId,
   BondStereo,
   ElementSymbol,
+  FunctionalGroupName,
   Molecule,
   RingTemplateName,
   Vec2,
@@ -93,6 +94,7 @@ export type ToolId =
   | "element"
   | "ring"
   | "chain"
+  | "group"
   | "eraser"
   | "charge";
 
@@ -123,6 +125,9 @@ export interface ToolOptions {
   readonly ringTemplate: RingTemplateName;
   /** How many atoms one click of the chain tool appends. */
   readonly chainLength: number;
+  /** Which functional group the group tool stamps: a key of chem-core's
+   *  `FUNCTIONAL_GROUPS`, so the option and the table cannot disagree. */
+  readonly functionalGroup: FunctionalGroupName;
   /** One click of the charge tool. Alt-click applies the opposite sign. */
   readonly chargeDelta: 1 | -1;
 }
@@ -180,6 +185,8 @@ export interface UiState {
   readonly exportDialogOpen: boolean;
   /** The full periodic table behind the element picker's "Show all". */
   readonly periodicTableOpen: boolean;
+  /** The insert box: a structure by name, sum formula, SMILES or molfile. */
+  readonly insertDialogOpen: boolean;
   readonly figureExport: FigureExportSettings;
   /**
    * What an outside toolkit refused about THE CURRENT MOLECULE, or nothing.
@@ -387,6 +394,7 @@ export interface UiSlice {
   setActivePanel(id: PanelId | null): void;
   setExportDialogOpen(open: boolean): void;
   setPeriodicTableOpen(open: boolean): void;
+  setInsertDialogOpen(open: boolean): void;
   setFigureExport(patch: Partial<FigureExportSettings>): void;
   clearElementInputBuffer(): void;
   setRefusal(refusal: ToolkitRefusal | null): void;

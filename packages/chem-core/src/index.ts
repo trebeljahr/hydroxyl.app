@@ -34,6 +34,8 @@ export * from "./aromatic.js";
 export * from "./molblock-write.js";
 export * from "./molblock-read.js";
 export * from "./templates.js";
+// Functional groups: stamped through templates.ts's attachment direction.
+export * from "./groups.js";
 export * from "./lewis.js";
 export * from "./condensed.js";
 // The one lift and signed volume both stereo readers call. Imports neither.

@@ -80,6 +80,7 @@ describe("no RDKit at module scope", () => {
     expect(hits.map((f) => path.basename(f)).toSorted()).toEqual([
       "fidelity.node.test.ts",
       "inchi.node.test.ts",
+      "insert-fidelity.node.test.ts",
       "stereo-centres.node.test.ts",
       "stereo-groups.node.test.ts",
       "valence-table.node.test.ts",

@@ -636,7 +636,7 @@ function ringVertices(centre: Vec2, v0: Vec2, size: number): Vec2[] {
  * way the sprout rule does at a centre with no room left, by picking the
  * widest gap there is.
  */
-function templateAngle(mol: Molecule, atomId: AtomId): number {
+export function templateAngle(mol: Molecule, atomId: AtomId): number {
   const angle = defaultSproutAngle(mol, atomId);
   const ringIndices = ringsAtAtom(mol, atomId);
   if (ringIndices.length === 0) return angle;

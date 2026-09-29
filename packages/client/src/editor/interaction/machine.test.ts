@@ -21,6 +21,7 @@ import {
   buildMolecule,
   requireAtom,
   linearChain,
+  molecularFormula,
   singleAtom,
   valenceIssues,
 } from "@starter/chem-core";
@@ -969,6 +970,50 @@ describe("the tools that were not wired to the reducer", () => {
     driver.send({ kind: "click", sample: sample({ x: 5, y: 5 }) });
     // One seed plus three appended: the count the user set is what they get.
     expect(driver.molecule.atomIds).toHaveLength(5);
+  });
+
+  it("stamps the armed functional group on a clicked atom as one undo entry", () => {
+    // Benzoic acid from benzene: one click of the group tool set to COOH.
+    const driver = new Driver(benzene());
+    driver.tool = "group";
+    driver.toolOptions = { ...DEFAULT_TOOL_OPTIONS, functionalGroup: "COOH" };
+    driver.send({ kind: "click", sample: sample(pos(driver.molecule, "a1"), atomHit("a1")) });
+
+    expect(molecularFormula(driver.molecule)).toBe("C7H6O2");
+    expect(driver.entries).toEqual(["Add functional group"]);
+    expect(driver.status).toBeNull();
+  });
+
+  it("stamps a group at the drawing's own bond length", () => {
+    // A structure imported in Angstroms: the group must match its bonds, not
+    // chem-core's unit default.
+    const driver = new Driver(benzene(1.54));
+    driver.tool = "group";
+    driver.toolOptions = { ...DEFAULT_TOOL_OPTIONS, functionalGroup: "OMe" };
+    driver.send({ kind: "click", sample: sample(pos(driver.molecule, "a1"), atomHit("a1")) });
+
+    for (const bondId of driver.molecule.bondIds) {
+      const bond = driver.molecule.bonds[bondId]!;
+      expect(distance(pos(driver.molecule, bond.from), pos(driver.molecule, bond.to))).toBeCloseTo(1.54, 6);
+    }
+  });
+
+  it("refuses empty canvas and bonds with the group tool, saying what it wants", () => {
+    const driver = new Driver(benzene());
+    driver.tool = "group";
+    driver.toolOptions = { ...DEFAULT_TOOL_OPTIONS, functionalGroup: "NO2" };
+    const before = driver.molecule;
+
+    driver.send({ kind: "click", sample: sample({ x: 9, y: 9 }) });
+    expect(driver.molecule).toBe(before);
+    expect(driver.status).toBe("Click an atom to attach NO₂");
+
+    driver.send({
+      kind: "click",
+      sample: sample({ x: 0, y: 0 }, { kind: "bond", bondId: driver.molecule.bondIds[0]! }),
+    });
+    expect(driver.molecule).toBe(before);
+    expect(driver.entries).toEqual([]);
   });
 
   it("SETS a clicked bond to the tool's order rather than cycling it", () => {

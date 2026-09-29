@@ -1411,10 +1411,21 @@ describe("chem-core exports", () => {
     expect(owners.get("atomSymmetryClasses")).toEqual(["symmetry.ts"]);
     expect(owners.get("StereoDescriptor")).toEqual(["stereo.ts"]);
 
+    // The structure dictionary is the one deliberate exception: ~80 kB of
+    // molblock text that only the insert box needs, so it is served from its
+    // own entry point and the root barrel must NOT pull it in. It is still
+    // checked for duplicate names above like every other module.
+    const ownEntryPoint = new Set(["dictionary.ts", "dictionary-entries.ts"]);
     const index = readFileSync(join(srcDir, "index.ts"), "utf8");
     for (const file of modules) {
-      expect(index).toContain(`"./${file.replace(/\.ts$/, ".js")}"`);
+      const specifier = `"./${file.replace(/\.ts$/, ".js")}"`;
+      if (ownEntryPoint.has(file)) expect(index).not.toContain(specifier);
+      else expect(index).toContain(specifier);
     }
+    const manifest = JSON.parse(readFileSync(join(srcDir, "..", "package.json"), "utf8")) as {
+      exports: Record<string, { import: string }>;
+    };
+    expect(manifest.exports["./dictionary"]?.import).toBe("./dist/dictionary.js");
   });
 
   it("keeps parity.ts's liftParity the only 2D-to-tetrahedral lift", () => {

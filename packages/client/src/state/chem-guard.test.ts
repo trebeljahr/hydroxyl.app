@@ -140,6 +140,7 @@ describe("guardedOps", () => {
       attachRingToAtom: (d) => void guardedOps.attachRingToAtom(d, firstAtom, "benzene"),
       spiroRingAtAtom: (d) => void guardedOps.spiroRingAtAtom(d, firstAtom, "benzene"),
       appendChain: (d) => void guardedOps.appendChain(d, firstAtom, 3),
+      attachGroupToAtom: (d) => void guardedOps.attachGroupToAtom(d, firstAtom, "COOH"),
     };
 
     // The facade and the attempts cover each other. Without this the object

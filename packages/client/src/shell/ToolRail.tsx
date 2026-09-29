@@ -21,7 +21,12 @@
 import { useState } from "react";
 import type { ReactElement, ReactNode } from "react";
 import { ChevronDownIcon } from "lucide-react";
-import { RING_TEMPLATES, elementBySymbol } from "@starter/chem-core";
+import {
+  FUNCTIONAL_GROUP_NAMES,
+  FUNCTIONAL_GROUPS,
+  RING_TEMPLATES,
+  elementBySymbol,
+} from "@starter/chem-core";
 import type { BondStereo, ElementSymbol, RingTemplateName } from "@starter/chem-core";
 import { COMMON_ORGANIC_ELEMENTS } from "@starter/chem-core";
 import { BOND_ORDER_VALUES, BOND_STEREO_VALUES } from "@starter/shared";
@@ -528,11 +533,51 @@ function ChainOptions(): ReactElement {
   );
 }
 
+/**
+ * The functional-group palette: every group as the abbreviation a scheme
+ * writes, in chem-core's table order.
+ *
+ * The button text is the LABEL ("CO₂Me") and the accessible name is the
+ * substituent name with it ("Methoxycarbonyl (CO₂Me)"), for the same reason
+ * the element grid says "Carbon (C)": the label is what the eye looks for and
+ * the name is what a screen reader should say. Whatever the label, the group
+ * lands as real atoms — see the header of chem-core's groups.ts.
+ */
+function GroupOptions(): ReactElement {
+  const current = useEditorStore((state) => state.toolOptions.functionalGroup);
+  return (
+    <div className="flex w-60 flex-col gap-1">
+      <p className="text-muted-foreground text-xs font-medium">Click an atom to attach</p>
+      <div className="grid grid-cols-4 gap-1">
+        {FUNCTIONAL_GROUP_NAMES.map((name) => {
+          const group = FUNCTIONAL_GROUPS[name];
+          return (
+            <OptionButton
+              key={name}
+              active={current === name}
+              commandId={`group.${name}`}
+              testId={`group-${name}`}
+              label={`${group.title} (${group.label})`}
+              onSelect={() => {
+                void commandById(`group.${name}`).run(editorStore);
+              }}
+              className="justify-center gap-0 px-1 text-center"
+            >
+              {group.label}
+            </OptionButton>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 const OPTIONS_BY_TOOL: Partial<Record<ToolId, () => ReactElement>> = {
   bond: BondOptions,
   ring: RingOptions,
   element: ElementOptions,
   chain: ChainOptions,
+  group: GroupOptions,
 };
 
 /**
@@ -540,7 +585,7 @@ const OPTIONS_BY_TOOL: Partial<Record<ToolId, () => ReactElement>> = {
  * registry's static one.
  *
  * A hook rather than a lookup because it subscribes: the rail has to redraw
- * when the armed template or bond order changes, and only these three
+ * when the armed template or bond order changes, and only the option-carrying
  * buttons care.
  */
 function useToolGlyph(id: ToolId): ReactNode {
@@ -549,6 +594,7 @@ function useToolGlyph(id: ToolId): ReactNode {
   const bondStereo = useEditorStore((state) => state.toolOptions.bondStereo);
   const element = useEditorStore((state) => state.toolOptions.element);
   const chainLength = useEditorStore((state) => state.toolOptions.chainLength);
+  const functionalGroup = useEditorStore((state) => state.toolOptions.functionalGroup);
 
   if (id === "ring") {
     const Icon = RING_ICONS[ringTemplate];
@@ -560,6 +606,24 @@ function useToolGlyph(id: ToolId): ReactNode {
     const Icon =
       bondStereo === "none" ? ORDER_ICONS[bondOrder] : STEREO_ICONS[bondStereo];
     return <Icon className="size-5" />;
+  }
+  if (id === "group") {
+    // The armed group's own label, like the element tool's symbol: "COOH" on
+    // the button says what the next click adds. Long labels ("CH=CH₂") are
+    // set smaller rather than truncated, since a clipped "CO₂" reads as a
+    // different group.
+    const label = FUNCTIONAL_GROUPS[functionalGroup].label;
+    return (
+      <span
+        data-rail-badge="group"
+        className={cn(
+          "font-semibold leading-none",
+          label.length > 4 ? "text-[9px]" : label.length > 2 ? "text-[11px]" : "text-sm",
+        )}
+      >
+        {label}
+      </span>
+    );
   }
   if (id === "element") {
     // The symbol itself, because no glyph says "nitrogen" better than "N".

@@ -9,6 +9,10 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./dictionary": {
+      "import": "./dist/dictionary.js",
+      "types": "./dist/dictionary.d.ts"
     }
   },
   "scripts": {

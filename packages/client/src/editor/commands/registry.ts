@@ -29,6 +29,8 @@
 
 import {
   DEFAULT_BOND_LENGTH,
+  FUNCTIONAL_GROUP_NAMES,
+  FUNCTIONAL_GROUPS,
   isEmpty,
   RING_TEMPLATES,
 } from "@starter/chem-core";
@@ -102,6 +104,7 @@ export type CommandGroup =
   | "element"
   | "ring"
   | "chain"
+  | "group"
   | "figure";
 
 export interface Command {
@@ -443,6 +446,30 @@ function chainLengthCommands(): Command[] {
       state.setTool("chain");
     },
   }));
+}
+
+/**
+ * One command per functional group, so the palette finds "Boc" or "nitrile"
+ * and the rail's group popover dispatches through the registry like its
+ * siblings. Picking one arms the group tool as well, the way picking a ring
+ * template arms the ring tool.
+ */
+function functionalGroupCommands(): Command[] {
+  return FUNCTIONAL_GROUP_NAMES.map((name) => {
+    const group = FUNCTIONAL_GROUPS[name];
+    return {
+      id: `group.${name}`,
+      title: `Functional group: ${group.label} (${group.title.toLowerCase()})`,
+      keywords: ["group", "functional group", "substituent", name, group.title, ...group.keywords],
+      group: "group" as const,
+      enabled: always,
+      run: (store: EditorStore) => {
+        const state = store.getState();
+        state.setToolOption("functionalGroup", name);
+        state.setTool("group");
+      },
+    };
+  });
 }
 
 /**
@@ -830,6 +857,31 @@ const STRUCTURE_COMMANDS: readonly Command[] = [
     group: "structure",
     enabled: (state) => !isEmpty(state.document.molecule),
     run: (store) => cleanUpStructure(store),
+  },
+  {
+    id: "structure.insert",
+    title: "Insert a structure by name, formula, SMILES or molfile…",
+    keywords: [
+      "insert",
+      "add",
+      "molecule",
+      "compound",
+      "name",
+      "smiles",
+      "molfile",
+      "formula",
+      "glucose",
+      "caffeine",
+      "amino acid",
+      "sugar",
+      "solvent",
+    ],
+    group: "structure",
+    // Always: inserting into an empty sketch is the commonest way to start one.
+    enabled: always,
+    run: (store) => {
+      store.getState().setInsertDialogOpen(true);
+    },
   },
   {
     id: "structure.charge-up",
@@ -1262,6 +1314,7 @@ export const COMMANDS: readonly Command[] = Object.freeze([
   ...ringTemplateCommands(),
   ...chainLengthCommands(),
   ELEMENT_TABLE_COMMAND,
+  ...functionalGroupCommands(),
   ...elementCommands(),
   ...EDIT_COMMANDS,
   ...SELECT_COMMANDS,

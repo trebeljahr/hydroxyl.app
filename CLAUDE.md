@@ -125,6 +125,15 @@ the entire dependency is confined to `packages/client/src/lib/rdkit/`.
 - **Write molblocks for RDKit with `hydrogenAssertion: "valence"`.** The
   default `hhh` field is a QUERY field per the CTfile spec and RDKit treats it
   as one — benzene written with it arrives as C6, silently, with an empty log.
+- **The structure dictionary is generated, not written.**
+  `packages/chem-core/src/dictionary-entries.ts` holds RDKit-laid-out molblocks
+  for the insert box's named compounds. Edit the source table in
+  `packages/client/scripts/build-structure-dictionary.mjs` and run
+  `pnpm --filter @starter/client build:dictionary`; the script refuses to write
+  if a row's CIP descriptors or InChIKey disagree with RDKit. RDKit runs there
+  at build time only — the editor reads the molblocks with chem-core. The
+  dictionary is served from `@starter/chem-core/dictionary`, never from the
+  root barrel, so its ~80 kB loads only when the insert box opens.
 - **The fidelity harness never asserts on a SMILES string**, because RDKit
   canonicalises the right and the wrong answer to the same one. It asserts on
   chem-core's own queries, and on more than `elementCounts` and `netCharge`:

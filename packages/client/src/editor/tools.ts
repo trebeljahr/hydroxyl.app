@@ -46,8 +46,9 @@
  * S Cl Br I Si Se — is genuinely untouched, but Br and Se are untouched only
  * because the key layer gives a completed COMMON_ORGANIC_ELEMENTS pair
  * priority over a tool letter as well; without that exception `r` and `e`
- * would take them. Not one of `d e g q r v x z` is a one-letter symbol except
- * `v` (vanadium), and `q` costs nothing at all: no element begins with it.
+ * would take them. Not one of `d e g j q r v x z` is a one-letter symbol
+ * except `v` (vanadium), and `j` and `q` cost nothing at all: no element
+ * begins with either.
  */
 
 import type { ComponentType } from "react";
@@ -62,6 +63,7 @@ import {
   CarbonChainIcon,
   ChargeIcon,
   CyclohexaneIcon,
+  FunctionalGroupIcon,
   SingleBondIcon,
 } from "@/chem-icons";
 import type { ToolId } from "@/state";
@@ -151,6 +153,28 @@ export const TOOLS: readonly ToolDef[] = Object.freeze([
     hotkey: "z",
     cursor: "copy",
     Icon: CarbonChainIcon,
+    branches: ["click"],
+  }),
+  Object.freeze<ToolDef>({
+    id: "group",
+    keywords: [
+      "functional group",
+      "substituent",
+      "hydroxy",
+      "carboxy",
+      "amino",
+      "nitro",
+      "phenyl",
+      "protecting group",
+      "Boc",
+    ],
+    title: "Functional group",
+    hint: "Click an atom to attach the chosen group through a new bond",
+    // J because it costs nothing: no element symbol begins with it, and no
+    // one-letter element is followed by it, so no symbol becomes unreachable.
+    hotkey: "j",
+    cursor: "copy",
+    Icon: FunctionalGroupIcon,
     branches: ["click"],
   }),
   Object.freeze<ToolDef>({
