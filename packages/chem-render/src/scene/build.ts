@@ -1367,13 +1367,18 @@ function pushProjectedHydrogens(
 
 /**
  * A descriptor's run: chem-core decides WHICH descriptors print (none for an
- * undetermined centre or a mixture), and the letter goes through the one
- * italic hook (decision 192), which sets it upright until an italic face is
- * vendored — byte-identical to chem-core's own `descriptorText` today.
+ * undetermined centre or a mixture) and how they are SPELLED, wrapper and
+ * all; only the letter goes through the one italic hook (decision 192), which
+ * sets it upright until an italic face is vendored. The wrapper is never
+ * re-typed here, so the figure and chem-core's text surfaces cannot drift
+ * apart when chem-core's spelling changes.
  */
 function descriptorRun(descriptor: StereoDescriptor | undefined): string | undefined {
-  if (descriptor === undefined || descriptorText(descriptor) === undefined) return undefined;
-  return `(${italic(descriptor.kind)})`;
+  const text = descriptorText(descriptor);
+  if (text === undefined || descriptor === undefined) return text;
+  const at = text.indexOf(descriptor.kind);
+  if (at < 0) return text;
+  return `${text.slice(0, at)}${italic(descriptor.kind)}${text.slice(at + descriptor.kind.length)}`;
 }
 
 /**
