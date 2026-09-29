@@ -23,7 +23,9 @@ vi.mock("@/persistence", async (importOriginal) => ({
   setDocumentStore: () => undefined,
 }));
 
-import EditorPage, { documentIdFromSearch } from "./page";
+import { EXAMPLE_VIEWS, exampleDocument } from "@/components/landing/example-document";
+
+import EditorPage, { documentIdFromSearch, exampleFromSearch } from "./page";
 
 function ethanol() {
   return buildMolecule((b) => {
@@ -195,5 +197,121 @@ describe("documentIdFromSearch", () => {
     expect(documentIdFromSearch("?doc=")).toBeNull();
     expect(documentIdFromSearch("?doc=   ")).toBeNull();
     expect(documentIdFromSearch(`?doc=${STARTUP_DOCUMENT_ID}`)).toBeNull();
+  });
+});
+
+/**
+ * `?example=landing` — the landing figure, opened as a sketch of the
+ * visitor's own (decision 127).
+ */
+describe("/editor?example=<name>", () => {
+  function freshMount(search: string) {
+    editorStore.getState().loadDocument(startupDocument());
+    editorStore.getState().setStatusMessage(null);
+    return visit(search);
+  }
+
+  async function opened(): Promise<void> {
+    await waitFor(() => {
+      expect(editorStore.getState().document.id).not.toBe(STARTUP_DOCUMENT_ID);
+    });
+  }
+
+  it("opens the landing figure's document under an id of this tab's own", async () => {
+    const page = freshMount("?example=landing");
+    await opened();
+
+    const doc = editorStore.getState().document;
+    const example = exampleDocument();
+    // The same sketch the visitor was looking at …
+    expect(doc.metadata.title).toBe("Acetic acid");
+    expect(doc.panels.map((panel) => panel.representation.kind)).toEqual([...EXAMPLE_VIEWS]);
+    expect(doc.panels).toEqual(example.panels);
+    expect(doc.figure).toEqual(example.figure);
+    expect(doc.stylePreset).toBe(example.stylePreset);
+    expect(doc.molecule.atomIds).toHaveLength(4);
+    // … but not the build-time id, which is the same in every browser.
+    expect(doc.id).not.toBe(example.id);
+    page.unmount();
+  });
+
+  it("stores nothing until the first edit, then stores it under the new id", async () => {
+    const page = freshMount("?example=landing");
+    await opened();
+
+    await expect(flushEditorDocument()).resolves.toBeNull();
+    const untouched = await store.listMeta();
+    expect(untouched.ok && untouched.value.map((meta) => meta.id).sort()).toEqual(
+      [FIRST.id, SECOND.id].sort(),
+    );
+
+    const id = editorStore.getState().document.id;
+    editorStore
+      .getState()
+      .applyMoleculeEdit("Retype", (m) => guardedOps.setElement(m, m.atomIds[0]!, "N"));
+    const result = await flushEditorDocument();
+    expect(result?.ok).toBe(true);
+    page.unmount();
+
+    const reread = await store.get(id);
+    expect(reread.ok && reread.value.metadata.title).toBe("Acetic acid");
+    expect(reread.ok && reread.value.panels).toHaveLength(EXAMPLE_VIEWS.length);
+    expect((await store.get(exampleDocument().id)).ok).toBe(false);
+  });
+
+  it("is one undo away from the placeholder, which writes nothing", async () => {
+    const page = freshMount("?example=landing");
+    await opened();
+    editorStore.getState().undo();
+    expect(editorStore.getState().document.id).toBe(STARTUP_DOCUMENT_ID);
+    await expect(flushEditorDocument()).resolves.toBeNull();
+    page.unmount();
+  });
+
+  it("opens the editor as usual for an unknown name, and says so", async () => {
+    const page = freshMount("?example=nope");
+    await opened();
+    expect(editorStore.getState().document.metadata.title).toBe("Benzene");
+    expect(editorStore.getState().ui.statusMessage).toBe(
+      "There is no example called “nope”. The editor opened a new sketch.",
+    );
+    page.unmount();
+  });
+
+  it("gives way to ?doc=, which names stored work", async () => {
+    const page = freshMount(`?doc=${FIRST.id}&example=landing`);
+    await waitFor(() => {
+      expect(editorStore.getState().document.id).toBe(FIRST.id);
+    });
+    page.unmount();
+  });
+});
+
+describe("exampleFromSearch", () => {
+  it("asks for nothing without a name", () => {
+    expect(exampleFromSearch("")).toEqual({ kind: "none" });
+    expect(exampleFromSearch("?example=")).toEqual({ kind: "none" });
+    expect(exampleFromSearch("?example=%20")).toEqual({ kind: "none" });
+  });
+
+  it("mints a new id on every call, so two clicks are two sketches", () => {
+    const first = exampleFromSearch("?example=landing");
+    const second = exampleFromSearch("?example=landing");
+    expect(first.kind === "found" && second.kind === "found").toBe(true);
+    if (first.kind !== "found" || second.kind !== "found") return;
+    expect(first.document.id).not.toBe(second.document.id);
+  });
+
+  it("does not read Object.prototype as a table of examples", () => {
+    expect(exampleFromSearch("?example=toString").kind).toBe("unknown");
+    expect(exampleFromSearch("?example=__proto__").kind).toBe("unknown");
+  });
+
+  it("clips a long name before repeating it on the status line", () => {
+    const result = exampleFromSearch(`?example=${"x".repeat(500)}`);
+    expect(result.kind).toBe("unknown");
+    if (result.kind !== "unknown") return;
+    expect(result.message).toContain(`“${"x".repeat(39)}…”`);
+    expect(result.message.length).toBeLessThan(120);
   });
 });

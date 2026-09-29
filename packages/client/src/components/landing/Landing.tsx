@@ -28,9 +28,15 @@ import type { ReactElement, ReactNode } from "react";
 
 import { JOURNAL_WIDTHS_CM, MIN_PRINTED_LABEL_PT } from "@starter/chem-render";
 
-import { editorHref, isFileExportBuild, thirdPartyNoticesHref } from "@/lib/deployment";
+import {
+  editorExampleHref,
+  editorHref,
+  isFileExportBuild,
+  thirdPartyNoticesHref,
+} from "@/lib/deployment";
 import { DONATE_URL } from "@/lib/donation";
 
+import { LANDING_EXAMPLE } from "./example-document";
 import { exampleFigure } from "./example-figure";
 
 function Section({
@@ -108,6 +114,17 @@ export function Landing(): ReactElement {
             Acetic acid, drawn once and exported by the editor as {example.panelCount} panels. At
             single-column width it prints {example.printedSize}, with {example.labelSize} labels.
           </figcaption>
+          {/* A plain anchor, like "New sketch": see `@/lib/deployment` for why
+              the static export needs a full page load here. The editor opens
+              a copy under a new id and stores nothing until the first edit
+              (decision 127). */}
+          <a
+            href={editorExampleHref(LANDING_EXAMPLE)}
+            data-landing="open-example"
+            className="text-foreground focus-visible:ring-ring mt-2 inline-block rounded-sm text-sm font-medium underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2"
+          >
+            Open this example in the editor
+          </a>
         </figure>
       </section>
 

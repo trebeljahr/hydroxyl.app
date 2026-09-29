@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { molecularFormula } from "@starter/chem-core";
 import { MIN_PRINTED_LABEL_PT } from "@starter/chem-render";
 
-import { EXAMPLE_VIEWS, exampleDocument, exampleFigure, exampleMolecule } from "./example-figure";
+import { EXAMPLE_VIEWS, exampleDocument, exampleMolecule } from "./example-document";
+import { exampleFigure } from "./example-figure";
 
 describe("the landing page's example figure", () => {
   it("is acetic acid", () => {

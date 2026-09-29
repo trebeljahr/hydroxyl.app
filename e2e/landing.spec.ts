@@ -19,6 +19,9 @@ import type { Page } from "@playwright/test";
 const HEADLINE = "Draw the molecule once. Export every view your figure needs.";
 const FORMULA = '[data-status="formula"]';
 const SAVE_STATE = '[data-status="save-state"]';
+const CANVAS = "[data-canvas-root]";
+const PANELS = '[data-shell="figure-panels"]';
+const TOP_BAR = '[data-shell="top-bar"]';
 
 const ETHANOL_MOLBLOCK = `Ethanol
   chemcore          2D
@@ -52,6 +55,29 @@ async function withoutNativePickers(page: Page): Promise<void> {
     delete w.showSaveFilePicker;
     delete w.showOpenFilePicker;
   });
+}
+
+async function panelKinds(page: Page): Promise<string[]> {
+  return page
+    .locator(`${PANELS} [data-panel-id]`)
+    .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-panel-kind") ?? ""));
+}
+
+/** React's hydration report, which arrives through `console.error` and
+ *  nowhere else. Narrow on purpose — see the same listener in shell.spec.ts. */
+function collectHydrationErrors(page: Page): string[] {
+  const hydration: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() !== "error") return;
+    const text = message.text();
+    if (/hydrat/i.test(text) || /server rendered HTML didn't match/i.test(text)) {
+      hydration.push(text);
+    }
+  });
+  page.on("pageerror", (error) => {
+    if (/hydrat/i.test(error.message)) hydration.push(error.message);
+  });
+  return hydration;
 }
 
 /** Two sketches in storage, the way a chemist gets them: an SDF dropped on
@@ -163,4 +189,66 @@ test("Export all sketches writes one file that Import restores in an empty brows
   await fresh.locator('[data-recents="card"]', { hasText: "Acetone" }).locator('[data-recents="open"]').click();
   await expect(fresh.locator(FORMULA)).toHaveText("C₃H₆O");
   await other.close();
+});
+
+/**
+ * "Open this example in the editor" (decision 127): the landing figure,
+ * opened as a sketch of the visitor's own.
+ *
+ * The three claims the link makes, in the order a visitor meets them: it is
+ * the figure they saw, it is new, and it costs their library nothing until
+ * they change it. The id is minted in the mount effect, so the prerendered
+ * `doc_startup` and the browser still agree — hence the hydration listener.
+ */
+test("the landing figure opens in the editor as a new sketch, stored only once edited", async ({
+  page,
+}) => {
+  const hydration = collectHydrationErrors(page);
+
+  await page.goto("/");
+  await page.locator('[data-landing="open-example"]').click();
+
+  // `/editor/` under `trailingSlash: true`; the link itself carries none.
+  await expect(page).toHaveURL(/\/editor\/?\?example=landing$/);
+  await expect(page.locator(FORMULA)).toHaveText("C₂H₄O₂");
+  await expect.poll(() => panelKinds(page)).toEqual(["skeletal", "explicitH", "lewis", "condensed"]);
+  await expect(page.locator('[data-shell="document-title"]')).toHaveValue("Acetic acid");
+  const id = await page.locator(TOP_BAR).getAttribute("data-doc-id");
+  expect(id).not.toBe("doc_startup");
+  // The build-time id is the same in every browser; the copy's is not.
+  expect(id).not.toBe("doc-landing-example");
+  expect(hydration).toEqual([]);
+
+  // Opened and left untouched: the library is still empty, so `/` is still
+  // the landing page.
+  await page.goto("/");
+  await expect(page.locator('[data-recents="empty"]')).toBeVisible();
+
+  await page.locator('[data-landing="open-example"]').click();
+  await expect(page.locator(FORMULA)).toHaveText("C₂H₄O₂");
+  const edited = await page.locator(TOP_BAR).getAttribute("data-doc-id");
+  // A second click is a second sketch, never the first one reopened.
+  expect(edited).not.toBe(id);
+  await page.locator(CANVAS).click({ position: { x: 8, y: 8 } });
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.press("+");
+  await expect(page.locator(`${SAVE_STATE}[data-save-status="saved"]`)).toBeVisible({
+    timeout: 10_000,
+  });
+
+  await page.goto("/");
+  await expect(page.locator('[data-recents="card"]')).toHaveCount(1);
+  const card = page.locator(`[data-recents="card"][data-doc-id="${edited}"]`);
+  await expect(card.locator('[data-recents="title"]')).toHaveText("Acetic acid");
+  await card.locator('[data-recents="open"]').click();
+  await expect.poll(() => panelKinds(page)).toEqual(["skeletal", "explicitH", "lewis", "condensed"]);
+});
+
+test("an unknown ?example= opens the editor as usual and says so", async ({ page }) => {
+  await page.goto("/editor?example=nope");
+
+  await expect(page.locator(FORMULA)).toHaveText("C₆H₆");
+  await expect(page.locator('[data-status="message"]')).toHaveText(
+    "There is no example called “nope”. The editor opened a new sketch.",
+  );
 });

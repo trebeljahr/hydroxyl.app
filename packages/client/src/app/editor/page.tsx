@@ -41,6 +41,11 @@
  * closing it again does not leave an untouched benzene in the grid. The first
  * real edit is the first write.
  *
+ * `?example=landing` is the other way in with nothing stored behind it: the
+ * landing page's acetic acid, opened as a NEW sketch so a visitor can edit
+ * exactly the figure they just saw. It follows the fixture's rules — see
+ * `exampleFromSearch`.
+ *
  * ── THE LOAD DECISION IS MADE ON THE DOCUMENT'S ID, NOT ON EMPTINESS ───────
  *
  * It used to read `?doc=` only inside `if (isEmpty(molecule))`, and that was
@@ -66,10 +71,12 @@ import type { SketchDocument } from "@starter/shared";
 
 import { fixtureDocument, stressDocument, STRESS_HEAVY_ATOMS } from "@/canvas";
 import { armCanvasCrash, CRASH_GLOBAL } from "@/canvas/crash";
+import { exampleNamed } from "@/components/landing/example-document";
 import { EditorShell } from "@/shell";
 import { editorStore, STARTUP_DOCUMENT_ID } from "@/state";
 import {
   baselineEditorDocument,
+  copyOf,
   createMemoryDocumentStore,
   flushEditorDocument,
   holdEditorDocument,
@@ -135,6 +142,52 @@ export function documentIdFromSearch(search: string): string | null {
   const id = new URLSearchParams(search).get("doc");
   if (id === null || id.trim() === "") return null;
   return id === STARTUP_DOCUMENT_ID ? null : id;
+}
+
+/** What `?example=` asked for. */
+export type ExampleRequest =
+  | { readonly kind: "none" }
+  | { readonly kind: "found"; readonly document: SketchDocument }
+  | { readonly kind: "unknown"; readonly message: string };
+
+/** Longest example name the status line repeats back. The name comes from a
+ *  URL, and the line has one row to share with the formula and the counters. */
+const SHOWN_EXAMPLE_NAME = 40;
+
+/**
+ * The example `?example=` names, as a sketch nobody has saved yet (decision
+ * 127).
+ *
+ * A `copyOf` UNDER A FRESH ID, never the example itself. `exampleDocument()`
+ * carries a fixed id so the landing figure is byte-identical across builds,
+ * and that string is the same in every visitor's browser: stored, it would
+ * name nobody's sketch, and the second click on the link would save straight
+ * over the edits made after the first. The copy keeps everything a visitor saw —
+ * the molecule, the four panels and the two-column layout — and the title,
+ * which Duplicate would otherwise suffix with "copy".
+ *
+ * CALLED FROM THE MOUNT EFFECT, NEVER DURING RENDER, because `copyOf` mints an
+ * id from `Date.now()` and `Math.random()`. The prerender and the browser
+ * both render the `doc_startup` placeholder; the mint happens after
+ * hydration, exactly where the benzene fixture's does.
+ *
+ * An unknown name is not an error page. The editor opens as a bare `/editor`
+ * would, and the message says why the visitor is not looking at the example
+ * they followed a link for.
+ */
+export function exampleFromSearch(search: string): ExampleRequest {
+  const name = new URLSearchParams(search).get("example");
+  if (name === null || name.trim() === "") return { kind: "none" };
+  const example = exampleNamed(name);
+  if (example === null) {
+    const shown =
+      name.length > SHOWN_EXAMPLE_NAME ? `${name.slice(0, SHOWN_EXAMPLE_NAME - 1)}…` : name;
+    return {
+      kind: "unknown",
+      message: `There is no example called “${shown}”. The editor opened a new sketch.`,
+    };
+  }
+  return { kind: "found", document: copyOf(example, { title: example.metadata.title }) };
 }
 
 /**
@@ -291,9 +344,19 @@ export default function EditorPage(): ReactElement {
     } else if (isEmpty(state.document.molecule)) {
       // Bare `/editor`, nothing open. There is no id to compare against, so
       // emptiness is still the honest test for "this is a fresh mount".
-      const requested = documentFromSearch(search);
-      state.openDocument(requested ?? fixtureDocument(),
-        requested === null ? "Open Benzene" : "Open stress fixture");
+      //
+      // `?example=` opens the same way as the fixture: an undoable entry and
+      // then a baseline, so nothing is stored until the first edit and one
+      // Ctrl+Z lands on the placeholder, which is never written (decision 85).
+      const example = exampleFromSearch(search);
+      if (example.kind === "found") {
+        state.openDocument(example.document, "Open example");
+      } else {
+        const requested = documentFromSearch(search);
+        state.openDocument(requested ?? fixtureDocument(),
+          requested === null ? "Open Benzene" : "Open stress fixture");
+        if (example.kind === "unknown") state.setStatusMessage(example.message);
+      }
       baselineEditorDocument(editorStore.getState().document);
     } else {
       baselineEditorDocument(state.document);

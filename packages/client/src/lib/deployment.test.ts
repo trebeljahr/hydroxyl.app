@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   aboutHref,
   deploymentRoot,
+  editorExampleHref,
   editorHref,
   indexablePageUrls,
   isFileExportBuild,
@@ -51,6 +52,12 @@ describe("the standalone / dev build", () => {
     vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "0");
     expect(editorHref("a b&c=d")).toBe("/editor?doc=a%20b%26c%3Dd");
   });
+
+  it("opens an example with ?example=, never with ?doc=", () => {
+    vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "0");
+    expect(editorExampleHref("landing")).toBe("/editor?example=landing");
+    expect(editorExampleHref("a b")).toBe("/editor?example=a%20b");
+  });
 });
 
 describe("the static export", () => {
@@ -62,6 +69,7 @@ describe("the static export", () => {
     // "/editor/" either, whose relative ./_next/ prefix resolves into a
     // directory with no assets in it.
     expect(editorHref("doc_1")).toBe("editor.html?doc=doc_1");
+    expect(editorExampleHref("landing")).toBe("editor.html?example=landing");
     expect(recentsHref()).toBe("index.html");
     expect(aboutHref()).toBe("about.html");
     expect(thirdPartyNoticesHref()).toBe("rdkit/THIRD-PARTY-NOTICES.txt");

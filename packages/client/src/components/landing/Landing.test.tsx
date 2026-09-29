@@ -25,6 +25,21 @@ describe("the landing page", () => {
     expect(container.querySelector('[data-landing="figure"] svg')).not.toBeNull();
   });
 
+  it("links the figure to a copy of itself in the editor, flat in the export", () => {
+    const { unmount } = render(<Landing />);
+    const link = screen.getByText("Open this example in the editor").closest("a");
+    expect(link).toHaveAttribute("href", "/editor?example=landing");
+    // Inside the figure, so it reads as being about the picture above it.
+    expect(link?.closest('[data-landing="figure"]')).not.toBeNull();
+    unmount();
+
+    vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "1");
+    render(<Landing />);
+    expect(
+      screen.getByText("Open this example in the editor").closest("a")?.getAttribute("href"),
+    ).toBe("editor.html?example=landing");
+  });
+
   it("states what the editor does not do", () => {
     render(<Landing />);
     const limits = screen.getByRole("heading", { name: "Not in this version" }).closest("section");

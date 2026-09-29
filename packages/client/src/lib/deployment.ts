@@ -108,7 +108,23 @@ export function editorHref(docId?: string | null): string {
     docId === undefined || docId === null || docId === ""
       ? ""
       : `?doc=${encodeURIComponent(docId)}`;
-  return `${isFileExportBuild() ? "editor.html" : "/editor"}${query}`;
+  return `${editorPath()}${query}`;
+}
+
+/**
+ * A link that opens one of the built-in examples (`example-document.ts`) in
+ * the editor as a new, unsaved sketch — decision 127.
+ *
+ * Its own function rather than a second parameter on `editorHref`: `?doc=`
+ * names stored work and `?example=` names a template, and no link should
+ * carry both. If one does, the editor opens the `?doc=`.
+ */
+export function editorExampleHref(example: string): string {
+  return `${editorPath()}?example=${encodeURIComponent(example)}`;
+}
+
+function editorPath(): string {
+  return isFileExportBuild() ? "editor.html" : "/editor";
 }
 
 /** A link to the recents grid, in whichever build this is. */

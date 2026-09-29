@@ -14,14 +14,8 @@
  * It runs at BUILD time. Both pages that show it are server components, so
  * the markup is in the prerendered HTML and no visitor's browser composes it.
  *
- * ── WHY ACETIC ACID ────────────────────────────────────────────────────────
- *
- * Every one of the four views can draw it: it is acyclic, so the condensed
- * formula is available (chem-render refuses that view for rings), and its
- * oxygens give the Lewis panel lone pairs to draw. L-alanine was tried first
- * and dropped: at this size the methyl hydrogens of its explicit-H and Lewis
- * panels crowd the alpha carbon's, which is a fair picture of a dense
- * molecule and a poor first picture of the product.
+ * The document itself is `example-document.ts`'s, which the editor opens as
+ * well; the reasons it is acetic acid are there.
  *
  * ── THE FONT IS NOT EMBEDDED HERE ──────────────────────────────────────────
  *
@@ -31,58 +25,11 @@
  * with) sets the same glyph widths. Everything else is the file's own output.
  */
 
-import { add, buildMolecule, DEG, fromPolar, ORIGIN } from "@starter/chem-core";
-import type { Molecule, Vec2 } from "@starter/chem-core";
-import { PRINTED_BOND_LENGTH_CM, serializeFigure, VIEW_KIND_TITLES } from "@starter/chem-render";
-import { createDocument, createPanel } from "@starter/shared";
-import type { Panel, RepresentationKind, SketchDocument } from "@starter/shared";
+import { PRINTED_BOND_LENGTH_CM, serializeFigure } from "@starter/chem-render";
 
 import { formatPt, prepareFigure } from "@/lib/export/figure";
 
-/** The views the example lays side by side, in panel order. */
-export const EXAMPLE_VIEWS: readonly RepresentationKind[] = [
-  "skeletal",
-  "explicitH",
-  "lewis",
-  "condensed",
-];
-
-function step(from: Vec2, degrees: number): Vec2 {
-  return add(from, fromPolar(degrees * DEG, 1));
-}
-
-/** Acetic acid, CH3COOH: the methyl on the left, the carbonyl up, the
- *  hydroxyl continuing the zig-zag to the right. */
-export function exampleMolecule(): Molecule {
-  return buildMolecule((b) => {
-    const methyl = b.atom("C", ORIGIN);
-    const carboxylPos = step(ORIGIN, 30);
-    const carboxyl = b.atom("C", carboxylPos);
-    const carbonyl = b.atom("O", step(carboxylPos, 90));
-    const hydroxyl = b.atom("O", step(carboxylPos, -30));
-    b.bond(methyl, carboxyl, 1);
-    b.bond(carboxyl, carbonyl, 2);
-    b.bond(carboxyl, hydroxyl, 1);
-  });
-}
-
-export function exampleDocument(): SketchDocument {
-  const panels: Panel[] = EXAMPLE_VIEWS.map((kind) => ({
-    ...createPanel(kind, VIEW_KIND_TITLES[kind], "publication"),
-    // Fixed rather than generated: the panel id reaches the SVG's element ids,
-    // and a stable one keeps two builds of the page byte-identical.
-    id: `panel-example-${kind}`,
-  }));
-  return createDocument({
-    id: "doc-landing-example",
-    title: "Acetic acid",
-    molecule: exampleMolecule(),
-    stylePreset: "publication",
-    panels,
-    figure: { columns: 2 },
-    now: "2026-01-01T00:00:00.000Z",
-  });
-}
+import { exampleDocument } from "./example-document";
 
 export interface ExampleFigure {
   /** Inline SVG markup with no XML declaration. Its px `width`/`height` are
