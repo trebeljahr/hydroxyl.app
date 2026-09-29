@@ -1300,6 +1300,77 @@ function refuse(reason: CycliseRefusalReason, atomIds: readonly AtomId[]): Cycli
   return { kind: "refused", reason, atomIds: sortIds(atomIds) };
 }
 
+/**
+ * The carbon of a hydroxyl that can become a ring oxygen: a neutral O singly
+ * bonded to one carbon and carrying at least one hydrogen. Undefined for an
+ * ether, an ester, a ring oxygen or an alkoxide.
+ */
+function hydroxylCarbon(mol: Molecule, oxygenId: AtomId): AtomId | undefined {
+  const oxygen = mol.atoms[oxygenId];
+  const heavy = heavyNeighbours(mol, oxygenId);
+  const carbon = heavy[0];
+  if (
+    oxygen?.element !== "O" ||
+    oxygen.charge !== 0 ||
+    heavy.length !== 1 ||
+    mol.atoms[carbon!]?.element !== "C" ||
+    bondBetween(mol, oxygenId, carbon!)?.order !== 1 ||
+    hydrogenCount(mol, oxygenId) < 1
+  ) {
+    return undefined;
+  }
+  return carbon;
+}
+
+/** A hydroxyl that closes an open-chain sugar onto its carbonyl carbon. */
+export interface SugarRingClosure {
+  readonly form: SugarRingForm;
+  readonly carbonylCarbon: AtomId;
+  /** The oxygen that becomes the ring oxygen. */
+  readonly hydroxylOxygen: AtomId;
+  /** The chain carbon carrying it: the ring-closing carbon to be. */
+  readonly closingCarbon: AtomId;
+}
+
+const CLOSURE_SIZES: readonly (readonly [SugarRingForm, number])[] = [
+  ["pyranose", 6],
+  ["furanose", 5],
+];
+
+/**
+ * Every hydroxyl `cycliseSugar` accepts for the open-chain sugar whose
+ * carbonyl carbon is `carbonylCarbon`, pyranoses first, then by oxygen id.
+ * Empty when that carbon anchors no open chain, or the chain numbers the same
+ * from both ends (both of which `cycliseSugar` refuses).
+ *
+ * This is how "pyranose" and "furanose" become an oxygen, so no caller counts
+ * chain positions itself: an aldose closes a pyranose on C5 and a furanose on
+ * C4, a 2-ketose on C6 and C5. A carbonyl at C4 or beyond can reach a hydroxyl
+ * of one ring size in both directions, and both are listed.
+ */
+export function sugarRingClosures(mol: Molecule, carbonylCarbon: AtomId): readonly SugarRingClosure[] {
+  if (!Object.hasOwn(mol.atoms, carbonylCarbon)) return [];
+  const unit = carbohydrates(mol).find((u) => u.form === "open" && u.anchor === carbonylCarbon);
+  if (unit === undefined || unit.directionTied) return [];
+  const ik = unit.backbone.indexOf(carbonylCarbon);
+  if (ik < 0) return [];
+  const closures: SugarRingClosure[] = [];
+  for (const [form, size] of CLOSURE_SIZES) {
+    const found: SugarRingClosure[] = [];
+    for (const step of [-1, 1]) {
+      const closingCarbon = unit.backbone[ik + step * (size - 2)];
+      if (closingCarbon === undefined) continue;
+      for (const oxygen of heavyNeighbours(mol, closingCarbon)) {
+        if (hydroxylCarbon(mol, oxygen) !== closingCarbon) continue;
+        found.push({ form, carbonylCarbon, hydroxylOxygen: oxygen, closingCarbon });
+      }
+    }
+    found.sort((p, q) => compareIds(p.hydroxylOxygen, q.hydroxylOxygen));
+    closures.push(...found);
+  }
+  return Object.freeze(closures);
+}
+
 /** A drawn hydrogen atom on `atomId`, protium first, then `compareIds`. */
 function drawnHydrogen(mol: Molecule, atomId: AtomId): AtomId | undefined {
   const hydrogens = bondsAt(mol, atomId)
@@ -1357,21 +1428,10 @@ export function cycliseSugar(mol: Molecule, options: CycliseSugarOptions): Cycli
   if (unit === undefined) return refuse("not-a-sugar", [k]);
   if (unit.directionTied) return refuse("numbering-tied", [k]);
 
-  const oxygen = mol.atoms[o]!;
-  const oHeavy = heavyNeighbours(mol, o);
-  const ch = oHeavy[0];
-  if (
-    oxygen.element !== "O" ||
-    oxygen.charge !== 0 ||
-    oHeavy.length !== 1 ||
-    mol.atoms[ch!]?.element !== "C" ||
-    bondBetween(mol, o, ch!)?.order !== 1 ||
-    hydrogenCount(mol, o) < 1
-  ) {
-    return refuse("not-a-hydroxyl", [o]);
-  }
+  const ch = hydroxylCarbon(mol, o);
+  if (ch === undefined) return refuse("not-a-hydroxyl", [o]);
   const ik = unit.backbone.indexOf(k);
-  const ic = unit.backbone.indexOf(ch!);
+  const ic = unit.backbone.indexOf(ch);
   if (ic < 0) return refuse("not-on-the-chain", [o]);
   const size = Math.abs(ic - ik) + 2;
   if (size !== 5 && size !== 6) return refuse("ring-size", [k, o]);

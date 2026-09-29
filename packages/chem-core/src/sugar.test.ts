@@ -41,6 +41,7 @@ import {
   openRing,
   perceiveSugarRing,
   sugarPerceptionComputationCount,
+  sugarRingClosures,
   sugarRings,
   type Anomer,
   type Carbohydrate,
@@ -993,5 +994,77 @@ describe("openRing", () => {
     }
     const chain = glucoseOpen();
     expect(openRing(chain, only(chain).anchor)).toMatchObject({ kind: "refused", reason: "not-a-sugar-ring" });
+  });
+});
+
+describe("sugarRingClosures", () => {
+  /** Each closure as "form:locant of the carbon carrying the hydroxyl". */
+  function closuresByLocant(mol: Molecule): string[] {
+    const unit = only(mol);
+    return sugarRingClosures(mol, unit.anchor).map((closure) => {
+      expect(closure.carbonylCarbon).toBe(unit.anchor);
+      expect(closure.hydroxylOxygen).toBe(oxygenOn(mol, closure.closingCarbon));
+      return `${closure.form}:${carbohydrateLocant(unit, closure.closingCarbon)}`;
+    });
+  }
+
+  // An aldose closes on C5 and C4; a 2-ketose on C6 and C5; a triose on
+  // nothing, since neither ring fits on three carbons.
+  const OPEN: readonly (readonly [string, () => Molecule, readonly string[]])[] = [
+    ["D-glucose", glucoseOpen, ["pyranose:5", "furanose:4"]],
+    ["D-galactose", () => fixture("projection", "d-galactose-open.mol"), ["pyranose:5", "furanose:4"]],
+    ["D-fructose", () => fixture("projection", "d-fructose-open.mol"), ["pyranose:6", "furanose:5"]],
+    ["D-ribose", () => fixture("projection", "d-ribose-open.mol"), ["pyranose:5", "furanose:4"]],
+    ["2-deoxy-D-ribose", () => fixture("projection", "2-deoxy-d-ribose-open.mol"), ["pyranose:5", "furanose:4"]],
+    ["(R)-glyceraldehyde", () => fixture("projection", "r-glyceraldehyde.mol"), []],
+  ];
+
+  for (const [name, load, expected] of OPEN) {
+    it(`lists ${name}'s ring-closing hydroxyls by ring form`, () => {
+      expect(closuresByLocant(load())).toEqual(expected);
+    });
+  }
+
+  it("lists only hydroxyls cycliseSugar accepts, each closing the ring it names", () => {
+    for (const [name, load] of OPEN) {
+      const chain = load();
+      for (const closure of sugarRingClosures(chain, only(chain).anchor)) {
+        for (const anomer of ["alpha", "beta", "mixture"] as const) {
+          const result = cycliseSugar(chain, { ...closure, anomer });
+          if (result.kind !== "cyclised") throw new Error(`${name} ${closure.form} ${anomer}: ${result.reason}`);
+          expect(result.ring.form, `${name} ${anomer}`).toBe(closure.form);
+          expect(result.ring.ringHeteroatom).toBe(closure.hydroxylOxygen);
+          expect(result.ring.ringClosingCarbon).toBe(closure.closingCarbon);
+        }
+      }
+    }
+  });
+
+  it("lists nothing for a ring form, a glycoside, or an atom that is no carbonyl", () => {
+    const ring = fixture("projection", "beta-d-glucopyranose.mol");
+    expect(sugarRingClosures(ring, only(ring).ring!.anomericCarbon)).toEqual([]);
+    const glycoside = fixture("sugar", "methyl-alpha-d-glucopyranoside.mol");
+    expect(sugarRingClosures(glycoside, only(glycoside).ring!.anomericCarbon)).toEqual([]);
+    const chain = glucoseOpen();
+    expect(sugarRingClosures(chain, atLocant(only(chain), "2"))).toEqual([]);
+    expect(sugarRingClosures(chain, "constructor")).toEqual([]);
+  });
+
+  it("lists both hydroxyls when a carbonyl past C3 reaches one ring size either way", () => {
+    // Oct-4-ulose: the ketone is nearer C1, so C1 is fixed, and a furanose
+    // closes on either C1 or C7 while only C8 closes a pyranose.
+    const octulose = buildMolecule((b) => {
+      const carbons = Array.from({ length: 8 }, (_, i) => b.atom("C", { x: i * 0.866, y: i % 2 === 0 ? 0 : 0.5 }));
+      for (let i = 1; i < carbons.length; i++) b.bond(carbons[i - 1]!, carbons[i]!, 1);
+      carbons.forEach((carbon, i) => {
+        const y = i % 2 === 0 ? -1 : 1.5;
+        const oxygen = b.atom("O", { x: i * 0.866, y });
+        b.bond(carbon, oxygen, i === 3 ? 2 : 1);
+      });
+    });
+    const unit = only(octulose);
+    expect(unit).toMatchObject({ parent: "ketose", firstLocant: 1 });
+    expect(carbohydrateLocant(unit, unit.anchor)).toBe("4");
+    expect(closuresByLocant(octulose).sort()).toEqual(["furanose:1", "furanose:7", "pyranose:8"]);
   });
 });
