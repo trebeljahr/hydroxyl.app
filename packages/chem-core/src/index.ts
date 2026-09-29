@@ -69,6 +69,8 @@ export * from "./carbon-chain.js";
 export * from "./amino-acid.js";
 // Sugar rings, carbohydrate numbering, D/L, alpha/beta, cyclise and open.
 export * from "./sugar.js";
+// Locants: explicit first, then the sugar and amino-acid rules. Reads both.
+export * from "./numbering.js";
 // One implicit hydrogen drawn as a real atom for an arrow to reach (decision
 // 131). Reads stereo-config to keep a centre's configuration, so it sits last.
 export * from "./promote-hydrogen.js";
