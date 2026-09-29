@@ -63,8 +63,10 @@ export * from "./achirality.js";
 // One centre on a synthetic Fischer cross, read through stereo-config: the
 // only thing sugar and amino-acid D/L share (decision 132).
 export * from "./fischer-side.js";
-// Parent-chain selection with an honest stop at a tie.
+// Parent-chain selection with an honest stop at a tie, for the two below.
 export * from "./carbon-chain.js";
+// Alpha-amino acids: C1 at the carboxyl, D/L at the alpha carbon.
+export * from "./amino-acid.js";
 // Sugar rings, carbohydrate numbering, D/L, alpha/beta, cyclise and open.
 export * from "./sugar.js";
 // One implicit hydrogen drawn as a real atom for an arrow to reach (decision
