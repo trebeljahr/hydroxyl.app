@@ -156,7 +156,7 @@ import {
 } from "./parity.js";
 import { LruCache } from "./rings.js";
 import { unrepresentableStereo, type UnrepresentableStereoElement } from "./stereo-axes.js";
-import type { AtomId, Bond, BondId, Molecule } from "./types.js";
+import type { AtomId, Bond, BondId, BondStereo, Molecule } from "./types.js";
 import { implicitHydrogenCount } from "./valence.js";
 import type { Vec2 } from "./vec.js";
 
@@ -245,14 +245,34 @@ export type DepthConvention =
   | { readonly kind: "pseudo3d"; readonly depth: Readonly<Record<AtomId, number>> };
 
 /**
+ * A mark as a layout drew it: the stereo code and which END is narrow.
+ *
+ * The narrow end is NAMED rather than implied by `bond.from`, because a
+ * projection moves marks without editing bonds: a mirrored panel exchanges
+ * wedge and hash, and a panel re-marking a centre may put the narrow end at
+ * the bond's `to`. Rewriting `from`/`to` to say that would be minting a bond,
+ * which a view must never do (decision 12).
+ */
+export interface PlacedMark {
+  readonly stereo: BondStereo;
+  readonly narrowEnd: AtomId;
+}
+
+/**
  * A molecule and where its atoms are drawn. `positions` overrides `atom.pos`
  * per atom, so a projection layout can be read without writing it into the
- * model. Atoms it omits keep their own positions. Marks always come from the
- * molecule's bonds.
+ * model. Atoms it omits keep their own positions.
+ *
+ * `marks` does the same for the bonds' stereo marks, keyed by bond id. A bond
+ * it omits keeps the molecule's own mark, so a caller reading a layout that
+ * drew NO mark on a bond says so with `stereo: "none"` rather than leaving it
+ * out — otherwise the author's wedge would leak into the reading of a Fischer
+ * that never drew it.
  */
 export interface Placement {
   readonly mol: Molecule;
   readonly positions?: Readonly<Record<AtomId, Vec2>> | undefined;
+  readonly marks?: Readonly<Record<BondId, PlacedMark>> | undefined;
 }
 
 export type ConfigUnavailableReason =
@@ -443,6 +463,7 @@ type Lift = { readonly kind: "points"; readonly points: readonly LiftedPoint[] }
 interface ReadContext {
   readonly mol: Molecule;
   readonly positions: Readonly<Record<AtomId, Vec2>> | undefined;
+  readonly marks: Readonly<Record<BondId, PlacedMark>> | undefined;
 }
 
 function positionOf(ctx: ReadContext, atomId: AtomId): Vec2 {
@@ -468,18 +489,36 @@ function bondsByNeighbour(mol: Molecule, centre: AtomId): Map<AtomId, Bond> {
   return out;
 }
 
+/** The bond's own mark: narrow end at `from`, the model's convention. */
+function ownMark(bond: Bond): PlacedMark {
+  return { stereo: bond.stereo, narrowEnd: bond.from };
+}
+
+/** The mark the placement drew on `bond`: its override, else the bond's own. */
+function drawnMark(ctx: ReadContext, bond: Bond): PlacedMark {
+  const marks = ctx.marks;
+  if (marks !== undefined && Object.hasOwn(marks, bond.id)) return marks[bond.id]!;
+  return ownMark(bond);
+}
+
 /** +1 toward, −1 away, 0 silent. Narrow end only, single bonds only. */
-function markAt(bond: Bond, centre: AtomId): number {
-  if (bond.order !== 1 || bond.from !== centre) return 0;
-  if (bond.stereo === "wedge") return 1;
-  if (bond.stereo === "hash") return -1;
+function markValue(bond: Bond, mark: PlacedMark, centre: AtomId): number {
+  if (bond.order !== 1 || mark.narrowEnd !== centre) return 0;
+  if (mark.stereo === "wedge") return 1;
+  if (mark.stereo === "hash") return -1;
   return 0;
 }
 
-function hasWavyAt(mol: Molecule, atomId: AtomId): boolean {
-  return bondsAt(mol, atomId).some(
-    (bond) => bond.order === 1 && bond.from === atomId && bond.stereo === "wavy",
-  );
+/** `markValue` against the bond's own mark, for a reader with no placement. */
+function markAt(bond: Bond, centre: AtomId): number {
+  return markValue(bond, ownMark(bond), centre);
+}
+
+function hasWavyAt(ctx: ReadContext, atomId: AtomId): boolean {
+  return bondsAt(ctx.mol, atomId).some((bond) => {
+    const mark = drawnMark(ctx, bond);
+    return bond.order === 1 && mark.narrowEnd === atomId && mark.stereo === "wavy";
+  });
 }
 
 function implicitCount(centre: CentreLigands): number {
@@ -616,9 +655,13 @@ function readCentre(
   let lift: Lift | CentreReading;
   switch (convention.kind) {
     case "wedgeHash":
-      lift = readDrawn(ctx, centre, (_, bond) => markAt(bond, centre.atomId), "no-stereo-bond", {
-        refuseOpposedMarks: true,
-      });
+      lift = readDrawn(
+        ctx,
+        centre,
+        (_, bond) => markValue(bond, drawnMark(ctx, bond), centre.atomId),
+        "no-stereo-bond",
+        { refuseOpposedMarks: true },
+      );
       break;
     case "pseudo3d": {
       const depth = convention.depth;
@@ -641,7 +684,7 @@ function readCentre(
   // A wavy bond is the author declining to state a configuration, under every
   // convention. It is checked after the placement test so a refusal still
   // names every off-axis centre.
-  if (hasWavyAt(ctx.mol, centre.atomId)) return { kind: "mixture", of: "epimers" };
+  if (hasWavyAt(ctx, centre.atomId)) return { kind: "mixture", of: "epimers" };
   if (lift.kind !== "points") return lift;
   // Fischer and Haworth points are unit directions built from the convention,
   // so the floor applies at the depth constant's own scale.
@@ -659,8 +702,10 @@ function readDoubleBond(
     return { kind: "undetermined", reason: "not-covered" };
   }
   const bond = requireBond(ctx.mol, unit.bondId);
-  if (bond.stereo === "either") return { kind: "undetermined", reason: "unspecified" };
-  if (hasWavyAt(ctx.mol, bond.from) || hasWavyAt(ctx.mol, bond.to)) {
+  if (drawnMark(ctx, bond).stereo === "either") {
+    return { kind: "undetermined", reason: "unspecified" };
+  }
+  if (hasWavyAt(ctx, bond.from) || hasWavyAt(ctx, bond.to)) {
     return { kind: "undetermined", reason: "unspecified" };
   }
   const from = positionOf(ctx, bond.from);
@@ -744,6 +789,7 @@ export function readConfig(placement: Placement, convention: DepthConvention): C
   const mol = placement.mol;
   const cacheable =
     placement.positions === undefined &&
+    placement.marks === undefined &&
     (convention.kind === "wedgeHash" || convention.kind === "fischer");
   let reads: Map<string, ConfigRead> | undefined;
   if (cacheable) {
@@ -755,7 +801,10 @@ export function readConfig(placement: Placement, convention: DepthConvention): C
     const cached = reads.get(convention.kind);
     if (cached !== undefined) return cached;
   }
-  const result = computeRead({ mol, positions: placement.positions }, convention);
+  const result = computeRead(
+    { mol, positions: placement.positions, marks: placement.marks },
+    convention,
+  );
   reads?.set(convention.kind, result);
   return result;
 }

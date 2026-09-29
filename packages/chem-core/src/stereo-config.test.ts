@@ -734,6 +734,54 @@ describe("pseudo3d convention", () => {
   });
 });
 
+describe("a marks override", () => {
+  // The projection engine reads a layout's own marks through this, so a
+  // mirrored or re-marked panel is read as DRAWN, never through the author's
+  // bonds. Butan-2-ol has one wedge, narrow end at the centre C2.
+  const mol = butan2olWedged();
+  const wedge = mol.bondIds.map((id) => mol.bonds[id]!).find((bond) => bond.stereo === "wedge")!;
+  const c2 = wedge.from;
+  const oxygen = wedge.to;
+  const own = parities(stereoConfig(mol));
+  type Mark = { stereo: "none" | "wedge" | "hash" | "wavy" | "either"; narrowEnd: AtomId };
+  const read = (mark: Mark) =>
+    readOk(readConfig({ mol, marks: { [wedge.id]: mark } }, { kind: "wedgeHash" }));
+
+  it("inverts the centre when the override turns its wedge into a hash", () => {
+    expect(own).toEqual({ [c2]: expect.any(Number) });
+    expect(parities(read({ stereo: "hash", narrowEnd: c2 }))).toEqual(invert(own));
+    expect(cipLetter(mol, c2)).toBe("R");
+  });
+
+  it("takes the narrow end from the override, not from bond.from", () => {
+    // The same wedge with its narrow end moved to the oxygen says nothing about C2.
+    expect(parities(read({ stereo: "wedge", narrowEnd: oxygen }))).toEqual({ [c2]: "no-stereo-bond" });
+    expect(parities(read({ stereo: "none", narrowEnd: c2 }))).toEqual({ [c2]: "no-stereo-bond" });
+  });
+
+  it("reads a wavy override as the mixture a wavy bond states", () => {
+    const config = read({ stereo: "wavy", narrowEnd: c2 });
+    expect(config.centres[0]!.reading).toEqual({ kind: "mixture", of: "epimers" });
+  });
+
+  it("reads a crossed double bond from the override", () => {
+    const butene = but2ene("cis");
+    const drawn = relations(stereoConfig(butene));
+    expect(Object.values(drawn)).toEqual(["cis"]);
+    const bondId = Object.keys(drawn)[0]!;
+    const crossed = readOk(
+      readConfig({ mol: butene, marks: { [bondId]: { stereo: "either", narrowEnd: "a1" } } }, { kind: "wedgeHash" }),
+    );
+    expect(relations(crossed)).toEqual({ [bondId]: "unspecified" });
+  });
+
+  it("is not served from the per-instance cache of the plain reading", () => {
+    expect(parities(stereoConfig(mol))).toEqual(own);
+    expect(parities(read({ stereo: "hash", narrowEnd: c2 }))).toEqual(invert(own));
+    expect(parities(stereoConfig(mol))).toEqual(own);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Which atoms are centres
 // ---------------------------------------------------------------------------
