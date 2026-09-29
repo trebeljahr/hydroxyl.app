@@ -111,6 +111,7 @@ import { sceneBounds } from "./bounds.js";
 import {
   derivedNodeLabel,
   layoutDrawing,
+  layoutMirrors,
   projectedPrimitiveId,
   projectedSource,
 } from "./projected.js";
@@ -514,6 +515,7 @@ function buildStructural(
       source,
       built.site(),
       options?.layout === undefined,
+      options?.layout !== undefined && layoutMirrors(source, options.layout),
     ));
   const stored = options?.schemeAnnotations;
   const schemeAnnotations =

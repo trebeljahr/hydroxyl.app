@@ -54,6 +54,7 @@ import {
 import type { CurlyArrowAnnotation, SchemeAnnotation } from "../src/scheme/annotation.js";
 import { modelToPx, pxToModel, PUBLICATION_STYLE, SCREEN_STYLE } from "../src/style.js";
 import type { RenderStyle } from "../src/style.js";
+import { layoutMirrors } from "../src/scene/projected.js";
 import { serializeScene } from "../src/svg/serialize.js";
 
 const STYLES: readonly RenderStyle[] = [PUBLICATION_STYLE, SCREEN_STYLE];
@@ -279,6 +280,38 @@ describe("anchors resolve against the panel's geometry", () => {
     const shape = chordFrameOf(turned.curve.p0, turned.curve.p3, curveApex(turned.curve))!;
     expect(shape.bulge).toBeCloseTo(attack.bulge, 12);
     expect(distance(turned.curve.p0, turned.curve.p3)).toBeCloseTo(distance(flat.curve.p0, flat.curve.p3), 9);
+  });
+
+  it("mirrors with a mirrored panel, and only with one (decision 196)", () => {
+    const layoutFor = (rotationDeg: number, mirror: boolean): ProjectedLayout => {
+      const view: PlanarView = {
+        kind: "planar",
+        template: "wedgeDash",
+        frame: {},
+        params: { rotationDeg, mirror },
+      };
+      const result = project(fixture.molecule, stereoConfig(fixture.molecule), view);
+      if (result.kind !== "available") throw new Error(result.kind);
+      return result.layout;
+    };
+    // Turning sense of the drawn curve in y-up model space: a reflection
+    // reverses it, a rotation does not.
+    const turn = (layout?: ProjectedLayout): number => {
+      const drawn = layoutOf(fixture.molecule, attack, PUBLICATION_STYLE, skeletal, layout ? { layout } : {});
+      return Math.sign(signedArea(toModel(PUBLICATION_STYLE, drawn.curve)));
+    };
+    const flat = turn();
+    expect(flat).not.toBe(0);
+    for (const rotationDeg of [0, 90, 215]) {
+      expect(layoutMirrors(fixture.molecule, layoutFor(rotationDeg, false)), `${rotationDeg}`).toBe(false);
+      expect(turn(layoutFor(rotationDeg, false)), `turned ${rotationDeg}`).toBe(flat);
+      expect(layoutMirrors(fixture.molecule, layoutFor(rotationDeg, true)), `${rotationDeg} mirrored`).toBe(true);
+      expect(turn(layoutFor(rotationDeg, true)), `mirrored ${rotationDeg}`).toBe(-flat);
+    }
+    // A shape chosen on the mirrored panel has to be stored negated back.
+    const mirrored = layoutFor(0, true);
+    expect(schemeAnchorContext(fixture.molecule, PUBLICATION_STYLE, skeletal, { layout: mirrored })!.mirrored).toBe(true);
+    expect(schemeAnchorContext(fixture.molecule, PUBLICATION_STYLE, skeletal)!.mirrored).toBe(false);
   });
 
   it("draws in exactly the panels where every anchor resolves", () => {

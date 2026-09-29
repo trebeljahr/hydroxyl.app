@@ -82,6 +82,12 @@ export interface SchemeAnnotationContext {
   readonly placement: SchemeAnchorPlacement;
   readonly geometry: SchemeAnchorGeometry;
   readonly obstacles: CurlyArrowObstacles;
+  /**
+   * True when the panel draws the molecule mirrored (decision 196): stored
+   * bulges are drawn negated here, and a shape chosen on this panel must be
+   * negated before it is stored.
+   */
+  readonly mirrored: boolean;
 }
 
 /**
@@ -96,6 +102,7 @@ export function schemeAnnotationContext(
   source: Molecule,
   site: SchemeLayerSite,
   drawsModelFrame: boolean,
+  mirrored = false,
 ): SchemeAnnotationContext {
   const placement = anchorPlacementOf(primitives, source, drawsModelFrame);
   const bondOf = (bondId: BondId) =>
@@ -117,7 +124,7 @@ export function schemeAnnotationContext(
     if (label !== undefined) labels.push({ atomId, obstacles: label.obstacles });
   }
   labels.push(...site.hydrogenLabels);
-  return { placement, geometry, obstacles: { labels, bonds: site.bonds } };
+  return { placement, geometry, obstacles: { labels, bonds: site.bonds }, mirrored };
 }
 
 /**
@@ -134,8 +141,11 @@ export function drawSchemeAnnotations(
   const unresolved: SchemeAnnotationId[] = [];
   for (const annotation of annotations) {
     if (annotation.kind !== "curlyArrow") continue;
+    // A reflection keeps the apex's place along the chord and swaps its side
+    // (decision 196), so a mirrored panel draws the bulge negated.
+    const drawn = context.mirrored ? { ...annotation, bulge: -annotation.bulge } : annotation;
     const layout = schemeAnnotationResolves(annotation, context.placement)
-      ? layoutCurlyArrow(annotation, context.geometry, style, context.obstacles)
+      ? layoutCurlyArrow(drawn, context.geometry, style, context.obstacles)
       : undefined;
     if (layout === undefined) {
       unresolved.push(annotation.id);

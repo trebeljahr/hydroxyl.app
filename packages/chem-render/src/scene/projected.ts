@@ -37,6 +37,7 @@ import type {
   DerivedNode,
   Molecule,
   ProjectedLayout,
+  Vec2,
 } from "@starter/chem-core";
 
 import type { ComposedLabel, LabelSide } from "../label/compose.js";
@@ -114,6 +115,54 @@ export function layoutDrawing(mol: Molecule, layout: ProjectedLayout): LayoutDra
     hydrogenHosts: new Set(hydrogens.map((node) => node.host)),
     layout,
   };
+}
+
+/**
+ * True when a PLANAR layout draws the molecule's mirror image of the page —
+ * a mirrored wedge-dash or Mills panel — and false for every other frame
+ * kind, whose layouts are not similarity maps of the drawing (decision 196).
+ *
+ * Read off the geometry rather than off `PlanarParams.mirror`, which the
+ * renderer never sees: the sign of the determinant of the cross-covariance of
+ * source and layout positions, over the atoms drawn as themselves — the
+ * orthogonal Procrustes test, exact for a turned or mirrored copy and right
+ * for a re-layout that keeps or flips orientation. Fewer than three atoms not
+ * on one line give a zero determinant and read as not mirrored, where a turn
+ * and a reflection draw the same picture.
+ */
+export function layoutMirrors(mol: Molecule, layout: ProjectedLayout): boolean {
+  if (layout.kind !== "planar") return false;
+  const pairs: { readonly s: Vec2; readonly l: Vec2 }[] = [];
+  for (const atomId of mol.atomIds) {
+    const atom = Object.hasOwn(mol.atoms, atomId) ? mol.atoms[atomId] : undefined;
+    if (atom === undefined || !Object.hasOwn(layout.drawnAs, atomId)) continue;
+    if (layout.drawnAs[atomId] !== atomId || !Object.hasOwn(layout.positions, atomId)) continue;
+    pairs.push({ s: atom.pos, l: layout.positions[atomId]! });
+  }
+  if (pairs.length < 3) return false;
+  const mean = (pick: (p: (typeof pairs)[number]) => Vec2): Vec2 => ({
+    x: pairs.reduce((sum, p) => sum + pick(p).x, 0) / pairs.length,
+    y: pairs.reduce((sum, p) => sum + pick(p).y, 0) / pairs.length,
+  });
+  const ms = mean((p) => p.s);
+  const ml = mean((p) => p.l);
+  let xx = 0;
+  let xy = 0;
+  let yx = 0;
+  let yy = 0;
+  let spread = 0;
+  for (const { s, l } of pairs) {
+    const sx = s.x - ms.x;
+    const sy = s.y - ms.y;
+    const lx = l.x - ml.x;
+    const ly = l.y - ml.y;
+    xx += sx * lx;
+    xy += sx * ly;
+    yx += sy * lx;
+    yy += sy * ly;
+    spread += (sx * sx + sy * sy) * (lx * lx + ly * ly);
+  }
+  return xx * yy - xy * yx < -1e-9 * spread;
 }
 
 /** The scene source of a derived node: the node and every atom it stands for. */
