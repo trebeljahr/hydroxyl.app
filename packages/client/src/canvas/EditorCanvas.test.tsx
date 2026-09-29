@@ -33,12 +33,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { buildMolecule } from "@starter/chem-core";
 import type { Vec2 } from "@starter/chem-core";
 import { PUBLICATION_STYLE, SCREEN_STYLE, modelToPx } from "@starter/chem-render";
+import { createDocument } from "@starter/shared";
 import type { RenderStyle } from "@starter/chem-render";
 
 import { editorStore, toScreen } from "@/state";
 
 import { EditorCanvas } from "./EditorCanvas";
 import { fixtureDocument } from "./fixture";
+import { renderStyleFor } from "./scene-bridge";
 
 const DOC = fixtureDocument("2024-01-01T00:00:00.000Z");
 const MOL = DOC.molecule;
@@ -69,10 +71,13 @@ function canvasRoot(): SVGSVGElement {
  *
  * The forward chain, read off the LIVE viewport: `EditorCanvas` fits the
  * document on mount, so a point computed against the initial viewport would
- * miss by the whole fit.
+ * miss by the whole fit. And at the OPEN document's style, not a fixed one:
+ * the fixture opens in Publication (decision 135), and the style-switch tests
+ * below open it in Screen.
  */
 function canvasPointFor(model: Vec2): Vec2 {
-  return toScreen(editorStore.getState().viewport, modelToPx(SCREEN_STYLE, model));
+  const state = editorStore.getState();
+  return toScreen(state.viewport, modelToPx(renderStyleFor(state.document), model));
 }
 
 function atomPoint(atomId: string): Vec2 {
@@ -192,7 +197,7 @@ describe("EditorCanvas — the DOM contract", () => {
     });
 
     for (const atomId of MOL.atomIds) {
-      const scenePoint = modelToPx(SCREEN_STYLE, MOL.atoms[atomId]!.pos);
+      const scenePoint = modelToPx(renderStyleFor(DOC), MOL.atoms[atomId]!.pos);
       const painted = paint(scenePoint);
       const predicted = toScreen(editorStore.getState().viewport, scenePoint);
       expect(painted.x).toBeCloseTo(predicted.x, 4);
@@ -220,6 +225,24 @@ describe("EditorCanvas — the DOM contract", () => {
       expect(point.y).toBeGreaterThan(0);
       expect(point.y).toBeLessThan(600);
     }
+  });
+
+  it("opens a blank document at Reset's 100%, not fitted to its margin box (decision 174)", () => {
+    // An empty scene is only the style's margin box around the origin, so a
+    // fit blew it up to 2073% and the first atom drawn filled the canvas.
+    act(() => editorStore.getState().openDocument(createDocument({ now: DOC.metadata.createdAt })));
+    render(<EditorCanvas />);
+    expect(editorStore.getState().document.stylePreset).toBe("publication");
+    // 44 px on screen for a 24 px Publication bond: the readout's 100%.
+    expect(editorStore.getState().viewport.zoom).toBeCloseTo(44 / 24, 12);
+    expect(editorStore.getState().viewport.pan).toEqual({ x: 0, y: 0 });
+
+    act(() =>
+      editorStore
+        .getState()
+        .openDocument(createDocument({ stylePreset: "screen", now: DOC.metadata.createdAt })),
+    );
+    expect(editorStore.getState().viewport.zoom).toBe(1);
   });
 });
 
@@ -674,6 +697,12 @@ describe("EditorCanvas — editing", () => {
 });
 
 describe("EditorCanvas — a style switch changes the ink and nothing else (decision 107)", () => {
+  // From Screen, so the switch under test is the one a user makes after
+  // choosing Screen: new documents already open in Publication (decision 135).
+  beforeEach(() => {
+    editorStore.getState().openDocument({ ...DOC, stylePreset: "screen" });
+  });
+
   /** Where each atom is painted, given the style its scene is drawn at. */
   function paintedAtoms(style: RenderStyle): Map<string, Vec2> {
     const viewport = editorStore.getState().viewport;

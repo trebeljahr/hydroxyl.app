@@ -448,7 +448,9 @@ export function createDocumentSlice(
       },
 
       addPanel(kind, caption) {
-        const panel = createPanel(kind, caption);
+        // Seeded from THIS document's preset, not the new-document default:
+        // a panel added to a Screen sketch takes Screen's display defaults.
+        const panel = createPanel(kind, caption, get().document.stylePreset);
         commitPanels("Add panel", [...get().document.panels, panel]);
         return panel.id;
       },

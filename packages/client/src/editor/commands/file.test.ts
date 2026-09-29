@@ -16,7 +16,7 @@ import { createEditorStore, type EditorStore } from "@/state";
 
 import { molblockVersionNotice } from "@/lib/rdkit/translate";
 
-import { applyImport, exportCurrent, leaveToRecents } from "./file";
+import { applyImport, exportCurrent, leaveToRecents, newSketch } from "./file";
 
 /** Ethanol: three heavy atoms, so a document swap is visible by count alone. */
 function ethanol() {
@@ -50,6 +50,15 @@ afterEach(() => {
   stopEditorPersistence();
   vi.unstubAllEnvs();
   setDocumentStore(null);
+});
+
+describe("a new sketch", () => {
+  it("opens in Publication, whatever the sketch before it used (decision 135)", async () => {
+    editor.getState().setStylePreset("screen");
+    await newSketch(editor);
+    expect(editor.getState().document.molecule.atomIds).toHaveLength(0);
+    expect(editor.getState().document.stylePreset).toBe("publication");
+  });
 });
 
 describe("importing a document that is already in storage", () => {

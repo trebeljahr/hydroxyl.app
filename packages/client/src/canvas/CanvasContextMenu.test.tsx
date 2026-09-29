@@ -19,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { requireBond } from "@starter/chem-core";
 import type { Vec2 } from "@starter/chem-core";
-import { SCREEN_STYLE, modelToPx } from "@starter/chem-render";
+import { modelToPx } from "@starter/chem-render";
 
 import { setClipboardForTest } from "@/editor/commands/registry";
 import { editorStore, toScreen } from "@/state";
@@ -27,6 +27,7 @@ import { editorStore, toScreen } from "@/state";
 import { declaredColours, variantColours } from "../../test/picker-colours";
 import { EditorCanvas } from "./EditorCanvas";
 import { fixtureDocument } from "./fixture";
+import { renderStyleFor } from "./scene-bridge";
 import { LONG_PRESS_MS } from "./useCanvasGestures";
 
 const DOC = fixtureDocument("2024-01-01T00:00:00.000Z");
@@ -51,8 +52,10 @@ function canvasRoot(): SVGSVGElement {
   return svg;
 }
 
+/** At the open document's style, which for the fixture is Publication. */
 function canvasPointFor(model: Vec2): Vec2 {
-  return toScreen(editorStore.getState().viewport, modelToPx(SCREEN_STYLE, model));
+  const state = editorStore.getState();
+  return toScreen(state.viewport, modelToPx(renderStyleFor(state.document), model));
 }
 
 function atomPoint(atomId: string): Vec2 {

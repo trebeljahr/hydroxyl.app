@@ -219,8 +219,9 @@ test("exports ONE self-contained SVG: labelled panels, one bond length, unique i
   expect(widthCm).toBeLessThan(8.25);
   const [, , vbW, vbH] = attr(svg, "viewBox").split(" ").map(Number);
   expect(Number.parseFloat(attr(svg, "height"))).toBeCloseTo((widthCm * vbH!) / vbW!, 3);
-  // New documents are in the screen preset, but the export defaults to
-  // Publication's 24 px bond (decision 50).
+  // Publication's 24 px bond: new documents open in Publication (decision
+  // 135), and the export defaults to it whatever the canvas shows (decision
+  // 50).
   expect(printedBondCm(svg, 24)).toBeCloseTo(0.508, 3);
   await expect(page.locator('[data-shell="figure-scaled"]')).toHaveCount(0);
 
@@ -555,15 +556,48 @@ test("the export defaults to Publication whatever the canvas shows, and can foll
 }) => {
   await openEditor(page);
   const topBar = page.locator('[data-shell="style-preset"]');
-  // New documents still open in the screen style.
-  await expect(topBar).toHaveAttribute("data-style-preset", "screen");
+  // New documents open in Publication (decision 135), so the canvas and the
+  // default file already agree, and both choices give one file.
+  await expect(topBar).toHaveAttribute("data-style-preset", "publication");
 
   await openExportDialog(page);
   const style = page.locator('[data-shell="figure-style"]');
   const notice = page.locator('[data-shell="figure-style-notice"]');
+  await expect(style).toHaveAttribute("data-style-preset", "publication");
+  await expect(style).toHaveAttribute("data-document-preset", "publication");
+  await expect(style.locator('input[value="publication"]')).toBeChecked();
+  await expect(notice).toHaveCount(0);
+  const newSvg = (await downloadFrom(page, "figure.export-svg")).toString("utf8");
+  expect(firstSkeletalBondLength(newSvg)).toBeCloseTo(24, 1);
+  await style.locator('input[value="canvas"]').check();
+  await expect(notice).toHaveCount(0);
+  expect((await downloadFrom(page, "figure.export-svg")).toString("utf8")).toBe(newSvg);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(DIALOG)).toBeHidden();
+
+  // A sketch switched to Screen, saved and reloaded, keeps Screen.
+  await topBar.locator('[data-command="view.style-screen"]').click();
+  await expect(topBar).toHaveAttribute("data-style-preset", "screen");
+  await expect(topBar.locator('[data-command="view.style-screen"]')).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.locator(`${SAVE_STATE}[data-save-status="saved"]`)).toBeVisible({
+    timeout: 10_000,
+  });
+  const id = await page.locator('[data-shell="top-bar"]').getAttribute("data-doc-id");
+  expect(id).toBeTruthy();
+  await page.goto(`/editor?doc=${id}`);
+  await expect(page.locator('[data-shell="top-bar"]')).toHaveAttribute("data-doc-id", id!);
+  await page.locator(`${CANVAS} [data-layer="scene"]`).waitFor();
+  await expect(topBar).toHaveAttribute("data-style-preset", "screen");
+
+  await openExportDialog(page);
   // Decision 50: the file is Publication by default; the canvas stays Screen.
   await expect(style).toHaveAttribute("data-style-preset", "publication");
   await expect(style).toHaveAttribute("data-document-preset", "screen");
+  // Session-only: "canvas" was picked before the reload, which is back on
+  // the default.
   await expect(style.locator('input[value="publication"]')).toBeChecked();
   await expect(notice).toHaveText("The canvas shows the Screen style. The export uses the Publication style.");
   await expect(page.locator('[data-shell="figure-label-size"]')).toHaveCount(0);
@@ -593,36 +627,6 @@ test("the export defaults to Publication whatever the canvas shows, and can foll
   await page.keyboard.press("Escape");
   await expect(page.locator(DIALOG)).toBeHidden();
   await expect(topBar).toHaveAttribute("data-style-preset", "screen");
-
-  // A Publication document, saved and reloaded: both choices give one file.
-  await topBar.locator('[data-command="view.style-publication"]').click();
-  await expect(topBar).toHaveAttribute("data-style-preset", "publication");
-  await expect(topBar.locator('[data-command="view.style-publication"]')).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  await expect(page.locator(`${SAVE_STATE}[data-save-status="saved"]`)).toBeVisible({
-    timeout: 10_000,
-  });
-  const id = await page.locator('[data-shell="top-bar"]').getAttribute("data-doc-id");
-  expect(id).toBeTruthy();
-  await page.goto(`/editor?doc=${id}`);
-  await expect(page.locator('[data-shell="top-bar"]')).toHaveAttribute("data-doc-id", id!);
-  await page.locator(`${CANVAS} [data-layer="scene"]`).waitFor();
-  await expect(page.locator('[data-shell="style-preset"]')).toHaveAttribute(
-    "data-style-preset",
-    "publication",
-  );
-  await openExportDialog(page);
-  await expect(style).toHaveAttribute("data-document-preset", "publication");
-  // Session-only: the reload is back on the default.
-  await expect(style.locator('input[value="publication"]')).toBeChecked();
-  await expect(notice).toHaveCount(0);
-  const reloadedSvg = (await downloadFrom(page, "figure.export-svg")).toString("utf8");
-  expect(firstSkeletalBondLength(reloadedSvg)).toBeCloseTo(24, 1);
-  await style.locator('input[value="canvas"]').check();
-  await expect(notice).toHaveCount(0);
-  expect((await downloadFrom(page, "figure.export-svg")).toString("utf8")).toBe(reloadedSvg);
 });
 
 test("Copy figure writes svg, png and plain text in ONE ClipboardItem", async ({ page }) => {

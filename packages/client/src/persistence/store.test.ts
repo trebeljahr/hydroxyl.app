@@ -204,6 +204,39 @@ describe("the schema ladder", () => {
   });
 });
 
+describe("the preset a stored sketch reopens in (decision 135)", () => {
+  /** A row as a build that opened new documents in Screen stored it. */
+  function savedInScreen(): Record<string, unknown> {
+    const doc = createDocument({ id: "doc_screen", molecule: benzene(), stylePreset: "screen", now: NOW });
+    return JSON.parse(JSON.stringify(encodeDocument(doc))) as Record<string, unknown>;
+  }
+
+  it("reopens a v2 row saved in Screen in Screen", async () => {
+    const row = savedInScreen();
+    expect(row.schemaVersion).toBe(2);
+    expect(row.stylePreset).toBe("screen");
+    const decoded = decodeStored(row);
+    expect(decoded.ok).toBe(true);
+    if (!decoded.ok) return;
+    expect(decoded.value.stylePreset).toBe("screen");
+
+    // And through a store, the way `?doc=` reads it.
+    const store = createMemoryDocumentStore();
+    await store.put(recordFor(decoded.value));
+    const read = await store.get("doc_screen");
+    expect(read.ok && read.value.stylePreset).toBe("screen");
+  });
+
+  it("reopens a v1 row saved in Screen in Screen, through the upgrade", () => {
+    const row = savedInScreen();
+    delete row.annotations;
+    delete row.nextAnnotationId;
+    row.schemaVersion = 1;
+    const decoded = decodeStored(row);
+    expect(decoded.ok && decoded.value.stylePreset).toBe("screen");
+  });
+});
+
 describe("the save path", () => {
   beforeEach(() => {
     resetSaveState();

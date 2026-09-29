@@ -215,13 +215,18 @@ describe("StatusBar — viewport chrome", () => {
     expect(editorStore.getState().viewport.zoom).toBeCloseTo(first, 9);
   });
 
-  it("reports the zoom as a percentage", () => {
+  it("reports the zoom as a percentage of the reference bond", () => {
+    // The fixture opens in Publication (decision 135). At a viewport zoom of
+    // 1 its 24 px bond is 24/44 of Screen's reference bond (decision 107).
     render(<StatusBar />);
-    const zoom = editorStore.getState().viewport.zoom;
-    expect(statusText("zoom")).toBe(`${String(Math.round(zoom * 100))}%`);
+    expect(editorStore.getState().viewport.zoom).toBe(1);
+    expect(statusText("zoom")).toBe("55%");
   });
 
   it("reads the same percentage for the same picture in either style (decision 107)", () => {
+    // From Screen, the preset a user switches to: new documents open in
+    // Publication (decision 135).
+    editorStore.getState().openDocument({ ...DOC, stylePreset: "screen" });
     render(
       <>
         <EditorCanvas />

@@ -167,6 +167,25 @@ describe("importing a native sketch", () => {
   });
 });
 
+describe("the preset an import opens in (decision 135)", () => {
+  it("opens a structure file in Publication, like any new document", async () => {
+    const mol = await openText(BENZENE_MOLBLOCK, { name: "benzene.mol" });
+    expect(mol.ok && mol.value.documents.map((doc) => doc.stylePreset)).toEqual(["publication"]);
+    const sdf = await openText(THREE_RECORD_SDF, { name: "three.sdf" });
+    expect(sdf.ok && sdf.value.documents.map((doc) => doc.stylePreset)).toEqual([
+      "publication",
+      "publication",
+      "publication",
+    ]);
+  });
+
+  it("keeps the preset a native sketch was saved with", async () => {
+    const saved = createDocument({ stylePreset: "screen", now: "2024-01-01T00:00:00.000Z" });
+    const result = await openText(JSON.stringify(encodeDocument(saved)));
+    expect(result.ok && result.value.documents[0]?.stylePreset).toBe("screen");
+  });
+});
+
 describe("importing a SMILES", () => {
   it("is the one path that reaches for RDKit", async () => {
     const bridge: RdkitImportBridge = {

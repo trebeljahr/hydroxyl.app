@@ -38,6 +38,7 @@ import {
   setAtomLocant,
   MAX_FIGURE_COLUMNS,
   MAX_LOCANT_LENGTH,
+  NEW_DOCUMENT_PRESET,
   STEREO_GROUP_KIND_VALUES,
   type SketchDocument,
 } from "./document.js";
@@ -574,6 +575,22 @@ describe("factories", () => {
     expect(undefinedValuedPaths(doc)).toEqual([]);
   });
 
+  it("opens a new document in Publication unless a preset is given (decision 135)", () => {
+    expect(NEW_DOCUMENT_PRESET).toBe("publication");
+    expect(createDocument({ now: NOW }).stylePreset).toBe("publication");
+    // A preset that is stated is kept, which is what a copy and a decoded
+    // file rely on.
+    expect(createDocument({ now: NOW, stylePreset: "screen" }).stylePreset).toBe("screen");
+  });
+
+  it("keeps the preset a stored document states when it decodes", () => {
+    // A sketch saved while new documents opened in Screen stored "screen"
+    // explicitly, and reopens in it; the default only fills a gap.
+    const saved = encodeDocument(createDocument({ now: NOW, stylePreset: "screen" }));
+    const reread = JSON.parse(JSON.stringify(saved)) as unknown;
+    expect(decodeDocument(reread).stylePreset).toBe("screen");
+  });
+
   it("mints a distinct id per document", () => {
     expect(createDocument({ now: NOW }).id).not.toBe(
       createDocument({ now: NOW }).id,
@@ -652,8 +669,9 @@ describe("factories", () => {
       ).toBe(true);
     }
     // A document created under a preset gets panels seeded from it, rather
-    // than from a constant frozen before any preset was chosen.
-    const doc = createDocument({ stylePreset: "publication" });
+    // than from a constant frozen before any preset was chosen. Screen, so
+    // this is the branch that does not reuse `DEFAULT_PANELS`.
+    const doc = createDocument({ stylePreset: "screen" });
     expect(doc.panels.map((panel) => panel.representation.kind)).toEqual([
       "skeletal",
       "sumFormula",

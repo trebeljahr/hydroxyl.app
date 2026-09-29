@@ -47,6 +47,8 @@ interface DrawnBond {
   readonly id: string;
   readonly lines: number;
   readonly midpoint: { readonly x: number; readonly y: number };
+  /** The drawn axis's length on screen: shorter than the bond where a label trims it. */
+  readonly length: number;
 }
 
 /**
@@ -66,7 +68,12 @@ async function drawnBonds(page: Page): Promise<DrawnBond[]> {
       const ctm = axis.getScreenCTM()!;
       const a = new DOMPoint(axis.x1.baseVal.value, axis.y1.baseVal.value).matrixTransform(ctm);
       const b = new DOMPoint(axis.x2.baseVal.value, axis.y2.baseVal.value).matrixTransform(ctm);
-      return { id, lines: lines.length, midpoint: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
+      return {
+        id,
+        lines: lines.length,
+        midpoint: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+        length: Math.hypot(b.x - a.x, b.y - a.y),
+      };
     });
   }, SCENE);
 }
@@ -80,7 +87,12 @@ test("right-click a single bond, choose Double: that bond is redrawn double", as
   await dropMolfile(page, "butan2ol-wedge.mol", MOLFILE);
   await expect(page.locator(`${SCENE} [data-atom-id]`)).toHaveCount(5);
 
-  const single = (await drawnBonds(page)).find((bond) => bond.lines === 1);
+  // The LONGEST single line: one no label trims. In Publication, where an
+  // import opens (decision 135), C2's "HC" cuts C1-C2 down to a stub whose
+  // middle is inside C1's own pick radius, so a click there is on the atom.
+  const single = (await drawnBonds(page))
+    .filter((bond) => bond.lines === 1)
+    .sort((a, b) => b.length - a.length)[0];
   if (single === undefined) throw new Error("butan-2-ol drew no single bond as a line");
 
   // Recorded AFTER React's root listener has run, so it reads what the

@@ -104,6 +104,21 @@ export const SCHEMA_VERSION = 2;
 export type StylePresetId = "publication" | "screen";
 
 /**
+ * The preset a document CREATED here opens in: blank, the editor's startup
+ * document, and a structure imported from a molfile, SDF or SMILES
+ * (decision 135, which reverses decision 50's "new documents still open in
+ * Screen").
+ *
+ * Publication, because the export defaults to Publication (decision 50) and
+ * the Publication canvas is the exported figure at the zoom you work at
+ * (decision 107). Opening in Screen meant editing one picture and exporting
+ * another. A document that already HAS a preset keeps it: a saved one, a
+ * `.chemsketch.json` file, and a copy, which `copyOf` hands its source's.
+ * This is only the answer when nobody has chosen.
+ */
+export const NEW_DOCUMENT_PRESET: StylePresetId = "publication";
+
+/**
  * THE VIEW KINDS AND THE DISPLAY FLAGS ARE CHEM-RENDER'S, IMPORTED (decision
  * 10).
  *
@@ -336,7 +351,7 @@ void ASSEMBLERS_ARE_COMPLETE;
  */
 export function defaultRepresentation(
   kind: RepresentationKind,
-  preset: StylePresetId = "screen",
+  preset: StylePresetId = NEW_DOCUMENT_PRESET,
 ): Representation {
   const base = defaultFlagsFor(kind);
   const seed = AROMATIC_CIRCLES_BY_PRESET[preset];
@@ -378,16 +393,17 @@ const AROMATIC_CIRCLES_BY_PRESET: Readonly<
  * The panels a fresh document opens with: the structure you draw into, and
  * the formula that tells you at a glance whether it is the compound you meant.
  */
-export const DEFAULT_PANELS: readonly Panel[] = defaultPanelsFor("screen");
+export const DEFAULT_PANELS: readonly Panel[] = defaultPanelsFor(NEW_DOCUMENT_PRESET);
 
 /**
  * The opening panels seeded from a style preset.
  *
- * `DEFAULT_PANELS` is the "screen" case, kept as a named constant because
- * plenty of code and several tests compare against it by value. A document
- * created under another preset gets its own set, so the preset's
- * circle-versus-Kekule convention actually reaches the panels rather than
- * being applied to a constant that was frozen before the preset was chosen.
+ * `DEFAULT_PANELS` is the `NEW_DOCUMENT_PRESET` case, kept as a named
+ * constant because plenty of code and several tests compare against it by
+ * value. A document created under another preset gets its own set, so the
+ * preset's circle-versus-Kekule convention actually reaches the panels rather
+ * than being applied to a constant that was frozen before the preset was
+ * chosen.
  */
 export function defaultPanelsFor(preset: StylePresetId): readonly Panel[] {
   return Object.freeze([
@@ -422,7 +438,7 @@ function generateId(prefix: string): string {
 export function createPanel(
   kind: RepresentationKind,
   caption?: string,
-  preset: StylePresetId = "screen",
+  preset: StylePresetId = NEW_DOCUMENT_PRESET,
 ): Panel {
   return assemblePanel(generateId("panel"), {
     representation: defaultRepresentation(kind, preset),
@@ -455,7 +471,7 @@ export interface CreateDocumentInit {
 
 export function createDocument(init: CreateDocumentInit = {}): SketchDocument {
   const now = init.now ?? new Date().toISOString();
-  const stylePreset = init.stylePreset ?? "screen";
+  const stylePreset = init.stylePreset ?? NEW_DOCUMENT_PRESET;
   const molecule = init.molecule ?? emptyMolecule();
   const annotations = (init.annotations ?? []).map(assembleSchemeAnnotation);
   for (const annotation of annotations) requireAnchorsIn(molecule, annotation);
@@ -472,7 +488,7 @@ export function createDocument(init: CreateDocumentInit = {}): SketchDocument {
     // aromatic circle — reaches the panels a document opens with.
     panels:
       init.panels ??
-      (stylePreset === "screen" ? DEFAULT_PANELS : defaultPanelsFor(stylePreset)),
+      (stylePreset === NEW_DOCUMENT_PRESET ? DEFAULT_PANELS : defaultPanelsFor(stylePreset)),
     metadata: assembleMetadata({
       title: init.title ?? "Untitled",
       createdAt: now,

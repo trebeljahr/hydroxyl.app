@@ -652,6 +652,10 @@ test("the prerendered editor names the fixed startup document", async ({ page })
 
   const match = /data-shell="top-bar"[^>]*data-doc-id="([^"]*)"/.exec(html);
   expect(match?.[1]).toBe("doc_startup");
+  // And in the preset every new document opens in (decision 135), which the
+  // browser's own placeholder agrees with: see the mismatch listener below.
+  const preset = /data-shell="style-preset"[^>]*data-style-preset="([^"]*)"/.exec(html);
+  expect(preset?.[1]).toBe("publication");
 });
 
 /**

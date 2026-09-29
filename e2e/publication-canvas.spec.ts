@@ -43,7 +43,12 @@ const GLUCOSE = readFileSync(
   "utf8",
 );
 
-async function openGlucose(page: Page): Promise<void> {
+/**
+ * Glucose, imported, and left in `preset`. An import opens in Publication
+ * (decision 135); asking for Screen switches it there, for the specs that
+ * test the switch a user makes from Screen.
+ */
+async function openGlucose(page: Page, preset: "screen" | "publication"): Promise<void> {
   await page.addInitScript(() => {
     delete (window as unknown as { showSaveFilePicker?: unknown }).showSaveFilePicker;
   });
@@ -68,8 +73,9 @@ async function openGlucose(page: Page): Promise<void> {
   }).toPass();
   await expect(page.locator('[data-shell="style-preset"]')).toHaveAttribute(
     "data-style-preset",
-    "screen",
+    "publication",
   );
+  if (preset === "screen") await switchTo(page, "screen");
 }
 
 async function switchTo(page: Page, preset: "screen" | "publication"): Promise<void> {
@@ -139,7 +145,7 @@ async function exportSvg(page: Page): Promise<string> {
 }
 
 test("switching to Publication moves nothing: only the ink changes", async ({ page }) => {
-  await openGlucose(page);
+  await openGlucose(page, "screen");
   await page.locator(CANVAS).focus();
   await page.keyboard.press("ControlOrMeta+a");
   await expect(page.locator('[data-overlay="selected-atom"]')).toHaveCount(12);
@@ -191,8 +197,9 @@ test("switching to Publication moves nothing: only the ink changes", async ({ pa
 test("the Publication canvas draws the exported figure, coordinate for coordinate", async ({
   page,
 }) => {
-  await openGlucose(page);
-  await switchTo(page, "publication");
+  // Not switched: an import opens in Publication (decision 135), so this is
+  // the canvas a new sketch shows from its first stroke.
+  await openGlucose(page, "publication");
 
   // Every id'd primitive the canvas draws, with the attributes that place and
   // size it, exactly as the DOM carries them.
@@ -230,7 +237,7 @@ test("the Publication canvas draws the exported figure, coordinate for coordinat
 test("the view never reaches the file: switching and zooming export the same bytes", async ({
   page,
 }) => {
-  await openGlucose(page);
+  await openGlucose(page, "screen");
   const first = await exportSvg(page);
 
   await switchTo(page, "publication");
@@ -243,4 +250,76 @@ test("the view never reaches the file: switching and zooming export the same byt
   // The export defaults to Publication whichever style the canvas shows
   // (decision 50), so both are the same figure, byte for byte.
   expect(await exportSvg(page)).toBe(first);
+});
+
+/** The shortest distance between two drawn atom dots, in client px: one bond. */
+async function bondOnScreen(page: Page): Promise<number> {
+  return page.evaluate((scene) => {
+    const dots = [...document.querySelectorAll<SVGCircleElement>(`${scene} circle[data-atom-id]`)].map(
+      (circle) =>
+        new DOMPoint(circle.cx.baseVal.value, circle.cy.baseVal.value).matrixTransform(
+          circle.getScreenCTM()!,
+        ),
+    );
+    let shortest = Infinity;
+    dots.forEach((a, i) => {
+      for (const b of dots.slice(i + 1)) shortest = Math.min(shortest, Math.hypot(a.x - b.x, a.y - b.y));
+    });
+    return shortest;
+  }, SCENE);
+}
+
+test("a new document opens in Publication, framed no smaller than Screen frames it", async ({
+  page,
+}) => {
+  await page.goto("/editor");
+  const presets = page.locator('[data-shell="style-preset"]');
+  const readout = page.locator('[data-status="zoom"]');
+  await expect(page.locator(`${SCENE} circle[data-atom-id]`)).toHaveCount(6);
+  // Decision 135: the benzene a bare /editor opens is in Publication.
+  await expect(presets).toHaveAttribute("data-style-preset", "publication");
+  const opened = await bondOnScreen(page);
+  const openedReadout = await readout.textContent();
+
+  // The same drawing fitted in Screen. Publication's margin is a smaller
+  // share of its bond (8 of 24 px against 16 of 44), so its fit is if
+  // anything larger: measured 222 px against 216 px at 1280 x 720.
+  await switchTo(page, "screen");
+  await page.getByRole("button", { name: "Fit" }).click();
+  await expect(readout).not.toHaveText(openedReadout!);
+  expect(opened).toBeGreaterThanOrEqual(await bondOnScreen(page));
+
+  // And Reset agrees with the readout in both: 100% is a 44 px bond.
+  await page.getByRole("button", { name: "Reset" }).click();
+  await expect(readout).toHaveText("100%");
+  expect(await bondOnScreen(page)).toBeCloseTo(44, 1);
+  await switchTo(page, "publication");
+  await expect(readout).toHaveText("100%");
+  expect(await bondOnScreen(page)).toBeCloseTo(44, 1);
+});
+
+test("a blank sketch opens at 100%, so its first atom is drawn at a working size (decision 174)", async ({
+  page,
+}) => {
+  await page.goto("/editor");
+  await expect(page.locator(`${SCENE} circle[data-atom-id]`)).toHaveCount(6);
+  await page.keyboard.press("ControlOrMeta+k");
+  await page.click('[data-palette-command="file.new"]');
+  await expect(page.locator(`${SCENE} [data-atom-id]`)).toHaveCount(0);
+  await expect(page.locator('[data-shell="style-preset"]')).toHaveAttribute(
+    "data-style-preset",
+    "publication",
+  );
+  // Not the empty scene's margin box fitted to the canvas, which read 2073%.
+  await expect(page.locator('[data-status="zoom"]')).toHaveText("100%");
+
+  // A carbon placed on it: fitted, its "CH4" measured 1168 x 828 px.
+  await page.locator('[data-tool="element"]').click();
+  const box = (await page.locator(CANVAS).boundingBox())!;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  const label = page.locator(`${SCENE} text[data-atom-id]`);
+  await expect(label).toHaveCount(1);
+  const drawn = (await label.boundingBox())!;
+  expect(drawn.height).toBeLessThan(60);
+  expect(drawn.width).toBeLessThan(120);
 });

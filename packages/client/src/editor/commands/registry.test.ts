@@ -11,8 +11,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { ELEMENTS, alphaAminoAcids, benzene, buildMolecule, elementCounts, readMolblock } from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
 import { dictionaryEntryById } from "@starter/chem-core/dictionary";
-import { PUBLICATION_STYLE, serializeFigure } from "@starter/chem-render";
+import { SCREEN_STYLE, serializeFigure } from "@starter/chem-render";
 import { createDocument } from "@starter/shared";
+import type { StylePresetId } from "@starter/shared";
 
 import { buildCanvasScene } from "@/canvas/scene-bridge";
 import { documentFigure } from "@/lib/export/figure";
@@ -30,9 +31,9 @@ import {
   setClipboardForTest,
 } from "./registry";
 
-function storeWith(molecule: Molecule): EditorStore {
+function storeWith(molecule: Molecule, stylePreset?: StylePresetId): EditorStore {
   return createEditorStore({
-    document: createDocument({ molecule, now: "2024-01-01T00:00:00.000Z" }),
+    document: createDocument({ molecule, stylePreset, now: "2024-01-01T00:00:00.000Z" }),
     viewportSize: { width: 800, height: 600 },
     now: () => "2024-01-01T00:00:00.000Z",
   });
@@ -393,9 +394,11 @@ describe("view commands", () => {
   });
 
   it("enables the locants toggle over a document that numbers an atom, and draws them (decision 168)", () => {
-    // L-cysteine: C1 the carboxyl, C2 the alpha carbon, C3 the CH2SH.
+    // L-cysteine: C1 the carboxyl, C2 the alpha carbon, C3 the CH2SH. In
+    // Screen: at Publication, where new documents open (decision 135), C2's
+    // locant has no clear slot and is reported instead (decision 71).
     const cysteine = readMolblock(dictionaryEntryById("l-cysteine")!.molblock).molecule;
-    const store = storeWith(cysteine);
+    const store = storeWith(cysteine, "screen");
     const command = commandById("view.show-locants");
     expect(command.enabled(store.getState())).toBe(true);
     expect(command.disabledReason?.(store.getState())).toBeUndefined();
@@ -448,30 +451,30 @@ describe("style preset commands (decision 21)", () => {
   it("switch the preset a canvas-style export draws with, as ONE undo step", () => {
     const store = storeWith(benzene());
     const state = () => store.getState();
-    // New documents still open in the screen style.
-    expect(state().document.stylePreset).toBe("screen");
-    expect(commandById("view.style-screen").enabled(state())).toBe(false);
-    expect(commandById("view.style-publication").enabled(state())).toBe(true);
-
-    const screenSvg = serializeFigure(documentFigure(state().document, "canvas"));
-    const before = state().history.past.length;
-    commandById("view.style-publication").run(store);
-
+    // New documents open in the publication style (decision 135).
     expect(state().document.stylePreset).toBe("publication");
-    expect(state().history.past.length).toBe(before + 1);
-    expect(documentFigure(state().document, "canvas").style).toBe(PUBLICATION_STYLE);
-    expect(serializeFigure(documentFigure(state().document, "canvas"))).not.toBe(screenSvg);
     expect(commandById("view.style-publication").enabled(state())).toBe(false);
+    expect(commandById("view.style-screen").enabled(state())).toBe(true);
+
+    const publicationSvg = serializeFigure(documentFigure(state().document, "canvas"));
+    const before = state().history.past.length;
+    commandById("view.style-screen").run(store);
+
+    expect(state().document.stylePreset).toBe("screen");
+    expect(state().history.past.length).toBe(before + 1);
+    expect(documentFigure(state().document, "canvas").style).toBe(SCREEN_STYLE);
+    expect(serializeFigure(documentFigure(state().document, "canvas"))).not.toBe(publicationSvg);
+    expect(commandById("view.style-screen").enabled(state())).toBe(false);
 
     state().undo();
-    expect(state().document.stylePreset).toBe("screen");
-    expect(serializeFigure(documentFigure(state().document, "canvas"))).toBe(screenSvg);
+    expect(state().document.stylePreset).toBe("publication");
+    expect(serializeFigure(documentFigure(state().document, "canvas"))).toBe(publicationSvg);
   });
 
   it("records nothing when the preset is already in use", () => {
     const store = storeWith(benzene());
     const before = store.getState().history.past.length;
-    commandById("view.style-screen").run(store);
+    commandById("view.style-publication").run(store);
     expect(store.getState().history.past.length).toBe(before);
   });
 });
@@ -552,18 +555,19 @@ describe("the surfaces the registry has to cover", () => {
   it("resets to 100% as the status bar reads it, in either style (decision 107)", () => {
     const store = storeWith(benzene());
     store.getState().setViewportSize({ width: 800, height: 600 });
-    store.getState().panBy({ x: 40, y: 40 });
-    commandById("view.reset").run(store);
-    expect(store.getState().viewport.zoom).toBe(1);
-    expect(store.getState().viewport.pan).toEqual({ x: 0, y: 0 });
-
-    // Publication's bond is 24 px, so a viewport zoom of 1 would put a bond
-    // on screen at 55% of Screen's. Reset lands on the zoom that shows the
-    // same 44 px bond Screen shows at 100%.
-    commandById("view.style-publication").run(store);
+    // A new document is in Publication (decision 135), whose bond is 24 px, so
+    // a viewport zoom of 1 would put a bond on screen at 55% of Screen's.
+    // Reset lands on the zoom that shows the same 44 px bond Screen shows at
+    // 100%.
     store.getState().panBy({ x: 40, y: 40 });
     commandById("view.reset").run(store);
     expect(store.getState().viewport.zoom).toBeCloseTo(44 / 24, 12);
+    expect(store.getState().viewport.pan).toEqual({ x: 0, y: 0 });
+
+    commandById("view.style-screen").run(store);
+    store.getState().panBy({ x: 40, y: 40 });
+    commandById("view.reset").run(store);
+    expect(store.getState().viewport.zoom).toBe(1);
     expect(store.getState().viewport.pan).toEqual({ x: 0, y: 0 });
   });
 

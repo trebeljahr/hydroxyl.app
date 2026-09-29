@@ -15,9 +15,12 @@
  *   than a graph error — the house rule for chem-core fixtures, and it applies
  *   just as well to what the canvas draws.
  *
- * `screen` rather than `publication` because this is the editing surface: the
- * screen preset's 44px bond exists so a line is a comfortable mouse target,
- * not merely legible at figure size.
+ * IN THE NEW-DOCUMENT PRESET, which is Publication (decision 135), because
+ * this is the document a bare `/editor` opens and it should open the way any
+ * new sketch does. It used to be pinned to Screen for its 44 px bond, as a
+ * comfortable mouse target; since decision 107 the view is measured in
+ * on-screen bonds and the first fit frames the molecule, so a Publication
+ * bond is as big a target on screen as a Screen one.
  *
  * Note that benzene arrives as an explicit Kekule ring — alternating single
  * and double bonds — so a structural view draws NINE lines for six bonds, the
@@ -41,7 +44,6 @@ export function fixtureDocument(now?: string): SketchDocument {
   return createDocument({
     molecule: benzene(),
     title: "Benzene",
-    stylePreset: "screen",
     now,
   });
 }
@@ -95,7 +97,6 @@ export function stressDocument(
   return createDocument({
     molecule: stressMolecule(heavyAtoms),
     title: `Stress ${heavyAtoms}`,
-    stylePreset: "screen",
     now,
   });
 }

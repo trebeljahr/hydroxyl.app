@@ -64,22 +64,29 @@ test("keeps quiet while the descriptor is drawn, and says so when it is not", as
   // Nothing is annotated yet, so there is nothing to report.
   await expect(page.locator(UNPLACED)).toHaveCount(0);
 
-  // A new document opens in the Screen style, whose 44 px bond leaves the
-  // (R) a clear slot: it is drawn and nothing is reported.
+  // An imported structure opens in Publication (decision 135), which sets
+  // the descriptor at 8 pt on a 24 px bond. No slot is both clear of the
+  // bonds and visibly nearer C2 than its neighbours, so the pass reports it —
+  // but it is drawn, so nothing is missing and the status bar says nothing
+  // (decision 70).
+  const presets = page.locator('[data-shell="style-preset"]');
+  await expect(presets).toHaveAttribute("data-style-preset", "publication");
   await setViewFlag(page, "showStereoDescriptors");
   const descriptor = page.locator(`${CANVAS} [id$=":descriptor"]`);
-  await expect(descriptor).toHaveCount(1);
-  await expect(descriptor).toHaveText("(R)");
-  await expect(page.locator(UNPLACED)).toHaveCount(0);
-
-  // Publication sets the same descriptor at 8 pt on a 24 px bond. No slot is
-  // both clear of the bonds and visibly nearer C2 than its neighbours, so the
-  // pass reports it — but it is drawn, so nothing is missing and the status
-  // bar says nothing (decision 70).
-  await page.locator('[data-shell="style-preset"] [data-command="view.style-publication"]').click();
   const unplaced = page.locator(UNPLACED);
   await expect(descriptor).toHaveCount(1);
+  await expect(descriptor).toHaveText("(R)");
   await expect(unplaced).toHaveCount(0);
+
+  // Screen's 44 px bond leaves the (R) a clear slot: it is drawn and nothing
+  // is reported.
+  await presets.locator('[data-command="view.style-screen"]').click();
+  await expect(presets).toHaveAttribute("data-style-preset", "screen");
+  await expect(descriptor).toHaveCount(1);
+  await expect(descriptor).toHaveText("(R)");
+  await expect(unplaced).toHaveCount(0);
+  await presets.locator('[data-command="view.style-publication"]').click();
+  await expect(presets).toHaveAttribute("data-style-preset", "publication");
 
   // Revealing the hydrogens fills the room around C2 with "H" glyphs. The
   // descriptor's ink can no longer keep its clearance from them, so it leaves

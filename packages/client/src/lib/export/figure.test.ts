@@ -191,8 +191,8 @@ describe("the figure a document exports", () => {
   });
 
   it("exports in Publication by default, whatever the canvas shows (decision 50)", () => {
-    const screen = threePanelDoc();
-    expect(screen.stylePreset).toBe("screen");
+    // A sketch switched to Screen: new ones open in Publication (decision 135).
+    const screen: SketchDocument = { ...threePanelDoc(), stylePreset: "screen" };
     expect(INITIAL_UI_STATE.figureExport.style).toBe("publication");
     expect(documentFigure(screen, "publication").style).toBe(PUBLICATION_STYLE);
 
@@ -213,7 +213,7 @@ describe("the figure a document exports", () => {
   });
 
   it("exports the canvas's own preset when that is chosen, and says what it prints", () => {
-    const screen = threePanelDoc();
+    const screen: SketchDocument = { ...threePanelDoc(), stylePreset: "screen" };
     const publication: SketchDocument = { ...screen, stylePreset: "publication" };
     const asCanvas: FigureExportSettings = { ...SINGLE_300, style: "canvas" };
     expect(documentFigure(screen, "canvas").style).toBe(SCREEN_STYLE);

@@ -22,9 +22,12 @@
  * This partly reverses decision 21 ("export what the canvas shows"). At the
  * fixed printed bond Screen sets 5.2 pt labels where the ACS 1996 setting
  * asks 10 pt; a warning with a one-click switch still let faint figures reach
- * a manuscript, because new documents open in Screen and most people never
- * change it. The choice is session UI state, never the document's preset, so
- * exporting cannot restyle the canvas or leave an undo entry behind.
+ * a manuscript, because new documents then opened in Screen and most people
+ * never changed it. The choice is session UI state, never the document's
+ * preset, so exporting cannot restyle the canvas or leave an undo entry
+ * behind. New documents now open in Publication too (decision 135), so the
+ * default export matches a new canvas; the default still matters for a sketch
+ * saved in Screen, and for one switched to it.
  *
  * ── HOW BIG IT PRINTS (decision 20) ──────────────────────────────────────
  *

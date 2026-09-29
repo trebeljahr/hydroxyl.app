@@ -801,15 +801,17 @@ describe("documents and panels", () => {
 
   it("makes the style preset and the title undoable", () => {
     const store = makeStore();
+    // A new document opens in Publication (decision 135).
+    expect(store.getState().document.stylePreset).toBe("publication");
 
-    store.getState().setStylePreset("publication");
+    store.getState().setStylePreset("screen");
     store.getState().setDocumentTitle("Aspirin synthesis");
     expect(store.getState().history.past).toHaveLength(2);
 
     store.getState().undo();
     expect(store.getState().document.metadata.title).toBe("Untitled");
     store.getState().undo();
-    expect(store.getState().document.stylePreset).toBe("screen");
+    expect(store.getState().document.stylePreset).toBe("publication");
   });
 });
 

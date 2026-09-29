@@ -109,11 +109,15 @@ describe("RepresentationSwitcher view options", () => {
   });
 
   it("enables the locants box over a numbered document, and the canvas draws them (decision 168)", () => {
-    // Beta-D-glucopyranose: the ring carbons C1 to C5, and C6.
+    // Beta-D-glucopyranose: the ring carbons C1 to C5, and C6. In Screen,
+    // whose 44 px bond has room for all six: Publication, where new documents
+    // open (decision 135), reports the crowded ring's C3 to C5 instead of
+    // drawing them (decision 71), and this is about the numbering, not slots.
     act(() => {
       editorStore.getState().openDocument(
         createDocument({
           molecule: readMolblock(dictionaryEntryById("beta-d-glucopyranose")!.molblock).molecule,
+          stylePreset: "screen",
           now: "2024-01-01T00:00:00.000Z",
         }),
       );

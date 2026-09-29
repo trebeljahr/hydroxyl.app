@@ -250,9 +250,13 @@ test.describe("mouse and trackpad", () => {
     await settle(page);
     expect((await view(page)).zoom / fitted.zoom).toBeCloseTo(2, 4);
 
+    // Reset is the readout's 100%: a 44 px reference bond on screen (decision
+    // 107). The fixture opens in Publication (decision 135), whose 24 px bond
+    // needs a viewport zoom of 44/24 for that.
     await page.getByRole("button", { name: "Reset" }).click();
     await settle(page);
-    expect((await view(page)).zoom).toBeCloseTo(1, 6);
+    expect((await view(page)).zoom).toBeCloseTo(44 / 24, 6);
+    await expect(page.locator('[data-status="zoom"]')).toHaveText("100%");
 
     await page.getByRole("button", { name: "Fit" }).click();
     await settle(page);

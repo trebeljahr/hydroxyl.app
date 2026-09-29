@@ -73,6 +73,17 @@ describe("the startup document", () => {
     expect(isStartupDocument(doc)).toBe(true);
   });
 
+  it("opens in Publication in both module instances (decision 135)", async () => {
+    // The preset reaches the prerendered HTML as the top bar's
+    // `data-style-preset`, so it has to agree between the two instances for
+    // the same reason the id does.
+    const first = await freshStartupDocument();
+    const second = await freshStartupDocument();
+    expect(first.stylePreset).toBe("publication");
+    expect(second.stylePreset).toBe(first.stylePreset);
+    expect(second.panels).toEqual(first.panels);
+  });
+
   it("does not freeze the ids of documents a page actually opens", async () => {
     const { fixtureDocument } = await import("@/canvas/fixture");
 
@@ -81,6 +92,8 @@ describe("the startup document", () => {
     expect(fixtureDocument().id).not.toBe(fixtureDocument().id);
     expect(fixtureDocument().id).not.toBe(STARTUP_DOCUMENT_ID);
     expect(isStartupDocument(fixtureDocument())).toBe(false);
+    // The document a bare /editor opens is a new sketch like any other.
+    expect(fixtureDocument().stylePreset).toBe("publication");
   });
 });
 

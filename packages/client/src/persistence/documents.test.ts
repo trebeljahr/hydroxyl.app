@@ -60,8 +60,10 @@ function oxidation(): SketchDocument {
       { id: "ann_2", kind: "text", text: "[O]", at: { x: 3, y: 0.5 } },
     ],
     nextAnnotationId: 4,
-    stylePreset: "publication",
-    panels: [createPanel("skeletal", "Scheme 1", "publication")],
+    // Screen, the preset a new document does NOT open in (decision 135), so a
+    // copy that dropped it would come back in Publication and show.
+    stylePreset: "screen",
+    panels: [createPanel("skeletal", "Scheme 1", "screen")],
     figure: { columns: 2 },
     // Explicit locants the user typed: the reacting carbon on each side.
     locants: { a2: "1", a7: "1" },

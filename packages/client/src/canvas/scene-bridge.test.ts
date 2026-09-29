@@ -67,15 +67,17 @@ describe("renderStyleFor", () => {
   it("resolves the document's preset to the frozen render style object", () => {
     // Identity, not deep equality: `buildScene` and the editor both compare
     // styles by reference to decide whether a scene needs rebuilding.
+    // The fixture opens in Publication, as every new document does (decision
+    // 135); Screen is the preset a user switches to.
     expect(renderStyleFor(fixtureDocument("2024-01-01T00:00:00.000Z"))).toBe(
-      SCREEN_STYLE,
+      PUBLICATION_STYLE,
     );
-    const publication = createDocument({
+    const screen = createDocument({
       molecule: benzene(),
-      stylePreset: "publication",
+      stylePreset: "screen",
       now: "2024-01-01T00:00:00.000Z",
     });
-    expect(renderStyleFor(publication)).toBe(PUBLICATION_STYLE);
+    expect(renderStyleFor(screen)).toBe(SCREEN_STYLE);
   });
 });
 
@@ -188,7 +190,7 @@ describe("buildDocumentScene", () => {
     // circle names itself by its atom set, because a ring has no id of its own
     // in chem-core and an index into `rings()` is exactly the counter the
     // determinism rule forbids.
-    expect(scene.style).toBe(SCREEN_STYLE);
+    expect(scene.style).toBe(PUBLICATION_STYLE);
     expect(scene.primitives.map((p) => p.id)).toEqual([
       "bond:b7:line",
       "bond:b8:line",

@@ -39,6 +39,13 @@ function ethanol() {
 
 const FIRST = createDocument({ id: "doc_first", title: "Ethanol", molecule: ethanol() });
 const SECOND = createDocument({ id: "doc_second", title: "Benzene", molecule: benzene() });
+/** Saved in Screen, the way every sketch was before decision 135. */
+const SAVED_IN_SCREEN = createDocument({
+  id: "doc_screen",
+  title: "Saved in Screen",
+  molecule: benzene(),
+  stylePreset: "screen",
+});
 
 let store: MemoryDocumentStore;
 
@@ -94,6 +101,18 @@ describe("/editor?doc=<id>", () => {
     expect(reread.ok && reread.value.molecule.atoms[reread.value.molecule.atomIds[0]!]?.element).toBe(
       "N",
     );
+  });
+
+  it("reopens a sketch saved in Screen in Screen (decision 135)", async () => {
+    // New documents open in Publication now. A sketch stored before that
+    // stored "screen" and keeps it: the new default fills no gap here.
+    await store.put(recordFor(SAVED_IN_SCREEN));
+    const page = visit(`?doc=${SAVED_IN_SCREEN.id}`);
+    await waitFor(() => {
+      expect(editorStore.getState().document.id).toBe(SAVED_IN_SCREEN.id);
+    });
+    expect(editorStore.getState().document.stylePreset).toBe("screen");
+    page.unmount();
   });
 });
 
@@ -272,6 +291,8 @@ describe("/editor?example=<name>", () => {
     const page = freshMount("?example=nope");
     await opened();
     expect(editorStore.getState().document.metadata.title).toBe("Benzene");
+    // As a bare /editor does: a new sketch, in Publication (decision 135).
+    expect(editorStore.getState().document.stylePreset).toBe("publication");
     expect(editorStore.getState().ui.statusMessage).toBe(
       "There is no example called “nope”. The editor opened a new sketch.",
     );

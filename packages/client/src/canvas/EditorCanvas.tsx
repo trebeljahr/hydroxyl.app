@@ -46,6 +46,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
+import { isEmpty } from "@starter/chem-core";
 import { modelToPx, pxPerModelUnit } from "@starter/chem-render";
 import {
   keyboardContextTarget,
@@ -72,6 +73,7 @@ import {
   useCanvasGestures,
   type CanvasGestureHandlers,
 } from "./useCanvasGestures";
+import { referenceZoom } from "./view-scale";
 
 export interface EditorCanvasProps {
   readonly className?: string;
@@ -262,11 +264,22 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
   // a zero-size viewport recentres without touching the zoom, which would
   // consume the one shot this effect gets and leave the molecule at 100%
   // forever.
+  //
+  // NOTHING TO FRAME OPENS AT RESET'S 100% (decision 174). An empty scene is
+  // only the style's margin box, 16 px square at Publication, so fitting it
+  // opened a blank New sketch at 2073% and drew its first carbon's label
+  // bigger than the canvas. The rule is the Fit command's: Fit is off while
+  // the molecule is empty, so the first frame of an empty document is Reset's.
   const fittedDocumentIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (fittedDocumentIdRef.current === doc.id) return;
     if (viewport.size.width <= 0 || viewport.size.height <= 0) return;
     fittedDocumentIdRef.current = doc.id;
+    const state = editorStore.getState();
+    if (isEmpty(state.document.molecule)) {
+      state.resetViewport(referenceZoom(renderStyleFor(state.document)));
+      return;
+    }
     fitToScene();
   }, [doc.id, viewport.size.width, viewport.size.height, fitToScene]);
 
