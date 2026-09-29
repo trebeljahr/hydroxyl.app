@@ -9,7 +9,7 @@
  * `representations.test.ts` measures the padded clear space.
  *
  * THE INK IS TAKEN OFF THE SCENE, not off the placement pass. A test that
- * asks `phantomHydrogens` where it put things and then checks its own answer
+ * asks `derivedHydrogens` where it put things and then checks its own answer
  * can only catch the pass disagreeing with itself; what matters is where the
  * glyphs were DRAWN, so every box below is measured from a `textRun`
  * primitive with the same measurer the serialiser will use. A regression that
@@ -29,10 +29,10 @@ import { describe, expect, it } from "vitest";
 import { ORIGIN, rotateAtoms } from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
 
-import { FIXTURES, steroidSkeleton } from "../src/fixtures.js";
+import { FIXTURES, perhydrophenanthrene, steroidSkeleton } from "../src/fixtures.js";
 import { representation } from "../src/representation.js";
 import type { StructuralRepresentation } from "../src/representation.js";
-import { atomLabelPlacements, buildScene } from "../src/scene/build.js";
+import { atomLabelPlacements, buildScene, derivedHydrogens } from "../src/scene/build.js";
 import { detectCollisions } from "../src/scene/collide.js";
 import type { LabelBox } from "../src/label/placement.js";
 import type {
@@ -41,7 +41,6 @@ import type {
   ScenePrimitive,
   TextRunPrimitive,
 } from "../src/scene/types.js";
-import { phantomHydrogens } from "../src/modes/explicitH.js";
 import { modelToPx, RENDER_STYLES, withStyle } from "../src/style.js";
 import type { RenderStyle } from "../src/style.js";
 import { glyphInkRects, measurerFor, measureTextRun } from "../src/text/measurer.js";
@@ -56,7 +55,7 @@ const PRESETS: readonly RenderStyle[] = Object.freeze([
 ]);
 
 /**
- * Every fixture, plus the steroid.
+ * Every fixture, plus perhydrophenanthrene and the steroid.
  *
  * THE STEROID IS WHY THIS FILE IS NOT JUST A LOOP OVER `FIXTURES`. Nothing in
  * the fixture set puts a hydrogen-bearing carbon between two other
@@ -65,11 +64,13 @@ const PRESETS: readonly RenderStyle[] = Object.freeze([
  * all. The steroid's ring system does it eighteen times over, and before the
  * separation pass it drew five overlapping pairs of hydrogens at Publication
  * — 54 px² between C1's and C14's — while every fixture in `FIXTURES` drew
- * at most one.
+ * at most one. Perhydrophenanthrene is the same ring system without the
+ * steroid's methyls and wedges.
  */
 const SUBJECTS: readonly { readonly name: string; readonly molecule: Molecule }[] =
   Object.freeze([
     ...FIXTURES,
+    Object.freeze({ name: "perhydrophenanthrene", molecule: perhydrophenanthrene() }),
     Object.freeze({ name: "steroidSkeleton", molecule: steroidSkeleton() }),
   ]);
 
@@ -177,9 +178,11 @@ describe("derived hydrogen separation", () => {
     // warning counts.
     //
     // THE PAGE IS FILLED BY THE STYLE, NOT BY A CONTRIVED MOLECULE. Every
-    // fixture and the steroid now clear at both presets and at nine
-    // rotations, which is the point of the pass — so a test that waited for a
-    // natural failure would be asserting nothing at all. Tripling the label
+    // subject above clears at both presets — the steroid's C19 methyl, one
+    // bond from three ring carbons, still meets C1's label at one of the
+    // crowding sweep's nine rotations — which is the point of the pass, so a
+    // test that waited for a natural failure would be asserting almost
+    // nothing. Tripling the label
     // against the bond puts 32 hydrogens and 21 labels on a page that cannot
     // hold them, and is a style a caller may legitimately build.
     const crowded = withStyle(RENDER_STYLES.publication, { fontSizePx: 50 });
@@ -233,7 +236,7 @@ describe("derived hydrogen separation", () => {
       // centred on its advance — Arimo's "H" has a left and a right bearing
       // that differ by a font unit — and a test that read the ink for this
       // would be measuring the typeface rather than the placement.
-      for (const hydrogen of phantomHydrogens(
+      for (const hydrogen of derivedHydrogens(
         mol,
         style,
         VIEWS[0]!,

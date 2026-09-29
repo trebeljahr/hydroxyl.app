@@ -36,11 +36,10 @@ import { aromaticRings, getAtom, ringAt } from "@starter/chem-core";
 import type { AtomId, BondId, Molecule } from "@starter/chem-core";
 
 import { aromaticCircleId } from "../bond/aromatic.js";
-import { phantomHydrogens } from "../modes/explicitH.js";
 import type { LabelBox, LabelObstacle } from "../label/placement.js";
 import { isStructural } from "../representation.js";
 import { modelToPx, pxPerModelUnit } from "../style.js";
-import { atomLabelPlacements } from "./build.js";
+import { atomLabelPlacements, derivedHydrogens } from "./build.js";
 import type { LinePrimitive, RenderScene, ScenePoint, SceneSource } from "./types.js";
 
 export type CollisionKind =
@@ -67,10 +66,13 @@ export type CollisionKind =
    * THE FAILURE THE EXPLICIT-H VIEW IS TESTED AGAINST. A hydrogen is fanned
    * into the widest gap its host's bonds leave, which is the best available
    * direction and on a crowded fused vertex still not a clear one — the gap
-   * points straight at a neighbour two bonds away. Like every other finding
-   * here it is REPORTED and not repaired: moving the hydrogen would be the
-   * renderer inventing geometry, and the honest fix is the author's, either
-   * a re-layout or a view that does not draw every hydrogen.
+   * points straight at a neighbour two bonds away. The renderer has already
+   * turned, stood off and spread every derived hydrogen it could inside its
+   * own gap (decision 134, `modes/explicitH.ts`), so what arrives here is
+   * the crowding no such move cleared. It is REPORTED and not repaired
+   * further: this pass moves nothing, and the honest fix for what is left is
+   * the author's, either a re-layout or a view that does not draw every
+   * hydrogen.
    */
   | "hydrogen-over-atom"
   /** An aromatic ring too distorted for a circle, so none was drawn. */
@@ -318,7 +320,7 @@ export function detectCollisions(
   // boxes checked are the boxes trimmed against — the scene carries a run's
   // origin but not the padded per-span rects, and re-measuring here would be
   // a second measurer with its own answer.
-  const hydrogens = phantomHydrogens(mol, style, representation, placements);
+  const hydrogens = derivedHydrogens(mol, style, representation, placements);
   for (let i = 0; i < hydrogens.length; i++) {
     const hydrogen = hydrogens[i]!;
     const source: SceneSource = {

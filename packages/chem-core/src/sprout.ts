@@ -55,6 +55,7 @@ import {
   otherEnd,
   requireAtom,
 } from "./molecule.js";
+import { ringCentroid, ringsAtAtom } from "./rings.js";
 import type { AtomId, BondId, BondOrder, Molecule } from "./types.js";
 import {
   add,
@@ -292,30 +293,54 @@ export function fanDirections(
   directions: readonly Vec2[],
   count: number,
 ): number[] {
+  return fanSectors(directions, count).map((sector) => sector.angle);
+}
+
+/**
+ * One fanned direction and the angular gap it was fanned into.
+ *
+ * `start` and `width` are the gap between two consecutive `directions` — the
+ * bonds the atom really has — measured counter-clockwise, so the gap runs
+ * from `start` to `start + width` and `angle` lies strictly inside it. Every
+ * direction in that open interval is room the atom's bonds leave empty; one
+ * outside it is on the far side of a bond.
+ */
+export interface FanSector {
+  readonly angle: number;
+  readonly start: number;
+  readonly width: number;
+}
+
+/**
+ * `fanDirections` with the gap each direction came from.
+ *
+ * THE GAP IS THE PART A CALLER MAY RELY ON, not the angle. The explicit-H view
+ * turns a crowded hydrogen off its fanned angle (decision 134), and what keeps
+ * that turn honest is that it never leaves the gap: a hydrogen moved past one
+ * of its host's bonds changes the cyclic order of the substituents, and at a
+ * stereocentre that order is what a reader reads the configuration from. The
+ * bounds come from the same sorted angles the fan does, so the renderer never
+ * runs a second gap search with its own rounding to find them.
+ *
+ * A FREE ATOM has no bonds and so no gap: the whole circle is room. Each
+ * direction's sector is then the full turn centred on it, which bounds no
+ * turn a caller would ever make.
+ */
+export function fanSectors(
+  directions: readonly Vec2[],
+  count: number,
+): FanSector[] {
   if (count <= 0) return [];
 
-  const angles = directions
-    .map((d) => normalizeAnglePositive(angleOf(d)))
-    .sort((a, b) => a - b);
-
-  const first = angles[0];
-  if (first === undefined) {
+  if (directions.length === 0) {
     const step = (2 * Math.PI) / count;
-    return Array.from({ length: count }, (_unused, i) => normalizeAngle(i * step));
+    return Array.from({ length: count }, (_unused, i) => {
+      const angle = normalizeAngle(i * step);
+      return { angle, start: angle - Math.PI, width: 2 * Math.PI };
+    });
   }
 
-  interface Gap {
-    readonly start: number;
-    readonly width: number;
-    slots: number;
-  }
-  const gaps: Gap[] = [];
-  for (let i = 0; i < angles.length; i++) {
-    const start = angles[i]!;
-    // The last gap wraps past 2PI back to the first direction.
-    const end = i + 1 < angles.length ? angles[i + 1]! : first + 2 * Math.PI;
-    gaps.push({ start, width: end - start, slots: 0 });
-  }
+  const gaps = gapsBetween(directions).map((gap) => ({ ...gap, slots: 0 }));
 
   for (let placed = 0; placed < count; placed++) {
     let best = gaps[0]!;
@@ -344,13 +369,85 @@ export function fanDirections(
     best.slots++;
   }
 
-  const out: number[] = [];
+  const out: FanSector[] = [];
   for (const gap of gaps) {
     for (let k = 0; k < gap.slots; k++) {
-      out.push(normalizeAngle(gap.start + (gap.width * (k + 1)) / (gap.slots + 1)));
+      out.push({
+        angle: normalizeAngle(gap.start + (gap.width * (k + 1)) / (gap.slots + 1)),
+        start: gap.start,
+        width: gap.width,
+      });
     }
   }
   return out;
+}
+
+/**
+ * Every angular gap `directions` leave, each with its bisector as `angle`:
+ * one per direction, counter-clockwise from it to the next, the last wrapping
+ * round to the first. Empty when there are no directions, which bound no gap.
+ *
+ * What `fanSectors` allocates slots among, exposed whole for a caller that
+ * wants the gaps a fan did NOT use — the explicit-H view's fallback when the
+ * gap it did use has no room (decision 134).
+ */
+export function angularGaps(directions: readonly Vec2[]): FanSector[] {
+  return gapsBetween(directions).map((gap) => ({
+    angle: normalizeAngle(gap.start + gap.width / 2),
+    start: gap.start,
+    width: gap.width,
+  }));
+}
+
+function gapsBetween(
+  directions: readonly Vec2[],
+): { readonly start: number; readonly width: number }[] {
+  const angles = directions
+    .map((d) => normalizeAnglePositive(angleOf(d)))
+    .sort((a, b) => a - b);
+  const first = angles[0];
+  if (first === undefined) return [];
+  const gaps: { readonly start: number; readonly width: number }[] = [];
+  for (let i = 0; i < angles.length; i++) {
+    const start = angles[i]!;
+    // The last gap wraps past 2PI back to the first direction.
+    const end = i + 1 < angles.length ? angles[i + 1]! : first + 2 * Math.PI;
+    gaps.push({ start, width: end - start });
+  }
+  return gaps;
+}
+
+/**
+ * Where `count` hydrogens drawn off `atomId` go, and the gap each may move in:
+ * `fanSectors` over the atom's bonds, with the inside of every ring the atom
+ * is in counted as occupied too.
+ *
+ * THE SAME FACT `templateAngle` APPLIES, for the same reason (decision 183).
+ * A bond says nothing about which side of it the paper is full, so a
+ * fused-ring junction CH — three bonds, three gaps of exactly 120 degrees —
+ * gave its hydrogen to whichever gap `fanSectors` broke the tie towards, and
+ * two of the three are ring interiors. The hydrogen then printed inside a
+ * ring, with its stem across the middle of it. One more occupied direction
+ * per ring, towards that ring's centroid, splits each interior in two, so the
+ * exterior gap is the widest and wins. A plain ring vertex fans exactly as it
+ * did: its two hydrogens were already in the exterior gap, and the split
+ * interior is not the gap that wraps, so the exterior's start and width are
+ * the same numbers.
+ */
+export function hydrogenFan(
+  mol: Molecule,
+  atomId: AtomId,
+  count: number,
+): FanSector[] {
+  const pos = requireAtom(mol, atomId).pos;
+  const inward: Vec2[] = [];
+  for (const index of ringsAtAtom(mol, atomId)) {
+    const towards = sub(ringCentroid(mol, index), pos);
+    // An atom sitting on its own ring's centroid is a degenerate import with
+    // no inside to point at; `angleOf` of a zero vector would invent one.
+    if (lengthSq(towards) > 0) inward.push(normalize(towards));
+  }
+  return fanSectors([...bondDirections(mol, atomId), ...inward], count);
 }
 
 /** Nearest atom to `point` within `radius`, ignoring `excludeId`. */

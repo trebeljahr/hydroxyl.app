@@ -87,7 +87,7 @@ import {
   phantomHydrogenId,
   phantomHydrogens,
 } from "../modes/explicitH.js";
-import type { PhantomHydrogen } from "../modes/explicitH.js";
+import type { BondInk, PhantomHydrogen } from "../modes/explicitH.js";
 import { placeAtomLabel } from "../label/placement.js";
 import type {
   AtomLabelPlacement,
@@ -402,6 +402,81 @@ export function atomLabelPlacements(
 }
 
 /**
+ * The derived hydrogens `buildScene` draws for this molecule in this view, for
+ * a caller outside the scene build — `detectCollisions`, a test.
+ *
+ * The hydrogens are placed against the bonds as drawn, so this runs the bond
+ * pass exactly as `buildStructural` does, into primitives it throws away.
+ * Asking `phantomHydrogens` directly with anything else — no bonds, or bonds
+ * measured some other way — would place hydrogens the scene never drew.
+ * `placements` is the map `atomLabelPlacements` returns, passed in because
+ * every caller already has one.
+ */
+export function derivedHydrogens(
+  mol: Molecule,
+  style: RenderStyle,
+  representation: StructuralRepresentation,
+  placements: ReadonlyMap<AtomId, AtomLabelPlacement | undefined>,
+): PhantomHydrogen[] {
+  if (!representation.flags.showImplicitHydrogens) return [];
+  const centres = new Map<AtomId, ScenePoint>();
+  for (const atomId of mol.atomIds) {
+    const atom = getAtom(mol, atomId);
+    if (atom !== undefined) centres.set(atomId, modelToPx(style, atom.pos));
+  }
+  const suppressed = representation.flags.aromaticCircles
+    ? aromaticCirclePrimitives(mol, style, centres).suppressedBondIds
+    : EMPTY_CIRCLES.suppressedBondIds;
+  const bondInk = pushBonds(
+    [],
+    mol,
+    style,
+    centres,
+    placements,
+    suppressed,
+    representation,
+    new Map(),
+    [],
+  );
+  return phantomHydrogens(mol, style, representation, placements, bondInk);
+}
+
+/**
+ * Every bond's primitives, in the molecule's own order, and what each bond
+ * drew as segments — the map the hydrogen pass keeps its glyphs off.
+ */
+function pushBonds(
+  primitives: ScenePrimitive[],
+  mol: Molecule,
+  style: RenderStyle,
+  centres: ReadonlyMap<AtomId, ScenePoint>,
+  placements: ReadonlyMap<AtomId, AtomLabelPlacement | undefined>,
+  suppressedBondIds: ReadonlySet<BondId>,
+  representation: StructuralRepresentation,
+  corridors: Map<BondId, AnnotationSegment>,
+  drawn: AnnotationSegment[],
+): BondInk {
+  const ink = new Map<BondId, readonly AnnotationSegment[]>();
+  for (const bondId of mol.bondIds) {
+    const start = drawn.length;
+    pushBondPrimitives(
+      primitives,
+      mol,
+      style,
+      bondId,
+      centres,
+      placements,
+      suppressedBondIds,
+      representation,
+      corridors,
+      drawn,
+    );
+    if (drawn.length > start) ink.set(bondId, drawn.slice(start));
+  }
+  return ink;
+}
+
+/**
  * Bonds, then aromatic circles, then atoms — each in the molecule's own
  * insertion order.
  *
@@ -506,26 +581,20 @@ function buildMolecularLayers(
   // corridor alone lets a locant graze the second line of a ring bond.
   const drawn: AnnotationSegment[] = [];
 
-  // Where each bond's own strokes start in `drawn`, for the scheme layer: an
-  // arrow crossing the second line of a C=O crosses the bond even where it
-  // misses the axis. Offsets only; the slices are cut if an arrow asks.
-  const bondLineStarts: number[] = [];
-  for (const bondId of mol.bondIds) {
-    bondLineStarts.push(drawn.length);
-    pushBondPrimitives(
-      primitives,
-      mol,
-      style,
-      bondId,
-      centres,
-      placements,
-      circles.suppressedBondIds,
-      representation,
-      corridors,
-      drawn,
-    );
-  }
-  const bondLinesEnd = drawn.length;
+  // Each bond's own strokes, keyed by bond: the hydrogen pass keeps its
+  // glyphs off them, and the scheme layer asks whether an arrow crosses the
+  // second line of a C=O even where it misses the axis.
+  const bondInk = pushBonds(
+    primitives,
+    mol,
+    style,
+    centres,
+    placements,
+    circles.suppressedBondIds,
+    representation,
+    corridors,
+    drawn,
+  );
 
   primitives.push(...circles.primitives);
 
@@ -647,36 +716,28 @@ function buildMolecularLayers(
   // A projection places some hydrogens itself (a Fischer arm's H) and folds
   // others into a group's word ("CH2OH"); the explicit-H view must not fan a
   // second set off those atoms, nor off an atom the projection does not show.
-  // Filtered AFTER the fan, so a dropped host's hydrogens still took part in
-  // the fan's crowding search and may have turned a kept neighbour's; the
-  // exact fix is a skip set inside `phantomHydrogens`, left for the pass
-  // `explicit-h-publication-crowding` (decision 134) is reworking.
-  const fanned = phantomHydrogens(mol, style, representation, placements);
-  const hydrogens =
+  // They are SKIPPED inside the fan rather than filtered out of it, so a
+  // hydrogen the page never shows cannot have turned one it does.
+  const hydrogens = phantomHydrogens(
+    mol,
+    style,
+    representation,
+    placements,
+    bondInk,
     drawing === undefined
-      ? fanned
-      : fanned.filter(
-          (h) =>
-            !drawing.hidden.has(h.hostAtomId) &&
-            !drawing.condensedAt.has(h.hostAtomId) &&
-            !drawing.hydrogenHosts.has(h.hostAtomId),
-        );
+      ? undefined
+      : new Set([...drawing.hidden, ...drawing.condensedAt.keys(), ...drawing.hydrogenHosts]),
+  );
   pushHydrogenPrimitives(primitives, style, hydrogens, centres, placements, drawn);
   const projectedHydrogens =
     drawing === undefined ? [] : pushProjectedHydrogens(primitives, style, drawing, centres, placements, drawn);
 
   // What a scheme annotation resolves against, gathered here so every return
   // below carries it: this panel's centres and labels, and its bonds as drawn.
-  // A thunk: `drawn` only grows past `bondLinesEnd`, so the slices are the
-  // same whenever it runs.
+  // A thunk, so the lookups are built only if an arrow asks.
   const site = (): SchemeLayerSite => {
     const bondLines = new Map<BondId, readonly AnnotationSegment[]>();
-    mol.bondIds.forEach((bondId, index) => {
-      bondLines.set(
-        bondId,
-        drawn.slice(bondLineStarts[index]!, bondLineStarts[index + 1] ?? bondLinesEnd),
-      );
-    });
+    for (const bondId of mol.bondIds) bondLines.set(bondId, bondInk.get(bondId) ?? []);
     return {
       geometry: mol,
       centres,

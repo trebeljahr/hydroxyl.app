@@ -13,7 +13,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   benzene,
+  bondsAt,
   buildMolecule,
+  hydrogenFan,
+  implicitHydrogenCount,
+  molecularFormula,
+  normalizeAnglePositive,
   ORIGIN,
   rotateAtoms,
   singleAtom,
@@ -29,15 +34,15 @@ import {
   ethanol,
   FIXTURES,
   naphthalene,
+  perhydrophenanthrene,
+  steroidSkeleton,
 } from "../src/fixtures.js";
-import {
-  derivedHydrogenDirections,
-  phantomHydrogens,
-} from "../src/modes/explicitH.js";
+import { derivedHydrogenDirections } from "../src/modes/explicitH.js";
 import { representation } from "../src/representation.js";
-import { atomLabelPlacements, buildScene } from "../src/scene/build.js";
+import { atomLabelPlacements, buildScene, derivedHydrogens } from "../src/scene/build.js";
 import { PRINTED_BOND_LENGTH_CM } from "../src/figure/physical.js";
 import { detectCollisions } from "../src/scene/collide.js";
+import { serializeScene } from "../src/svg/serialize.js";
 import type { CirclePrimitive, RenderScene, ScenePoint } from "../src/scene/types.js";
 import {
   modelToPx,
@@ -60,42 +65,77 @@ function hydrogenPrimitives(scene: RenderScene, type: "line" | "textRun") {
 }
 
 /**
- * `hydrogen-over-atom` findings per "fixture view", over every fixture at nine
- * rotations in both views that draw hydrogens. Every key is present, zero
- * included, so a caller asserting a count cannot miss a fixture.
+ * What the crowding sweep draws: every fixture, and the two sp3 fused-ring
+ * systems.
  *
  * `unmergedDropOverlap` is excluded: it deliberately holds two fragments
  * dropped on top of each other, so its heavy atoms already collide and its
  * hydrogens have to.
+ *
+ * THE FUSED sp3 RINGS ARE WHY THIS IS NOT JUST `FIXTURES`. Nothing in that
+ * set puts a hydrogen-bearing carbon between two others in a ring: a chain
+ * vertex has 240 degrees of page to fan into, and the aromatic fixtures'
+ * junctions carry no hydrogens. Perhydrophenanthrene is that case on its own;
+ * the steroid adds the two angular methyls, the most crowded vertices in the
+ * corpus.
+ */
+const CROWDING_SUBJECTS: readonly { readonly name: string; readonly molecule: Molecule }[] = [
+  ...FIXTURES.filter((fixture) => fixture.name !== "unmergedDropOverlap"),
+  { name: "perhydrophenanthrene", molecule: perhydrophenanthrene() },
+  { name: "steroidSkeleton", molecule: steroidSkeleton() },
+];
+
+/** Every crowding subject at the sweep's nine rotations, 40 degrees apart. */
+function* rotations(): Generator<{ readonly name: string; readonly molecule: Molecule }> {
+  for (const subject of CROWDING_SUBJECTS) {
+    for (let step = 0; step < 9; step++) {
+      const molecule = rotateAtoms(
+        subject.molecule,
+        subject.molecule.atomIds,
+        ORIGIN,
+        (step * 40 * Math.PI) / 180,
+      );
+      const probe = molecule.atomIds[0];
+      if (probe !== undefined) {
+        // A rotation that produced NaN is the bug this sweep once had.
+        expect(Number.isFinite(molecule.atoms[probe]!.pos.x), subject.name).toBe(true);
+      }
+      yield { name: subject.name, molecule };
+    }
+  }
+}
+
+/**
+ * `hydrogen-over-atom` findings per "subject view", summed over the nine
+ * rotations, in both views that draw hydrogens. Every key is present, zero
+ * included, so a caller asserting a count cannot miss a subject.
  */
 function crowdingReport(style: RenderStyle): Map<string, number> {
   const out = new Map<string, number>();
   for (const view of [EXPLICIT_H, LEWIS]) {
-    for (const fixture of FIXTURES) {
-      if (fixture.name === "unmergedDropOverlap") continue;
-      const key = `${fixture.name} ${view.kind}`;
-      out.set(key, 0);
-      for (let step = 0; step < 9; step++) {
-        const degrees = step * 40;
-        const mol = rotateAtoms(
-          fixture.molecule,
-          fixture.molecule.atomIds,
-          ORIGIN,
-          (degrees * Math.PI) / 180,
-        );
-        const probe = mol.atomIds[0];
-        if (probe !== undefined) {
-          // A rotation that produced NaN is the bug this helper replaced.
-          expect(Number.isFinite(mol.atoms[probe]!.pos.x), key).toBe(true);
-        }
-        const found = detectCollisions(buildScene(mol, style, view), mol).collisions.filter(
-          (c) => c.kind === "hydrogen-over-atom",
-        );
-        out.set(key, out.get(key)! + found.length);
-      }
+    for (const subject of CROWDING_SUBJECTS) out.set(`${subject.name} ${view.kind}`, 0);
+    for (const { name, molecule } of rotations()) {
+      const key = `${name} ${view.kind}`;
+      const found = detectCollisions(buildScene(molecule, style, view), molecule, {
+        maxFindings: 10_000,
+      }).collisions.filter((c) => c.kind === "hydrogen-over-atom");
+      out.set(key, out.get(key)! + found.length);
     }
   }
   return out;
+}
+
+/** Proper crossing of two open segments. */
+function crosses(p1: ScenePoint, p2: ScenePoint, q1: ScenePoint, q2: ScenePoint): boolean {
+  const rx = p2.x - p1.x;
+  const ry = p2.y - p1.y;
+  const sx = q2.x - q1.x;
+  const sy = q2.y - q1.y;
+  const d = rx * sy - ry * sx;
+  if (d === 0) return false;
+  const t = ((q1.x - p1.x) * sy - (q1.y - p1.y) * sx) / d;
+  const u = ((q1.x - p1.x) * ry - (q1.y - p1.y) * rx) / d;
+  return t > 0 && t < 1 && u > 0 && u < 1;
 }
 
 /** The derived hydrogens, placed against the same label map `buildScene` uses
@@ -105,12 +145,7 @@ function hydrogensOf(
   style: RenderStyle,
   view: StructuralRepresentation,
 ) {
-  return phantomHydrogens(
-    mol,
-    style,
-    view,
-    atomLabelPlacements(mol, style, view),
-  );
+  return derivedHydrogens(mol, style, view, atomLabelPlacements(mol, style, view));
 }
 
 function dotsOf(scene: RenderScene, atomId: string): CirclePrimitive[] {
@@ -179,63 +214,141 @@ describe("the fully-explicit view", () => {
     }
   });
 
-  it("never stacks a hydrogen on an atom, a bond or another hydrogen at Screen", () => {
-    // THE CROWDING ACCEPTANCE, run over the whole fixture set — naphthalene
-    // and chrysene included, which are the fused systems whose inner vertices
-    // have the least room — at nine rotations and both views that draw
-    // hydrogens. Rotations matter because the fan is computed from angular
-    // gaps, and a structure sitting square with the page is the one
-    // arrangement most likely to work by accident.
+  it("pins the hydrogen crowding Screen reports: the steroid's methyls only", () => {
+    // THE CROWDING ACCEPTANCE, run over every fixture and the two fused sp3
+    // ring systems at nine rotations and both views that draw hydrogens.
+    // Rotations matter because the fan is computed from angular gaps, and a
+    // structure sitting square with the page is the one arrangement most
+    // likely to work by accident.
     //
     // THE PIVOT IS PASSED. This sweep used to call `rotateAtoms(mol, ids,
     // angle)`, which reads the angle as the pivot and leaves the angle
     // undefined: every coordinate came out NaN, no collision could fire, and
-    // the sweep passed from the day it was written. `crowdingReport` above
-    // asserts every rotated position is finite, so it cannot go vacuous that
-    // way again.
+    // the sweep passed from the day it was written. `rotations` above asserts
+    // every rotated position is finite, so it cannot go vacuous that way
+    // again.
+    //
+    // Screen's 44 px bond has room for every fixture and for
+    // perhydrophenanthrene. What is left is the steroid's C19 methyl, which
+    // stands one bond from C1, C9 and C11 at once. Before decision 134 let the
+    // renderer spread a fan and keep a hydrogen on its own side of every
+    // bond, the steroid reported 46 and 47 here and perhydrophenanthrene 4
+    // and 4.
+    const pinned: Record<string, number> = {
+      "steroidSkeleton explicitH": 7,
+      "steroidSkeleton lewis": 7,
+    };
     for (const [key, count] of crowdingReport(SCREEN_STYLE)) {
-      expect(count, key).toBe(0);
+      expect(count, key).toBe(pinned[key] ?? 0);
     }
   });
 
   it("pins the hydrogen crowding Publication reports", () => {
     // At the ACS 1996 setting (decision 26) the "H" glyphs are 10 pt on a
     // 14.4 pt bond, and a hydrogen on one carbon and a hydrogen on the next
-    // are fanned into the same pocket: cis-2-butene's two inner hydrogens, the
-    // hydrogens beside butan-2-ol's wedge. The separation pass pulls them off
-    // each other's ink but cannot also find them a padding's worth of white,
-    // so this is not zero. It is PINNED instead: a change that makes any
-    // fixture more crowded fails here, and one that makes it less crowded has
+    // are fanned into the same pocket. It is PINNED: a change that makes any
+    // subject more crowded fails here, and one that makes it less crowded has
     // to come and lower the number.
     //
-    // THIS COUNTS CLEAR SPACE, NOT INK, and the difference is why it is not
-    // zero now that the separation pass exists. `detectCollisions` compares
-    // the PADDED boxes, so two glyphs with a hairline of white between them
-    // are a finding here. The separation pass prefers a place with that
-    // padding and settles for one that merely keeps the glyphs apart, and
-    // only the second is guaranteed — `hydrogen-separation.test.ts` is where
-    // it is asserted. At the ACS 1996 setting (decision 26) the "H" glyphs
-    // are 10 pt on a 14.4 pt bond and `labelPaddingPx` is 1.6, so a carbon's
-    // hydrogen and the next carbon's cannot always both have their padding.
+    // THIS COUNTS CLEAR SPACE, NOT INK. `detectCollisions` compares the
+    // PADDED boxes, so two glyphs with a hairline of white between them are a
+    // finding here; `hydrogen-separation.test.ts` is where ink is asserted.
     //
-    // Summed over the nine rotations. 78 before the separation pass, which is
-    // 72 from the original sweep plus the 6 the minimum visible stem
-    // (`explicitHydrogenMinStemRatio`) added; 58 after it. Every other
-    // fixture, the fused rings included, must stay at zero.
+    // EVERY FIXTURE IS AT ZERO. Summed over the nine rotations, the fixtures
+    // reported 72 when this sweep first ran, 78 with the minimum visible stem
+    // (`explicitHydrogenMinStemRatio`), and 58 once the separation pass kept
+    // glyphs off each other's ink. They reach zero because the separation
+    // search now scores a place by what this pass reports — padded boxes,
+    // bond lines — and not by ink alone, keeps every hydrogen on its own side
+    // of every bond, and places the still-crowded ones again against the
+    // whole page (decision 134).
+    //
+    // WHAT REMAINS IS THE STEROID'S TWO ANGULAR METHYLS. C19 stands one bond
+    // from C1, C9 and C11 at once, and C18 one bond from C12 and 1.2 from
+    // C17, so a methyl and its neighbours share a pocket narrower than their
+    // 10 pt glyphs.
+    // Before decision 134 the steroid reported 126 and 136 here and
+    // perhydrophenanthrene 51 and 51. Perhydrophenanthrene's last finding is
+    // one CH2 at one rotation (280 degrees), squeezed from both sides until
+    // its own two hydrogens' clear spaces meet.
     const pinned: Record<string, number> = {
-      "ethanol explicitH": 1,
-      "ethanol lewis": 1,
-      "ethanolMirrored explicitH": 1,
-      "ethanolMirrored lewis": 1,
-      "butan2olWedged explicitH": 12,
-      "butan2olWedged lewis": 14,
-      "cis2Butene explicitH": 4,
-      "cis2Butene lewis": 4,
-      "wedgeOnNonStereocentre explicitH": 9,
-      "wedgeOnNonStereocentre lewis": 11,
+      "perhydrophenanthrene explicitH": 1,
+      "perhydrophenanthrene lewis": 1,
+      "steroidSkeleton explicitH": 53,
+      "steroidSkeleton lewis": 58,
     };
     for (const [key, count] of crowdingReport(PUBLICATION_STYLE)) {
       expect(count, key).toBe(pinned[key] ?? 0);
+    }
+  });
+
+  it("never puts a derived hydrogen on the far side of a bond from its host", () => {
+    // Decision 134 lets the renderer turn a hydrogen, never carry it past a
+    // bond. A hydrogen across a bond reads as attached to whatever is on the
+    // other side — a methyl's hydrogen inside the ring beside it, which is
+    // what the steroid's C19 drew before this was a rule. Centre to centre,
+    // host to hydrogen against atom to atom, so a stem that slips through the
+    // white between a label and its trimmed bond still counts.
+    expect(molecularFormula(perhydrophenanthrene())).toBe("C14H24");
+    for (const style of PRESETS) {
+      for (const view of [EXPLICIT_H, LEWIS]) {
+        for (const { name, molecule } of rotations()) {
+          for (const hydrogen of hydrogensOf(molecule, style, view)) {
+            const host = modelToPx(style, molecule.atoms[hydrogen.hostAtomId]!.pos);
+            for (const bondId of molecule.bondIds) {
+              const bond = molecule.bonds[bondId]!;
+              if (bond.from === hydrogen.hostAtomId || bond.to === hydrogen.hostAtomId) continue;
+              const a = modelToPx(style, molecule.atoms[bond.from]!.pos);
+              const b = modelToPx(style, molecule.atoms[bond.to]!.pos);
+              expect(
+                crosses(host, hydrogen.centre, a, b),
+                `${name} ${view.kind} ${style.name} ${hydrogen.hostAtomId}:${hydrogen.index} x ${bondId}`,
+              ).toBe(false);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it("keeps a hydrogen beside a stereo bond inside the gap it was fanned into", () => {
+    // At a centre with a wedge or a hash the cyclic order of the substituents
+    // IS the configuration a reader reads, so a derived hydrogen there may
+    // turn only within its own gap — never past one of the host's bonds, and
+    // never into another gap. butan-2-ol, the non-stereocentre with a wedge
+    // and the steroid's four wedged centres are the cases.
+    let seen = 0;
+    for (const style of PRESETS) {
+      for (const view of [EXPLICIT_H, LEWIS]) {
+        for (const { name, molecule } of rotations()) {
+          for (const hydrogen of hydrogensOf(molecule, style, view)) {
+            const hostId = hydrogen.hostAtomId;
+            if (bondsAt(molecule, hostId).every((bond) => bond.stereo === "none")) continue;
+            seen++;
+            const sector = hydrogenFan(molecule, hostId, implicitHydrogenCount(molecule, hostId))[
+              hydrogen.index
+            ]!;
+            // Back to model space, y-up, to compare with chem-core's angles.
+            const host = modelToPx(style, molecule.atoms[hostId]!.pos);
+            const angle = Math.atan2(-(hydrogen.centre.y - host.y), hydrogen.centre.x - host.x);
+            const offset = normalizeAnglePositive(angle - sector.start);
+            expect(offset, `${name} ${view.kind} ${style.name} ${hostId}`).toBeGreaterThan(0);
+            expect(offset, `${name} ${view.kind} ${style.name} ${hostId}`).toBeLessThan(sector.width);
+          }
+        }
+      }
+    }
+    expect(seen).toBeGreaterThan(0);
+  });
+
+  it("draws the same crowded figure twice, byte for byte", () => {
+    // The repair passes are order-dependent by design; what they may not be
+    // is run-dependent. Exported figures are committed and diffed.
+    for (const view of [EXPLICIT_H, LEWIS]) {
+      const mol = steroidSkeleton();
+      expect(serializeScene(buildScene(mol, PUBLICATION_STYLE, view))).toBe(
+        serializeScene(buildScene(steroidSkeleton(), PUBLICATION_STYLE, view)),
+      );
     }
   });
 

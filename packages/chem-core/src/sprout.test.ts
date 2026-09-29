@@ -2,18 +2,23 @@ import { describe, expect, it } from "vitest";
 import { benzene, buildMolecule, linearChain, singleAtom } from "./builders.js";
 import * as M from "./molecule.js";
 import {
+  angularGaps,
+  bondDirections,
   DEFAULT_ANGLE_STEP,
   defaultSproutAngle,
   defaultSproutPosition,
   fanDirections,
+  fanSectors,
+  hydrogenFan,
   sprout,
   sproutDrag,
   sproutTo,
   type SproutTarget,
 } from "./sprout.js";
+import { ringCentroid, ringsAtAtom } from "./rings.js";
 import { rotateAtoms } from "./transform.js";
 import type { AtomId, Molecule } from "./types.js";
-import { valenceIssues } from "./valence.js";
+import { implicitHydrogenCount, valenceIssues } from "./valence.js";
 import {
   angleOf,
   approxEqual,
@@ -461,5 +466,161 @@ describe("fanDirections", () => {
     const once = degrees(fanDirections(bonds, 2));
     expect(degrees(fanDirections(bonds, 2))).toEqual(once);
     expect(degrees(fanDirections([...bonds].reverse(), 2))).toEqual(once);
+  });
+});
+
+describe("fanSectors", () => {
+  const inDegrees = (angle: number): number => Math.round(normalizeAnglePositive(angle) / DEG);
+  const sectorsOf = (mol: Molecule, atomId: AtomId) =>
+    fanSectors(bondDirections(mol, atomId), implicitHydrogenCount(mol, atomId)).map((s) => ({
+      angle: inDegrees(s.angle),
+      start: inDegrees(s.start),
+      width: Math.round(s.width / DEG),
+    }));
+
+  it("bounds each of ethanol's methylene hydrogens by the C–C and C–O bonds", () => {
+    // The methylene's bonds are 120 degrees apart, so both hydrogens share
+    // the one 240-degree gap, and the gap's two edges ARE those bonds: a
+    // hydrogen turned past either edge would sit between a carbon and an
+    // oxygen it was drawn outside of.
+    let methylene: AtomId = "";
+    const mol = buildMolecule((b) => {
+      const c1 = b.atom("C", vec(0, 0));
+      methylene = b.atom("C", vec(Math.cos(30 * DEG), Math.sin(30 * DEG)));
+      const o = b.atom("O", vec(2 * Math.cos(30 * DEG), 0));
+      b.bond(c1, methylene, 1);
+      b.bond(methylene, o, 1);
+    });
+    const sectors = sectorsOf(mol, methylene);
+    expect(sectors).toHaveLength(2);
+    for (const sector of sectors) {
+      // The bond to the oxygen points at 330 degrees and the bond back to C1
+      // at 210, so the open side runs 330 -> 210 through north.
+      expect(sector.start).toBe(330);
+      expect(sector.width).toBe(240);
+    }
+    expect(sectors.map((s) => s.angle)).toEqual([50, 130]);
+  });
+
+  it("gives benzene's hydrogen the exocyclic gap and nothing inside the ring", () => {
+    const mol = benzene();
+    const atomId = mol.atomIds[0]!;
+    const [sector] = sectorsOf(mol, atomId);
+    expect(sector?.width).toBe(240);
+    // The hydrogen is on the bisector, 120 degrees from either ring bond.
+    expect(normalizeAnglePositive((sector!.angle - sector!.start) * DEG) / DEG).toBeCloseTo(120, 9);
+  });
+
+  it("agrees with fanDirections angle for angle", () => {
+    const bonds = [fromPolar(10 * DEG), fromPolar(130 * DEG), fromPolar(250 * DEG)];
+    expect(fanSectors(bonds, 2).map((s) => s.angle)).toEqual(fanDirections(bonds, 2));
+  });
+
+  it("leaves methane's hydrogens a whole turn each, since no bond bounds them", () => {
+    const sectors = fanSectors([], 4);
+    expect(sectors.map((s) => s.width)).toEqual([2 * Math.PI, 2 * Math.PI, 2 * Math.PI, 2 * Math.PI]);
+    for (const sector of sectors) {
+      expect(sector.start + Math.PI).toBeCloseTo(sector.angle, 12);
+    }
+  });
+});
+
+describe("hydrogenFan", () => {
+  /** Decalin's carbon skeleton, flat: two hexagons sharing a vertical bond,
+   *  with the two junction carbons returned by name. */
+  function decalin(): { readonly mol: Molecule; readonly top: AtomId; readonly bottom: AtomId } {
+    let top: AtomId = "";
+    let bottom: AtomId = "";
+    const mol = buildMolecule((b) => {
+      const apothem = Math.cos(30 * DEG);
+      const at = (cx: number, degrees: number): Vec2 =>
+        vec(cx + Math.cos(degrees * DEG), Math.sin(degrees * DEG));
+      // The shared edge is the left ring's 30- and 330-degree vertices, which
+      // are the right ring's 150- and 210-degree ones.
+      const left = [30, 90, 150, 210, 270, 330].map((d) => b.atom("C", at(-apothem, d)));
+      top = left[0]!;
+      bottom = left[5]!;
+      const right = [top, ...[90, 30, 330, 270].map((d) => b.atom("C", at(apothem, d))), bottom];
+      for (const ring of [left, right]) {
+        for (let i = 0; i < 6; i++) {
+          // The shared bond closes the left ring; the right ring must not
+          // draw it a second time.
+          if (ring === right && i === 5) continue;
+          b.bond(ring[i]!, ring[(i + 1) % 6]!, 1);
+        }
+      }
+    });
+    return { mol, top, bottom };
+  }
+
+  it("puts a ring-fusion hydrogen outside both rings, at every rotation", () => {
+    // Each junction has three bonds and three 120-degree gaps, two of them
+    // ring interiors. Which one the bonds alone pick is a tie broken by start
+    // angle, so it depends on how the drawing happens to sit on the page:
+    // square to it the exterior wins, and at six of these nine rotations the
+    // bonds alone put the top junction's hydrogen inside a ring. Nine
+    // rotations, 40 degrees apart, as the renderer's crowding sweep uses.
+    const outside = (mol: Molecule, atomId: AtomId, angle: number): boolean =>
+      ringsAtAtom(mol, atomId).every((index) => {
+        const towards = sub(ringCentroid(mol, index), mol.atoms[atomId]!.pos);
+        return fromPolar(angle).x * towards.x + fromPolar(angle).y * towards.y < 0;
+      });
+    const base = decalin();
+    let bondsAloneWentInside = 0;
+    for (let step = 0; step < 9; step++) {
+      const mol = rotateAtoms(base.mol, base.mol.atomIds, ORIGIN, step * 40 * DEG);
+      for (const junction of [base.top, base.bottom]) {
+        expect(implicitHydrogenCount(mol, junction)).toBe(1);
+        const [sector] = hydrogenFan(mol, junction, 1);
+        expect(outside(mol, junction, sector!.angle), `${junction} at ${step * 40}`).toBe(true);
+        // The gap it may turn in is bounded by the two outer ring bonds, not
+        // by the invented ring directions: 120 degrees wide.
+        expect(sector!.width / DEG).toBeCloseTo(120, 9);
+        const [alone] = fanSectors(bondDirections(mol, junction), 1);
+        if (!outside(mol, junction, alone!.angle)) bondsAloneWentInside++;
+      }
+    }
+    // The sweep reaches the case it is for.
+    expect(bondsAloneWentInside).toBeGreaterThan(0);
+  });
+
+  it("fans a plain ring vertex exactly as the bonds alone would", () => {
+    // Benzene's CH and decalin's CH2s already had their hydrogens in the
+    // exterior gap; counting the interior as occupied must not move them by
+    // so much as an ulp, or every explicit-H golden would re-bless.
+    const ring = benzene();
+    for (const atomId of ring.atomIds) {
+      expect(hydrogenFan(ring, atomId, 1)).toEqual(fanSectors(bondDirections(ring, atomId), 1));
+    }
+    const { mol, top, bottom } = decalin();
+    for (const atomId of mol.atomIds) {
+      if (atomId === top || atomId === bottom) continue;
+      expect(hydrogenFan(mol, atomId, 2)).toEqual(fanSectors(bondDirections(mol, atomId), 2));
+    }
+  });
+
+  it("leaves an acyclic atom's fan alone", () => {
+    const chain = linearChain(3);
+    const middle = chain.atomIds[1]!;
+    expect(hydrogenFan(chain, middle, 2)).toEqual(fanSectors(bondDirections(chain, middle), 2));
+  });
+});
+
+describe("angularGaps", () => {
+  it("lists every gap round a branch carbon, bisectors included", () => {
+    // Isobutane's central carbon, drawn with its three bonds 120 degrees
+    // apart: three gaps, whichever one a fan would pick.
+    const bonds = [fromPolar(90 * DEG), fromPolar(210 * DEG), fromPolar(330 * DEG)];
+    const gaps = angularGaps(bonds);
+    expect(gaps.map((g) => Math.round(normalizeAnglePositive(g.angle) / DEG)).sort((a, b) => a - b)).toEqual([30, 150, 270]);
+    for (const gap of gaps) expect(gap.width / DEG).toBeCloseTo(120, 9);
+  });
+
+  it("is the gap list fanSectors allocates among", () => {
+    const bonds = [fromPolar(10 * DEG), fromPolar(130 * DEG), fromPolar(250 * DEG)];
+    for (const sector of fanSectors(bonds, 2)) {
+      expect(angularGaps(bonds).some((g) => g.start === sector.start && g.width === sector.width)).toBe(true);
+    }
+    expect(angularGaps([])).toEqual([]);
   });
 });

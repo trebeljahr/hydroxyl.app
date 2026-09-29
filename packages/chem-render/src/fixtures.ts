@@ -567,9 +567,10 @@ export function unmergedDropOverlap(): Molecule {
  * and naphthalene's fused vertices carry no hydrogens at all — which is why
  * `hydrogen-separation.test.ts` names this fixture directly.
  *
- * NOT IN `FIXTURES`: it would add a golden per view and join the rotation and
- * hydrogen-crowding sweeps that are about other things. The contact sheet
- * gives it its own section.
+ * NOT IN `FIXTURES`: it would add a golden per view and join the rotation
+ * sweeps that are about other things. The contact sheet gives it its own
+ * section, and the explicit-H crowding sweep in `representations.test.ts`
+ * names it directly, beside `perhydrophenanthrene`.
  */
 export function steroidSkeletonWithLocants(
   options: { readonly reverseBonds?: boolean } = {},
@@ -667,6 +668,63 @@ export function steroidSkeletonWithLocants(
 /** The molecule of `steroidSkeletonWithLocants`, for callers that want only it. */
 export function steroidSkeleton(): Molecule {
   return steroidSkeletonWithLocants().molecule;
+}
+
+/**
+ * Perhydrophenanthrene, C14H24: phenanthrene's three rings with every carbon
+ * saturated, drawn flat, with no wedge anywhere.
+ *
+ * THE sp3 FUSED-RING CROWDING CASE. Nothing aromatic can stand in for it: an
+ * aromatic junction carries no hydrogen, and a benzo CH has the whole outside
+ * of its ring to fan into. Here every carbon carries one or two. The four
+ * junction CHs each have three gaps of 120 degrees, two of them ring insides,
+ * and the CH2s either side of a junction fan into the same pockets. It is the
+ * steroid's rings A, B and C without its methyls, hydroxyls and wedges, so a
+ * crowding count on it is about the ring system alone.
+ *
+ * NAMED FOR WHAT IT DRAWS. Its four junction centres carry no wedge, so the
+ * drawing asserts no configuration at any of them, and neither does the name.
+ *
+ * NOT IN `FIXTURES`, for the steroid's reason: it would add a golden per view
+ * and join sweeps about other things. The explicit-H crowding sweep in
+ * `representations.test.ts` and `hydrogen-separation.test.ts` name it
+ * directly.
+ */
+export function perhydrophenanthrene(): Molecule {
+  return buildMolecule((b) => {
+    const ringA: Vec2 = ORIGIN;
+    const ringB: Vec2 = { x: Math.sqrt(3), y: 0 };
+    const ringC: Vec2 = { x: 1.5 * Math.sqrt(3), y: 1.5 };
+    const carbon = (centre: Vec2, degrees: number): AtomId => b.atom("C", step(centre, degrees));
+    // Each ring's vertices at 30, 90 ... 330 degrees round its centre. A
+    // shared vertex is minted ONCE, by the first ring that has it, so a
+    // fusion atom is not two points a few ulps apart: ring B's 150 and 210
+    // are ring A's 30 and 330, and ring C's 210 and 270 are ring B's 90 and
+    // 30.
+    const a = [30, 90, 150, 210, 270, 330].map((degrees) => carbon(ringA, degrees));
+    const b30 = carbon(ringB, 30);
+    const b90 = carbon(ringB, 90);
+    const bRing = [b30, b90, a[0]!, a[5]!, carbon(ringB, 270), carbon(ringB, 330)];
+    const cRing = [
+      carbon(ringC, 30),
+      carbon(ringC, 90),
+      carbon(ringC, 150),
+      b90,
+      b30,
+      carbon(ringC, 330),
+    ];
+    // Round each ring, skipping the edge a fusion already drew.
+    const drawn = new Set<string>();
+    for (const ring of [a, bRing, cRing]) {
+      ring.forEach((from, i) => {
+        const to = ring[(i + 1) % ring.length]!;
+        const key = from < to ? `${from}-${to}` : `${to}-${from}`;
+        if (drawn.has(key)) return;
+        drawn.add(key);
+        b.bond(from, to, 1);
+      });
+    }
+  });
 }
 
 export interface Fixture {
