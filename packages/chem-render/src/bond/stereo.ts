@@ -11,9 +11,15 @@
  * a bond, an atom id or any id list: turning the bond round is `flipBond`'s
  * job, and the depiction inverts because `axis.a` moved. That is the whole of
  * "flipBond inverts the depiction" — there is no second rule to keep in step.
- * The one exception is a style's, not a bond's: a house style that draws a
- * hashed wedge wide at the stereocentre (decision 177) hands the ladder
- * `reversedAxis(axis)`, and nothing else changes.
+ *
+ * WHICH END OF A HASH IS NARROW IS A STYLE SWITCH (decision 177), and the
+ * DEFAULT, in both presets, is narrow at the stereocentre: IUPAC 2006
+ * (Brecher, Pure Appl. Chem. 78, 1897, ST-0.3) reads a hashed wedge "from the
+ * narrow end to the wide end", the wide end further from the viewer, as a
+ * solid wedge is read. A house style that draws the perspective convention
+ * instead (`RenderStyle.hashedWedgeNarrowEnd: "substituent"`) hands the
+ * ladder `reversedAxis(axis)`, and nothing else changes: what the mark states
+ * is chem-core's, at its named narrow end.
  *
  * EVERY MARK IS BUILT ON THE ALREADY-TRIMMED `BondAxis`, so it inherits the
  * label clearance the plain line gets for free. The wedge's wide end is the
