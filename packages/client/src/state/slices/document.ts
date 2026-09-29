@@ -398,6 +398,18 @@ export function createDocumentSlice(
         });
       },
 
+      removeSchemeAnnotations(label, ids) {
+        const before = snapshot();
+        const doomed = new Set(ids);
+        const annotations = before.document.annotations.filter((a) => !doomed.has(a.id));
+        if (annotations.length === before.document.annotations.length) return;
+        const edited: SketchDocument = { ...before.document, annotations };
+        commit(label, {
+          document: touchDocument(edited, options.now()),
+          selection: pruneSelection(before.selection, edited.molecule, annotations),
+        });
+      },
+
       setStylePreset(preset) {
         const before = get().document;
         if (before.stylePreset === preset) return;

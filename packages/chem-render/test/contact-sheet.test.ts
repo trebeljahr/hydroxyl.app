@@ -15,12 +15,13 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 
 import { afterAll, describe, expect, it } from "vitest";
 
-import { FIXTURES } from "../src/fixtures.js";
+import { FIXTURES, MECHANISM_FIXTURES } from "../src/fixtures.js";
 import { VIEW_KINDS } from "../src/representation.js";
 
 import {
   ANNOTATED_SECTION_NAME,
   contactSheetPath,
+  MECHANISM_SECTION_PREFIX,
   contactSheetUrl,
   writeContactSheet,
 } from "./contact-sheet.js";
@@ -59,21 +60,37 @@ describe("contact sheet", () => {
       //
       // The fused-ring annotation section adds two more skeletal rows of its
       // own: the bare steroid, and the steroid with descriptors and locants.
+      // Each mechanism section adds a skeletal row and a Lewis row.
       const rows = html.split(`class="kind">${kind}`).length - 1;
       expect(rows, kind).toBe(
-        FIXTURES.length * (kind === "skeletal" ? 3 : 1) + (kind === "skeletal" ? 2 : 0),
+        FIXTURES.length * (kind === "skeletal" ? 3 : 1) +
+          (kind === "skeletal" ? 2 : 0) +
+          (kind === "skeletal" || kind === "lewis" ? MECHANISM_FIXTURES.length : 0),
       );
     }
     expect(html).toContain("<em>kekule alternation</em>");
     expect(html).toContain("<em>stereo descriptors</em>");
     const cells = html.split('class="cell"').length - 1;
-    expect(cells).toBe(FIXTURES.length * (VIEW_KINDS.length + 2) * 2 + 2 * 2);
+    expect(cells).toBe(
+      FIXTURES.length * (VIEW_KINDS.length + 2) * 2 + 2 * 2 + MECHANISM_FIXTURES.length * 2 * 2,
+    );
   });
 
   it("carries the fused-ring annotation section, locants drawn", () => {
     expect(html).toContain(`<h2>${ANNOTATED_SECTION_NAME}</h2>`);
     expect(html).toContain("<em>stereo descriptors + locants</em>");
     expect(html).toMatch(/id="atom:a\d+:locant"/);
+  });
+
+  it("carries a section per mechanism, its curly arrows drawn as shaft and head", () => {
+    for (const fixture of MECHANISM_FIXTURES) {
+      expect(html).toContain(`<h2>${MECHANISM_SECTION_PREFIX}${fixture.name}</h2>`);
+      for (const arrow of fixture.annotations) {
+        expect(html).toContain(`id="annotation:${arrow.id}:shaft"`);
+        expect(html).toContain(`id="annotation:${arrow.id}:head"`);
+      }
+    }
+    expect(html).toContain("<em>curly arrows from the drawn lone pairs</em>");
   });
 
   it("embeds the SVG rather than linking it", () => {

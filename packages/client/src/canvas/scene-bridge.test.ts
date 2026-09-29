@@ -15,6 +15,7 @@ import { benzene } from "@starter/chem-core";
 import {
   PUBLICATION_STYLE,
   SCREEN_STYLE,
+  cyanideAdditionToAcetone,
   isStructural,
 } from "@starter/chem-render";
 import {
@@ -34,6 +35,7 @@ import { describe, expect, it } from "vitest";
 import { fixtureDocument } from "./fixture";
 import {
   buildDocumentScene,
+  canvasAnnotatedScene,
   renderStyleFor,
   toRenderRepresentation,
 } from "./scene-bridge";
@@ -137,6 +139,35 @@ describe("toRenderRepresentation", () => {
       "showStereoBonds",
       "showStereoDescriptors",
     ]);
+  });
+});
+
+describe("the document's curly arrows", () => {
+  const mechanism = cyanideAdditionToAcetone();
+  const doc = createDocument({
+    molecule: mechanism.molecule,
+    annotations: mechanism.annotations,
+    panels: [createPanel("skeletal"), createPanel("sumFormula")],
+    now: "2024-01-01T00:00:00.000Z",
+  });
+  const arrowIds = (primitives: readonly { readonly id: string }[]): string[] =>
+    primitives.map((p) => p.id).filter((id) => id.startsWith("annotation:"));
+
+  it("are drawn on the canvas, shaft and head, from the stored annotations", () => {
+    const built = canvasAnnotatedScene(doc, null);
+    expect(arrowIds(built.scene.primitives)).toEqual([
+      "annotation:ann_1:shaft",
+      "annotation:ann_1:head",
+      "annotation:ann_2:shaft",
+      "annotation:ann_2:head",
+    ]);
+    expect(built.schemeAnnotations.curlyArrows.map((a) => a.annotationId)).toEqual(["ann_1", "ann_2"]);
+    expect(arrowIds(buildDocumentScene(doc).primitives)).toHaveLength(4);
+  });
+
+  it("drop out of a panel that places no atom for them", () => {
+    const text = doc.panels[1]!;
+    expect(arrowIds(buildDocumentScene(doc, text.id).primitives)).toEqual([]);
   });
 });
 

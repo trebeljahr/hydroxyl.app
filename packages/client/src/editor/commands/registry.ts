@@ -298,6 +298,15 @@ function hasSelection(state: EditorState): boolean {
   return state.selection.atomIds.length > 0 || state.selection.bondIds.length > 0;
 }
 
+/**
+ * `hasSelection`, plus a selected scheme annotation: what Delete can act on.
+ * Only Delete widens so far; copy, cut and select-all stay molecule-only until
+ * the arrow tools give an annotation a clipboard form.
+ */
+function hasDeletableSelection(state: EditorState): boolean {
+  return hasSelection(state) || state.selection.annotationIds.length > 0;
+}
+
 function selectedBondIds(state: EditorState): readonly string[] {
   return state.selection.bondIds;
 }
@@ -886,20 +895,27 @@ const EDIT_COMMANDS: readonly Command[] = [
     keywords: ["delete", "erase", "remove", "backspace"],
     shortcut: "Delete",
     group: "edit",
-    enabled: hasSelection,
-    disabledReason: whenOff(hasSelection, REASONS.nothingSelected),
+    enabled: hasDeletableSelection,
+    disabledReason: whenOff(hasDeletableSelection, REASONS.nothingSelected),
     run: (store) => {
       const state = store.getState();
-      const { atomIds, bondIds } = state.selection;
-      if (atomIds.length === 0 && bondIds.length === 0) return;
+      const { atomIds, bondIds, annotationIds } = state.selection;
+      if (atomIds.length === 0 && bondIds.length === 0 && annotationIds.length === 0) return;
       state.transact("Delete selection", () => {
+        // A selected arrow goes in the same entry as the atoms: one undo
+        // brings the whole selection back.
+        if (annotationIds.length > 0) {
+          state.removeSchemeAnnotations("Delete selection", annotationIds);
+        }
         // Bonds first: removing an atom takes its bonds with it, so a bond id
         // gathered before the atom removal may already be gone by the time it
         // is reached. `removeBonds` ignores ids it does not have, but doing
         // the narrower edit first keeps the intent legible in the diff.
-        state.applyMoleculeEdit("Delete selection", (mol) =>
-          guardedOps.removeAtoms(guardedOps.removeBonds(mol, bondIds), atomIds),
-        );
+        if (atomIds.length > 0 || bondIds.length > 0) {
+          state.applyMoleculeEdit("Delete selection", (mol) =>
+            guardedOps.removeAtoms(guardedOps.removeBonds(mol, bondIds), atomIds),
+          );
+        }
         state.setSelection(EMPTY_SELECTION);
       });
     },
@@ -911,7 +927,7 @@ const EDIT_COMMANDS: readonly Command[] = [
     shortcut: "Backspace",
     group: "edit",
     hidden: true,
-    enabled: hasSelection,
+    enabled: hasDeletableSelection,
     run: (store) => {
       runCommand(store, "edit.delete");
     },

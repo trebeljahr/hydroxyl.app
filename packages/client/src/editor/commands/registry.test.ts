@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { ELEMENTS, alphaAminoAcids, benzene, buildMolecule, elementCounts, readMolblock } from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
 import { dictionaryEntryById } from "@starter/chem-core/dictionary";
-import { SCREEN_STYLE, serializeFigure } from "@starter/chem-render";
+import { SCREEN_STYLE, cyanideAdditionToAcetone, serializeFigure } from "@starter/chem-render";
 import { createDocument } from "@starter/shared";
 import type { StylePresetId } from "@starter/shared";
 
@@ -145,6 +145,45 @@ describe("edit commands", () => {
     store.getState().undo();
     expect(store.getState().document.molecule.atomIds).toHaveLength(6);
     expect(store.getState().selection.atomIds).toEqual(["a1", "a2"]);
+  });
+
+  it("deletes a selected curly arrow, alone or with atoms, as ONE history entry", () => {
+    const mechanism = cyanideAdditionToAcetone();
+    const store = createEditorStore({
+      document: createDocument({
+        molecule: mechanism.molecule,
+        annotations: mechanism.annotations,
+        now: "2024-01-01T00:00:00.000Z",
+      }),
+      viewportSize: { width: 800, height: 600 },
+      now: () => "2024-01-01T00:00:00.000Z",
+    });
+    const annotationIds = () => store.getState().document.annotations.map((a) => a.id);
+    const past = () => store.getState().history.past.length;
+
+    store.getState().setSelection({ atomIds: [], bondIds: [], annotationIds: ["ann_2"] });
+    expect(commandById("edit.delete").enabled(store.getState())).toBe(true);
+    const before = past();
+    commandById("edit.delete").run(store);
+    expect(annotationIds()).toEqual(["ann_1"]);
+    expect(store.getState().document.molecule).toBe(mechanism.molecule);
+    expect(store.getState().selection.annotationIds).toEqual([]);
+    expect(past()).toBe(before + 1);
+
+    // An arrow and an unrelated atom together: still one entry, one undo.
+    store.getState().setSelection({
+      atomIds: [mechanism.oxygen],
+      bondIds: [],
+      annotationIds: ["ann_1"],
+    });
+    commandById("edit.delete").run(store);
+    expect(annotationIds()).toEqual([]);
+    expect(store.getState().document.molecule.atomIds).not.toContain(mechanism.oxygen);
+    expect(past()).toBe(before + 2);
+    store.getState().undo();
+    expect(annotationIds()).toEqual(["ann_1"]);
+    expect(store.getState().document.molecule.atomIds).toContain(mechanism.oxygen);
+    expect(store.getState().selection.annotationIds).toEqual(["ann_1"]);
   });
 
   it("copies a fragment and pastes it offset, selecting the copies", () => {

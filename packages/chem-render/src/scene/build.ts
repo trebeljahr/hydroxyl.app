@@ -27,6 +27,17 @@ import {
 import type { FormulaPart } from "@starter/chem-core";
 import type { AtomId, BondId, DerivedNode, Molecule, ProjectedLayout } from "@starter/chem-core";
 
+import {
+  drawSchemeAnnotations,
+  EMPTY_SCHEME_ANNOTATION_LAYOUT,
+  schemeAnnotationContext,
+  unplacedSchemeAnnotations,
+} from "../annotation/layer.js";
+import type {
+  SchemeAnnotationContext,
+  SchemeAnnotationLayout,
+  SchemeLayerSite,
+} from "../annotation/layer.js";
 import { aromaticCircleId, inscribedCircle } from "../bond/aromatic.js";
 import {
   BOND_GEOMETRY,
@@ -85,6 +96,7 @@ import type {
   PlacedTextRun,
 } from "../label/placement.js";
 import { isStructural } from "../representation.js";
+import type { SchemeAnnotation } from "../scheme/annotation.js";
 import type {
   Representation,
   StructuralRepresentation,
@@ -139,7 +151,9 @@ import type {
  * together in decision 17's priority order. It is LAST because it has to see
  * everything else first: an annotation looks for the hole nothing else wanted.
  *
- * `options` carries what the molecule itself does not: today, the locants.
+ * `options` carries what the molecule itself does not: the locants, a
+ * projection's layout, and the document's stored scheme annotations, whose
+ * curly arrows are drawn LAST, on top of everything (annotation/layer.ts).
  * Omitting it changes nothing about any scene built before it existed.
  */
 export function buildScene(
@@ -156,6 +170,12 @@ export interface AnnotatedScene {
   readonly scene: RenderScene;
   /** `EMPTY_ANNOTATION_LAYOUT` for a text view, or when nothing is annotated. */
   readonly annotations: AnnotationLayout;
+  /**
+   * The stored scheme annotations this build drew and the ones it could not
+   * place, with each drawn arrow's findings. A text view places no atom, so
+   * every arrow is unresolved there.
+   */
+  readonly schemeAnnotations: SchemeAnnotationLayout;
 }
 
 /**
@@ -173,7 +193,11 @@ export function buildAnnotatedScene(
 ): AnnotatedScene {
   const built = isStructural(representation)
     ? buildStructural(mol, style, representation, options)
-    : { primitives: [buildFormulaRun(mol, style, representation.kind)], annotations: EMPTY_ANNOTATION_LAYOUT };
+    : {
+        primitives: [buildFormulaRun(mol, style, representation.kind)],
+        annotations: EMPTY_ANNOTATION_LAYOUT,
+        schemeAnnotations: unplacedSchemeAnnotations(options?.schemeAnnotations),
+      };
   const { primitives } = built;
   return {
     scene: {
@@ -183,6 +207,7 @@ export function buildAnnotatedScene(
       representation,
     },
     annotations: built.annotations,
+    schemeAnnotations: built.schemeAnnotations,
   };
 }
 
@@ -215,6 +240,14 @@ export interface SceneBuildOptions {
    * re-poses. Ignored by the two text views, which have no coordinates.
    */
   readonly layout?: ProjectedLayout;
+  /**
+   * The document's stored scheme annotations. Each curly arrow whose every
+   * anchor this panel places is drawn on top of the structure, resolved
+   * against THIS panel's geometry — a projection's layout when there is one —
+   * and the others are listed as unresolved (annotation/layer.ts). The other
+   * annotation kinds are not drawn yet.
+   */
+  readonly schemeAnnotations?: readonly SchemeAnnotation[];
 }
 
 /**
@@ -257,6 +290,26 @@ export function annotationObstacles(
 ): AnnotationContext | undefined {
   if (!isStructural(representation)) return undefined;
   return buildStructural(mol, style, representation, options).context;
+}
+
+/**
+ * What a scheme annotation sees of this panel: which anchors it places, the
+ * injected geometry an arrow resolves against, and the labels and bonds an
+ * arrow must not cross. Undefined for a text view.
+ *
+ * For the drawing gesture: it is what `defaultCurlyArrowShape` takes to choose
+ * a new arrow's bulge at CREATION (and what a hit-test or a reshape handle can
+ * resolve an arrow's ends with). Diagnostic like `annotationObstacles`: it
+ * rebuilds the structural scene, so its geometry is the drawing's exactly.
+ */
+export function schemeAnchorContext(
+  mol: Molecule,
+  style: RenderStyle,
+  representation: Representation,
+  options?: SceneBuildOptions,
+): SchemeAnnotationContext | undefined {
+  if (!isStructural(representation)) return undefined;
+  return buildStructural(mol, style, representation, options).schemeContext();
 }
 
 /**
@@ -367,6 +420,52 @@ function buildStructural(
   readonly primitives: readonly ScenePrimitive[];
   readonly annotations: AnnotationLayout;
   readonly context?: AnnotationContext;
+  readonly schemeAnnotations: SchemeAnnotationLayout;
+  /** Built on first call, from the primitives BEFORE any arrow was added. */
+  readonly schemeContext: () => SchemeAnnotationContext;
+} {
+  const built = buildMolecularLayers(source, style, representation, options);
+  // The scheme layer goes LAST and asks only what the layers above drew: an
+  // arrow resolves against this panel's centres and labels, and a projection
+  // draws no model frame (the scheme contract's `drawsModelFrame: false`).
+  // Lazy, because nearly every build — each frame of a drag — has no arrow to
+  // draw and should not pay for the placement sets and obstacle lists.
+  let context: SchemeAnnotationContext | undefined;
+  const schemeContext = (): SchemeAnnotationContext =>
+    (context ??= schemeAnnotationContext(
+      built.primitives,
+      source,
+      built.site(),
+      options?.layout === undefined,
+    ));
+  const stored = options?.schemeAnnotations;
+  const schemeAnnotations =
+    stored === undefined || stored.length === 0
+      ? EMPTY_SCHEME_ANNOTATION_LAYOUT
+      : drawSchemeAnnotations(built.primitives, stored, schemeContext(), style);
+  return {
+    primitives: built.primitives,
+    annotations: built.annotations,
+    ...(built.context === undefined ? {} : { context: built.context }),
+    schemeAnnotations,
+    schemeContext,
+  };
+}
+
+/**
+ * The molecule itself: bonds, rings, labels, hydrogens and the label
+ * annotation pass, with the geometry the scheme layer resolves against.
+ */
+function buildMolecularLayers(
+  source: Molecule,
+  style: RenderStyle,
+  representation: StructuralRepresentation,
+  options: SceneBuildOptions | undefined,
+): {
+  readonly primitives: ScenePrimitive[];
+  readonly annotations: AnnotationLayout;
+  readonly context?: AnnotationContext;
+  readonly site: () => SchemeLayerSite;
 } {
   const primitives: ScenePrimitive[] = [];
 
@@ -407,7 +506,12 @@ function buildStructural(
   // corridor alone lets a locant graze the second line of a ring bond.
   const drawn: AnnotationSegment[] = [];
 
+  // Where each bond's own strokes start in `drawn`, for the scheme layer: an
+  // arrow crossing the second line of a C=O crosses the bond even where it
+  // misses the axis. Offsets only; the slices are cut if an arrow asks.
+  const bondLineStarts: number[] = [];
   for (const bondId of mol.bondIds) {
+    bondLineStarts.push(drawn.length);
     pushBondPrimitives(
       primitives,
       mol,
@@ -421,6 +525,7 @@ function buildStructural(
       drawn,
     );
   }
+  const bondLinesEnd = drawn.length;
 
   primitives.push(...circles.primitives);
 
@@ -560,6 +665,47 @@ function buildStructural(
   const projectedHydrogens =
     drawing === undefined ? [] : pushProjectedHydrogens(primitives, style, drawing, centres, placements, drawn);
 
+  // What a scheme annotation resolves against, gathered here so every return
+  // below carries it: this panel's centres and labels, and its bonds as drawn.
+  // A thunk: `drawn` only grows past `bondLinesEnd`, so the slices are the
+  // same whenever it runs.
+  const site = (): SchemeLayerSite => {
+    const bondLines = new Map<BondId, readonly AnnotationSegment[]>();
+    mol.bondIds.forEach((bondId, index) => {
+      bondLines.set(
+        bondId,
+        drawn.slice(bondLineStarts[index]!, bondLineStarts[index + 1] ?? bondLinesEnd),
+      );
+    });
+    return {
+      geometry: mol,
+      centres,
+      placements,
+      hydrogenLabels: [
+        ...hydrogens.map((h) => ({ atomId: h.hostAtomId, obstacles: h.placement.obstacles })),
+        ...projectedHydrogens.map((p) => ({
+          atomId: drawing?.hydrogens.find((node) => node.id === p.atomId)?.host ?? p.atomId,
+          obstacles: p.obstacles,
+        })),
+      ],
+      bonds: [...corridors].flatMap(([bondId, corridor]) => {
+        const bond = Object.hasOwn(mol.bonds, bondId) ? mol.bonds[bondId] : undefined;
+        return bond === undefined
+          ? []
+          : [
+              {
+                bondId,
+                a: corridor.a,
+                b: corridor.b,
+                from: bond.from,
+                to: bond.to,
+                lines: bondLines.get(bondId) ?? [],
+              },
+            ];
+      }),
+    };
+  };
+
   // Chemistry from the SOURCE molecule: a descriptor is the configuration's,
   // which a projection re-poses and never changes; positions from `centres`.
   const { requests, prefixText } = annotationRequests(
@@ -577,7 +723,7 @@ function buildStructural(
   // that drops the collection back off it — `wedgelessStereoGroupAtoms` in
   // chem-core is what the export dialog warns from.)
   if (requests.length === 0 && prefixText === undefined) {
-    return { primitives, annotations: EMPTY_ANNOTATION_LAYOUT };
+    return { primitives, annotations: EMPTY_ANNOTATION_LAYOUT, site };
   }
 
   const obstacles: LabelObstacle[] = [];
@@ -671,7 +817,7 @@ function buildStructural(
       ? requests
       : [...requests, structurePrefixRequest(prefixText, ink)];
   if (placementRequests.length === 0) {
-    return { primitives, annotations: EMPTY_ANNOTATION_LAYOUT, context };
+    return { primitives, annotations: EMPTY_ANNOTATION_LAYOUT, context, site };
   }
   const annotations = placeAnnotations(placementRequests, context);
 
@@ -696,7 +842,7 @@ function buildStructural(
     primitives.push(run);
   }
 
-  return { primitives, annotations, context };
+  return { primitives, annotations, context, site };
 }
 
 /**

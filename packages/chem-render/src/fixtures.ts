@@ -37,6 +37,9 @@ import {
 } from "@starter/chem-core";
 import type { AtomId, BondId, Molecule, Vec2 } from "@starter/chem-core";
 
+import { assembleSchemeAnnotation, schemeAnnotationId } from "./scheme/annotation.js";
+import type { CurlyArrowAnnotation } from "./scheme/annotation.js";
+
 /** One unit-length step from `from`, at `degrees` counter-clockwise from +x. */
 function step(from: Vec2, degrees: number): Vec2 {
   return add(from, fromPolar(degrees * DEG, 1));
@@ -712,3 +715,164 @@ export const FIXTURES: readonly Fixture[] = Object.freeze([
   }),
 ]);
 
+
+// ---------------------------------------------------------------------------
+// Mechanisms: molecules with the curly arrows a textbook draws on them
+// ---------------------------------------------------------------------------
+
+/**
+ * A molecule and the curly arrows drawn on it, as a document would hold them.
+ *
+ * Kept OUT of `FIXTURES`: the arrows are a document field the scene takes as
+ * an option (`SceneBuildOptions.schemeAnnotations`), so these get a contact
+ * sheet section and goldens of their own rather than riding along with every
+ * plain molecule. The bulges are the stored shapes, chosen once as an author
+ * would and pinned: `test/curly-arrows.test.ts` asserts each draws clear —
+ * no label or bond crossed — at both presets and in both views the sheet
+ * shows, which is what `defaultCurlyArrowShape` promises a NEW arrow.
+ */
+export interface MechanismFixture {
+  readonly name: string;
+  readonly molecule: Molecule;
+  readonly annotations: readonly CurlyArrowAnnotation[];
+}
+
+function curlyArrow(
+  n: number,
+  electrons: CurlyArrowAnnotation["electrons"],
+  source: CurlyArrowAnnotation["source"],
+  sink: CurlyArrowAnnotation["sink"],
+  bulge: number,
+  skew = 0,
+): CurlyArrowAnnotation {
+  const arrow = assembleSchemeAnnotation({
+    id: schemeAnnotationId(n),
+    kind: "curlyArrow",
+    electrons,
+    source,
+    sink,
+    bulge,
+    skew,
+  });
+  return arrow as CurlyArrowAnnotation;
+}
+
+/**
+ * Cyanide adding to acetone: the carbonyl addition every mechanism course
+ * starts with. Two double-barbed arrows — the cyanide carbon's lone pair into
+ * the carbonyl carbon (an ATOM sink), and the C=O pi pair up onto the oxygen
+ * (a BOND source, a LONE-PAIR sink).
+ *
+ * Acetone is drawn C=O up with its methyls level; cyanide stands below the
+ * carbonyl carbon, C-N pointing down, the Bürgi-Dunitz side. The first arrow
+ * rises from the cyanide carbon and bows WEST — positive bulge, LEFT of
+ * tail-to-head in y-up model space — and the second curls EAST off the C=O
+ * onto the oxygen: negative bulge, right of its upward chord.
+ * That makes this the fixture the y-flip test reads handedness off: a
+ * perpendicular taken in the wrong space bows the first arrow down through
+ * the methyl and the second into the cyanide.
+ */
+export function cyanideAdditionToAcetone(): MechanismFixture & {
+  readonly carbonylCarbon: AtomId;
+  readonly oxygen: AtomId;
+  readonly carbonyl: BondId;
+  readonly cyanideCarbon: AtomId;
+} {
+  let carbonylCarbon = "";
+  let oxygen = "";
+  let carbonyl = "";
+  let cyanideCarbon = "";
+  // chem-core's own `acetoneAndCyanide` (mechanism.test.ts), atom for atom,
+  // so the arrows drawn here are the ones `applyArrows` is tested on.
+  const molecule = buildMolecule((b) => {
+    const alpha = b.atom("C", { x: -1, y: 0 });
+    carbonylCarbon = b.atom("C", ORIGIN);
+    b.bond(alpha, carbonylCarbon, 1);
+    oxygen = b.atom("O", { x: 0, y: 1 });
+    carbonyl = b.bond(carbonylCarbon, oxygen, 2);
+    b.bond(carbonylCarbon, b.atom("C", { x: 1, y: 0 }), 1);
+    cyanideCarbon = b.atom("C", { x: 0, y: -2 }, { charge: -1 });
+    b.bond(cyanideCarbon, b.atom("N", { x: 0, y: -3 }), 3);
+  });
+  return {
+    name: "cyanideAdditionToAcetone",
+    molecule,
+    annotations: [
+      curlyArrow(1, "pair", { kind: "lonePair", atomId: cyanideCarbon }, { kind: "atom", atomId: carbonylCarbon }, 0.25),
+      curlyArrow(2, "pair", { kind: "bond", bondId: carbonyl }, { kind: "lonePair", atomId: oxygen }, -0.7),
+    ],
+    carbonylCarbon,
+    oxygen,
+    carbonyl,
+    cyanideCarbon,
+  };
+}
+
+/**
+ * Acetate's two resonance forms, the arrows that interconvert them: the
+ * alkoxide oxygen's lone pair into the C-O bond (a BOND sink, decision 172's
+ * case: aimed at the bond's midpoint, stopped at the double-bond gap) and the
+ * C=O pi pair onto the other oxygen.
+ */
+export function acetateResonance(): MechanismFixture & {
+  readonly alkoxide: AtomId;
+  readonly singleCO: BondId;
+} {
+  let alkoxide = "";
+  let singleCO = "";
+  let doubleCO = "";
+  let carbonylOxygen = "";
+  const molecule = buildMolecule((b) => {
+    const methyl = b.atom("C", ORIGIN);
+    const carboxylPos = step(ORIGIN, 30);
+    const carboxyl = b.atom("C", carboxylPos);
+    b.bond(methyl, carboxyl, 1);
+    carbonylOxygen = b.atom("O", step(carboxylPos, 90));
+    doubleCO = b.bond(carboxyl, carbonylOxygen, 2);
+    alkoxide = b.atom("O", step(carboxylPos, -30), { charge: -1 });
+    singleCO = b.bond(carboxyl, alkoxide, 1);
+  });
+  return {
+    name: "acetateResonance",
+    molecule,
+    annotations: [
+      curlyArrow(1, "pair", { kind: "lonePair", atomId: alkoxide }, { kind: "bond", bondId: singleCO }, -0.7),
+      curlyArrow(2, "pair", { kind: "bond", bondId: doubleCO }, { kind: "atom", atomId: carbonylOxygen }, 0.7),
+    ],
+    alkoxide,
+    singleCO,
+  };
+}
+
+/**
+ * Homolysis of bromine: two single-barbed fishhooks from the Br-Br bond, one
+ * onto each bromine. Each is an arrow from a bond to one of its OWN ends —
+ * the short-chord case, half a bond long with a wide "Br" at the head — so it
+ * is where the head-only fallback would show if a stored bulge left no room.
+ */
+export function bromineHomolysis(): MechanismFixture & { readonly bond: BondId } {
+  let bond = "";
+  let left = "";
+  let right = "";
+  const molecule = buildMolecule((b) => {
+    left = b.atom("Br", ORIGIN);
+    right = b.atom("Br", step(ORIGIN, 0));
+    bond = b.bond(left, right, 1);
+  });
+  return {
+    name: "bromineHomolysis",
+    molecule,
+    annotations: [
+      curlyArrow(1, "single", { kind: "bond", bondId: bond }, { kind: "atom", atomId: left }, -0.7),
+      curlyArrow(2, "single", { kind: "bond", bondId: bond }, { kind: "atom", atomId: right }, 0.7),
+    ],
+    bond,
+  };
+}
+
+/** The mechanism fixtures, in the order the contact sheet shows them. */
+export const MECHANISM_FIXTURES: readonly MechanismFixture[] = Object.freeze([
+  cyanideAdditionToAcetone(),
+  acetateResonance(),
+  bromineHomolysis(),
+]);

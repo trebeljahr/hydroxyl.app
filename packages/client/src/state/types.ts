@@ -276,6 +276,12 @@ export interface DocumentSlice {
    */
   loadDocument(document: SketchDocument): void;
   applyMoleculeEdit(label: string, edit: MoleculeEdit): void;
+  /**
+   * Removes stored scheme annotations — curly arrows today — by id, as one
+   * undo entry, and drops them from the selection in the same entry. Ids the
+   * document does not hold are ignored; when none is held nothing is pushed.
+   */
+  removeSchemeAnnotations(label: string, ids: readonly SchemeAnnotationId[]): void;
   setStylePreset(preset: StylePresetId): void;
   setDocumentTitle(title: string): void;
   /**

@@ -28,6 +28,7 @@ import {
   dimethylSulfone,
   ethanol,
   FIXTURES,
+  MECHANISM_FIXTURES,
   naphthalene,
   trans2Butene,
   wedgeOnNonStereocentre,
@@ -230,4 +231,29 @@ describe("golden SVG", () => {
     );
     await expectMatchesGolden(svg, "acetate-sumFormula-publication.svg");
   });
+
+  // Curly arrows: shaft and head as two primitives, sourced to the stored
+  // annotation. Skeletal at both presets freezes the chord-frame curve and
+  // the head's line-width proportions; Lewis at Publication freezes a tail
+  // leaving from a drawn lone pair.
+  for (const fixture of MECHANISM_FIXTURES) {
+    for (const preset of PRESETS) {
+      it(`renders ${fixture.name}'s curly arrows skeletal in the ${preset} style`, async () => {
+        const svg = serializeScene(
+          buildScene(fixture.molecule, RENDER_STYLES[preset], representation("skeletal"), {
+            schemeAnnotations: fixture.annotations,
+          }),
+        );
+        await expectMatchesGolden(svg, `${fixture.name}-curly-arrows-skeletal-${preset}.svg`);
+      });
+    }
+    it(`renders ${fixture.name}'s curly arrows from its drawn lone pairs`, async () => {
+      const svg = serializeScene(
+        buildScene(fixture.molecule, RENDER_STYLES.publication, representation("lewis"), {
+          schemeAnnotations: fixture.annotations,
+        }),
+      );
+      await expectMatchesGolden(svg, `${fixture.name}-curly-arrows-lewis-publication.svg`);
+    });
+  }
 });

@@ -29,7 +29,8 @@
  * `data-atom-id` / `data-bond-id`, which is what the editor's DOM contract and
  * the e2e specs select on. If you arrived here grepping for one spelling and
  * found the other: they are two names for the same back-reference, the
- * exported file uses the short pair and the live canvas the long pair, and
+ * exported file uses the short pair and the live canvas the long pair (and
+ * likewise `data-annotation` / `data-annotation-id` for a curly arrow), and
  * `data-decoration` is common to both.
  */
 
@@ -66,6 +67,7 @@ interface SourceAttrs {
   readonly "data-hydrogen-index"?: string;
   readonly "data-projected-node"?: string;
   readonly "data-projected-atom-ids"?: string;
+  readonly "data-annotation-id"?: string;
   readonly "data-decoration"?: string;
 }
 
@@ -310,6 +312,11 @@ function sourceAttrs(id: string, source: SceneSource): SourceAttrs {
         "data-projected-node": source.nodeId,
         "data-projected-atom-ids": source.atomIds.join(" "),
       };
+    case "annotation":
+      // A stored scheme annotation — a curly arrow's shaft or head — by the
+      // `ann_<n>` id a selection of it holds. Not `data-atom-id`: an arrow
+      // filed under the atom it points at would grow that atom's pick target.
+      return { "data-primitive-id": id, "data-annotation-id": source.annotationId };
     case "decoration":
       // No model entity to point at; the flag exists so a consumer walking the
       // DOM can skip the background rect and the frame the way hit-testing

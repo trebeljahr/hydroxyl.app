@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-24 -34.7 92 59.59" width="92px" height="59.59px">
+  <rect data-decoration="background" x="-24" y="-34.7" width="92" height="59.59" fill="#ffffff"/>
+  <line id="bond:b3:line" data-bond="b3" x1="11" y1="0" x2="33" y2="0" stroke="#1f2937" stroke-width="2"/>
+  <text id="atom:a1:label" data-atom="a1" x="-8" y="5.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start"><tspan>Br</tspan></text>
+  <text id="atom:a2:label" data-atom="a2" x="36" y="5.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start"><tspan>Br</tspan></text>
+  <path id="annotation:ann_1:shaft" data-annotation="ann_1" d="M22 0 C25.38 -9.86 18.81 -14.99 11.85 -15.38" fill="none" stroke="#1f2937" stroke-width="2"/>
+  <polygon id="annotation:ann_1:head" data-annotation="ann_1" points="-0.34,-8.5 12.62,-18.7 12.43,-14.23" fill="#1f2937"/>
+  <path id="annotation:ann_2:shaft" data-annotation="ann_2" d="M22 0 C18.62 -9.86 25.19 -14.99 32.15 -15.38" fill="none" stroke="#1f2937" stroke-width="2"/>
+  <polygon id="annotation:ann_2:head" data-annotation="ann_2" points="44.34,-8.5 31.38,-18.7 31.57,-14.23" fill="#1f2937"/>
+</svg>

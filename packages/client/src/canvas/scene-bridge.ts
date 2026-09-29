@@ -194,14 +194,22 @@ export function documentNumbersAtoms(doc: SketchDocument): boolean {
  *
  * The numbering is asked for only while `rep` draws locants: with the flag
  * off the scene would ignore it, and a drag with locants off (every default
- * panel) then pays nothing for it.
+ * panel) then pays nothing for it. The document's curly arrows ride along
+ * whenever it has any: they resolve against this panel's own geometry and
+ * drop out of a panel that does not place their anchors.
  */
 function sceneOptionsFor(
   doc: SketchDocument,
   rep: RenderRepresentation,
 ): SceneBuildOptions | undefined {
-  if (!isStructural(rep) || !rep.flags.showLocants) return undefined;
-  return { locants: documentNumbering(doc).locants };
+  const locants =
+    isStructural(rep) && rep.flags.showLocants ? documentNumbering(doc).locants : undefined;
+  const annotations = doc.annotations.length > 0 ? doc.annotations : undefined;
+  if (locants === undefined && annotations === undefined) return undefined;
+  return {
+    ...(locants === undefined ? {} : { locants }),
+    ...(annotations === undefined ? {} : { schemeAnnotations: annotations }),
+  };
 }
 
 /**

@@ -70,7 +70,14 @@ export * from "./figure/compose.js";
 export * from "./figure/physical.js";
 export * from "./svg/figure.js";
 // Scheme annotations: the stored arrows, plus signs, brackets and text a
-// document holds beside its molecule. Types, anchors and pruning only — the
-// layer that resolves them to geometry and draws them builds on this.
+// document holds beside its molecule. Types, anchors and pruning.
 export * from "./scheme/annotation.js";
+// The layer that draws them: an anchor resolver over a panel's injected
+// geometry, the chord-frame curve, one arrowhead module, and the curly arrow
+// laid out, reported on and emitted as a shaft and a head.
+export * from "./annotation/anchor.js";
+export * from "./annotation/curve.js";
+export * from "./annotation/arrowhead.js";
+export * from "./annotation/curly.js";
+export * from "./annotation/layer.js";
 export * from "./fixtures.js";

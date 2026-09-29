@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-62 -68.98 124 225.88" width="124px" height="225.88px">
+  <rect data-decoration="background" x="-62" y="-68.98" width="124" height="225.88" fill="#ffffff"/>
+  <line id="bond:b3:line" data-bond="b3" x1="-44" y1="0" x2="0" y2="0" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b5:line" data-bond="b5" x1="-3.5" y1="0" x2="-3.5" y2="-35.5" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b5:line2" data-bond="b5" x1="3.5" y1="0" x2="3.5" y2="-35.5" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b7:line" data-bond="b7" x1="0" y1="0" x2="44" y2="0" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b10:line" data-bond="b10" x1="0" y1="96.5" x2="0" y2="123.5" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b10:line2" data-bond="b10" x1="7" y1="96.5" x2="7" y2="123.5" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b10:line3" data-bond="b10" x1="-7" y1="96.5" x2="-7" y2="123.5" stroke="#1f2937" stroke-width="2"/>
+  <circle id="atom:a1:dot" data-atom="a1" cx="-44" cy="0" r="2" fill="#111827"/>
+  <circle id="atom:a2:dot" data-atom="a2" cx="0" cy="0" r="2" fill="#111827"/>
+  <text id="atom:a4:label" data-atom="a4" x="-6.22" y="-38.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start"><tspan>O</tspan></text>
+  <circle id="atom:a6:dot" data-atom="a6" cx="44" cy="0" r="2" fill="#111827"/>
+  <text id="atom:a8:label" data-atom="a8" x="-5.78" y="93.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start"><tspan>C</tspan><tspan font-size="11.52" dy="-5.6">−</tspan></text>
+  <text id="atom:a9:label" data-atom="a9" x="-5.78" y="137.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start"><tspan>N</tspan></text>
+  <path id="annotation:ann_1:shaft" data-annotation="ann_1" d="M-8.78 79.81 C-24.86 61.15 -26.27 33.94 -13 13.78" fill="none" stroke="#1f2937" stroke-width="2"/>
+  <polygon id="annotation:ann_1:head" data-annotation="ann_1" points="-3.86,3.17 -17.16,12.93 -12.8,13.95 -11,18.04" fill="#1f2937"/>
+  <path id="annotation:ann_2:shaft" data-annotation="ann_2" d="M0 -22 C9.54 -18.73 14.64 -24.76 15.32 -31.45" fill="none" stroke="#1f2937" stroke-width="2"/>
+  <polygon id="annotation:ann_2:head" data-annotation="ann_2" points="9.22,-44.06 11.15,-27.68 14.18,-30.96 18.63,-30.51" fill="#1f2937"/>
+</svg>

@@ -13,8 +13,8 @@
  * here or lower — decision 10's direction, the one the display flags took.
  * chem-core is lower but ruled out: it has no business knowing what an arrow
  * is, which is also why chem-core's `Selection` does not grow annotation ids
- * and the client's does. Nothing in this module draws; the render layer that
- * resolves anchors to geometry is a later task and builds on these types.
+ * and the client's does. Nothing in this module draws: `annotation/` resolves
+ * the anchors to a panel's geometry and draws them, on these types.
  *
  * THE MODEL (decisions 102-104 and the architectural rulings behind them):
  *
@@ -66,7 +66,7 @@ import {
 } from "@starter/chem-core";
 
 import { isStructural } from "../representation.js";
-import type { RenderScene } from "../scene/types.js";
+import type { RenderScene, ScenePrimitive } from "../scene/types.js";
 
 export type SchemeAnnotationId = string;
 
@@ -411,9 +411,27 @@ export function sceneAnchorPlacement(
   mol: Molecule,
   options: { readonly drawsModelFrame?: boolean | undefined } = {},
 ): SchemeAnchorPlacement {
+  return anchorPlacementOf(
+    scene.primitives,
+    mol,
+    options.drawsModelFrame ?? isStructural(scene.representation),
+  );
+}
+
+/**
+ * `sceneAnchorPlacement` over a primitive list rather than a finished scene:
+ * what `buildScene`'s own annotation layer asks of the primitives it has
+ * emitted so far, so the arrows it then draws obey the same rule a caller
+ * reading the finished scene would apply.
+ */
+export function anchorPlacementOf(
+  primitives: readonly ScenePrimitive[],
+  mol: Molecule,
+  drawsModelFrame: boolean,
+): SchemeAnchorPlacement {
   const atoms = new Set<AtomId>();
   const bonds = new Set<BondId>();
-  for (const primitive of scene.primitives) {
+  for (const primitive of primitives) {
     const source = primitive.source;
     switch (source.kind) {
       case "atom":
@@ -441,6 +459,9 @@ export function sceneAnchorPlacement(
         // a Fischer's "CH2OH" is a letter in a word, not a place.
         if (source.atomIds.length === 1) atoms.add(source.atomIds[0]!);
         break;
+      case "annotation":
+        // Another annotation places nothing an annotation could anchor to.
+        break;
       case "decoration":
         break;
       default: {
@@ -452,7 +473,7 @@ export function sceneAnchorPlacement(
   return {
     hasAtom: (atomId) => atoms.has(atomId),
     hasBond: (bondId) => bonds.has(bondId),
-    drawsModelFrame: options.drawsModelFrame ?? isStructural(scene.representation),
+    drawsModelFrame,
   };
 }
 

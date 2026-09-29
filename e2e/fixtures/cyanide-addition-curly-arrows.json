@@ -1,0 +1,200 @@
+{
+  "schemaVersion": 2,
+  "id": "doc_mumm6aj2_3_9c5ofyur",
+  "molecule": {
+    "atoms": {
+      "a1": {
+        "id": "a1",
+        "element": "C",
+        "pos": {
+          "x": -1,
+          "y": 0
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a2": {
+        "id": "a2",
+        "element": "C",
+        "pos": {
+          "x": 0,
+          "y": 0
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a4": {
+        "id": "a4",
+        "element": "O",
+        "pos": {
+          "x": 0,
+          "y": 1
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a6": {
+        "id": "a6",
+        "element": "C",
+        "pos": {
+          "x": 1,
+          "y": 0
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a8": {
+        "id": "a8",
+        "element": "C",
+        "pos": {
+          "x": 0,
+          "y": -2
+        },
+        "charge": -1,
+        "radicalElectrons": 0,
+        "aromatic": false
+      },
+      "a9": {
+        "id": "a9",
+        "element": "N",
+        "pos": {
+          "x": 0,
+          "y": -3
+        },
+        "charge": 0,
+        "radicalElectrons": 0,
+        "aromatic": false
+      }
+    },
+    "bonds": {
+      "b3": {
+        "id": "b3",
+        "from": "a1",
+        "to": "a2",
+        "order": 1,
+        "stereo": "none",
+        "doubleBondSide": "auto",
+        "aromatic": false
+      },
+      "b5": {
+        "id": "b5",
+        "from": "a2",
+        "to": "a4",
+        "order": 2,
+        "stereo": "none",
+        "doubleBondSide": "auto",
+        "aromatic": false
+      },
+      "b7": {
+        "id": "b7",
+        "from": "a2",
+        "to": "a6",
+        "order": 1,
+        "stereo": "none",
+        "doubleBondSide": "auto",
+        "aromatic": false
+      },
+      "b10": {
+        "id": "b10",
+        "from": "a8",
+        "to": "a9",
+        "order": 3,
+        "stereo": "none",
+        "doubleBondSide": "auto",
+        "aromatic": false
+      }
+    },
+    "atomIds": [
+      "a1",
+      "a2",
+      "a4",
+      "a6",
+      "a8",
+      "a9"
+    ],
+    "bondIds": [
+      "b3",
+      "b5",
+      "b7",
+      "b10"
+    ],
+    "nextId": 11
+  },
+  "annotations": [
+    {
+      "id": "ann_1",
+      "kind": "curlyArrow",
+      "electrons": "pair",
+      "source": {
+        "kind": "lonePair",
+        "atomId": "a8"
+      },
+      "sink": {
+        "kind": "atom",
+        "atomId": "a2"
+      },
+      "bulge": 0.25,
+      "skew": 0
+    },
+    {
+      "id": "ann_2",
+      "kind": "curlyArrow",
+      "electrons": "pair",
+      "source": {
+        "kind": "bond",
+        "bondId": "b5"
+      },
+      "sink": {
+        "kind": "lonePair",
+        "atomId": "a4"
+      },
+      "bulge": -0.7,
+      "skew": 0
+    }
+  ],
+  "nextAnnotationId": 3,
+  "stylePreset": "screen",
+  "panels": [
+    {
+      "id": "panel_mumm6aj2_1_y8vgxr7w",
+      "representation": {
+        "kind": "skeletal",
+        "display": {
+          "showCarbonLabels": false,
+          "showImplicitHydrogens": false,
+          "showLonePairs": false,
+          "showCharges": true,
+          "showStereoBonds": true,
+          "showLocants": false,
+          "aromaticCircles": true,
+          "showStereoDescriptors": false
+        }
+      }
+    },
+    {
+      "id": "panel_mumm6aj2_2_km711smv",
+      "representation": {
+        "kind": "lewis",
+        "display": {
+          "showCarbonLabels": true,
+          "showImplicitHydrogens": true,
+          "showLonePairs": true,
+          "showCharges": true,
+          "showStereoBonds": false,
+          "showLocants": false,
+          "aromaticCircles": false,
+          "showStereoDescriptors": false
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "title": "Untitled",
+    "createdAt": "2026-09-29T00:00:00.000Z",
+    "modifiedAt": "2026-09-29T00:00:00.000Z"
+  }
+}

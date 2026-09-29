@@ -21,6 +21,7 @@
 import type { AtomId, BondId } from "@starter/chem-core";
 
 import type { Representation } from "../representation.js";
+import type { SchemeAnnotationId } from "../scheme/annotation.js";
 import type { RenderStyle } from "../style.js";
 
 export interface ScenePoint {
@@ -59,6 +60,14 @@ export interface ScenePoint {
  * reason `hydrogen` is not: filing a condensed label under one atom would
  * grow that atom's pick target to the whole word and select half the group.
  *
+ * `annotation` is a STORED scheme annotation the document holds beside its
+ * molecule — today a curly arrow's shaft and head — named by its `ann_<n>` id
+ * so a click on the arrow can select it and a delete can remove it. Not
+ * `decoration`: that is what hit-testing ignores, and an arrow filed there
+ * could be neither selected nor deleted. Not the `atom` or `bond` arm of an
+ * end it is anchored to, either, or a click on the arrow would select the
+ * atom it points at.
+ *
  * `decoration` covers the things that belong to no model entity — the
  * background rect, a frame, the glyph run of a sum formula. Hit-testing
  * ignores them, and they must never be handed an atom or bond id just to make
@@ -78,6 +87,7 @@ export type SceneSource =
       readonly nodeId: string;
       readonly atomIds: readonly AtomId[];
     }
+  | { readonly kind: "annotation"; readonly annotationId: SchemeAnnotationId }
   | { readonly kind: "decoration" };
 
 export interface SceneStroke {

@@ -105,6 +105,10 @@ function sourceAttr(source: SceneSource): string {
         attr("data-projected-node", source.nodeId) +
         attr("data-projected-atoms", source.atomIds.join(" "))
       );
+    case "annotation":
+      // A stored scheme annotation (a curly arrow's shaft or head), by the id
+      // the document gave it: what a selection of it holds.
+      return attr("data-annotation", source.annotationId);
     case "decoration":
       // No model entity to point at; the flag exists so hit-testing can skip it.
       return attr("data-decoration", "true");

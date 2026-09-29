@@ -21,7 +21,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { representationAvailability } from "../src/availability.js";
-import { steroidSkeletonWithLocants, FIXTURES } from "../src/fixtures.js";
+import { MECHANISM_FIXTURES, steroidSkeletonWithLocants, FIXTURES } from "../src/fixtures.js";
 import {
   isStructuralViewKind,
   representation,
@@ -214,6 +214,27 @@ const ANNOTATED_ROWS: readonly Row[] = Object.freeze([
   }),
 ]);
 
+/**
+ * The MECHANISM sections: molecules with the curly arrows a textbook draws on
+ * them, passed as the document field they are (`schemeAnnotations`). Skeletal
+ * is the figure; Lewis is where a lone-pair arrow must leave from the drawn
+ * pair rather than from the label, and where the y-flip would show first — an
+ * arrow bowing the wrong way runs through the dots it should start beside.
+ */
+export const MECHANISM_SECTION_PREFIX = "mechanism: ";
+const MECHANISM_ROWS: readonly Row[] = Object.freeze([
+  Object.freeze({
+    label: "skeletal",
+    note: "curly arrows",
+    representation: representation("skeletal"),
+  }),
+  Object.freeze({
+    label: "lewis",
+    note: "curly arrows from the drawn lone pairs",
+    representation: representation("lewis"),
+  }),
+]);
+
 function renderRow(
   row: Row,
   fixture: { readonly molecule: Molecule },
@@ -274,6 +295,14 @@ export function renderContactSheet(): string {
       ANNOTATED_SECTION_NAME,
       ANNOTATED_ROWS.map((row) =>
         renderRow(row, ANNOTATED, { locants: ANNOTATED.locants }),
+      ),
+    ),
+    ...MECHANISM_FIXTURES.map((fixture) =>
+      renderSection(
+        MECHANISM_SECTION_PREFIX + fixture.name,
+        MECHANISM_ROWS.map((row) =>
+          renderRow(row, fixture, { schemeAnnotations: fixture.annotations }),
+        ),
       ),
     ),
   ].join("\n");

@@ -22,6 +22,7 @@ import { benzene, removeBond } from "@starter/chem-core";
 import {
   SCREEN_STYLE,
   buildScene,
+  cyanideAdditionToAcetone,
   formatNumber,
   modelToPx,
   representation,
@@ -174,6 +175,27 @@ describe("SceneLayer", () => {
     // a1 sits at model y = -1, so its scene y is +44: y-down, flipped once.
     const a1 = container.querySelector('[data-atom-id="a1"]')!;
     expect(Number(a1.getAttribute("cy"))).toBeCloseTo(SCREEN_STYLE.bondLengthPx, 1);
+  });
+
+  it("files a curly arrow under its annotation id, never under an atom or as decoration", () => {
+    const mechanism = cyanideAdditionToAcetone();
+    const container = renderScene(
+      buildScene(mechanism.molecule, SCREEN_STYLE, SKELETAL, {
+        schemeAnnotations: mechanism.annotations,
+      }),
+    );
+    const arrow = [...container.querySelectorAll('[data-annotation-id="ann_1"]')];
+    expect(arrow.map((el) => [el.tagName.toLowerCase(), el.id])).toEqual([
+      ["path", "annotation:ann_1:shaft"],
+      ["polygon", "annotation:ann_1:head"],
+    ]);
+    for (const el of arrow) {
+      expect(el.hasAttribute("data-atom-id")).toBe(false);
+      expect(el.hasAttribute("data-decoration")).toBe(false);
+    }
+    // An open curve with no fill would close into a black blob.
+    expect(arrow[0]!.getAttribute("fill")).toBe("none");
+    expect(arrow[1]!.getAttribute("fill")).toBe(SCREEN_STYLE.colors.bond);
   });
 
   it("marks a text view's glyph run as a decoration belonging to nothing", () => {
