@@ -24,6 +24,10 @@
  *      PNG, and the two landing pages point `og:image` and `twitter:image`
  *      at it on that domain (decision 138). `e2e/social-metadata.spec.ts`
  *      checks the standalone side.
+ *   5. No analytics (decisions 136 and 170). No file in `out/` carries the
+ *      pageview script, and when the build was given Plausible settings — CI
+ *      passes some on purpose, so this is not vacuous — none names their
+ *      host either. `e2e/analytics.spec.ts` checks the standalone side.
  *
  * A route below the root, such as `/guides/journal-figure-size`, reaches the
  * root through `flatten-export.mjs` (decision 137), which `build` runs after
@@ -155,11 +159,32 @@ if (robots !== null) {
   }
 }
 
+// Every file, not only the HTML: the RSC payloads (`*.txt`) and the chunks
+// under `_next/` would carry the script too if a client component rendered it.
+// The id is `PAGEVIEW_SCRIPT_ID` in src/lib/analytics.ts.
+function allFiles(dir) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    return entry.isDirectory() ? allFiles(full) : [full];
+  });
+}
+const plausibleUrl = process.env.NEXT_PUBLIC_PLAUSIBLE_SCRIPT_URL?.trim();
+const analyticsMarkers = ["plausible-pageview"];
+if (plausibleUrl) analyticsMarkers.push(new URL(plausibleUrl).host);
+for (const file of allFiles(out)) {
+  if (/\.(wasm|png)$/.test(file)) continue;
+  const text = readFileSync(file, "utf8");
+  for (const marker of analyticsMarkers.filter((m) => text.includes(m))) {
+    problems.push(`out/${path.relative(out, file)} contains "${marker}"; the export sends no analytics`);
+  }
+}
+
 if (problems.length > 0) {
   console.error(`static export check failed:\n\n${problems.join("\n\n")}\n`);
   process.exit(1);
 }
 console.log(
   "static export: every page at the root, the guide flattened, RDKit assets and notice present, " +
-    `sitemap.xml, robots.txt and the social card name ${site}`,
+    `sitemap.xml, robots.txt and the social card name ${site}, and no analytics ` +
+    (plausibleUrl ? `(built with Plausible settings for ${new URL(plausibleUrl).host})` : "(built without Plausible settings)"),
 );

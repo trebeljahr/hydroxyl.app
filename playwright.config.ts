@@ -45,6 +45,17 @@ export default defineConfig({
     timeout: 300_000,
     // NEXT_FILE_EXPORT must stay unset: output:"export" emits no server
     // for `next start` to run.
-    env: { PORT: String(PORT), NEXT_FILE_EXPORT: "" },
+    //
+    // The Plausible settings build the pageview script into every page, the
+    // way a deploy with `hatchkit add` done does, so e2e/analytics.spec.ts can
+    // read what it sends. The host is reserved (.invalid) and that spec
+    // intercepts it. Every other spec stays off the network because the script
+    // sends nothing while `navigator.webdriver` is set.
+    env: {
+      PORT: String(PORT),
+      NEXT_FILE_EXPORT: "",
+      NEXT_PUBLIC_PLAUSIBLE_DOMAIN: "chemistry.trebeljahr.com",
+      NEXT_PUBLIC_PLAUSIBLE_SCRIPT_URL: "https://plausible.e2e.invalid/js/script.js",
+    },
   },
 });

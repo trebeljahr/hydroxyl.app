@@ -62,12 +62,20 @@ jobs:
       - run: pnpm run typecheck
       - run: pnpm run test
       - run: pnpm run build
+      # The export is built WITH Plausible settings, so that check-export.mjs
+      # can prove it still ships no analytics (decision 136). The host is
+      # reserved (.invalid) and never contacted.
       - name: Static export must keep building
         run: NEXT_FILE_EXPORT=1 pnpm run build
+        env:
+          NEXT_PUBLIC_PLAUSIBLE_DOMAIN: chemistry.trebeljahr.com
+          NEXT_PUBLIC_PLAUSIBLE_SCRIPT_URL: https://plausible.export-check.invalid/js/script.js
       # "It built" is not "it runs": a nested page under assetPrefix "./"
       # builds cleanly and then 404s every one of its own chunks.
       - name: Static export must stay runnable
         run: node packages/client/scripts/check-export.mjs
+        env:
+          NEXT_PUBLIC_PLAUSIBLE_SCRIPT_URL: https://plausible.export-check.invalid/js/script.js
 
   e2e:
     runs-on: ubuntu-latest
@@ -111,6 +119,14 @@ jobs:
           context: .
           file: Dockerfile
           push: true
+          # Plausible, cookie-less pageviews (decisions 136 and 170). Repo
+          # VARIABLES, not secrets: both values are in every page anyway.
+          # Unset, they arrive empty and the site loads no analytics.
+          #   gh variable set NEXT_PUBLIC_PLAUSIBLE_DOMAIN --body chemistry.trebeljahr.com
+          #   gh variable set NEXT_PUBLIC_PLAUSIBLE_SCRIPT_URL --body https://<plausible host>/js/script.js
+          build-args: |
+            NEXT_PUBLIC_PLAUSIBLE_DOMAIN=${{ vars.NEXT_PUBLIC_PLAUSIBLE_DOMAIN }}
+            NEXT_PUBLIC_PLAUSIBLE_SCRIPT_URL=${{ vars.NEXT_PUBLIC_PLAUSIBLE_SCRIPT_URL }}
           tags: |
             ghcr.io/${{ github.repository }}-client:main
             ghcr.io/${{ github.repository }}-client:${{ github.sha }}

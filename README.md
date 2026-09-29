@@ -90,6 +90,12 @@ pnpm test:e2e
 Managed by [hatchkit](https://hatchkit.trebeljahr.com) — Docker image built in
 CI, deployed to Coolify on a Hetzner VPS.
 
+Analytics is one cookie-less Plausible pageview per page load, sent only when
+the GitHub repository variables `NEXT_PUBLIC_PLAUSIBLE_DOMAIN` and
+`NEXT_PUBLIC_PLAUSIBLE_SCRIPT_URL` are set. It sends the page's path, never its
+query string, and the static export contains none of it. See
+`packages/client/src/lib/analytics.ts`.
+
 ## Licence
 
 Not yet chosen.

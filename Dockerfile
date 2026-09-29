@@ -50,6 +50,15 @@ COPY packages/chem-core packages/chem-core
 COPY packages/chem-render packages/chem-render
 COPY packages/shared packages/shared
 COPY packages/client packages/client
+# Plausible (decisions 136 and 170). Next inlines NEXT_PUBLIC_* into the pages
+# at BUILD time, so these must be build args; runtime env on the container
+# changes nothing. CI passes them from GitHub repository variables, since the
+# copies `hatchkit add` writes into packages/client/.env.production are
+# dotenvx ciphertext and this build has no key. A build arg is in the
+# environment of the RUN below, and a set-but-empty one outranks that file
+# in Next's env loading, so no variables means no analytics.
+ARG NEXT_PUBLIC_PLAUSIBLE_DOMAIN
+ARG NEXT_PUBLIC_PLAUSIBLE_SCRIPT_URL
 RUN pnpm run build
 
 # ── Stage 3: production runtime ────────────────────────────────────

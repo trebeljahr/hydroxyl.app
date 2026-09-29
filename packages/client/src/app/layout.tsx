@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "@/styles/globals.css";
 
+import { Analytics } from "@/components/Analytics";
 import { DonationReturn } from "@/components/DonationReturn";
 import { siteUrl } from "@/lib/deployment";
 import { SITE_DESCRIPTION, SITE_NAME } from "@/lib/site";
@@ -24,6 +25,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="min-h-screen bg-background font-sans antialiased">
+        <Analytics />
         <DonationReturn />
         {children}
       </body>
