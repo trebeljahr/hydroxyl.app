@@ -25,7 +25,9 @@ import { readMolblock } from "./molblock-read.js";
 import { invertStereocentre, setBondStereo, setElement, setExplicitHydrogenCount, updateBond } from "./ops.js";
 import { isRingAtom } from "./rings.js";
 import { species } from "./species.js";
-import { cipDescriptor } from "./stereo.js";
+import { compareIds } from "./selection.js";
+import { cipDescriptor, stereocenterAtoms, stereoGroupCoverage } from "./stereo.js";
+import { stereoGroupAt, stereoGroupsOf, withStereoGroups } from "./stereo-groups.js";
 import { ligandRefs, parityAgainst, stereoConfig, stereoTopology } from "./stereo-config.js";
 import {
   anomericConfiguration,
@@ -228,6 +230,45 @@ describe("sugar rings", () => {
     expect(carbohydrateLocant(unit, glucose.ring.anomericCarbon)).toBe("1");
     // The aglycone carbon is a substituent, not C0 of the chain.
     expect(unit.backbone).not.toContain(glucose.ring.anomericSubstituent);
+  });
+
+  it("reads glucono-1,5-lactone as a lactone, never as a pyranose", () => {
+    // Oxidising beta-D-glucopyranose's anomeric OH to C=O gives the lactone:
+    // C1 is then an ester carbon, sp2, and no anomeric centre at all.
+    const beta = fixture("projection", "beta-d-glucopyranose.mol");
+    const [glucose] = sugarRings(beta);
+    if (glucose?.kind !== "sugarRing") throw new Error("no sugar ring");
+    const c1 = glucose.ring.anomericCarbon;
+    const o1 = glucose.ring.anomericSubstituent;
+    const lactone = updateBond(beta, bondBetween(beta, c1, o1)!.id, { order: 2, stereo: "none" });
+    expect(valenceIssues(lactone)).toEqual([]);
+
+    expect(sugarRings(lactone)).toEqual([
+      { kind: "undetermined", reason: "lactone", ringAtomIds: expect.any(Array), atomIds: [c1] },
+    ]);
+    expect(carbohydrates(lactone)).toEqual([]);
+    // No designation turns an ester carbon into an anomeric one.
+    const ring = glucose.ring.ringAtomIds;
+    expect(perceiveSugarRing(lactone, ring, { anomericCarbon: c1, anomericSubstituent: o1 })).toMatchObject({
+      kind: "undetermined",
+      reason: "lactone",
+    });
+    // And it is not "a glycoside" to openRing: it is a lactone.
+    expect(openRing(lactone, c1)).toMatchObject({ kind: "refused", reason: "lactone" });
+  });
+
+  it("does not report a plain lactone as a possible sugar ring", () => {
+    // gamma-Butyrolactone: THF with a C=O beside the ring oxygen. Nothing
+    // else is on the ring, so it is not even a candidate.
+    const thf = dictionary("thf");
+    const c2 = thf.atomIds.find(
+      (id) => thf.atoms[id]!.element === "C" && neighbours(thf, id).some((o) => thf.atoms[o]!.element === "O"),
+    )!;
+    const added = addAtom(thf, { element: "O", pos: { x: thf.atoms[c2]!.pos.x, y: thf.atoms[c2]!.pos.y - 1 } });
+    const gbl = addBond(added.molecule, { from: c2, to: added.id, order: 2 }).molecule;
+    expect(valenceIssues(gbl)).toEqual([]);
+    expect(sugarRings(gbl)).toEqual([]);
+    expect(carbohydrates(gbl)).toEqual([]);
   });
 
   it("does not take solvents, carbocycles or aromatic rings for sugar rings", () => {
@@ -655,9 +696,66 @@ describe("cycliseSugar", () => {
     expect(anomericConfiguration(result.molecule, only(result.molecule))).toEqual({ kind: "mixture", anomericCarbon: a });
   });
 
-  it("lays the new ring out as a regular polygon with its substituents clear of each other", () => {
-    for (const locant of ["4", "5"]) {
-      const result = cyclised(glucoseOpen(), locant, "alpha");
+  /** Every unbonded pair's distance, and every pair of crossing bonds sharing no atom. */
+  function crowding(mol: Molecule): { closest: number; pair: string; crossings: string[] } {
+    const pos = (id: AtomId) => mol.atoms[id]!.pos;
+    let closest = Infinity;
+    let pair = "";
+    for (let i = 0; i < mol.atomIds.length; i++) {
+      for (let j = i + 1; j < mol.atomIds.length; j++) {
+        const [p, q] = [mol.atomIds[i]!, mol.atomIds[j]!];
+        if (bondBetween(mol, p, q) !== undefined) continue;
+        const d = Math.hypot(pos(p).x - pos(q).x, pos(p).y - pos(q).y);
+        if (d < closest) [closest, pair] = [d, `${p} ${q}`];
+      }
+    }
+    const side = (a: { x: number; y: number }, b: { x: number; y: number }, c: { x: number; y: number }) =>
+      Math.sign((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
+    const crossings: string[] = [];
+    for (let i = 0; i < mol.bondIds.length; i++) {
+      for (let j = i + 1; j < mol.bondIds.length; j++) {
+        const b = mol.bonds[mol.bondIds[i]!]!;
+        const c = mol.bonds[mol.bondIds[j]!]!;
+        if ([b.from, b.to].some((id) => id === c.from || id === c.to)) continue;
+        const straddles = (s: typeof b, t: typeof b) =>
+          side(pos(s.from), pos(s.to), pos(t.from)) * side(pos(s.from), pos(s.to), pos(t.to)) < 0;
+        if (straddles(b, c) && straddles(c, b)) crossings.push(`${b.id} ${c.id}`);
+      }
+    }
+    return { closest, pair, crossings };
+  }
+
+  /** The chain `ring` opens to (openRing keeps its coordinates), closed again as `anomer`. */
+  function reclosed(ring: Molecule, anomer: Anomer): Extract<ReturnType<typeof cycliseSugar>, { kind: "cyclised" }> {
+    const opened = openRing(ring, only(ring).ring!.anomericCarbon);
+    if (opened.kind !== "opened") throw new Error(opened.reason);
+    const again = cycliseSugar(opened.molecule, {
+      carbonylCarbon: opened.carbonylCarbon,
+      hydroxylOxygen: opened.hydroxylOxygen,
+      anomer,
+    });
+    if (again.kind !== "cyclised") throw new Error(again.reason);
+    expect(again.unmarked).toEqual([]);
+    return again;
+  }
+
+  // What each layout is checked on: glucose's two ring sizes, a ketose's two
+  // (two groups on C2), and the two sugars with long tails on neighbouring
+  // ring carbons. Neu5Ac is the one that broke: its C5 N-acetyl and C6
+  // glycerol tail, turned rigidly outward, landed atom on atom.
+  const LAYOUTS: readonly (readonly [string, () => Extract<ReturnType<typeof cycliseSugar>, { kind: "cyclised" }>])[] = [
+    ["alpha-D-glucopyranose", () => cyclised(glucoseOpen(), "5", "alpha")],
+    ["alpha-D-glucofuranose", () => cyclised(glucoseOpen(), "4", "alpha")],
+    ["beta-D-fructofuranose", () => cyclised(fixture("projection", "d-fructose-open.mol"), "5", "beta")],
+    ["beta-D-fructopyranose", () => cyclised(fixture("projection", "d-fructose-open.mol"), "6", "beta")],
+    ["alpha-Neu5Ac", () => reclosed(fixture("sugar", "n-acetyl-beta-neuraminic-acid.mol"), "alpha")],
+    ["beta-Neu5Ac", () => reclosed(fixture("sugar", "n-acetyl-beta-neuraminic-acid.mol"), "beta")],
+    ["L-glycero-beta-D-manno-heptopyranose", () => reclosed(fixture("sugar", "l-glycero-alpha-d-manno-heptopyranose.mol"), "beta")],
+  ];
+
+  for (const [name, build] of LAYOUTS) {
+    it(`lays ${name}'s new ring out as a regular polygon with nothing on top of anything`, () => {
+      const result = build();
       const mol = result.molecule;
       const ring = result.ring.ringAtomIds;
       const pos = (id: AtomId) => mol.atoms[id]!.pos;
@@ -665,27 +763,61 @@ describe("cycliseSugar", () => {
         const bond = mol.bonds[id]!;
         return Math.hypot(pos(bond.to).x - pos(bond.from).x, pos(bond.to).y - pos(bond.from).y);
       });
+      const bond = lengths.sort((p, q) => p - q)[lengths.length >> 1]!;
       const ringLengths = ring.map((id, i) => {
         const next = ring[(i + 1) % ring.length]!;
         return Math.hypot(pos(next).x - pos(id).x, pos(next).y - pos(id).y);
       });
-      const bond = lengths.sort((p, q) => p - q)[lengths.length >> 1]!;
       for (const length of ringLengths) expect(length).toBeCloseTo(bond, 6);
       const cx = ring.reduce((s, id) => s + pos(id).x, 0) / ring.length;
       const cy = ring.reduce((s, id) => s + pos(id).y, 0) / ring.length;
       const radii = ring.map((id) => Math.hypot(pos(id).x - cx, pos(id).y - cy));
       for (const r of radii) expect(r).toBeCloseTo(radii[0]!, 6);
-      // No two atoms closer than half a bond: nothing drawn on top of anything.
-      for (let i = 0; i < mol.atomIds.length; i++) {
-        for (let j = i + 1; j < mol.atomIds.length; j++) {
-          const p = pos(mol.atomIds[i]!);
-          const q = pos(mol.atomIds[j]!);
-          expect(Math.hypot(p.x - q.x, p.y - q.y), `${mol.atomIds[i]} ${mol.atomIds[j]}`).toBeGreaterThan(0.5 * bond);
-        }
-      }
       // The ring oxygen is up and to the right of the anomeric carbon.
       expect(pos(result.ring.ringHeteroatom).y).toBeGreaterThan(pos(result.ring.anomericCarbon).y);
-    }
+      // No unbonded pair within 0.9 of a bond (the layout aims for one), and
+      // no two bonds crossing. The Neu5Ac pair was at 0.000, fructopyranose's
+      // O1 and ring O at 0.60.
+      const { closest, pair, crossings } = crowding(mol);
+      expect(closest, pair).toBeGreaterThan(0.9 * bond);
+      expect(crossings).toEqual([]);
+      expect(result.collisions).toEqual({ atoms: [], bonds: [] });
+    });
+  }
+
+  it("re-closes Neu5Ac to PubChem's letters, clear of itself", () => {
+    // beta-Neu5Ac, CID 445063: (2S,4S,5R,6R) on the oxane, (1R,2R) on the
+    // tail, i.e. C2 S, C4 S, C5 R, C6 R, C7 R, C8 R. Alpha differs at C2 only.
+    const original = fixture("sugar", "n-acetyl-beta-neuraminic-acid.mol");
+    expectResolved(original, only(original));
+    const letters = { 2: "S", 4: "S", 5: "R", 6: "R", 7: "R", 8: "R" };
+    expect(lettersByLocant(original, only(original))).toEqual(letters);
+    const beta = reclosed(original, "beta").molecule;
+    expect(lettersByLocant(beta, only(beta))).toEqual(letters);
+    expect(anomericConfiguration(beta, only(beta)).kind).toBe("beta");
+    const alpha = reclosed(original, "alpha").molecule;
+    expect(lettersByLocant(alpha, only(alpha))).toEqual({ ...letters, 2: "R" });
+    expect(anomericConfiguration(alpha, only(alpha)).kind).toBe("alpha");
+    expect(carbohydrateSeries(alpha, only(alpha)).kind).toBe("D");
+  });
+
+  it("reports an overlap no rigid move can clear, and does not hide it", () => {
+    // A hydroxyl hydrogen drawn exactly on top of C6: the C6 group is moved
+    // rigidly, so the overlap comes along, and it is reported by atom id.
+    const chain = glucoseOpen();
+    const unit = only(chain);
+    const c6 = atLocant(unit, "6");
+    const o6 = oxygenOn(chain, c6);
+    const h = addAtom(chain, { element: "H", pos: chain.atoms[c6]!.pos });
+    const drawn = addBond(h.molecule, { from: o6, to: h.id }).molecule;
+    const result = cycliseSugar(drawn, {
+      carbonylCarbon: unit.anchor,
+      hydroxylOxygen: oxygenOn(chain, atLocant(unit, "5")),
+      anomer: "beta",
+    });
+    if (result.kind !== "cyclised") throw new Error(result.reason);
+    expect(result.collisions.atoms).toEqual([[c6, h.id].sort()]);
+    expect(result.collisions.bonds).toEqual([]);
   });
 
   it("drops hydrogen pins on the atoms whose valence changed, and a drawn hydroxyl H", () => {
@@ -778,6 +910,57 @@ describe("cycliseSugar", () => {
     ]);
     // The original chain did not move.
     for (const id of chain.atomIds) expect(figure.atoms[id]!.pos).toEqual(chain.atoms[id]!.pos);
+  });
+});
+
+describe("stereo groups across the ring-chain edit", () => {
+  /** `mol` with every stereocentre in one group of `kind`. */
+  function grouped(mol: Molecule, kind: "and" | "or" | "abs"): Molecule {
+    return withStereoGroups(mol, [{ kind, index: 1, atomIds: stereocenterAtoms(mol) }]);
+  }
+
+  it("keeps racemic glucose racemic: the new anomeric centre joins the chain's AND group", () => {
+    const chain = grouped(glucoseOpen(), "and");
+    expect(stereoGroupCoverage(chain)).toMatchObject({ kind: "whole", prefix: "rac-" });
+    for (const anomer of ["alpha", "beta"] as const) {
+      const result = cyclised(chain, "5", anomer);
+      const c1 = result.ring.anomericCarbon;
+      // Alpha is relative to C5, so C1 states what C5 states: rac, not an
+      // absolute C1 on a racemic C2-C5.
+      expect(stereoGroupsOf(result.molecule)).toEqual([
+        { kind: "and", index: 1, atomIds: [...stereoGroupsOf(chain)[0]!.atomIds, c1].sort(compareIds) },
+      ]);
+      expect(stereoGroupCoverage(result.molecule)).toMatchObject({ kind: "whole", prefix: "rac-" });
+
+      const opened = openRing(result.molecule, c1);
+      if (opened.kind !== "opened") throw new Error(opened.reason);
+      // Open again, C1 is a carbonyl carbon and in no group.
+      expect(stereoGroupsOf(opened.molecule)).toEqual(stereoGroupsOf(chain));
+      expect(stereoGroupCoverage(opened.molecule)).toMatchObject({ kind: "whole", prefix: "rac-" });
+    }
+  });
+
+  it("puts the anomer in the reference atom's group whatever its kind, and a mixture in none", () => {
+    const abs = cyclised(grouped(glucoseOpen(), "abs"), "5", "alpha");
+    expect(stereoGroupAt(abs.molecule, abs.ring.anomericCarbon)).toMatchObject({ kind: "abs" });
+    const rel = cyclised(grouped(glucoseOpen(), "or"), "4", "beta");
+    expect(stereoGroupAt(rel.molecule, rel.ring.anomericCarbon)).toMatchObject({ kind: "or", index: 1 });
+    // A wavy bond states no configuration, so it joins nothing.
+    const mixture = cyclised(grouped(glucoseOpen(), "and"), "5", "mixture");
+    expect(stereoGroupAt(mixture.molecule, mixture.ring.anomericCarbon)).toBeUndefined();
+    // Ungrouped in, ungrouped out: no key appears.
+    expect(Object.hasOwn(cyclised(glucoseOpen(), "5", "alpha").molecule, "stereoGroups")).toBe(false);
+  });
+
+  it("drops the old anomeric carbon from its group when the ring opens", () => {
+    const ring = grouped(fixture("projection", "beta-d-glucopyranose.mol"), "and");
+    const c1 = only(ring).ring!.anomericCarbon;
+    expect(stereoGroupAt(ring, c1)).toBeDefined();
+    const opened = openRing(ring, c1);
+    if (opened.kind !== "opened") throw new Error(opened.reason);
+    expect(stereoGroupAt(opened.molecule, c1)).toBeUndefined();
+    expect(stereoGroupsOf(opened.molecule)[0]!.atomIds).toEqual(stereocenterAtoms(opened.molecule));
+    expect(stereoGroupCoverage(opened.molecule)).toMatchObject({ kind: "whole", prefix: "rac-" });
   });
 });
 

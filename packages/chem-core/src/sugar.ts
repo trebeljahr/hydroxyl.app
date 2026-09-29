@@ -19,8 +19,10 @@
  * the ring carbon bonded to BOTH that heteroatom and an exocyclic heteroatom:
  * a hemiacetal or acetal O, a glycosylamine or nucleoside N, a thioglycoside
  * S, or a glycosyl halide. Not "the ring carbon with an OH": C4 and C2 have
- * one too, and the discriminator is the bond to the ring heteroatom. Two
- * cases are not guessed:
+ * one too, and the discriminator is the bond to the ring heteroatom. The
+ * anomeric carbon is sp3: a ring whose carbon next to the heteroatom carries
+ * a C=O instead (glucono-1,5-lactone) is a LACTONE, reported undetermined,
+ * never a pyranose (decision 158). Two cases are not guessed:
  *   - a ring with two heteroatoms (a 1,3-oxathiolane, a benzylidene acetal's
  *     dioxane) is `undetermined` until the ring heteroatom is designated;
  *   - a C-GLYCOSIDE's anomeric carbon carries a carbon, which by topology is
@@ -115,9 +117,15 @@ import {
   stereoTopology,
   type StereoConfig,
 } from "./stereo-config.js";
+import {
+  prunedStereoGroups,
+  stereoGroupAt,
+  stereoGroupsOf,
+  withStereoGroups,
+} from "./stereo-groups.js";
 import { regularRingVertices } from "./templates.js";
 import { medianBondLength } from "./transform.js";
-import type { AtomId, Molecule } from "./types.js";
+import type { AtomId, Bond, BondId, Molecule } from "./types.js";
 import { implicitHydrogenCount } from "./valence.js";
 import { sub, type Vec2 } from "./vec.js";
 
@@ -158,6 +166,13 @@ export type SugarRingUndeterminedReason =
   /** More than one heteroatom in the ring: designate `ringHeteroatom`. */
   | "ring-heteroatoms"
   | "not-a-ring-heteroatom"
+  /**
+   * A carbon next to the ring heteroatom is double-bonded to a heteroatom out
+   * of the ring: a lactone (glucono-1,5-lactone), lactam or thionolactone.
+   * That carbon is at the oxidation level of an ester, not an anomeric centre,
+   * and no designation makes it one (decision 158).
+   */
+  | "lactone"
   | "no-anomeric-carbon"
   | "not-an-anomeric-candidate"
   | "no-anomeric-substituent"
@@ -290,6 +305,11 @@ function simpleRingWalk(mol: Molecule, ids: readonly AtomId[]): AtomId[] | undef
   return walk.length === set.size ? walk : undefined;
 }
 
+/** The bonds from `atomId` to atoms outside `ring`. */
+function exocyclicBonds(mol: Molecule, atomId: AtomId, ring: ReadonlySet<AtomId>): Bond[] {
+  return bondsAt(mol, atomId).filter((bond) => !ring.has(otherEnd(bond, atomId)));
+}
+
 function isSaturatedRing(mol: Molecule, walk: readonly AtomId[]): boolean {
   for (let i = 0; i < walk.length; i++) {
     const a = walk[i]!;
@@ -367,8 +387,21 @@ export function perceiveSugarRing(
 
   const ring = new Set(walk);
   const zi = walk.indexOf(z);
-  const alpha = [walk[(zi + 1) % n]!, walk[(zi + n - 1) % n]!].filter(
+  const nextToZ = [walk[(zi + 1) % n]!, walk[(zi + n - 1) % n]!].filter(
     (id) => mol.atoms[id]!.element === "C",
+  );
+  // An anomeric carbon is sp3: every bond out of the ring is single. One
+  // double-bonded to a heteroatom makes the ring a lactone, which is refused
+  // whatever is designated; one double-bonded to a carbon (an exo-glycal) is
+  // simply not a candidate.
+  const lactone = nextToZ.filter((id) =>
+    exocyclicBonds(mol, id, ring).some(
+      (bond) => bond.order !== 1 && isHetero(mol.atoms[otherEnd(bond, id)]?.element),
+    ),
+  );
+  if (lactone.length > 0) return undeterminedRing("lactone", walk, lactone);
+  const alpha = nextToZ.filter((id) =>
+    exocyclicBonds(mol, id, ring).every((bond) => bond.order === 1 && !bond.aromatic),
   );
   const exocyclic = (id: AtomId): AtomId[] => heavyNeighbours(mol, id).filter((o) => !ring.has(o));
   const exoHetero = (id: AtomId): AtomId[] =>
@@ -452,7 +485,13 @@ function isCandidateRing(mol: Molecule, walk: readonly AtomId[]): boolean {
     if (mol.atoms[walk[i]!]!.element === "C") continue;
     for (const neighbour of [walk[(i + 1) % n]!, walk[(i + n - 1) % n]!]) {
       if (mol.atoms[neighbour]!.element !== "C") continue;
-      if (heavyNeighbours(mol, neighbour).some((o) => !ring.has(o))) return true;
+      // Single bonds only: a lactone's C=O alone does not make gamma-
+      // butyrolactone look like a sugar. A sugar lactone still qualifies by
+      // its C5 and comes back undetermined as a lactone.
+      const substituted = exocyclicBonds(mol, neighbour, ring).some(
+        (bond) => bond.order === 1 && mol.atoms[otherEnd(bond, neighbour)]?.element !== "H",
+      );
+      if (substituted) return true;
     }
   }
   return false;
@@ -747,6 +786,18 @@ export function configurationalAtom(mol: Molecule, unit: Carbohydrate): AtomId |
 }
 
 /**
+ * 2-Carb-6.2's rule on the chain's stereocentres in locant order: the last
+ * one (the configurational atom), unless there are more than four and so
+ * more than one configurational prefix, when it is the highest of the first
+ * group of four. The ONE statement of the rule: `anomericReferenceAtom`
+ * reads alpha/beta with it and `cycliseSugar` writes the anomer with it, so
+ * the two cannot drift apart.
+ */
+function referenceFromCentres(centres: readonly AtomId[]): AtomId | undefined {
+  return centres.length <= 4 ? centres.at(-1) : centres[3];
+}
+
+/**
  * The anomeric reference atom, what alpha/beta is referred to (2-Carb-6.2,
  * decision 141). The configurational atom, unless the chain has more than
  * four stereocentres and so more than one configurational prefix: then the
@@ -756,8 +807,8 @@ export function configurationalAtom(mol: Molecule, unit: Carbohydrate): AtomId |
 export function anomericReferenceAtom(mol: Molecule, unit: Carbohydrate): AtomId | undefined {
   if (unit.ring === undefined) return undefined;
   const centres = chainCentres(mol, unit);
-  if (centres === undefined || centres.length === 0) return undefined;
-  return centres.length <= 4 ? centres.at(-1) : centres[3];
+  if (centres === undefined) return undefined;
+  return referenceFromCentres(centres);
 }
 
 /**
@@ -940,15 +991,70 @@ function markCentre(mol: Molecule, centre: AtomId, target: TetrahedralParity): M
 // ---------------------------------------------------------------------------
 
 /**
+ * What a cyclisation's layout could not clear, in the ring's connected
+ * piece: reported, never silently overlaid (decision 157).
+ */
+export interface RingLayoutCollisions {
+  /** Atoms not bonded to each other and closer than half a bond, id-sorted pairs. */
+  readonly atoms: readonly (readonly [AtomId, AtomId])[];
+  /** Bonds sharing no atom whose segments cross, id-sorted pairs. */
+  readonly bonds: readonly (readonly [BondId, BondId])[];
+}
+
+/** Below this fraction of a bond, two unbonded atoms are drawn on top of each other. */
+const COLLISION = 0.5;
+/** Below this fraction of a bond, two unbonded atoms read as crowded. */
+const COMFORT = 1;
+/**
+ * The turns a pendant group may take about its root, in the order they are
+ * preferred: unturned first, then small turns before large, clockwise before
+ * counter-clockwise.
+ */
+const SPINS: readonly number[] = [0, 30, -30, 60, -60, 90, -90, 120, -120, 150, -150, 180].map(
+  (degrees) => (degrees * Math.PI) / 180,
+);
+
+/** Whether segments p1-p2 and q1-q2 cross at a point inside both. */
+function segmentsCross(p1: Vec2, p2: Vec2, q1: Vec2, q2: Vec2): boolean {
+  const side = (a: Vec2, b: Vec2, c: Vec2): number => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+  const d1 = side(q1, q2, p1);
+  const d2 = side(q1, q2, p2);
+  const d3 = side(p1, p2, q1);
+  const d4 = side(p1, p2, q2);
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+}
+
+interface PendantGroup {
+  readonly ringAtom: AtomId;
+  readonly root: AtomId;
+  readonly atoms: readonly AtomId[];
+  /** Where the group sits unturned: rotated rigidly so its root is on its slot. */
+  readonly base: ReadonlyMap<AtomId, Vec2>;
+}
+
+/**
  * Positions for a ring just closed in `mol` (new bonds, old coordinates):
  * the ring as a regular polygon centred where its atoms were, heteroatom at
  * the upper right of a hexagon or the apex of a pentagon, the anomeric carbon
- * clockwise after it; every pendant group rotated rigidly with its
- * attachment bond so configuration inside it survives by construction. A
- * group bonded to the ring at two atoms is only translated, and the marks are
- * checked afterwards like everything else.
+ * clockwise after it. A group bonded to the ring at two atoms is only
+ * translated.
+ *
+ * Every other pendant group is moved RIGIDLY, so the configuration of every
+ * centre inside it survives by construction: first turned with its
+ * attachment bond so its root sits on its slot outside the ring, then, if
+ * that leaves it crowding the ring or another group (Neu5Ac's C5 N-acetyl
+ * and C6 glycerol tail, laid out that way, land atom on atom), turned about
+ * its root to the first of `SPINS` that crowds least. A turn about the root
+ * can change how the root's OWN mark reads, which is why the caller rewrites
+ * every centre's mark from the configuration and reads it back. This is the
+ * edit placing atoms it already moves, not a nudge of a drawn molecule
+ * (decision 157); what no turn clears is returned, never hidden.
  */
-function layoutRing(mol: Molecule, walk: readonly AtomId[], bondLength: number): Molecule {
+function layoutRing(
+  mol: Molecule,
+  walk: readonly AtomId[],
+  bondLength: number,
+): { readonly molecule: Molecule; readonly piece: ReadonlySet<AtomId> } {
   const n = walk.length;
   const ring = new Set(walk);
   let cx = 0;
@@ -1006,12 +1112,13 @@ function layoutRing(mol: Molecule, walk: readonly AtomId[], bondLength: number):
 
   const interior = (Math.PI * (n - 2)) / n;
   const free = 2 * Math.PI - interior;
+  const groups: PendantGroup[] = [];
   for (const a of walk) {
-    const groups = (single.get(a) ?? []).sort((p, q) => compareIds(p.root, q.root));
+    const list = (single.get(a) ?? []).sort((p, q) => compareIds(p.root, q.root));
     const at = next.get(a)!;
     const outward = Math.atan2(at.y - centre.y, at.x - centre.x);
-    groups.forEach((group, i) => {
-      const direction = outward - (Math.PI - interior / 2) + ((i + 1) * free) / (groups.length + 1);
+    list.forEach((group, i) => {
+      const direction = outward - (Math.PI - interior / 2) + ((i + 1) * free) / (list.length + 1);
       const oldRoot = mol.atoms[group.root]!.pos;
       const oldOffset = sub(oldRoot, mol.atoms[a]!.pos);
       const turn = direction - Math.atan2(oldOffset.y, oldOffset.x);
@@ -1021,13 +1128,122 @@ function layoutRing(mol: Molecule, walk: readonly AtomId[], bondLength: number):
         x: at.x + bondLength * Math.cos(direction),
         y: at.y + bondLength * Math.sin(direction),
       };
+      const base = new Map<AtomId, Vec2>();
       for (const q of group.atoms) {
         const d = sub(mol.atoms[q]!.pos, oldRoot);
-        next.set(q, { x: root.x + d.x * cos - d.y * sin, y: root.y + d.x * sin + d.y * cos });
+        base.set(q, { x: root.x + d.x * cos - d.y * sin, y: root.y + d.x * sin + d.y * cos });
       }
+      groups.push({ ringAtom: a, root: group.root, atoms: group.atoms, base });
+      for (const [q, pos] of base) next.set(q, pos);
     });
   }
-  return setAtomPositions(mol, next);
+
+  // Bonds of the piece, for the crossing test.
+  const pieceBonds: [AtomId, AtomId][] = [];
+  for (const id of mol.bondIds) {
+    const bond = mol.bonds[id]!;
+    if (assigned.has(bond.from) && assigned.has(bond.to)) pieceBonds.push([bond.from, bond.to]);
+  }
+
+  /** How badly `group`, at `placed`, crowds everything else in the piece. */
+  const crowding = (group: PendantGroup, placed: ReadonlyMap<AtomId, Vec2>): [number, number] => {
+    const inGroup = new Set(group.atoms);
+    const at = (id: AtomId): Vec2 => placed.get(id) ?? next.get(id)!;
+    let hard = 0;
+    let soft = 0;
+    for (const q of group.atoms) {
+      const pq = at(q);
+      for (const r of assigned) {
+        if (inGroup.has(r) || (q === group.root && r === group.ringAtom)) continue;
+        const pr = next.get(r)!;
+        const d = Math.hypot(pq.x - pr.x, pq.y - pr.y) / bondLength;
+        if (d < COLLISION) hard++;
+        if (d < COMFORT) soft += COMFORT - d;
+      }
+    }
+    for (const [u, v] of pieceBonds) {
+      const uIn = inGroup.has(u);
+      const vIn = inGroup.has(v);
+      const attachment = (u === group.root && v === group.ringAtom) || (v === group.root && u === group.ringAtom);
+      if (!uIn && !vIn && !attachment) continue;
+      for (const [s, t] of pieceBonds) {
+        if (inGroup.has(s) || inGroup.has(t)) continue;
+        if (s === u || s === v || t === u || t === v) continue;
+        if (segmentsCross(at(u), at(v), at(s), at(t))) hard++;
+      }
+    }
+    return [hard, soft];
+  };
+
+  const spun = (group: PendantGroup, angle: number): Map<AtomId, Vec2> => {
+    const root = group.base.get(group.root)!;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const out = new Map<AtomId, Vec2>();
+    for (const [q, pos] of group.base) {
+      const d = sub(pos, root);
+      out.set(q, { x: root.x + d.x * cos - d.y * sin, y: root.y + d.x * sin + d.y * cos });
+    }
+    return out;
+  };
+
+  // A group that crowds nothing keeps its unturned place; one that does is
+  // turned to the least crowded spin, and only for a strict improvement, so
+  // the passes settle. Greedy over the groups in ring order, a few passes.
+  const spin = new Map<PendantGroup, number>(groups.map((g) => [g, 0]));
+  const current = (group: PendantGroup): Map<AtomId, Vec2> => spun(group, SPINS[spin.get(group)!]!);
+  for (let pass = 0; pass < 4; pass++) {
+    let changed = false;
+    for (const group of groups) {
+      if (group.atoms.length < 2) continue;
+      const [hard, soft] = crowding(group, current(group));
+      if (hard === 0 && soft === 0) continue;
+      let best = { index: spin.get(group)!, hard, soft };
+      SPINS.forEach((angle, index) => {
+        const [h, s] = crowding(group, spun(group, angle));
+        if (h < best.hard || (h === best.hard && s < best.soft - 1e-9)) best = { index, hard: h, soft: s };
+      });
+      if (best.index !== spin.get(group)) {
+        spin.set(group, best.index);
+        for (const [q, pos] of current(group)) next.set(q, pos);
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+  return { molecule: setAtomPositions(mol, next), piece: assigned };
+}
+
+/** Every unbonded pair closer than half a bond, and every crossing, inside `piece`. */
+function layoutCollisions(
+  mol: Molecule,
+  piece: ReadonlySet<AtomId>,
+  bondLength: number,
+): RingLayoutCollisions {
+  const ids = sortIds(piece);
+  const atoms: (readonly [AtomId, AtomId])[] = [];
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) {
+      const p = mol.atoms[ids[i]!]!.pos;
+      const q = mol.atoms[ids[j]!]!.pos;
+      if (bondBetween(mol, ids[i]!, ids[j]!) !== undefined) continue;
+      if (Math.hypot(p.x - q.x, p.y - q.y) < COLLISION * bondLength) atoms.push([ids[i]!, ids[j]!]);
+    }
+  }
+  const bondIds = mol.bondIds
+    .filter((id) => piece.has(mol.bonds[id]!.from) && piece.has(mol.bonds[id]!.to))
+    .sort(compareIds);
+  const bonds: (readonly [BondId, BondId])[] = [];
+  for (let i = 0; i < bondIds.length; i++) {
+    const b = mol.bonds[bondIds[i]!]!;
+    for (let j = i + 1; j < bondIds.length; j++) {
+      const c = mol.bonds[bondIds[j]!]!;
+      if (b.from === c.from || b.from === c.to || b.to === c.from || b.to === c.to) continue;
+      const at = (id: AtomId): Vec2 => mol.atoms[id]!.pos;
+      if (segmentsCross(at(b.from), at(b.to), at(c.from), at(c.to))) bonds.push([bondIds[i]!, bondIds[j]!]);
+    }
+  }
+  return Object.freeze({ atoms: Object.freeze(atoms), bonds: Object.freeze(bonds) });
 }
 
 // ---------------------------------------------------------------------------
@@ -1068,6 +1284,11 @@ export type CycliseSugarResult =
       readonly ring: SugarRing;
       /** Centres whose configuration could not be drawn back; empty for real sugars. */
       readonly unmarked: readonly AtomId[];
+      /**
+       * Overlaps and crossings the new layout could not clear, in the ring's
+       * connected piece; both lists empty for the sugars tested (decision 157).
+       */
+      readonly collisions: RingLayoutCollisions;
     }
   | {
       readonly kind: "refused";
@@ -1113,10 +1334,12 @@ function clearHydrogenPins(mol: Molecule, atomIds: readonly AtomId[]): Molecule 
  * pyranose, with its C4 hydroxyl the furanose.
  *
  * Every centre that existed before keeps its parity against its own ligand
- * order: the ring is re-laid, so each ring centre's mark is rewritten from
- * the configuration and read back. `unmarked` lists any centre that could
- * not be; `explicitHydrogenCount` pins on the three atoms whose bonds changed
- * are dropped, and a drawn hydroxyl hydrogen is removed.
+ * order: the ring is re-laid, so each centre's mark is rewritten from the
+ * configuration and read back. `unmarked` lists any centre that could not
+ * be; `collisions` lists what the new layout could not clear (decision 157).
+ * `explicitHydrogenCount` pins on the three atoms whose bonds changed are
+ * dropped, and a drawn hydroxyl hydrogen is removed. An alpha or beta anomer
+ * joins its reference atom's stereo group, since it is stated relative to it.
  */
 export function cycliseSugar(mol: Molecule, options: CycliseSugarOptions): CycliseSugarResult {
   const { carbonylCarbon: k, hydroxylOxygen: o, anomer } = options;
@@ -1158,9 +1381,9 @@ export function cycliseSugar(mol: Molecule, options: CycliseSugarOptions): Cycli
 
   // The side the reference atom's heteroatom is on, before anything moves.
   let referenceSide: "right" | "left" | undefined;
+  let reference: AtomId | undefined;
   if (anomer !== "mixture") {
-    const centres = chainCentres(mol, unit) ?? [];
-    const reference = centres.length <= 4 ? centres.at(-1) : centres[3];
+    reference = referenceFromCentres(chainCentres(mol, unit) ?? []);
     if (reference === undefined) return refuse("reference-undetermined", [k]);
     const arms = chainArms(mol, unit, reference);
     if (typeof arms === "string") return refuse("reference-undetermined", [reference]);
@@ -1181,8 +1404,9 @@ export function cycliseSugar(mol: Molecule, options: CycliseSugarOptions): Cycli
 
   const walk = [o, ...path];
   const ringSet = new Set(walk);
-  next = layoutRing(next, walk, medianBondLength(mol) ?? 1);
-  next = clearMarksAt(next, ringSet);
+  const bondLength = medianBondLength(mol) ?? 1;
+  const laid = layoutRing(next, walk, bondLength);
+  next = clearMarksAt(laid.molecule, ringSet);
 
   // What every centre must read afterwards: its parity before the edit,
   // restated against its (unchanged) ligands.
@@ -1212,6 +1436,8 @@ export function cycliseSugar(mol: Molecule, options: CycliseSugarOptions): Cycli
     if (marked === undefined) unmarked.push(centre);
     else next = marked;
   }
+  const anomerStated = targets.has(k) && !unmarked.includes(k);
+  next = anomerIntoStereoGroups(next, k, anomerStated ? reference : undefined);
 
   const perceived = perceiveSugarRing(next, walk, {
     ringHeteroatom: o,
@@ -1219,7 +1445,38 @@ export function cycliseSugar(mol: Molecule, options: CycliseSugarOptions): Cycli
     anomericSubstituent: oc,
   });
   if (perceived.kind !== "sugarRing") throw new Error("cycliseSugar built a ring it cannot perceive");
-  return { kind: "cyclised", molecule: next, ring: perceived.ring, unmarked: Object.freeze(unmarked) };
+  return {
+    kind: "cyclised",
+    molecule: next,
+    ring: perceived.ring,
+    unmarked: Object.freeze(unmarked),
+    collisions: layoutCollisions(next, laid.piece, bondLength),
+  };
+}
+
+/**
+ * The new anomeric carbon's stereo-group membership (decision 157). Alpha and
+ * beta are RELATIVE to the reference atom, so the anomeric centre states
+ * exactly what the reference atom states: it joins the reference atom's
+ * group, and a racemic chain gives a racemic anomer rather than an absolute
+ * C1 on a racemic C2–C5. With no grouped reference (or a wavy mixture) it is
+ * in no group. Any membership the carbonyl carbon had said nothing, since it
+ * was no centre, and is dropped first.
+ */
+function anomerIntoStereoGroups(mol: Molecule, anomeric: AtomId, reference: AtomId | undefined): Molecule {
+  const groups = stereoGroupsOf(mol);
+  if (groups.length === 0) return mol;
+  const home = reference === undefined ? undefined : stereoGroupAt(mol, reference);
+  const pruned = prunedStereoGroups(groups, (id) => id !== anomeric);
+  if (home === undefined) return pruned === groups ? mol : withStereoGroups(mol, pruned);
+  return withStereoGroups(
+    mol,
+    pruned.map((group) =>
+      group.kind === home.kind && group.index === home.index
+        ? { ...group, atomIds: [...group.atomIds, anomeric] }
+        : group,
+    ),
+  );
 }
 
 export type OpenRingRefusalReason =
@@ -1229,7 +1486,9 @@ export type OpenRingRefusalReason =
   /** Two sugar rings share this anomeric carbon. */
   | "ambiguous-ring"
   /** An acetal, a glycosylamine, a thio sugar: not a cyclised chain. */
-  | "glycoside";
+  | "glycoside"
+  /** A lactone's carbonyl carbon: an ester, which no ring-chain edit opens. */
+  | "lactone";
 
 export type OpenRingResult =
   | {
@@ -1254,18 +1513,25 @@ export type OpenRingResult =
  * anomeric carbon, no longer a centre, loses its marks.
  *
  * A glycoside is refused: an acetal is not a cyclised chain, and opening one
- * would have to delete its aglycone.
+ * would have to delete its aglycone. So is a lactone, an ester (decision 158).
+ * The old anomeric carbon leaves its stereo group (decision 157).
  */
 export function openRing(mol: Molecule, anomericCarbon: AtomId): OpenRingResult {
   const a = anomericCarbon;
   if (!Object.hasOwn(mol.atoms, a)) return { kind: "refused", reason: "no-such-atom", atomIds: [a] };
   const found: SugarRing[] = [];
+  let lactone = false;
   for (const ring of rings(mol)) {
     if (!ring.atomIds.includes(a)) continue;
     const perceived = perceiveSugarRing(mol, ring.atomIds, { anomericCarbon: a });
     if (perceived.kind === "sugarRing") found.push(perceived.ring);
+    else if (perceived.kind === "undetermined" && perceived.reason === "lactone") {
+      lactone ||= perceived.atomIds.includes(a);
+    }
   }
-  if (found.length === 0) return { kind: "refused", reason: "not-a-sugar-ring", atomIds: [a] };
+  if (found.length === 0) {
+    return { kind: "refused", reason: lactone ? "lactone" : "not-a-sugar-ring", atomIds: [a] };
+  }
   if (found.length > 1) return { kind: "refused", reason: "ambiguous-ring", atomIds: [a] };
   const ring = found[0]!;
   const z = ring.ringHeteroatom;
@@ -1287,5 +1553,10 @@ export function openRing(mol: Molecule, anomericCarbon: AtomId): OpenRingResult 
   next = updateBond(next, bondBetween(next, a, x)!.id, { order: 2, stereo: "none" });
   next = clearHydrogenPins(next, [a, x, z]);
   next = clearMarksAt(next, new Set([a]), true);
+  // The carbonyl carbon is no centre, so its stereo-group membership would
+  // be a statement about nothing: dropped with the marks (decision 157).
+  const groups = stereoGroupsOf(next);
+  const pruned = prunedStereoGroups(groups, (id) => id !== a);
+  if (pruned !== groups) next = withStereoGroups(next, pruned);
   return { kind: "opened", molecule: next, carbonylCarbon: a, hydroxylOxygen: z };
 }
