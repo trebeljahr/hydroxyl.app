@@ -593,6 +593,18 @@ function onMove(state: GestureState, pointer: GesturePointer): GestureResult {
 
   if (state.kind === "pan" && state.pointerId === pointer.pointerId) {
     /**
+     * A PAN WHOSE RELEASE NEVER ARRIVED ENDS HERE. A capture can fail, and a
+     * release lost outside the window is why `onDown` ends stale gestures at
+     * all. Without this the view would keep following a mouse with no button
+     * down until the next press. `buttons: 0` on a move is the browser saying
+     * the button is already up. Not for touch: a contact reports buttons 1
+     * for as long as it is on the glass, and its lift always arrives.
+     */
+    if (!state.touch && pointer.buttons === 0) {
+      const ended = abort(state);
+      return { state: ended.state, effects: [...ended.effects, { kind: "hover", point }] };
+    }
+    /**
      * THE SIGN. The drawing follows the pointer, so the VIEWPORT moves the
      * other way, and `panBy` moves the viewport by its argument. Per-move
      * deltas, because `panBy` is incremental.

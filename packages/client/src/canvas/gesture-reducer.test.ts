@@ -186,6 +186,33 @@ describe("gesture reducer — mouse and pen", () => {
     }
   });
 
+  it("ends a mouse or pen pan whose release never arrived on the first buttonless move", () => {
+    for (const pointerType of ["mouse", "pen"] as const) {
+      const { state, effects } = run([
+        down(ptr(1, pointerType, 100, 100, { button: 1, buttons: 4 })),
+        move(ptr(1, pointerType, 110, 100, { button: 1, buttons: 4 })),
+        // The pointerup went to some other element; the next move reports
+        // no button held.
+        move(ptr(1, pointerType, 150, 160, { buttons: 0 })),
+        move(ptr(1, pointerType, 200, 200, { buttons: 0 })),
+      ]);
+      expect(state).toEqual(GESTURE_IDLE);
+      // One pan frame, then the bracket closes and the pointer is hovering:
+      // the view does not follow a pointer with no button down.
+      expect(kinds(effects)).toEqual(["hoverEnd", "panStart", "pan", "panEnd", "hover", "hover"]);
+      expect(effects).toContainEqual({ kind: "release", pointerId: 1 });
+    }
+  });
+
+  it("keeps a touch pan going whatever its buttons say", () => {
+    const { state, effects } = run([
+      down(touch(7, 100, 100), { panTool: true }),
+      move(ptr(7, "touch", 130, 100, { buttons: 0 })),
+    ]);
+    expect(state.kind).toBe("pan");
+    expect(kinds(effects)).toEqual(["hoverEnd", "panStart", "pan"]);
+  });
+
   it("leaves a right press to the context menu", () => {
     const { effects } = run([
       down(ptr(1, "mouse", 50, 50, { button: 2, buttons: 2 })),

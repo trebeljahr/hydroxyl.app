@@ -442,6 +442,12 @@ export function useCanvasGestures(
       if (intent.kind === "zoom") {
         handlersRef.current.onZoom(intent.anchor, intent.factor);
       } else {
+        // The same clear a grab-style pan does at its start: the hover answer
+        // is stale the moment the view moves. It matters more here, because a
+        // wheel moves no cursor and no pointermove follows to correct it — the
+        // halo would stay on an atom that slid away from under the pointer.
+        // A zoom needs no clear: it pins whatever is under the cursor.
+        handlersRef.current.onHoverEnd();
         handlersRef.current.onPan(intent.delta);
       }
     };

@@ -205,6 +205,21 @@ describe("useCanvasGestures — wheel and trackpad", () => {
     expect(handlers.onZoom).not.toHaveBeenCalled();
   });
 
+  it("clears the hover before a wheel pan, and leaves it through a wheel zoom", () => {
+    const { svg } = mount(handlers);
+    wheel(svg, { deltaY: 30 });
+    // A wheel moves no cursor, so no pointermove follows to correct a halo
+    // left on the atom that just slid out from under the pointer.
+    expect(handlers.onHoverEnd).toHaveBeenCalledTimes(1);
+    expect(handlers.onHoverEnd.mock.invocationCallOrder[0]).toBeLessThan(
+      handlers.onPan.mock.invocationCallOrder[0]!,
+    );
+
+    // A zoom pins whatever is under the cursor, so the answer still holds.
+    wheel(svg, { deltaY: -100, ctrlKey: true });
+    expect(handlers.onHoverEnd).toHaveBeenCalledTimes(1);
+  });
+
   it("turns Shift + a vertical wheel into a horizontal pan", () => {
     const { svg } = mount(handlers);
     wheel(svg, { deltaY: 100, shiftKey: true });
