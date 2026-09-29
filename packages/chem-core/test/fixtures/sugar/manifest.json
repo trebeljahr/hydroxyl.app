@@ -1,0 +1,66 @@
+{
+  "generated": "2026-09-29",
+  "rdkit": "@rdkit/rdkit 2025.03.4 (MinimalLib): get_mol(smiles); set_new_coords(); get_molblock(). Header line 1 is the name, line 3 the SMILES. SMILES from PubChem (source per row).",
+  "fixtures": [
+    {
+      "file": "alpha-d-glucofuranose.mol",
+      "name": "alpha-D-glucofuranose",
+      "smiles": "C([C@H]([C@@H]1[C@@H]([C@H]([C@H](O1)O)O)O)O)O",
+      "source": "PubChem CID 11137711"
+    },
+    {
+      "file": "beta-d-galactofuranose.mol",
+      "name": "beta-D-galactofuranose",
+      "smiles": "C([C@H]([C@H]1[C@@H]([C@H]([C@@H](O1)O)O)O)O)O",
+      "source": "PubChem CID 11019448"
+    },
+    {
+      "file": "alpha-d-galactofuranose.mol",
+      "name": "alpha-D-galactofuranose",
+      "smiles": "C([C@H]([C@H]1[C@@H]([C@H]([C@H](O1)O)O)O)O)O",
+      "source": "PubChem CID 21627868"
+    },
+    {
+      "file": "l-glycero-alpha-d-manno-heptopyranose.mol",
+      "name": "L-glycero-alpha-D-manno-heptopyranose",
+      "smiles": "C([C@@H]([C@@H]1[C@H]([C@@H]([C@@H]([C@H](O1)O)O)O)O)O)O",
+      "source": "PubChem CID 125414"
+    },
+    {
+      "file": "2-deoxyadenosine.mol",
+      "name": "2'-deoxyadenosine",
+      "smiles": "C1[C@@H]([C@H](O[C@H]1N2C=NC3=C(N=CN=C32)N)CO)O",
+      "source": "PubChem CID 13730"
+    },
+    {
+      "file": "methyl-alpha-d-glucopyranoside.mol",
+      "name": "methyl alpha-D-glucopyranoside",
+      "smiles": "CO[C@@H]1[C@@H]([C@H]([C@@H]([C@H](O1)CO)O)O)O",
+      "source": "PubChem CID 64947"
+    },
+    {
+      "file": "methyl-beta-d-glucopyranoside.mol",
+      "name": "methyl beta-D-glucopyranoside",
+      "smiles": "CO[C@H]1[C@@H]([C@H]([C@@H]([C@H](O1)CO)O)O)O",
+      "source": "PubChem CID 445238"
+    },
+    {
+      "file": "n-acetyl-beta-neuraminic-acid.mol",
+      "name": "N-acetyl-beta-neuraminic acid",
+      "smiles": "CC(=O)N[C@@H]1[C@H](C[C@](O[C@H]1[C@@H]([C@@H](CO)O)O)(C(=O)O)O)O",
+      "source": "PubChem CID 445063"
+    },
+    {
+      "file": "dihydroxyacetone.mol",
+      "name": "dihydroxyacetone",
+      "smiles": "C(C(=O)CO)O",
+      "source": "PubChem CID 670"
+    },
+    {
+      "file": "lamivudine.mol",
+      "name": "lamivudine",
+      "smiles": "C1[C@H](O[C@H](S1)CO)N2C=CC(=NC2=O)N",
+      "source": "PubChem CID 60825"
+    }
+  ]
+}

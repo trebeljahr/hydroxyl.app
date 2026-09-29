@@ -60,6 +60,13 @@ export * from "./mechanism.js";
 export * from "./stereo-config.js";
 // Achirality proved by an atom mapping; reads stereo-config.
 export * from "./achirality.js";
+// One centre on a synthetic Fischer cross, read through stereo-config: the
+// only thing sugar and amino-acid D/L share (decision 132).
+export * from "./fischer-side.js";
+// Parent-chain selection with an honest stop at a tie.
+export * from "./carbon-chain.js";
+// Sugar rings, carbohydrate numbering, D/L, alpha/beta, cyclise and open.
+export * from "./sugar.js";
 // One implicit hydrogen drawn as a real atom for an arrow to reach (decision
 // 131). Reads stereo-config to keep a centre's configuration, so it sits last.
 export * from "./promote-hydrogen.js";

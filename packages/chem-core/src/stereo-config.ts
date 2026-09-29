@@ -183,7 +183,8 @@ export interface CentreLigands {
  *                  but a volume under parity.ts's floor is
  *                  `ambiguous-geometry`, never a guessed sign.
  *   `not-covered`  the convention cannot state this unit at all: a double bond
- *                  under fischer or haworth, a centre outside the Haworth ring.
+ *                  under fischer or haworth, a centre outside the Haworth ring,
+ *                  or any unit outside the read's `ReadScope`.
  *
  * The rest are stereo.ts's reasons, with stereo.ts's meanings.
  */
@@ -273,6 +274,17 @@ export interface Placement {
   readonly mol: Molecule;
   readonly positions?: Readonly<Record<AtomId, Vec2>> | undefined;
   readonly marks?: Readonly<Record<BondId, PlacedMark>> | undefined;
+}
+
+/**
+ * Which units a read covers (decision 144). A unit outside the scope reads
+ * `not-covered` and can never refuse the placement, so one centre can be put
+ * on a synthetic Fischer cross while every other centre keeps bonds that are
+ * nowhere near the page axes. Double bonds are outside every scope, because a
+ * scope names centres. Absent means every unit.
+ */
+export interface ReadScope {
+  readonly centres: readonly AtomId[];
 }
 
 export type ConfigUnavailableReason =
@@ -724,8 +736,15 @@ function readDoubleBond(
   return { kind: "specified", relation: sideFrom * sideTo > 0 ? "cis" : "trans" };
 }
 
-function computeRead(ctx: ReadContext, convention: DepthConvention): ConfigRead {
+const NOT_COVERED: CentreReading = Object.freeze({ kind: "undetermined", reason: "not-covered" });
+
+function computeRead(
+  ctx: ReadContext,
+  convention: DepthConvention,
+  scope: ReadScope | undefined,
+): ConfigRead {
   const { topology } = topologyRecord(ctx.mol);
+  const inScope = scope === undefined ? undefined : new Set(scope.centres);
 
   let ring: ReadonlySet<AtomId> = new Set();
   if (convention.kind === "haworth") {
@@ -744,6 +763,10 @@ function computeRead(ctx: ReadContext, convention: DepthConvention): ConfigRead 
   const refused: AtomId[] = [];
   let refusal: ConfigUnavailableReason | undefined;
   for (const centre of topology.centres) {
+    if (inScope !== undefined && !inScope.has(centre.atomId)) {
+      centres.push(Object.freeze({ ...centre, reading: NOT_COVERED }));
+      continue;
+    }
     const reading = readCentre(ctx, centre, convention, ring);
     if (reading.kind === "unavailable") {
       refusal ??= reading.reason;
@@ -758,7 +781,14 @@ function computeRead(ctx: ReadContext, convention: DepthConvention): ConfigRead 
 
   const doubleBonds = topology.doubleBonds.map(
     (unit): DoubleBondConfig =>
-      Object.freeze({ ...unit, reading: Object.freeze(readDoubleBond(ctx, unit, convention)) }),
+      Object.freeze({
+        ...unit,
+        reading: Object.freeze(
+          inScope === undefined
+            ? readDoubleBond(ctx, unit, convention)
+            : { kind: "undetermined" as const, reason: "not-covered" as const },
+        ),
+      }),
   );
   return Object.freeze({
     kind: "read",
@@ -784,12 +814,20 @@ const READS_BY_INSTANCE = new WeakMap<Molecule, Map<string, ConfigRead>>();
  * `unavailable` when the placement as a whole does not follow the convention:
  * a Fischer bond off the page axes, a Haworth ring that is not a ring. Every
  * other failure is per unit, an `undetermined` reading with its reason.
+ *
+ * `scope` restricts the read to some centres (decision 144): everything else
+ * reads `not-covered`, and only a centre in scope can refuse the placement.
  */
-export function readConfig(placement: Placement, convention: DepthConvention): ConfigRead {
+export function readConfig(
+  placement: Placement,
+  convention: DepthConvention,
+  scope?: ReadScope,
+): ConfigRead {
   const mol = placement.mol;
   const cacheable =
     placement.positions === undefined &&
     placement.marks === undefined &&
+    scope === undefined &&
     (convention.kind === "wedgeHash" || convention.kind === "fischer");
   let reads: Map<string, ConfigRead> | undefined;
   if (cacheable) {
@@ -804,6 +842,7 @@ export function readConfig(placement: Placement, convention: DepthConvention): C
   const result = computeRead(
     { mol, positions: placement.positions, marks: placement.marks },
     convention,
+    scope,
   );
   reads?.set(convention.kind, result);
   return result;

@@ -188,6 +188,29 @@ function circumradius(edge: number, size: number): number {
   return edge / (2 * Math.sin(Math.PI / size));
 }
 
+/**
+ * The vertices of a regular `size`-gon with edge `edge` centred on `centre`:
+ * the first at `startAngle` (radians, y-up), the rest CLOCKWISE on the page.
+ *
+ * For re-laying a ring whose atoms already exist, which the stamping
+ * gestures below never do: `cycliseSugar` closes a chain onto itself and
+ * needs the new ring as a polygon, not an open zig-zag with one long bond.
+ */
+export function regularRingVertices(
+  size: number,
+  centre: Vec2,
+  edge: number,
+  startAngle: number,
+): Vec2[] {
+  const radius = circumradius(edge, size);
+  const out: Vec2[] = [];
+  for (let k = 0; k < size; k++) {
+    const angle = startAngle - (2 * Math.PI * k) / size;
+    out.push({ x: centre.x + radius * Math.cos(angle), y: centre.y + radius * Math.sin(angle) });
+  }
+  return out;
+}
+
 /** Distance from a regular n-gon's centre to the midpoint of one of its edges. */
 function apothem(edge: number, size: number): number {
   return edge / (2 * Math.tan(Math.PI / size));
