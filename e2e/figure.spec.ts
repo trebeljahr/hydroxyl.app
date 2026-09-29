@@ -181,6 +181,16 @@ test("exports ONE self-contained SVG: labelled panels, one bond length, unique i
 }, testInfo) => {
   await openEditor(page);
   await composeThreeViews(page);
+
+  // WITH THE ROTATE HANDLE ON THE CANVAS. Every other overlay mark is drawn
+  // only during a gesture; the handle is drawn whenever two atoms or more are
+  // selected (decision 105), so it is the one most likely to be on screen when
+  // someone exports. The blanket `data-overlay` check below binds it only if
+  // it is actually there.
+  await page.locator(CANVAS).click({ position: { x: 4, y: 4 } });
+  await page.keyboard.press("ControlOrMeta+a");
+  await expect(page.locator('[data-overlay="rotate-handle"]')).toHaveCount(1);
+
   await openExportDialog(page);
   await expect(page.locator('[data-shell="figure-preview"]')).toBeVisible();
 
@@ -232,14 +242,23 @@ test("exports ONE self-contained SVG: labelled panels, one bond length, unique i
   for (const t of transforms) expect(t).toMatch(/^translate\(-?[\d.]+ -?[\d.]+\)$/);
   expect(firstSkeletalBondLength(svg)).toBeCloseTo(24, 1);
 
-  // The viewBox does not move with the editor's pan and zoom.
+  // The viewBox does not move with the editor's pan and zoom. BOTH are
+  // driven, and they are different gestures (decision 106): a bare wheel pans
+  // and Ctrl + wheel zooms, so a spec that only scrolled would prove half of
+  // what it claims.
   await page.keyboard.press("Escape");
   await expect(page.locator(DIALOG)).toBeHidden();
   const box = (await page.locator(CANVAS).boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  const zoom = page.locator('[data-status="zoom"]');
+  const zoomBefore = await zoom.textContent();
+  await page.keyboard.down("Control");
   await page.mouse.wheel(0, -600);
-  await page.keyboard.press("ControlOrMeta+0");
+  await page.keyboard.up("Control");
+  await expect(zoom).not.toHaveText(zoomBefore ?? "");
   await page.mouse.wheel(0, 400);
+  await page.keyboard.press("ControlOrMeta+0");
+  await page.mouse.wheel(120, 400);
   await openExportDialog(page);
   const again = (await downloadFrom(page, "figure.export-svg")).toString("utf8");
   expect(attr(again, "viewBox")).toBe(attr(svg, "viewBox"));
