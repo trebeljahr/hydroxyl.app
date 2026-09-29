@@ -1426,6 +1426,64 @@ describe("reaction arrows, conditions, brackets and TS marks (decisions 193, 194
     }
   });
 
+  it("throws from the writers on exactly what the codec refuses, so no document saves that will not reopen", () => {
+    // Each draft is one the codec refuses in a file. Added through the one
+    // minting site it must throw with the codec's reason, as `withLocants`
+    // does, rather than save a document that then will not open.
+    const { doc, s } = schemeDocument();
+    const burn = (conditions: unknown) =>
+      ({ kind: "reactionArrow", from: [s.methane, s.oxygen], to: [s.carbonDioxide, s.water], conditions }) as never;
+    const step = (...items: unknown[]) => ({ steps: [items], numbered: false });
+    const refused: readonly [string, Parameters<typeof addSchemeAnnotation>[1], RegExp][] = [
+      ["a second delta on the hydroxide O", { kind: "partialCharge", atomId: s.hydroxideO, sign: "+" }, /both put a partial charge/],
+      ["a partial bond from C to itself", { kind: "partialBond", atoms: [s.tsCarbon, s.tsCarbon] }, /two different atoms/],
+      ["a bracket charge of 0", { kind: "bracket", species: [s.allylA], charge: 0 }, /omitting it/],
+      ["a bracket charge of 1/2", { kind: "bracket", species: [s.allylA], charge: 0.5 } as never, /int/i],
+      ["a dagger stored as false", { kind: "bracket", species: [s.allylA], transitionState: false } as never, /true/],
+      ["a coefficient of 0", { kind: "coefficient", species: s.water, value: 0 }, />0/],
+      ["a coefficient of -2", { kind: "coefficient", species: s.water, value: -2 }, />0/],
+      ["-300 °C", burn(step({ kind: "temperature", value: -300, unit: "C" })), /absolute zero/],
+      ["-1 K", burn(step({ kind: "temperature", value: -1, unit: "K" })), /absolute zero/],
+      ["a time of 0 min", burn(step({ kind: "time", value: 0, unit: "min" })), />0/],
+      ["no steps", burn({ steps: [], numbered: false }), /steps/],
+      ["an empty step", burn({ steps: [[]], numbered: false }), /steps/],
+      ["an empty reagent", burn(step({ kind: "reagent", text: "" })), /text/],
+      ["an unknown bias", { kind: "reactionArrow", from: [s.methane], to: [s.water], equilibrium: { bias: "sideways" } } as never, /bias/],
+      ["a retro arrow with no target", { kind: "retrosynthesisArrow", target: [], precursors: [s.methane] } as never, /target/],
+      ["empty text", { kind: "text", text: "", at: { x: 0, y: 0 } }, /text/],
+      ["a curly arrow skewed past the chord", {
+        kind: "curlyArrow",
+        electrons: "pair",
+        source: { kind: "lonePair", atomId: s.hydroxideO },
+        sink: { kind: "atom", atomId: s.tsCarbon },
+        bulge: 0.5,
+        skew: 0.7,
+      }, /skew/],
+    ];
+    const encoded = encodedOf(doc);
+    for (const [name, draft, reason] of refused) {
+      // The pairing: the codec refuses this very record in a file...
+      const copy = structuredClone(encoded);
+      copy.annotations.push({ ...(draft as object), id: `ann_${doc.nextAnnotationId}` });
+      copy.nextAnnotationId = doc.nextAnnotationId + 1;
+      expect(safeDecodeDocument(copy).ok, name).toBe(false);
+      // ...and the writers throw on it, naming why.
+      expect(() => addSchemeAnnotation(doc, draft), name).toThrow(reason);
+      expect(
+        () => createDocument({ molecule: s.molecule, annotations: [...doc.annotations, { ...(draft as object), id: "ann_99" } as never], now: NOW }),
+        name,
+      ).toThrow(reason);
+    }
+    // A counter that would reuse an id is refused in a file and by createDocument.
+    expect(() => createDocument({ molecule: s.molecule, annotations: doc.annotations, nextAnnotationId: 3, now: NOW })).toThrow(
+      /reuse the id/,
+    );
+    // Control: what the codec accepts, the writers accept, and it reopens.
+    const fine = addSchemeAnnotation(doc, { kind: "coefficient", species: s.carbonDioxide, value: 0.5 }).document;
+    expect(roundTrip(fine)).toEqual(fine);
+    expect(roundTrip(createDocument({ molecule: s.molecule, annotations: fine.annotations, now: NOW })).annotations).toEqual(fine.annotations);
+  });
+
   it("refuses a new kind that names an atom not in the molecule, including a prototype member", () => {
     const encoded = encodedOf(schemeDocument().doc);
     const ghosts: ((copy: Record<string, any>, ghost: string) => void)[] = [

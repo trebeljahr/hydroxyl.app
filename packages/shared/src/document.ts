@@ -558,15 +558,16 @@ export function createDocument(init: CreateDocumentInit = {}): SketchDocument {
   const stylePreset = init.stylePreset ?? NEW_DOCUMENT_PRESET;
   const molecule = init.molecule ?? emptyMolecule();
   const annotations = (init.annotations ?? []).map(assembleSchemeAnnotation);
-  for (const annotation of annotations) requireAnchorsIn(molecule, annotation);
+  const nextAnnotationId =
+    init.nextAnnotationId ??
+    annotations.reduce((next, a) => Math.max(next, (idSuffix(a.id) ?? 0) + 1), 1);
+  requireReopens(molecule, annotations, nextAnnotationId);
   const doc: SketchDocument = {
     schemaVersion: SCHEMA_VERSION,
     id: init.id ?? generateId("doc"),
     molecule,
     annotations,
-    nextAnnotationId:
-      init.nextAnnotationId ??
-      annotations.reduce((next, a) => Math.max(next, (idSuffix(a.id) ?? 0) + 1), 1),
+    nextAnnotationId,
     stylePreset,
     // Seeded from the preset, so a display default the preset owns — the
     // aromatic circle — reaches the panels a document opens with.
@@ -806,20 +807,105 @@ export type SchemeAnnotationDraft = SchemeAnnotationInput extends infer T
     : never
   : never;
 
+/** A reason the codec refuses a document's annotations, and where it files it. */
+interface AnnotationListIssue {
+  /** The annotation it is filed against, by index. */
+  readonly index: number;
+  readonly path: readonly (string | number)[];
+  readonly message: string;
+}
+
 /**
- * Throws unless every atom and bond `annotation` names is in `molecule`.
+ * What the codec refuses about a document's annotations TAKEN TOGETHER, in
+ * its own words: a duplicate id, a counter that would reuse one, a reference
+ * to an atom or bond the molecule does not hold, and a second partial charge
+ * on one atom (decision 201). The one statement of these rules: the decode's
+ * `superRefine` files each as an issue, and the writers throw on them
+ * (`requireReopens`), so the two cannot drift apart.
  *
- * A programming error at this end — the codec reports the same condition in a
- * FILE as a listed issue, because a file is untrusted and a caller is not.
- * `Object.hasOwn`, never an index read: "constructor" is not an atom.
+ * A DANGLING annotation is refused, never kept: an edit prunes it in the same
+ * undo entry, so a file holding one was not written by this editor, and
+ * accepting it would make every consumer handle a reference that resolves to
+ * nothing. `Object.hasOwn`, never an index read: "constructor" is not an atom.
  */
-function requireAnchorsIn(molecule: Molecule, annotation: SchemeAnnotation): void {
-  const missing = danglingReferences(molecule, annotation);
-  if (missing.length > 0) {
-    throw new Error(
-      `Annotation ${annotation.id} names ${missing.join(", ")}, which the molecule ` +
-        `does not hold. A dangling annotation is a document that cannot be saved.`,
-    );
+function annotationListIssues(
+  molecule: Molecule,
+  annotations: readonly SchemeAnnotation[],
+  nextAnnotationId: number,
+): AnnotationListIssue[] {
+  const issues: AnnotationListIssue[] = [];
+  const annotationIds = new Set<string>();
+  // Decision 201: one partial charge per atom. A second is two statements
+  // about one atom's polarisation that the label pass could only draw one
+  // of, so the file is refused rather than half drawn.
+  const partialChargeAt = new Map<string, string>();
+  annotations.forEach((annotation, index) => {
+    if (annotation.kind === "partialCharge") {
+      const first = partialChargeAt.get(annotation.atomId);
+      if (first !== undefined) {
+        issues.push({
+          index,
+          path: ["annotations", index, "atomId"],
+          message: `annotations ${first} and ${annotation.id} both put a partial charge on ${annotation.atomId}`,
+        });
+      } else {
+        partialChargeAt.set(annotation.atomId, annotation.id);
+      }
+    }
+    if (annotationIds.has(annotation.id)) {
+      issues.push({ index, path: ["annotations", index, "id"], message: `duplicate annotation id ${annotation.id}` });
+    }
+    annotationIds.add(annotation.id);
+    const suffix = idSuffix(annotation.id);
+    if (suffix !== undefined && suffix >= nextAnnotationId) {
+      issues.push({
+        index,
+        path: ["nextAnnotationId"],
+        message: `nextAnnotationId ${nextAnnotationId} would reuse the id ${annotation.id}`,
+      });
+    }
+    for (const id of danglingReferences(molecule, annotation)) {
+      issues.push({
+        index,
+        path: ["annotations", index],
+        message: `annotation ${annotation.id} names ${id}, which is not in the molecule`,
+      });
+    }
+  });
+  return issues;
+}
+
+/**
+ * Throws unless the codec would decode `annotations` beside `molecule` and
+ * `nextAnnotationId`: each record against its schema arm, then the list's
+ * rules above. `withLocants`'s rule — a writer refuses what the decode
+ * refuses — so a document built here cannot save (journal, IndexedDB, a
+ * `.json`) and then fail to reopen. A programming error at this end: the
+ * codec reports the same thing in a FILE as a listed issue, because a file is
+ * untrusted and a caller is not. `only` limits it to the one record a caller
+ * just added to a list that already reopens.
+ */
+function requireReopens(
+  molecule: Molecule,
+  annotations: readonly SchemeAnnotation[],
+  nextAnnotationId: number,
+  only?: number,
+): void {
+  annotations.forEach((annotation, index) => {
+    if (only !== undefined && index !== only) return;
+    const parsed = annotationSchema.safeParse(annotation);
+    if (!parsed.success) {
+      const reasons = parsed.error.issues.map((issue) =>
+        issue.path.length === 0 ? issue.message : `${issue.path.join(".")}: ${issue.message}`,
+      );
+      throw new Error(`Annotation ${annotation.id} would not reopen: ${reasons.join("; ")}.`);
+    }
+  });
+  const issue = annotationListIssues(molecule, annotations, nextAnnotationId).find(
+    (candidate) => only === undefined || candidate.index === only,
+  );
+  if (issue !== undefined) {
+    throw new Error(`The document would not reopen: ${issue.message}.`);
   }
 }
 
@@ -878,7 +964,10 @@ function danglingReferences(molecule: Molecule, annotation: SchemeAnnotation): s
  * The one place an id is minted, so ids stay monotonic and never reused, and
  * a fixture that adds arrows in a fixed order gets the same ids every run.
  *
- * @throws if the draft names an atom or bond the molecule does not hold.
+ * @throws on anything the codec would refuse to reopen: a draft naming an
+ * atom or bond the molecule does not hold, one its schema arm refuses (a
+ * bracket charge of 0, a temperature below absolute zero, an empty step), or
+ * a second partial charge on an atom that has one.
  */
 export function addSchemeAnnotation(
   doc: SketchDocument,
@@ -886,15 +975,10 @@ export function addSchemeAnnotation(
 ): { readonly document: SketchDocument; readonly id: SchemeAnnotationId } {
   const id = schemeAnnotationId(doc.nextAnnotationId);
   const annotation = assembleSchemeAnnotation({ ...draft, id } as SchemeAnnotationInput);
-  requireAnchorsIn(doc.molecule, annotation);
-  return {
-    document: {
-      ...doc,
-      annotations: [...doc.annotations, annotation],
-      nextAnnotationId: doc.nextAnnotationId + 1,
-    },
-    id,
-  };
+  const annotations = [...doc.annotations, annotation];
+  const nextAnnotationId = doc.nextAnnotationId + 1;
+  requireReopens(doc.molecule, annotations, nextAnnotationId, annotations.length - 1);
+  return { document: { ...doc, annotations, nextAnnotationId }, id };
 }
 
 /**
@@ -2038,54 +2122,13 @@ export const sketchDocumentSchema = z
     });
 
     // Annotation ids are unique and below the counter, for the reason atom
-    // ids are below `nextId`; and every atom and bond an annotation names is
-    // in the molecule. A dangling annotation is REFUSED, never kept: an edit
-    // prunes it in the same undo entry, so a file holding one was not written
-    // by this editor, and accepting it would make every consumer handle a
-    // reference that resolves to nothing.
-    const annotationIds = new Set<string>();
-    // Decision 201: one partial charge per atom. A second is two statements
-    // about one atom's polarisation that the label pass could only draw one
-    // of, so the file is refused rather than half drawn.
-    const partialChargeAt = new Map<string, string>();
-    doc.annotations.forEach((parsed, index) => {
-      if (parsed.kind === "partialCharge") {
-        const first = partialChargeAt.get(parsed.atomId);
-        if (first !== undefined) {
-          ctx.addIssue({
-            code: "custom",
-            message: `annotations ${first} and ${parsed.id} both put a partial charge on ${parsed.atomId}`,
-            path: ["annotations", index, "atomId"],
-          });
-        } else {
-          partialChargeAt.set(parsed.atomId, parsed.id);
-        }
-      }
-      if (annotationIds.has(parsed.id)) {
-        ctx.addIssue({
-          code: "custom",
-          message: `duplicate annotation id ${parsed.id}`,
-          path: ["annotations", index, "id"],
-        });
-      }
-      annotationIds.add(parsed.id);
-      const suffix = idSuffix(parsed.id);
-      if (suffix !== undefined && suffix >= doc.nextAnnotationId) {
-        ctx.addIssue({
-          code: "custom",
-          message: `nextAnnotationId ${doc.nextAnnotationId} would reuse the id ${parsed.id}`,
-          path: ["nextAnnotationId"],
-        });
-      }
-      const missing = danglingReferences(doc.molecule, assembleSchemeAnnotation(parsed));
-      for (const id of missing) {
-        ctx.addIssue({
-          code: "custom",
-          message: `annotation ${parsed.id} names ${id}, which is not in the molecule`,
-          path: ["annotations", index],
-        });
-      }
-    });
+    // ids are below `nextId`; every atom and bond an annotation names is in
+    // the molecule; one partial charge per atom. The same rules the writers
+    // throw on (`annotationListIssues`).
+    const assembled = doc.annotations.map(assembleSchemeAnnotation);
+    for (const issue of annotationListIssues(doc.molecule, assembled, doc.nextAnnotationId)) {
+      ctx.addIssue({ code: "custom", message: issue.message, path: [...issue.path] });
+    }
 
     // A locant for an atom that is not there is a dangling reference, refused
     // like an annotation's; an edit prunes it in the same undo entry. An empty
