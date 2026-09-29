@@ -461,10 +461,10 @@ export interface ProjectionCoverage {
 /**
  * Why a unit the frame reaches is not stated by the layout.
  *
- *   no-mark-to-carry        planar: the configuration says the centre is
- *                           specified and the drawing carries no mark there
- *                           to show it (the mark WRITER is
- *                           `planar-frame-marks-mills-and-steroid`'s)
+ *   no-mark-to-carry        planar: the configuration states the centre and
+ *                           no bond the placement policy allows can show it
+ *                           (marks.ts, decision 178): every candidate is
+ *                           barred or reads ambiguous where it is drawn
  *   unspecified-in-config   the configuration does not state this unit, and
  *                           the template cannot draw "not stated": every
  *                           Fischer cross claims a configuration
