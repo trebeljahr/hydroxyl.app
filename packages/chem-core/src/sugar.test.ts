@@ -11,7 +11,7 @@
  * pass while proving nothing.
  */
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -555,12 +555,15 @@ describe("alpha/beta", () => {
   });
 
   it("never says which way an alpha substituent points", () => {
-    // Alpha is a relative configuration. "Alpha means the anomeric OH points
-    // down" holds for a D-pyranose in one orientation and is false for
-    // alpha-L-fucopyranose; no code or comment may carry it.
-    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "sugar.ts"), "utf8");
-    expect(source).not.toMatch(/points? down/i);
-    expect(source).not.toMatch(/alpha means/i);
+    // Alpha is a relative configuration. The shortcut that ties it to a
+    // direction on the page holds for a D-pyranose drawn one way and is false
+    // for alpha-L-fucopyranose, so no chem-core source may carry it.
+    const dir = dirname(fileURLToPath(import.meta.url));
+    for (const file of readdirSync(dir).filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"))) {
+      const source = readFileSync(join(dir, file), "utf8");
+      expect(source, file).not.toMatch(/alpha means/i);
+      expect(source, file).not.toMatch(/anomeric (OH|oxygen|hydroxyl|substituent)\s+points/i);
+    }
   });
 });
 
