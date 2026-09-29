@@ -81,6 +81,7 @@ import {
 } from "./frames.js";
 import { planarMillsTemplate } from "./mills.js";
 import { planarWedgeDashTemplate } from "./planar.js";
+import { planarSteroidTemplate } from "./steroid-panel.js";
 import {
   draftLayoutAccess,
   placementOfLayout,
@@ -113,6 +114,7 @@ import {
 const TEMPLATES: Readonly<Record<string, ProjectionTemplateImplementation<ProjectionView, unknown>>> = {
   "planar/wedgeDash": planarWedgeDashTemplate as ProjectionTemplateImplementation<ProjectionView, unknown>,
   "planar/mills": planarMillsTemplate as ProjectionTemplateImplementation<ProjectionView, unknown>,
+  "planar/steroid": planarSteroidTemplate as ProjectionTemplateImplementation<ProjectionView, unknown>,
   "chain/fischer": chainFischerTemplate as ProjectionTemplateImplementation<ProjectionView, unknown>,
 };
 
@@ -145,7 +147,9 @@ let topologyComputations = 0;
 function topologyViewKey(view: ProjectionView): string {
   switch (view.kind) {
     case "planar":
-      return JSON.stringify([view.kind, view.template]);
+      // The accepted skeleton is topology: which atoms are the core, checked
+      // against the molecule (decision 163).
+      return JSON.stringify([view.kind, view.template, view.params.skeleton ?? null]);
     case "chain":
       return JSON.stringify([view.kind, view.template, view.frame, view.params.top]);
     case "ring":
@@ -511,6 +515,33 @@ function freezeLayout(
     if (node !== undefined) drawnAs[atomId] = node;
   }
 
+  const locants: Record<AtomId, string> = {};
+  for (const atomId of mol.atomIds) {
+    const locant = draft.locants.get(atomId);
+    if (locant !== undefined) locants[atomId] = locant;
+  }
+  // A face label is a claim about a centre, so only a centre the layout
+  // states may carry one (decisions 146, 155).
+  const stated = new Set(coverage.centres);
+  const labelOrder = new Map(mol.atomIds.map((id, i) => [id, i]));
+  const faceLabels = draft.faceLabels
+    .filter((label) => stated.has(label.atomId))
+    .sort((p, q) => {
+      const byAtom = (labelOrder.get(p.atomId) ?? 0) - (labelOrder.get(q.atomId) ?? 0);
+      if (byAtom !== 0) return byAtom;
+      if (p.ligand.kind !== q.ligand.kind) return p.ligand.kind === "atom" ? -1 : 1;
+      return p.ligand.kind === "atom" && q.ligand.kind === "atom" ? compareIds(p.ligand.atomId, q.ligand.atomId) : 0;
+    })
+    .map((label) =>
+      Object.freeze({
+        atomId: label.atomId,
+        locant: label.locant,
+        ligand: Object.freeze({ ...label.ligand }),
+        face: label.face,
+        ...(label.group === undefined ? {} : { group: label.group }),
+      }),
+    );
+
   const frozenBonds = bonds.map((bond) =>
     Object.freeze(
       bond.sourceBondId === undefined
@@ -544,6 +575,8 @@ function freezeLayout(
     coverage,
     unplaced,
     collisions: collisions(nodeOrder, positions, draft.bondLength),
+    locants: Object.freeze(locants),
+    faceLabels: Object.freeze(faceLabels),
   });
 }
 

@@ -82,9 +82,11 @@ export * from "./skeleton/table.js";
 export * from "./skeleton/steroid.js";
 // The projection engine: frames, project and read back. Built on
 // stereo-config's reading conventions and read by nothing above. The
-// templates (template.ts, planar.ts, fischer.ts) stay internal: a template's
-// `place` returns an unchecked draft, and only `project`, which reads every
-// draft back before returning it (decision 146), may hand a layout out.
+// templates and their helpers (template.ts, planar.ts, mills.ts,
+// steroid-panel.ts, fischer.ts, marks.ts, skeleton-labels.ts) stay internal:
+// a template's `place` returns an unchecked draft, and only `project`, which
+// reads every draft back before returning it (decision 146), may hand a
+// layout out.
 export * from "./projection/types.js";
 export * from "./projection/nodes.js";
 export * from "./projection/frames.js";

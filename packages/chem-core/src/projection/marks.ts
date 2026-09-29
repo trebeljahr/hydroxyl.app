@@ -40,11 +40,14 @@
  * A REVEALED HYDROGEN is the node `<centre>.H` joined by `<centre>.H.bond`
  * (decision 147), ONE bond length out (`CHARACTERISTIC_LENGTHS.planar`), on
  * the bisector of the widest angular gap between the centre's drawn bonds.
- * Equal gaps — every gap of a regular ring-fusion atom — go to the most
- * nearly vertical bisector and then the upward one: where a steroid's 8β-H
- * and 9α-H are printed. That is a choice of where on the page, never of which
- * face: the face is the read-back's. The hydrogen is read where it is drawn
- * (decision 179). An id a hand-edited document already uses is skipped.
+ * Gaps within ten degrees of the widest are equals — every gap of a ring-
+ * fusion atom, however the rings were drawn — and go to the most nearly
+ * vertical bisector and then the upward one: where a steroid's 5α-H, 8β-H,
+ * 9α-H and 14α-H are printed. A bisector that would put the H within half a
+ * bond of another node is passed over while another is clear. That is a
+ * choice of where on the page, never of which face: the face is the
+ * read-back's. The hydrogen is read where it is drawn (decision 179). An id a
+ * hand-edited document already uses is skipped.
  */
 
 import { bondsAt, otherEnd } from "../molecule.js";
@@ -278,10 +281,22 @@ function undo(draft: PlacedLayout, centre: AtomId, candidate: Candidate): void {
 }
 
 /**
+ * Gaps whose widths differ by less than this count as equally wide: a
+ * drawing's own irregularity (RDKit's steroid has 118 and 122 degree angles)
+ * must not decide which side of a ring-fusion atom its hydrogen goes.
+ */
+const EQUAL_GAP = Math.PI / 18;
+
+/** A candidate place nearer than this many `b` to another node is crowded (decision 157's half bond). */
+const CROWDED = 0.5;
+
+/**
  * One bond length from the centre, on the bisector of the widest angular gap
- * between its drawn bonds. Equal gaps (within a millionth of a radian) go to
- * the most nearly vertical bisector, then to the upward one, then to the one
- * met first counter-clockwise from +x.
+ * between its drawn bonds. Gaps within ten degrees of the widest are equals,
+ * taken most nearly vertical first, then upward, then counter-clockwise from
+ * +x. A bisector whose hydrogen would land within half a bond of another node
+ * is passed over for the next, while any other is clear: choosing where a new
+ * node goes, which is not moving an atom the author drew.
  */
 function revealedHydrogenPosition(mol: Molecule, draft: PlacedLayout, centre: AtomId): Vec2 {
   const origin = draft.positions.get(centre)!;
@@ -298,26 +313,36 @@ function revealedHydrogenPosition(mol: Molecule, draft: PlacedLayout, centre: At
   }
   if (angles.length === 0) return { x: origin.x, y: origin.y + length };
   angles.sort((a, b) => a - b);
-  let best: { width: number; bisector: number } | undefined;
-  for (let i = 0; i < angles.length; i++) {
-    const from = angles[i]!;
+  const gaps = angles.map((from, i) => {
     const to = i + 1 < angles.length ? angles[i + 1]! : angles[0]! + 2 * Math.PI;
-    const width = to - from;
-    const bisector = from + width / 2;
-    if (best === undefined || prefer(width, bisector, best.width, best.bisector)) best = { width, bisector };
-  }
-  const direction = best!.bisector;
-  return { x: origin.x + length * Math.cos(direction), y: origin.y + length * Math.sin(direction) };
+    return { width: to - from, bisector: from + (to - from) / 2 };
+  });
+  const widest = Math.max(...gaps.map((g) => g.width));
+  const byPlace = (p: { bisector: number }, q: { bisector: number }): number => {
+    const vertical = Math.abs(Math.sin(q.bisector)) - Math.abs(Math.sin(p.bisector));
+    if (Math.abs(vertical) > 1e-9) return vertical;
+    const up = Math.sin(q.bisector) - Math.sin(p.bisector);
+    if (Math.abs(up) > 1e-9) return up;
+    return normalAngle(p.bisector) - normalAngle(q.bisector);
+  };
+  const equals = gaps.filter((g) => g.width >= widest - EQUAL_GAP).sort(byPlace);
+  const rest = gaps.filter((g) => g.width < widest - EQUAL_GAP).sort((p, q) => q.width - p.width || byPlace(p, q));
+  const places = [...equals, ...rest].map((g) => ({
+    x: origin.x + length * Math.cos(g.bisector),
+    y: origin.y + length * Math.sin(g.bisector),
+  }));
+  const limit = CROWDED * draft.bondLength;
+  const clear = places.find((place) => {
+    for (const [node, at] of draft.positions) {
+      if (node === centre) continue;
+      if (Math.hypot(at.x - place.x, at.y - place.y) < limit) return false;
+    }
+    return true;
+  });
+  return clear ?? places[0]!;
 }
 
-const GAP_TOLERANCE = 1e-6;
-
-function prefer(width: number, bisector: number, bestWidth: number, bestBisector: number): boolean {
-  if (width > bestWidth + GAP_TOLERANCE) return true;
-  if (width < bestWidth - GAP_TOLERANCE) return false;
-  const vertical = Math.abs(Math.sin(bisector));
-  const bestVertical = Math.abs(Math.sin(bestBisector));
-  if (vertical > bestVertical + GAP_TOLERANCE) return true;
-  if (vertical < bestVertical - GAP_TOLERANCE) return false;
-  return Math.sin(bisector) > Math.sin(bestBisector) + GAP_TOLERANCE;
+function normalAngle(angle: number): number {
+  const turned = angle % (2 * Math.PI);
+  return turned < 0 ? turned + 2 * Math.PI : turned;
 }

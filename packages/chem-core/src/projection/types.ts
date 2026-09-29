@@ -45,6 +45,7 @@
  */
 
 import type { FormulaPart } from "../formula.js";
+import type { AcceptedSkeleton, FaceLigand, SkeletonFace } from "../skeleton/table.js";
 import type { DepthConvention } from "../stereo-config.js";
 import type { AtomId, BondId, BondOrder, BondStereo } from "../types.js";
 import type { Vec2 } from "../vec.js";
@@ -72,7 +73,8 @@ export type FrameKind = (typeof FRAME_KINDS)[number];
  * returns for it, not the set of values a saved panel may hold. A template
  * with no implementation yet projects as `unavailable` with reason
  * `template-not-built`, never as an empty panel. Built today: planar
- * `wedgeDash` and chain `fischer` (decision 148), and planar `mills`.
+ * `wedgeDash` and chain `fischer` (decision 148), and planar `mills` and
+ * `steroid` (decisions 164, 182).
  *
  * Boat, half-chair and twist-boat are FORMS of the chair template's
  * conformer, not templates; the extended zig-zag is the torsion overlay
@@ -156,6 +158,16 @@ export interface AnnotationOverlayFrame {
 export interface PlanarParams {
   readonly rotationDeg: number;
   readonly mirror: boolean;
+  /**
+   * A skeleton the user ACCEPTED for this panel (decision 163): suggested by
+   * `suggestSteroidSkeleton`, confirmed, and stored here with the view. While
+   * it is set and still fits the molecule, a planar panel of any template
+   * carries the skeleton's numbering and alpha/beta labels; the `steroid`
+   * template needs it to know where the core is. One that no longer fits
+   * makes the panel `unavailable: skeleton-mismatch` rather than guess.
+   * Omitted when nothing was accepted.
+   */
+  readonly skeleton?: AcceptedSkeleton;
 }
 
 /** Which end of the backbone is drawn at the top of the page. */
@@ -478,6 +490,24 @@ export interface UnplacedUnit {
   readonly reason: UnplacedReason;
 }
 
+/**
+ * One alpha/beta statement a layout makes (decision 182): the ligand off the
+ * skeleton's core at `atomId`, and which face of the reference plane it is
+ * on. Only for centres in the layout's coverage.
+ *
+ * `group` is what the label names after its hyphen when the ligand is
+ * exactly a hydrogen, a hydroxyl, a thiol or a halogen ("H", "OH", "SH",
+ * "Cl"); absent for anything else, which the label then leaves at locant and
+ * letter ("10β"), since an annotation run has no subscript to spell "CH3".
+ */
+export interface FaceLabel {
+  readonly atomId: AtomId;
+  readonly locant: string;
+  readonly ligand: FaceLigand;
+  readonly face: SkeletonFace;
+  readonly group?: string;
+}
+
 /** Two nodes closer than `LAYOUT_COLLISION_DISTANCE` bond lengths. */
 export interface LayoutCollision {
   readonly a: LayoutNodeId;
@@ -529,6 +559,14 @@ export interface ProjectedLayout {
   readonly coverage: ProjectionCoverage;
   /** Units the frame reaches that the layout could not state, with why. */
   readonly unplaced: readonly UnplacedUnit[];
+  /**
+   * The numbering this panel applies, by source atom: an accepted
+   * skeleton's (decision 181), empty otherwise. Keys in `mol.atomIds` order;
+   * read with `Object.hasOwn`.
+   */
+  readonly locants: Readonly<Record<AtomId, string>>;
+  /** Alpha/beta statements, for covered centres only (decision 182); empty without a skeleton. */
+  readonly faceLabels: readonly FaceLabel[];
   /** Reported, never nudged. */
   readonly collisions: readonly LayoutCollision[];
 }
@@ -581,6 +619,13 @@ export type ProjectionUnavailableReason =
    * kaurane's C/D rings), so no layout of regular polygons exists.
    */
   | "bridged-ring-system"
+  /** The steroid template, with no skeleton accepted for the panel (decision 163). */
+  | "skeleton-not-accepted"
+  /**
+   * The accepted skeleton no longer fits: an atom gone, or a core bond
+   * broken or added. The atoms are the ones to look at; accept again.
+   */
+  | "skeleton-mismatch"
   /** The template is listed but owed by a later task. */
   | "template-not-built";
 

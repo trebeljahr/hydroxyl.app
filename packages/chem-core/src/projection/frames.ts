@@ -79,11 +79,21 @@ export function canonicalProjectionView(
     case "planar": {
       const rotationDeg = canonicalDegrees(view.params.rotationDeg);
       if (rotationDeg === undefined) return projectionUnavailable("invalid-parameter");
+      const skeleton = view.params.skeleton;
       return {
         kind: "planar",
         template: view.template,
         frame: {},
-        params: { rotationDeg, mirror: view.params.mirror === true },
+        // The accepted skeleton's core is ORDERED (atom per locant), so it is
+        // copied as it is, never sorted like a ring's set.
+        params:
+          skeleton === undefined
+            ? { rotationDeg, mirror: view.params.mirror === true }
+            : {
+                rotationDeg,
+                mirror: view.params.mirror === true,
+                skeleton: { name: skeleton.name, core: [...skeleton.core] },
+              },
       };
     }
     case "chain":

@@ -48,6 +48,7 @@ import { readConfig, type CentreReading, type StereoConfig } from "../stereo-con
 import type { AtomId, BondStereo, Molecule } from "../types.js";
 import type { Vec2 } from "../vec.js";
 import { writeCentreMarks } from "./marks.js";
+import { attachSkeletonLabels, resolvePanelSkeleton, type PanelSkeleton } from "./skeleton-labels.js";
 import {
   draftLayoutAccess,
   emptyPlacedLayout,
@@ -57,18 +58,32 @@ import {
   projectionBondLength,
   type PlacedLayout,
   type ProjectionTemplateImplementation,
+  type ProjectionTemplateResolution,
 } from "./template.js";
 import type { BondDepth, LayoutMark, PlanarView, ProjectionCoverage } from "./types.js";
 
 export const WEDGE_HASH = Object.freeze({ kind: "wedgeHash" as const });
 
-type Skeleton = Readonly<Record<never, never>>;
+/** What a planar template's topology half hands on: an accepted skeleton, if any. */
+export interface PlanarSkeleton {
+  readonly labels?: PanelSkeleton;
+}
 
-export const planarWedgeDashTemplate: ProjectionTemplateImplementation<PlanarView, Skeleton> = {
-  resolve() {
-    return { kind: "available", skeleton: {} };
+/**
+ * The topology half every planar template shares: the view's accepted
+ * skeleton, checked against `mol` (decision 163). None stored is fine.
+ */
+export function resolvePlanar(mol: Molecule, view: PlanarView): ProjectionTemplateResolution<PlanarSkeleton> {
+  const resolved = resolvePanelSkeleton(mol, view);
+  if (resolved.kind === "unavailable") return resolved;
+  return { kind: "available", skeleton: resolved.kind === "accepted" ? { labels: resolved.skeleton } : {} };
+}
+
+export const planarWedgeDashTemplate: ProjectionTemplateImplementation<PlanarView, PlanarSkeleton> = {
+  resolve(mol, view) {
+    return resolvePlanar(mol, view);
   },
-  place(mol, config, view, _skeleton, toPlace, reach) {
+  place(mol, config, view, skeleton, toPlace, reach) {
     const draft = emptyPlacedLayout(WEDGE_HASH, projectionBondLength(mol));
     const move = pageMotion(drawnPositions(mol), view.params.rotationDeg, view.params.mirror);
     for (const atomId of mol.atomIds) {
@@ -87,6 +102,7 @@ export const planarWedgeDashTemplate: ProjectionTemplateImplementation<PlanarVie
     }
     correctMarks(mol, config, toPlace, reach, draft);
     setDepthFromMarks(draft);
+    if (skeleton.labels !== undefined) attachSkeletonLabels(mol, config, skeleton.labels, draft);
     return draft;
   },
 };

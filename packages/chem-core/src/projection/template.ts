@@ -33,6 +33,7 @@ import { derivedBondId } from "./nodes.js";
 import type {
   BondDepth,
   DerivedNode,
+  FaceLabel,
   LayoutBond,
   LayoutBondId,
   LayoutMark,
@@ -65,6 +66,10 @@ export interface PlacedLayout {
   readonly provenance: Map<LayoutNodeId, readonly AtomId[]>;
   readonly drawnAs: Map<AtomId, LayoutNodeId>;
   readonly unplaced: UnplacedUnit[];
+  /** An accepted skeleton's numbering (decision 181); empty otherwise. */
+  readonly locants: Map<AtomId, string>;
+  /** Alpha/beta statements; the engine keeps only those its coverage states. */
+  readonly faceLabels: FaceLabel[];
 }
 
 export function emptyPlacedLayout(convention: DepthConvention, bondLength: number): PlacedLayout {
@@ -79,6 +84,8 @@ export function emptyPlacedLayout(convention: DepthConvention, bondLength: numbe
     provenance: new Map(),
     drawnAs: new Map(),
     unplaced: [],
+    locants: new Map(),
+    faceLabels: [],
   };
 }
 

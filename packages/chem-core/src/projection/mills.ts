@@ -53,9 +53,12 @@ import {
   correctDoubleBonds,
   pageMotion,
   placeSourceBonds,
+  resolvePlanar,
   setDepthFromMarks,
   WEDGE_HASH,
+  type PlanarSkeleton,
 } from "./planar.js";
+import { attachSkeletonLabels } from "./skeleton-labels.js";
 import {
   draftLayoutAccess,
   emptyPlacedLayout,
@@ -79,14 +82,18 @@ interface Piece {
   readonly anchors: readonly AtomId[];
 }
 
-export interface MillsSkeleton {
+export interface MillsSkeleton extends PlanarSkeleton {
   readonly systems: readonly SystemLayout[];
   readonly pieces: readonly Piece[];
 }
 
 export const planarMillsTemplate: ProjectionTemplateImplementation<PlanarView, MillsSkeleton> = {
-  resolve(mol) {
-    return resolveMills(mol);
+  resolve(mol, view) {
+    const planar = resolvePlanar(mol, view);
+    if (planar.kind !== "available") return planar;
+    const mills = resolveMills(mol);
+    if (mills.kind !== "available") return mills;
+    return { kind: "available", skeleton: { ...mills.skeleton, ...planar.skeleton } };
   },
   place(mol, config, view, skeleton, toPlace, reach) {
     const b = projectionBondLength(mol);
@@ -105,6 +112,7 @@ export const planarMillsTemplate: ProjectionTemplateImplementation<PlanarView, M
     });
     if (read.kind === "read") correctDoubleBonds(mol, config, toPlace, read.config, draft);
     setDepthFromMarks(draft);
+    if (skeleton.labels !== undefined) attachSkeletonLabels(mol, config, skeleton.labels, draft);
     return draft;
   },
 };
@@ -113,7 +121,7 @@ export const planarMillsTemplate: ProjectionTemplateImplementation<PlanarView, M
 // Topology: the systems and their unit layouts
 // ---------------------------------------------------------------------------
 
-export function resolveMills(mol: Molecule): ProjectionTemplateResolution<MillsSkeleton> {
+export function resolveMills(mol: Molecule): ProjectionTemplateResolution<Omit<MillsSkeleton, "labels">> {
   const perceived = rings(mol);
   const membership = ringMembership(mol);
 
@@ -348,9 +356,19 @@ function scaled(p: Vec2, b: number): Vec2 {
  * made of regular polygons comes back where it was.
  */
 export function fitOnto(model: readonly Vec2[], target: readonly Vec2[]): Vec2[] {
+  return model.map(rigidMotion(model, target));
+}
+
+/**
+ * The rigid motion that best lays `model` onto `target`, as a function any
+ * point can be put through: centroid onto centroid, then the rotation — with
+ * a reflection first, only when that fits strictly better — minimising the
+ * summed squared distance. Degenerate input (every point on one spot) gives
+ * the pure translation.
+ */
+export function rigidMotion(model: readonly Vec2[], target: readonly Vec2[]): (p: Vec2) => Vec2 {
   const m = centroidOf(model);
   const t = centroidOf(target);
-  const q = target.map((p) => ({ x: p.x - t.x, y: p.y - t.y }));
   let best: { reflect: boolean; angle: number; score: number } | undefined;
   for (const reflect of [false, true]) {
     let dot = 0;
@@ -358,8 +376,10 @@ export function fitOnto(model: readonly Vec2[], target: readonly Vec2[]): Vec2[]
     model.forEach((p, k) => {
       const px = reflect ? m.x - p.x : p.x - m.x;
       const py = p.y - m.y;
-      dot += px * q[k]!.x + py * q[k]!.y;
-      cross += px * q[k]!.y - py * q[k]!.x;
+      const qx = target[k]!.x - t.x;
+      const qy = target[k]!.y - t.y;
+      dot += px * qx + py * qy;
+      cross += px * qy - py * qx;
     });
     const score = Math.hypot(dot, cross);
     // A reflection must fit strictly better to be taken.
@@ -368,8 +388,8 @@ export function fitOnto(model: readonly Vec2[], target: readonly Vec2[]): Vec2[]
     }
   }
   const { reflect, angle } = best!;
-  return model.map((p) => {
+  return (p) => {
     const r = rotate({ x: reflect ? m.x - p.x : p.x - m.x, y: p.y - m.y }, angle);
     return { x: t.x + r.x, y: t.y + r.y };
-  });
+  };
 }

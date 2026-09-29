@@ -1563,6 +1563,8 @@ describe("chem-core exports", () => {
       "projection/fischer.ts",
       "projection/marks.ts",
       "projection/mills.ts",
+      "projection/steroid-panel.ts",
+      "projection/skeleton-labels.ts",
     ]);
     const index = readFileSync(join(srcDir, "index.ts"), "utf8");
     for (const file of modules) {
