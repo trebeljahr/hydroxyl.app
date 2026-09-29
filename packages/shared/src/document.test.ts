@@ -7,10 +7,12 @@ import {
   carbohydrates,
   elementCounts,
   emptyMolecule,
+  isTestOnlyMolecule,
   joinSpecies,
   locantOf,
   readMolblock,
   removeAtoms,
+  TEST_ONLY_MOLECULE,
   withStereoGroups,
 } from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
@@ -42,6 +44,7 @@ import {
   MAX_LOCANT_LENGTH,
   NEW_DOCUMENT_PRESET,
   STEREO_GROUP_KIND_VALUES,
+  TestOnlyMoleculeError,
   type SketchDocument,
 } from "./document.js";
 
@@ -1544,5 +1547,31 @@ describe("reaction arrows, conditions, brackets and TS marks (decisions 193, 194
       expect(result.ok, String(add)).toBe(false);
       if (!result.ok) expect(isFromNewerBuild(result.error), String(add)).toBe(true);
     }
+  });
+});
+
+describe("a molecule rebuilt from a projection layout (decision 210)", () => {
+  // The harness's layout-to-Molecule builder (chem-core's test tree) brands
+  // what it returns exactly like this; its own test pins that it does.
+  function testOnly(mol: Molecule): Molecule {
+    const branded = { ...mol };
+    Object.defineProperty(branded, TEST_ONLY_MOLECULE, { value: true, enumerable: false });
+    return branded;
+  }
+
+  it("is refused by the document assembler and by the encoder, and an ordinary molecule is not", () => {
+    const rebuilt = testOnly(ethanol());
+    expect(isTestOnlyMolecule(rebuilt)).toBe(true);
+    expect(() => createDocument({ molecule: rebuilt, now: NOW })).toThrow(TestOnlyMoleculeError);
+    // A document that somehow came to hold one (a store write, a spread) is
+    // still refused at the file boundary.
+    const doc = createDocument({ molecule: ethanol(), now: NOW });
+    expect(() => encodeDocument({ ...doc, molecule: rebuilt })).toThrow(TestOnlyMoleculeError);
+    expect(isTestOnlyMolecule(ethanol())).toBe(false);
+    expect(() => encodeDocument(doc)).not.toThrow();
+  });
+
+  it("never leaks the brand into JSON", () => {
+    expect(JSON.stringify(testOnly(ethanol()))).toBe(JSON.stringify(ethanol()));
   });
 });

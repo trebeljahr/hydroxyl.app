@@ -94,3 +94,7 @@ export * from "./projection/types.js";
 export * from "./projection/nodes.js";
 export * from "./projection/frames.js";
 export * from "./projection/engine.js";
+// The brand the projection harness's layout-to-Molecule builder puts on what
+// it returns, so a document refuses it (decision 210). The builder itself
+// lives in the test tree and is not exported.
+export * from "./test-only.js";

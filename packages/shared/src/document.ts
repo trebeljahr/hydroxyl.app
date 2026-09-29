@@ -41,6 +41,7 @@ import {
   PROJECTION_TEMPLATES,
   SKELETON_NAMES,
   canonicalProjectionView,
+  isTestOnlyMolecule,
   makeAtom,
   emptyMolecule,
   withSpeciesJoins,
@@ -553,10 +554,27 @@ export interface CreateDocumentInit {
   readonly now?: string | undefined;
 }
 
+/**
+ * Thrown when a molecule the projection harness rebuilt out of a layout is
+ * about to become a document or a file (decision 210). A view must never
+ * mint a molecule (decision 12): a derived one is indistinguishable from the
+ * document's own, and saving it would store a picture as the chemistry.
+ */
+export class TestOnlyMoleculeError extends Error {
+  constructor(where: string) {
+    super(
+      `${where} was handed a test-only molecule rebuilt from a projection layout. ` +
+        `A projection is a view of the document's molecule, never a molecule of its own.`,
+    );
+    this.name = "TestOnlyMoleculeError";
+  }
+}
+
 export function createDocument(init: CreateDocumentInit = {}): SketchDocument {
   const now = init.now ?? new Date().toISOString();
   const stylePreset = init.stylePreset ?? NEW_DOCUMENT_PRESET;
   const molecule = init.molecule ?? emptyMolecule();
+  if (isTestOnlyMolecule(molecule)) throw new TestOnlyMoleculeError("createDocument");
   const annotations = (init.annotations ?? []).map(assembleSchemeAnnotation);
   const nextAnnotationId =
     init.nextAnnotationId ??
@@ -2326,6 +2344,7 @@ function encodeMetadata(metadata: DocumentMetadata): JsonObject {
 /** A JSON-safe plain value: no class instances, no `undefined`-valued keys,
  *  nothing that `structuredClone` or `JSON.stringify` would alter. */
 export function encodeDocument(doc: SketchDocument): unknown {
+  if (isTestOnlyMolecule(doc.molecule)) throw new TestOnlyMoleculeError("encodeDocument");
   const encoded: JsonObject = {
     schemaVersion: doc.schemaVersion,
     id: doc.id,
