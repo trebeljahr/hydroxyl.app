@@ -179,6 +179,23 @@ describe("FigurePanelChooser refuses what cannot be drawn", () => {
     }
     expect(kinds()).toEqual(["skeletal", "sumFormula"]);
   });
+
+  it("stores no projection from any of its controls yet, so the planned list is honest", () => {
+    // A panel CAN store a view since decision 128 (`Panel.view`), but no
+    // control here sets one. The day one does, this fails: remove that
+    // projection from PLANNED_PROJECTIONS, or it is offered twice.
+    render(<FigurePanelChooser />);
+    const buttons = [
+      ...document.querySelectorAll<HTMLButtonElement>('[data-shell="panel-chooser"] button'),
+    ];
+    expect(buttons.length).toBeGreaterThan(VIEW_KINDS.length + PLANNED_PROJECTIONS.length);
+    for (const button of buttons) {
+      if (button.isConnected && !button.disabled) fireEvent.click(button);
+    }
+    const panels = editorStore.getState().document.panels;
+    expect(panels.length).toBeGreaterThan(0);
+    expect(panels.filter((panel) => Object.hasOwn(panel, "view"))).toEqual([]);
+  });
 });
 
 describe("FigurePanelChooser states", () => {

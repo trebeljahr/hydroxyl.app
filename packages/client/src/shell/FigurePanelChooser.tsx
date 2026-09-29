@@ -297,7 +297,13 @@ export function FigurePanelChooser({
         </p>
         <div data-shell="panel-chooser-planned" className="flex flex-col gap-1">
           {PLANNED_PROJECTIONS.map((planned) => (
-            <PlannedEntry key={planned.id} {...planned} reasonId={plannedReasonId} />
+            <PlannedEntry
+              key={planned.id}
+              id={planned.id}
+              title={planned.title}
+              shows={planned.shows}
+              reasonId={plannedReasonId}
+            />
           ))}
         </div>
       </div>
