@@ -1437,6 +1437,7 @@ describe("reaction arrows, conditions, brackets and TS marks (decisions 193, 194
     const refused: readonly [string, Parameters<typeof addSchemeAnnotation>[1], RegExp][] = [
       ["a second delta on the hydroxide O", { kind: "partialCharge", atomId: s.hydroxideO, sign: "+" }, /both put a partial charge/],
       ["a partial bond from C to itself", { kind: "partialBond", atoms: [s.tsCarbon, s.tsCarbon] }, /two different atoms/],
+      ["a delta signed ±", { kind: "partialCharge", atomId: s.tsCarbon, sign: "±" } as never, /sign/],
       ["a bracket charge of 0", { kind: "bracket", species: [s.allylA], charge: 0 }, /omitting it/],
       ["a bracket charge of 1/2", { kind: "bracket", species: [s.allylA], charge: 0.5 } as never, /int/i],
       ["a dagger stored as false", { kind: "bracket", species: [s.allylA], transitionState: false } as never, /true/],
@@ -1445,11 +1446,14 @@ describe("reaction arrows, conditions, brackets and TS marks (decisions 193, 194
       ["-300 °C", burn(step({ kind: "temperature", value: -300, unit: "C" })), /absolute zero/],
       ["-1 K", burn(step({ kind: "temperature", value: -1, unit: "K" })), /absolute zero/],
       ["a time of 0 min", burn(step({ kind: "time", value: 0, unit: "min" })), />0/],
+      ["100 °F", burn(step({ kind: "temperature", value: 100, unit: "F" })), /unit/],
       ["no steps", burn({ steps: [], numbered: false }), /steps/],
+      ["conditions with no numbered flag", burn({ steps: [[{ kind: "reagent", text: "H2O" }]] }), /numbered/],
       ["an empty step", burn({ steps: [[]], numbered: false }), /steps/],
       ["an empty reagent", burn(step({ kind: "reagent", text: "" })), /text/],
       ["an unknown bias", { kind: "reactionArrow", from: [s.methane], to: [s.water], equilibrium: { bias: "sideways" } } as never, /bias/],
       ["a retro arrow with no target", { kind: "retrosynthesisArrow", target: [], precursors: [s.methane] } as never, /target/],
+      ["a resonance arrow with one side", { kind: "resonanceArrow", between: [s.allylA] } as never, /between/],
       ["empty text", { kind: "text", text: "", at: { x: 0, y: 0 } }, /text/],
       ["a curly arrow skewed past the chord", {
         kind: "curlyArrow",
