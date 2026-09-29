@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { buildMolecule } from "../builders.js";
+import { insertFragment } from "../fragment.js";
 import { readMolblock } from "../molblock-read.js";
 import { addAtom, addBond, bondBetween } from "../molecule.js";
 import { removeAtoms, setAtomPosition, setBondStereo, setIsotope } from "../ops.js";
@@ -45,7 +46,7 @@ import {
 } from "./engine.js";
 import { canonicalProjectionView, restrictStereoConfig, stereoDisagreements } from "./frames.js";
 import { condensedGroup, layoutNodeOf, sourceAtomsOf } from "./nodes.js";
-import { placementOfLayout } from "./template.js";
+import { placementOfLayout, type LayoutAccess } from "./template.js";
 import {
   CHARACTERISTIC_LENGTHS,
   type ChainView,
@@ -1154,19 +1155,23 @@ describe("the engine's own sources", () => {
   });
 });
 
+/** A finished layout as `placementOfLayout` reads it, as `readProjection` builds it. */
+function accessOf(layout: ProjectedLayout): LayoutAccess {
+  return {
+    convention: layout.convention,
+    position: (node) => layout.positions[node],
+    nodeOf: (atomId) => layout.drawnAs[atomId],
+    bondFor: (bondId) => layout.bonds.find((b) => b.sourceBondId === bondId),
+    mark: (bondId) => layout.marks[bondId],
+  };
+}
+
 describe("reading a layout", () => {
   it("reads the layout's own marks and positions, never the molecule's", () => {
     const mol = load("rr-tartaric-acid.mol");
     const config = stereoConfig(mol);
     const layout = layoutOf(project(mol, config, planar(180, true)));
-    const placement = placementOfLayout(mol, {
-      convention: layout.convention,
-      position: (node) => layout.positions[node],
-      nodeOf: (atomId) => layout.drawnAs[atomId],
-      bondFor: (bondId) => layout.bonds.find((b) => b.sourceBondId === bondId),
-      mark: (bondId) => layout.marks[bondId],
-      parking: vec(0, 0),
-    });
+    const placement = placementOfLayout(mol, accessOf(layout));
     for (const atomId of mol.atomIds) expect(placement.positions![atomId]).toEqual(layout.positions[atomId]);
     // Every source bond has an explicit mark entry, "none" included.
     expect(Object.keys(placement.marks!)).toEqual(mol.bondIds);
@@ -1189,5 +1194,43 @@ describe("reading a layout", () => {
     ]);
     expect(readBack(mol, layout).centres.map((c) => c.atomId)).toEqual(["a5"]);
     for (const [, mark] of Object.entries(layout.marks)) expect(mark.narrowEnd).toBe("a5");
+  });
+
+  it("reads a Fischer beside a second species drawn off the page axes, scoped to its coverage (decision 171)", () => {
+    // A scheme is one Molecule: D-glucose with L-alanine drawn beside it.
+    const glucose = load("d-glucose-open.mol");
+    const alanine = load("l-alanine.mol");
+    const { molecule: mol, atomIdMap } = insertFragment(glucose, alanine, { offset: vec(10, 0) });
+    const alpha = atomIdMap.get(stereoConfig(alanine).centres[0]!.atomId)!;
+    const config = stereoConfig(mol);
+    // Every centre reads a letter before anything is projected.
+    expect(letters(mol, config)).toEqual({ a3: "R", a5: "S", a7: "R", a9: "R", [alpha]: "S" });
+
+    // Three of glucose's four crossings need their arms exchanged, so the
+    // template's own read-back is exercised as well as the engine's.
+    const layout = layoutOf(project(mol, config, fischer(GLUCOSE_BACKBONE)));
+    expect(layout.unplaced).toEqual([]);
+    expect(layout.coverage).toEqual({ centres: ["a3", "a5", "a7", "a9"], doubleBonds: [] });
+    expect(letters(mol, readBack(mol, layout))).toEqual({ a3: "R", a5: "S", a7: "R", a9: "R" });
+
+    // The layout draws no alanine atom and gives none a position, so each
+    // keeps the molecule's own coordinates. Nothing parks them: only the
+    // scope keeps alanine's off-axis bonds from refusing the whole reading.
+    const placement = placementOfLayout(mol, accessOf(layout));
+    for (const atomId of atomIdMap.values()) {
+      expect(Object.hasOwn(layout.drawnAs, atomId), atomId).toBe(false);
+      expect(Object.hasOwn(placement.positions!, atomId), atomId).toBe(false);
+    }
+    expect(readConfig(placement, layout.convention)).toEqual({
+      kind: "unavailable",
+      reason: "off-axis",
+      atomIds: [alpha],
+    });
+    const scoped = readConfig(placement, layout.convention, layout.coverage);
+    if (scoped.kind !== "read") throw new Error(`the scoped read refused: ${scoped.reason}`);
+    expect(scoped.config.centres.find((c) => c.atomId === alpha)?.reading).toEqual({
+      kind: "undetermined",
+      reason: "not-covered",
+    });
   });
 });

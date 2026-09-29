@@ -114,11 +114,17 @@ export type ProjectionTemplateResolution<S> =
  * A template, as the engine calls it. `V` is the view kind it draws, `S` the
  * skeleton its topology half hands its placement half.
  *
- * `place` receives only the units it must place: the frame's coverage
+ * `place` receives the units it must place, `toPlace`: the frame's coverage
  * restricted to units the configuration states. It records what it could not
  * state in `draft.unplaced`; the engine then reads the draft back and moves
  * anything else that disagrees there too (decision 146), so a template never
  * has to be trusted to report its own mistakes.
+ *
+ * It also receives `reach`, the frame's whole coverage. A template reading its
+ * draft back scopes the read to what it acts on (decision 171): usually
+ * `toPlace`, but a template that carries the author's marks acts on the whole
+ * reach, because a unit the configuration does not mention is outside
+ * `toPlace` and still has to lose any mark that would state it.
  */
 export interface ProjectionTemplateImplementation<V extends ProjectionView, S> {
   resolve(
@@ -132,6 +138,7 @@ export interface ProjectionTemplateImplementation<V extends ProjectionView, S> {
     view: V,
     skeleton: S,
     toPlace: ProjectionCoverage,
+    reach: ProjectionCoverage,
   ): PlacedLayout;
 }
 
@@ -142,9 +149,11 @@ export interface ProjectionTemplateImplementation<V extends ProjectionView, S> {
  * the author's leaks into the reading of a panel that did not draw it.
  *
  * An atom the layout does not show (another species beside a Fischer's
- * backbone) is parked at one shared point: its bonds then have no length and
- * read as undetermined, where its drawn coordinates could have made a
- * Fischer reading refuse the whole placement over a centre nobody projected.
+ * backbone) is given no position, so it keeps the molecule's own. Those
+ * coordinates are nowhere near a Fischer's page axes, and read unscoped they
+ * would refuse the whole placement over a centre nobody projected; every
+ * layout read is therefore scoped to the units the layout draws (decision
+ * 171), whose ligands are all drawn, and never sees them.
  */
 export interface LayoutAccess {
   readonly convention: DepthConvention;
@@ -152,8 +161,6 @@ export interface LayoutAccess {
   nodeOf(atomId: AtomId): LayoutNodeId | undefined;
   bondFor(sourceBondId: BondId): LayoutBond | undefined;
   mark(layoutBondId: LayoutBondId): LayoutMark | undefined;
-  /** Where an undrawn atom is parked. */
-  readonly parking: Vec2;
 }
 
 export function placementOfLayout(mol: Molecule, layout: LayoutAccess): Placement {
@@ -161,7 +168,7 @@ export function placementOfLayout(mol: Molecule, layout: LayoutAccess): Placemen
   for (const atomId of mol.atomIds) {
     const node = layout.nodeOf(atomId);
     const pos = node === undefined ? undefined : layout.position(node);
-    positions[atomId] = pos ?? layout.parking;
+    if (pos !== undefined) positions[atomId] = pos;
   }
   const marks: Record<BondId, PlacedMark> = {};
   for (const bondId of mol.bondIds) {
@@ -188,13 +195,11 @@ export function draftLayoutAccess(draft: PlacedLayout): LayoutAccess {
   for (const bond of draft.bonds.values()) {
     if (bond.sourceBondId !== undefined) bySource.set(bond.sourceBondId, bond);
   }
-  const first = draft.positions.values().next();
   return {
     convention: draft.convention,
     position: (node) => draft.positions.get(node),
     nodeOf: (atomId) => draft.drawnAs.get(atomId),
     bondFor: (bondId) => bySource.get(bondId),
     mark: (bondId) => draft.marks.get(bondId),
-    parking: first.done === true ? { x: 0, y: 0 } : first.value,
   };
 }

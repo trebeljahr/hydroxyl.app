@@ -280,11 +280,17 @@ export interface Placement {
  * Which units a read covers (decision 144). A unit outside the scope reads
  * `not-covered` and can never refuse the placement, so one centre can be put
  * on a synthetic Fischer cross while every other centre keeps bonds that are
- * nowhere near the page axes. Double bonds are outside every scope, because a
- * scope names centres. Absent means every unit.
+ * nowhere near the page axes. Absent means every unit.
+ *
+ * A double bond is in scope only when `doubleBonds` names it (decision 171):
+ * a synthetic cross names one centre and reads no double bond, while a
+ * projection layout's coverage, which has this same shape, names the double
+ * bonds a planar panel states. Naming one never lets another unit refuse,
+ * because a double bond's reading never refuses a placement.
  */
 export interface ReadScope {
   readonly centres: readonly AtomId[];
+  readonly doubleBonds?: readonly BondId[] | undefined;
 }
 
 export type ConfigUnavailableReason =
@@ -745,6 +751,7 @@ function computeRead(
 ): ConfigRead {
   const { topology } = topologyRecord(ctx.mol);
   const inScope = scope === undefined ? undefined : new Set(scope.centres);
+  const bondsInScope = scope === undefined ? undefined : new Set(scope.doubleBonds ?? []);
 
   let ring: ReadonlySet<AtomId> = new Set();
   if (convention.kind === "haworth") {
@@ -784,7 +791,7 @@ function computeRead(
       Object.freeze({
         ...unit,
         reading: Object.freeze(
-          inScope === undefined
+          bondsInScope === undefined || bondsInScope.has(unit.bondId)
             ? readDoubleBond(ctx, unit, convention)
             : { kind: "undetermined" as const, reason: "not-covered" as const },
         ),
@@ -815,8 +822,9 @@ const READS_BY_INSTANCE = new WeakMap<Molecule, Map<string, ConfigRead>>();
  * a Fischer bond off the page axes, a Haworth ring that is not a ring. Every
  * other failure is per unit, an `undetermined` reading with its reason.
  *
- * `scope` restricts the read to some centres (decision 144): everything else
- * reads `not-covered`, and only a centre in scope can refuse the placement.
+ * `scope` restricts the read to some centres (decision 144) and the double
+ * bonds it names (decision 171): everything else reads `not-covered`, and
+ * only a centre in scope can refuse the placement.
  */
 export function readConfig(
   placement: Placement,

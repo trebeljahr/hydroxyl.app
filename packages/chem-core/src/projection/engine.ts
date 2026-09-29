@@ -301,7 +301,7 @@ function computeProjection(
     doubleBonds: frameCoverage.doubleBonds.filter((id) => statedBonds.has(id)),
   };
 
-  const placed = placeConfiguration(template, mol, config, view, topology.template.skeleton, toPlace);
+  const placed = placeConfiguration(template, mol, config, view, topology.template.skeleton, toPlace, frameCoverage);
   const conformed = applyConformationToDraft(placed, conformation);
   const unmentioned: UnplacedUnit[] = [
     ...frameCoverage.centres
@@ -325,8 +325,9 @@ function placeConfiguration(
   view: ProjectionView,
   skeleton: unknown,
   toPlace: ProjectionCoverage,
+  reach: ProjectionCoverage,
 ): PlacedLayout {
-  return template.place(mol, config, view, skeleton, toPlace);
+  return template.place(mol, config, view, skeleton, toPlace, reach);
 }
 
 /**
@@ -412,12 +413,14 @@ function finishLayout(
   }
 
   // The read-back (decision 146): whatever the template claims, the layout
-  // states only what it can be read to state.
+  // states only what it can be read to state. The read is scoped to the
+  // claim (decision 171), so an atom the layout does not draw, at the
+  // molecule's own coordinates, can never refuse it.
   const claimed: ProjectionCoverage = {
     centres: frameCoverage.centres.filter((atomId) => !unplaced.has(keyOf({ kind: "centre", atomId }))),
     doubleBonds: frameCoverage.doubleBonds.filter((bondId) => !unplaced.has(keyOf({ kind: "doubleBond", bondId }))),
   };
-  const read = readConfig(placementOfLayout(mol, draftLayoutAccess(draft)), draft.convention);
+  const read = readConfig(placementOfLayout(mol, draftLayoutAccess(draft)), draft.convention, claimed);
   const disagreeing =
     read.kind === "read"
       ? stereoDisagreements(restrictStereoConfig(config, claimed), read.config, claimed)
@@ -594,25 +597,27 @@ function collisions(
  * from the result, not undetermined.
  *
  * `mol` supplies only topology: which atoms are centres and their ligand
- * orders. `unavailable` when the convention refuses the placement as a whole
- * (a Fischer bond off the page axes), which a layout `project` made never is.
+ * orders. The read is scoped to the coverage (decision 171), so only a
+ * covered centre can make the convention refuse the placement as a whole (a
+ * Fischer bond off the page axes) — and in a layout `project` made, none
+ * does.
  */
 export function readProjection(mol: Molecule, layout: ProjectedLayout): ConfigRead {
-  const read = readConfig(placementOfLayout(mol, layoutAccess(layout)), layout.convention);
+  const read = readConfig(placementOfLayout(mol, layoutAccess(layout)), layout.convention, layout.coverage);
   if (read.kind !== "read") return read;
+  // The scope reads every other unit as `not-covered`; outside the coverage
+  // a unit is unreported, so the restriction drops it.
   return Object.freeze({ kind: "read", config: restrictStereoConfig(read.config, layout.coverage) });
 }
 
 function layoutAccess(layout: ProjectedLayout): LayoutAccess {
   const bySource = new Map<BondId, ProjectedLayout["bonds"][number]>();
   for (const bond of layout.bonds) if (bond.sourceBondId !== undefined) bySource.set(bond.sourceBondId, bond);
-  const firstNode = Object.keys(layout.positions)[0];
   return {
     convention: layout.convention,
     position: (node) => (Object.hasOwn(layout.positions, node) ? layout.positions[node] : undefined),
     nodeOf: (atomId) => (Object.hasOwn(layout.drawnAs, atomId) ? layout.drawnAs[atomId] : undefined),
     bondFor: (bondId) => bySource.get(bondId),
     mark: (bondId) => (Object.hasOwn(layout.marks, bondId) ? layout.marks[bondId] : undefined),
-    parking: firstNode === undefined ? { x: 0, y: 0 } : layout.positions[firstNode]!,
   };
 }

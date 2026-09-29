@@ -65,7 +65,7 @@ export const planarWedgeDashTemplate: ProjectionTemplateImplementation<PlanarVie
   resolve() {
     return { kind: "available", skeleton: {} };
   },
-  place(mol, config, view, _skeleton, toPlace) {
+  place(mol, config, view, _skeleton, toPlace, reach) {
     const draft = emptyPlacedLayout(WEDGE_HASH, projectionBondLength(mol));
     const move = pageMotion(mol, view.params.rotationDeg, view.params.mirror);
     for (const atomId of mol.atomIds) {
@@ -86,7 +86,7 @@ export const planarWedgeDashTemplate: ProjectionTemplateImplementation<PlanarVie
         });
       }
     }
-    correctMarks(mol, config, toPlace, draft);
+    correctMarks(mol, config, toPlace, reach, draft);
     // Depth from the marks the layout FINALLY draws, after the correction
     // above may have exchanged, blurred or removed some: a wedge comes toward
     // the viewer, a hash goes away, and everything else lies on the page.
@@ -157,9 +157,13 @@ function correctMarks(
   mol: Molecule,
   config: StereoConfig,
   toPlace: ProjectionCoverage,
+  reach: ProjectionCoverage,
   draft: PlacedLayout,
 ): void {
-  const read = readConfig(placementOfLayout(mol, draftLayoutAccess(draft)), WEDGE_HASH);
+  // Scoped to the frame's REACH, not to `toPlace` (decision 171): a unit the
+  // configuration does not mention is outside `toPlace`, and its marks must
+  // still be read so they can be stripped below.
+  const read = readConfig(placementOfLayout(mol, draftLayoutAccess(draft)), WEDGE_HASH, reach);
   // The wedge/hash convention never refuses a placement; the engine's own
   // read-back reports it if that ever changes.
   if (read.kind !== "read") return;

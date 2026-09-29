@@ -86,6 +86,27 @@ describe("readConfig with a scope", () => {
     expect(scoped.config.centres.every((c) => c.reading.kind === "undetermined")).toBe(true);
     expect(readConfig({ mol }, { kind: "wedgeHash" })).toBe(full);
   });
+
+  it("reads a double bond only when the scope names it (decision 171)", () => {
+    for (const [file, relation] of [
+      ["cis-2-butene.mol", "cis"],
+      ["trans-2-butene.mol", "trans"],
+    ] as const) {
+      const mol = fixture(file);
+      const [unit] = stereoConfig(mol).doubleBonds;
+      // The drawing states the relation before any scope is applied.
+      expect(unit?.reading, file).toEqual({ kind: "specified", relation });
+      const named = readConfig({ mol }, { kind: "wedgeHash" }, { centres: [], doubleBonds: [unit!.bondId] });
+      const centresOnly = readConfig({ mol }, { kind: "wedgeHash" }, { centres: [] });
+      if (named.kind !== "read" || centresOnly.kind !== "read") throw new Error("refused");
+      expect(named.config.doubleBonds.map((b) => b.reading), file).toEqual([{ kind: "specified", relation }]);
+      // A scope that names centres alone, as the synthetic cross's does,
+      // still reads no double bond.
+      expect(centresOnly.config.doubleBonds.map((b) => b.reading), file).toEqual([
+        { kind: "undetermined", reason: "not-covered" },
+      ]);
+    }
+  });
 });
 
 describe("fischerSide", () => {

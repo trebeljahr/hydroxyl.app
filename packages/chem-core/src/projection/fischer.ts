@@ -124,7 +124,10 @@ export const chainFischerTemplate: ProjectionTemplateImplementation<ChainView, S
     }
 
     const first = drawFischer(mol, skeleton, new Set(), wavy);
-    const read = readConfig(placementOfLayout(mol, draftLayoutAccess(first)), FISCHER);
+    // Scoped to the crossings being placed (decision 171): an atom the cross
+    // does not draw stays wherever the author drew it, and must not refuse
+    // the reading of the ones it does.
+    const read = readConfig(placementOfLayout(mol, draftLayoutAccess(first)), FISCHER, toPlace);
     const flips = new Set<AtomId>();
     if (read.kind === "read") {
       for (const centre of read.config.centres) {
