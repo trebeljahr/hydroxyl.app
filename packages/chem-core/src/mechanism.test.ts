@@ -261,6 +261,86 @@ function acetate(at = { x: 0, y: 0 }) {
   return { mol, c, o1, o2, co1, co2 };
 }
 
+/** `mol` with the aromatic flag of each named bond set to `flag`. */
+function withBondFlags(mol: Molecule, bondIds: readonly BondId[], flag: boolean): Molecule {
+  const bonds = { ...mol.bonds };
+  for (const id of bondIds) bonds[id] = { ...bonds[id]!, aromatic: flag };
+  return { ...mol, bonds };
+}
+
+/** The same drawing with every aromatic flag, atom and bond, cleared: plain Kekule. */
+function unflagged(mol: Molecule): Molecule {
+  const cleared = withBondFlags(mol, mol.bondIds, false);
+  const atoms = { ...cleared.atoms };
+  for (const id of cleared.atomIds) atoms[id] = { ...atoms[id]!, aromatic: false };
+  return { ...cleared, atoms };
+}
+
+/** Pyridine as an importer leaves it: Kekule orders, every ring bond and atom flagged. */
+function flaggedPyridine() {
+  const ring: AtomId[] = [];
+  const mol = buildMolecule((b) => {
+    for (let i = 0; i < 6; i++) {
+      const angle = (Math.PI / 3) * i;
+      ring.push(b.atom(i === 0 ? "N" : "C", { x: Math.cos(angle), y: Math.sin(angle) }, { aromatic: true }));
+    }
+    for (let i = 0; i < 6; i++) b.bond(ring[i]!, ring[(i + 1) % 6]!, i % 2 === 0 ? 2 : 1);
+  });
+  return { mol: withBondFlags(mol, mol.bondIds, true), ring };
+}
+
+/** 2-pyridone as RDKit flags it: the ring aromatic, C2=O exocyclic and unflagged. */
+function flaggedPyridone() {
+  const ring: AtomId[] = [];
+  let o = "";
+  const ringBonds: BondId[] = [];
+  const mol = buildMolecule((b) => {
+    for (let i = 0; i < 6; i++) {
+      const angle = (Math.PI / 3) * i;
+      ring.push(b.atom(i === 0 ? "N" : "C", { x: Math.cos(angle), y: Math.sin(angle) }, { aromatic: true }));
+    }
+    // N1-C2, C2-C3 single; C3=C4; C4-C5; C5=C6; C6-N1.
+    const orders = [1, 1, 2, 1, 2, 1] as const;
+    for (let i = 0; i < 6; i++) ringBonds.push(b.bond(ring[i]!, ring[(i + 1) % 6]!, orders[i]!));
+    o = b.atom("O", { x: 1, y: 2 });
+    b.bond(ring[1]!, o, 2);
+  });
+  return { mol: withBondFlags(mol, ringBonds, true), ring, o };
+}
+
+/**
+ * A carbocation beside a carbon carrying the group that can migrate to it,
+ * that group promoted to a real atom when it is a hydrogen:
+ *   hydride: 3-methylbutan-2-yl cation, CH3-CH(+)-CH(CH3)2
+ *   methyl:  3,3-dimethylbutan-2-yl (pinacolyl) cation, CH3-CH(+)-C(CH3)3
+ */
+function cationBesideMigratingGroup(group: "hydride" | "methyl") {
+  let cation = "";
+  let origin = "";
+  let migrant = "";
+  const drawn = buildMolecule((b) => {
+    const c1 = b.atom("C", { x: 0, y: 0 });
+    cation = b.atom("C", { x: 1, y: 0.5 }, { charge: 1 });
+    b.bond(c1, cation);
+    origin = b.atom("C", { x: 2, y: 0 });
+    b.bond(cation, origin);
+    b.bond(origin, b.atom("C", { x: 3, y: 0.5 }));
+    b.bond(origin, b.atom("C", { x: 2, y: -1 }));
+    if (group === "methyl") {
+      migrant = b.atom("C", { x: 2.5, y: 1 });
+      b.bond(origin, migrant);
+    }
+  });
+  let mol = drawn;
+  if (group === "hydride") {
+    const promoted = promoteImplicitHydrogen(drawn, origin);
+    if (!promoted.ok) throw new Error(promoted.reason);
+    mol = promoted.molecule;
+    migrant = promoted.hydrogenId;
+  }
+  return { mol, cation, origin, migrant, migrating: bondBetween(mol, origin, migrant)!.id };
+}
+
 // ---------------------------------------------------------------------------
 // The vocabulary
 // ---------------------------------------------------------------------------
@@ -447,7 +527,38 @@ describe("source-to-sink table: one fixture per cell", () => {
     expect(implicitHydrogenCount(product, c)).toBe(3);
     expect(mechanismIssues(mol, arrows)).toEqual([]);
     // A PAIR moved that way is applied and warned: no bond carries it.
-    expect(kinds(mol, [pair(lp(n), toLp(c))])).toEqual(["electron-transfer"]);
+    expect(mechanismIssues(mol, [pair(lp(n), toLp(c))])).toMatchObject([
+      {
+        kind: "electron-transfer",
+        severity: "warning",
+        bondIds: [],
+        message: "Arrow 1 moves a pair from N's lone pairs to C's, through no bond",
+      },
+    ]);
+  });
+
+  it("a pair moved between the lone pairs of two BONDED atoms is warned as such (hydroperoxide's O-O)", () => {
+    // HO-O(-): the anion's pair handed straight to the other oxygen moves two
+    // charges (O- to O+, O to O2-) and leaves the O-O bond as it was, and the
+    // warning says that rather than "not bonded".
+    let oh = "";
+    let ominus = "";
+    let oo = "";
+    const mol = buildMolecule((b) => {
+      oh = b.atom("O", { x: 0, y: 0 });
+      ominus = b.atom("O", { x: 1, y: 0 }, { charge: -1 });
+      oo = b.bond(oh, ominus);
+    });
+    const arrows = [pair(lp(ominus), toLp(oh))];
+    const product = expectReverses(mol, arrows);
+    expect([charge(product, ominus), charge(product, oh), order(product, oh, ominus)]).toEqual([1, -2, 1]);
+    const transfer = mechanismIssues(mol, arrows).find((i) => i.kind === "electron-transfer");
+    expect(transfer).toMatchObject({
+      severity: "warning",
+      atomIds: [ominus, oh],
+      bondIds: [oo],
+      message: "Arrow 1 moves a pair from O's lone pairs to O's, straight across; the O-O bond between them does not change",
+    });
   });
 
   it("bond -> one of its own atoms: HETEROLYSIS (t-butyl bromide)", () => {
@@ -631,6 +742,112 @@ describe("single electrons and a bond's pair aimed at a third atom", () => {
     expect([charge(product, h), charge(product, br)]).toEqual([1, -1]);
   });
 
+  it("a 1,2-hydride shift drawn to the cation is reported, never applied as an elimination stranding H+", () => {
+    // The C3-H pair aimed at C2+. Adjacency alone would promote C2=C3 and leave
+    // the hydrogen a bare proton with no arrow receiving it: 2-methylbut-2-ene
+    // and H+, a different reaction, reported as clean.
+    const { mol, cation, origin, migrant, migrating } = cationBesideMigratingGroup("hydride");
+    const arrows = [pair(bd(migrating), toAtom(cation))];
+    const issues = mechanismIssues(mol, arrows);
+    expect(issues).toMatchObject([{ kind: "ambiguous-bond-end", arrowIndices: [0], severity: "error" }]);
+    expect(issues[0]!.atomIds).toEqual(expect.arrayContaining([origin, migrant, cation]));
+    expect(applyArrows(mol, arrows)).toBe(mol);
+  });
+
+  it("a Wagner-Meerwein methyl shift drawn to the cation is reported, never applied as a free methyl cation", () => {
+    const { mol, cation, migrating } = cationBesideMigratingGroup("methyl");
+    const arrows = [pair(bd(migrating), toAtom(cation))];
+    expect(kinds(mol, arrows)).toEqual(["ambiguous-bond-end"]);
+    expect(applyArrows(mol, arrows)).toBe(mol);
+  });
+
+  it("the elimination is spelled as the C-H pair into the C-C bond: 2-methylbut-2-ene and H+, and back", () => {
+    const { mol, cation, origin, migrant, migrating } = cationBesideMigratingGroup("hydride");
+    const arrows = [pair(bd(migrating), toBond(bondBetween(mol, cation, origin)!.id))];
+    const product = expectReverses(mol, arrows);
+    expect(order(product, cation, origin)).toBe(2);
+    expect(bondBetween(product, origin, migrant)).toBeUndefined();
+    expect([charge(product, cation), charge(product, origin), charge(product, migrant)]).toEqual([0, 0, 1]);
+    expect(mechanismIssues(mol, arrows)).toEqual([]);
+  });
+
+  it("a pinacol shift, with the oxygen's push drawn, lets flow move the methyl: protonated pinacolone", () => {
+    // (CH3)2C(+)-C(CH3)2-OH. The oxygen's lone pair into C3-O makes C3 an end
+    // that receives electrons, so the migrating C3-Me pair bonds the METHYL to
+    // the cation; nothing is left to adjacency.
+    let cation = "";
+    let c3 = "";
+    let me = "";
+    let o = "";
+    const mol = buildMolecule((b) => {
+      cation = b.atom("C", { x: 0, y: 0 }, { charge: 1 });
+      b.bond(cation, b.atom("C", { x: -1, y: 0.5 }));
+      b.bond(cation, b.atom("C", { x: -1, y: -0.5 }));
+      c3 = b.atom("C", { x: 1, y: 0 });
+      b.bond(cation, c3);
+      b.bond(c3, b.atom("C", { x: 2, y: -0.5 }));
+      me = b.atom("C", { x: 1, y: 1 });
+      b.bond(c3, me);
+      o = b.atom("O", { x: 2, y: 0.5 });
+      b.bond(c3, o);
+    });
+    const arrows = [
+      pair(bd(bondBetween(mol, c3, me)!.id), toAtom(cation)),
+      pair(lp(o), toBond(bondBetween(mol, c3, o)!.id)),
+    ];
+    const product = expectReverses(mol, arrows);
+    expect(order(product, me, cation)).toBe(1);
+    expect(bondBetween(product, me, c3)).toBeUndefined();
+    expect(order(product, c3, o)).toBe(2);
+    expect([charge(product, cation), charge(product, c3), charge(product, me), charge(product, o)]).toEqual([
+      0, 0, 0, 1,
+    ]);
+    expect(implicitHydrogenCount(product, o)).toBe(1);
+    expect(mechanismIssues(mol, arrows)).toEqual([]);
+  });
+
+  describe("hydrogen-atom abstraction from methane by a bromine radical", () => {
+    function methaneAndBromine() {
+      let c = "";
+      let br = "";
+      const drawn = buildMolecule((b) => {
+        c = b.atom("C", { x: 0, y: 0 });
+        br = b.atom("Br", { x: 3, y: 0 }, { radicalElectrons: 1 });
+      });
+      const promoted = promoteImplicitHydrogen(drawn, c);
+      if (!promoted.ok) throw new Error(promoted.reason);
+      return { mol: promoted.molecule, c, br, h: promoted.hydrogenId, ch: promoted.bondId };
+    }
+
+    it("the C-H electron aimed at the bromine is resolved by flow: HBr and a methyl radical", () => {
+      const { mol, c, br, h, ch } = methaneAndBromine();
+      const arrows = [hook(rad(br), toAtom(h)), hook(bd(ch), toAtom(br)), hook(bd(ch), toAtom(c))];
+      const product = expectReverses(mol, arrows);
+      expect(order(product, h, br)).toBe(1);
+      expect(bondBetween(product, c, h)).toBeUndefined();
+      expect([product.atoms[c]!.radicalElectrons, product.atoms[br]!.radicalElectrons]).toEqual([1, 0]);
+      expect(product.atomIds.every((id) => charge(product, id) === 0)).toBe(true);
+      expect(mechanismIssues(mol, arrows)).toEqual([]);
+    });
+
+    it("the textbook spelling, the C-H electron aimed at its own H, is half a homolysis: the Br arrow is refused", () => {
+      // The sinks cannot name the incipient H-Br bond, so an electron aimed at
+      // the H stays on the H, and the bromine's lone electron would be half a
+      // bond. That arrow is skipped and named; the C-H homolysis applies.
+      const { mol, c, br, h, ch } = methaneAndBromine();
+      const arrows = [hook(rad(br), toAtom(h)), hook(bd(ch), toAtom(h)), hook(bd(ch), toAtom(c))];
+      expect(mechanismIssues(mol, arrows)).toMatchObject([
+        { kind: "unpaired-bond-electron", arrowIndices: [0], label: "half a bond" },
+      ]);
+      const product = applyArrows(mol, arrows);
+      expect(bondBetween(product, h, br)).toBeUndefined();
+      expect(bondBetween(product, c, h)).toBeUndefined();
+      expect(
+        [c, h, br].map((id) => product.atoms[id]!.radicalElectrons),
+      ).toEqual([1, 1, 1]);
+    });
+  });
+
   it("a shift whose re-formed bond the flow rule would misread is reversed as two arrows", () => {
     // Cyclopropane's S-Z pair shifted into S-W, breaking S-Z. Aimed back at Z,
     // Z's ring bond to W would promote W-Z; the reverse spells it as a
@@ -764,6 +981,37 @@ describe("bad arrows are reported, never refused as a set", () => {
     expect(kinds(withFlags, arrows)).toEqual(["aromatic-bond"]);
     expect(applyArrows(withFlags, arrows)).toBe(withFlags);
     expect(applyArrows(flagged, arrows)).not.toBe(flagged);
+  });
+
+  it("an aromatic-flagged bond an arrow reaches through an ATOM sink is refused as well (pyridine's N)", () => {
+    // An importer's pyridine: every ring bond flagged. Aimed at a ring
+    // neighbour's atom, the nitrogen's lone pair would promote the flagged
+    // N-C bond without naming it — to a triple bond on one side.
+    const { mol, ring } = flaggedPyridine();
+    const n = ring[0]!;
+    for (const neighbour of [ring[1]!, ring[5]!]) {
+      const arrows = [pair(lp(n), toAtom(neighbour))];
+      const issues = mechanismIssues(mol, arrows);
+      expect(issues.map((i) => i.kind), neighbour).toEqual(["aromatic-bond"]);
+      expect(issues[0]!.bondIds).toEqual([bondBetween(mol, n, neighbour)!.id]);
+      expect(applyArrows(mol, arrows)).toBe(mol);
+    }
+  });
+
+  it("a third-atom arrow that adjacency lands on an aromatic-flagged ring bond is refused (2-pyridone's C=O)", () => {
+    // RDKit flags 2-pyridone's ring aromatic and keeps C2=O exocyclic. The
+    // C=O pi pair aimed at N1 resolves by adjacency to the flagged C2-N1 bond.
+    const { mol, ring, o } = flaggedPyridone();
+    const [n1, c2] = [ring[0]!, ring[1]!];
+    const co = bondBetween(mol, c2, o)!.id;
+    const arrows = [pair(bd(co), toAtom(n1))];
+    const issues = mechanismIssues(mol, arrows);
+    expect(issues.map((i) => [i.kind, i.bondIds])).toEqual([["aromatic-bond", [bondBetween(mol, n1, c2)!.id]]]);
+    expect(applyArrows(mol, arrows)).toBe(mol);
+    // The same drawing with the flags cleared is an ordinary allyl-type shift.
+    const kekule = unflagged(mol);
+    const product = expectReverses(kekule, arrows);
+    expect([order(product, c2, o), order(product, n1, c2)]).toEqual([1, 2]);
   });
 
   it("a bond past triple is refused; a lone fishhook into a bond leaves half a bond and is refused", () => {
@@ -1097,7 +1345,7 @@ describe("reversal is total", () => {
     }
     // Not vacuous: a random arrow is usually refused, but hundreds of these
     // steps change the molecule, and most of those keep their hydrogens.
-    // (Measured at 706 and 264 of 2000.)
+    // (Measured at 667 and 255 of 2000.)
     expect(admittedSomething).toBeGreaterThan(500);
     expect(exact).toBeGreaterThan(200);
   });

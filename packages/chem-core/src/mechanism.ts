@@ -50,8 +50,9 @@
  *                                   a homolysis). C a third atom: the pair
  *                                   forms (or promotes) a bond X-C, X one end
  *                                   of A-B, chosen by FLOW, then ADJACENCY —
- *                                   see `resolveThirdAtom`. Neither decides:
- *                                   not applied, `ambiguous-bond-end`.
+ *                                   see `resolveThirdAtom`, which never lets
+ *                                   adjacency read a 1,2-shift. Neither
+ *                                   decides: not applied, `ambiguous-bond-end`.
  *   bond A-B        -> bond C-D     sharing one atom: the pair SHIFTS, A-B
  *                                   goes down, C-D goes up. Sharing none: a
  *                                   jump, not applied. The same bond: itself.
@@ -91,7 +92,12 @@
  *     arrow may leave by another; the later claimant is the conflict.
  *   - an aromatic-FLAGGED bond: it has no order to consume or raise, and
  *     kekulising a copy first would change WHICH ring bonds are double, so the
- *     arrow the author drew could land on a single bond.
+ *     arrow the author drew could land on a single bond. Judged on the bond
+ *     the arrow CHANGES, not the one it names: a lone pair aimed at a ring
+ *     neighbour's atom reaches the ring bond between them just the same.
+ *   - a bond's pair aimed at a third atom where nothing in the drawing says
+ *     which end bonds to it, including a 1,2-shift adjacency would otherwise
+ *     misread as an elimination (decision 153).
  *   - a bond past triple, a single electron left alone in a bond, a double-
  *     barbed arrow from an unpaired electron, a jump between places that share
  *     no atom, and an arrow aimed at where it starts.
@@ -137,6 +143,25 @@
  *     pair) reverses into a pairing at that atom, because a lone-pair sink
  *     pairs with an unpaired electron when there is one. The vocabulary has
  *     no "arrive unpaired" sink for a through-space electron.
+ *
+ * WHAT THE SINKS CANNOT SAY YET. A sink names an atom, an existing bond or a
+ * lone pair, so an arrow whose electrons form a bond between two atoms that
+ * are not bonded yet says which atom it reaches but not which end of its own
+ * bond goes with them. Flow and adjacency recover most drawings; three common
+ * ones stay out of reach, and each is reported rather than guessed:
+ *
+ *   - Markovnikov protonation, propene's pi pair to HBr's proton: which
+ *     carbon takes the proton. `ambiguous-bond-end`.
+ *   - a 1,2-shift (hydride, Wagner-Meerwein, ring expansion), the migrating
+ *     bond's pair to the cation. `ambiguous-bond-end` (decision 153).
+ *   - hydrogen-atom abstraction drawn as the textbook's three fishhooks, with
+ *     the C-H electron aimed at the H it leaves with: that reads as the H's
+ *     half of a C-H homolysis, and the Br radical's electron is then half a
+ *     bond, `unpaired-bond-electron`. Aiming the C-H electron at the Br atom
+ *     instead is resolved by flow and applies as the abstraction.
+ *
+ * A sink naming the incipient bond (both atoms) would spell all three; it
+ * widens the scheme annotation codec, so it is left to a ruling.
  *
  * HYDROGENS ARE DERIVED, NOT FORBIDDEN (decision 131). Protonation and
  * deprotonation are the two commonest arrows in organic chemistry, and an
@@ -213,7 +238,7 @@ export type MechanismIssueKind =
   | "bond-order-overflow"
   /** The step would leave a single electron alone in a bond. */
   | "unpaired-bond-electron"
-  /** A pair moves between two atoms that are not bonded. Applied. */
+  /** A pair moves from one atom's lone pairs to another's, through no bond. Applied. */
   | "electron-transfer"
   /** A touched atom's derived hydrogen count changed across the step. */
   | "hydrogens-changed"
@@ -360,6 +385,9 @@ function resolveLocal(mol: Molecule, arrow: ElectronMove, index: number): Local 
 
   const sourceBond = source.kind === "bond" ? ownBond(mol, source.bondId) : undefined;
   const sinkBond = sink.kind === "bond" ? ownBond(mol, sink.bondId) : undefined;
+  // A NAMED aromatic bond is refused here, before a third-atom arrow could
+  // wait on it. A flagged bond an arrow reaches WITHOUT naming it is refused
+  // once its place is resolved, in `refuseAromatic`.
   for (const bond of [sourceBond, sinkBond]) {
     if (bond?.aromatic) return refused(index, "aromatic-bond", [bond.from, bond.to], [bond.id]);
   }
@@ -438,8 +466,23 @@ function resolveLocal(mol: Molecule, arrow: ElectronMove, index: number): Local 
  *      the far carbon, so the near one pairs with the radical. Every
  *      pericyclic arrow cycle resolves this way.
  *   2. ADJACENCY. Failing that, the one end already bonded to C promotes that
- *      bond — the allyl shift or E1 drawn to the cation (scope's rule: a sink
- *      already bonded to the source promotes rather than forms).
+ *      bond — the allyl shift, or an elimination drawn to the cation whose
+ *      proton another arrow takes (scope's rule: a sink already bonded to the
+ *      source promotes rather than forms).
+ *
+ * ADJACENCY NEVER READS A 1,2-SHIFT AS AN ELIMINATION. When A-B is a SINGLE
+ * bond, this arrow breaks it, and if no other arrow of the step touches the
+ * end Y that adjacency would leave behind, the drawing is exactly a 1,2-shift
+ * aimed at the cation: a hydride shift (C-H to C+), a Wagner-Meerwein alkyl
+ * shift, a ring expansion. Adjacency would instead promote X-C and strand Y
+ * as a cation no arrow receives — a bare H+ or a free methyl cation — and
+ * report nothing, which is a different reaction presented as the drawn one.
+ * The shift itself cannot be spelled until a sink can name a bond that does
+ * not exist yet, so the arrow is reported `ambiguous-bond-end`. A pi pair
+ * (A-B double or triple) leaves A-B standing, and its only other reading is a
+ * three-membered ring, so the allyl shift keeps the adjacency rule; so does
+ * any arrow whose Y another arrow speaks for. The elimination is spelled
+ * unambiguously as the C-H pair into the C-C bond, the shift cell.
  *
  * Neither: the arrow is not applied. Propene plus HBr drawn pi-to-H is the
  * honest example: which carbon takes the proton is not in the drawing.
@@ -470,11 +513,27 @@ function resolveThirdAtom(
     return false;
   };
 
+  /** Whether any OTHER arrow of the step names `atomId`, as an end or a target. */
+  const touchedElsewhere = (atomId: AtomId): boolean =>
+    moves.some(
+      (move) =>
+        move.index !== index &&
+        (placeAtoms(move.from).includes(atomId) || placeAtoms(move.to).includes(atomId)),
+    ) ||
+    others.some(
+      (other) =>
+        other.index !== index &&
+        (other.target === atomId || other.bond.from === atomId || other.bond.to === atomId),
+    );
+
   const byFlow = ends.filter((end) => !receivesElsewhere(end));
   let forming: AtomId | undefined = byFlow.length === 1 ? byFlow[0] : undefined;
   if (forming === undefined) {
     const bonded = ends.filter((end) => bondBetween(mol, end, target) !== undefined);
-    if (bonded.length === 1) forming = bonded[0];
+    const candidate = bonded.length === 1 ? bonded[0]! : undefined;
+    const stranded = candidate === bond.from ? bond.to : bond.from;
+    const drawnAsShift = bond.order === 1 && !touchedElsewhere(stranded);
+    if (candidate !== undefined && !drawnAsShift) forming = candidate;
   }
   if (forming === undefined) {
     return refused(index, "ambiguous-bond-end", [bond.from, bond.to, target], [bond.id]);
@@ -493,12 +552,31 @@ function resolveThirdAtom(
   };
 }
 
+/**
+ * Refuses a resolved move that takes electrons from, or adds them to, a bond
+ * carrying an aromatic flag. Judged on the RESOLVED places, not the spelling:
+ * a lone pair aimed at a neighbouring ATOM promotes the bond between them, and
+ * a bond's pair aimed at a third atom can land on a ring bond by the adjacency
+ * rule, and neither arrow names the bond it would change.
+ */
+function refuseAromatic(mol: Molecule, local: Local): Local {
+  if (local.kind !== "move") return local;
+  for (const place of [local.move.from, local.move.to]) {
+    if (place.kind !== "bond") continue;
+    const bond = bondBetween(mol, place.ends[0], place.ends[1]);
+    if (bond?.aromatic) {
+      return refused(local.move.index, "aromatic-bond", [bond.from, bond.to], [bond.id]);
+    }
+  }
+  return local;
+}
+
 /** Phases one and two: every arrow as a move or a refusal, in arrow order. */
 function resolveAll(
   mol: Molecule,
   arrows: readonly ElectronMove[],
 ): { readonly moves: readonly Move[]; readonly refusals: readonly Refusal[] } {
-  const locals = arrows.map((arrow, index) => resolveLocal(mol, arrow, index));
+  const locals = arrows.map((arrow, index) => refuseAromatic(mol, resolveLocal(mol, arrow, index)));
   const moves: Move[] = [];
   const pendings: PendingThirdAtom[] = [];
   for (const local of locals) {
@@ -507,7 +585,7 @@ function resolveAll(
   }
   const resolved = new Map<number, Local>();
   for (const pending of pendings) {
-    resolved.set(pending.index, resolveThirdAtom(mol, pending, moves, pendings));
+    resolved.set(pending.index, refuseAromatic(mol, resolveThirdAtom(mol, pending, moves, pendings)));
   }
   const allMoves: Move[] = [];
   const refusals: Refusal[] = [];
@@ -1157,8 +1235,18 @@ function refusalText(mol: Molecule, refusal: Refusal): readonly [string, string]
         `${n} leaves one electron alone in ${bond}: a fishhook into a bond needs a partner${skipped}`,
         "half a bond",
       ];
-    case "electron-transfer":
-      return [`${n} moves a pair between two atoms that are not bonded`, "pair transfer"];
+    case "electron-transfer": {
+      const [a, c] = refusal.atomIds;
+      const from = a === undefined ? "one atom" : elementOf(mol, a);
+      const to = c === undefined ? "another" : elementOf(mol, c);
+      // Bonded or not, the pair goes shell to shell: a bond between the two
+      // atoms keeps its order, which is the part worth saying.
+      const where =
+        refusal.bondIds[0] === undefined
+          ? "through no bond"
+          : `straight across; ${bondName(mol, refusal.bondIds[0])} between them does not change`;
+      return [`${n} moves a pair from ${from}'s lone pairs to ${to}'s, ${where}`, "pair transfer"];
+    }
     case "hydrogens-changed":
     case "product-over-valent":
     case "resonance-formula-differs":
@@ -1189,8 +1277,9 @@ function refusalIssue(mol: Molecule, refusal: Refusal): MechanismIssue {
 
 /**
  * Everything wrong with one mechanism step, in arrow order and then atom
- * order: the arrows `applyArrows` skipped and why, a pair moved between
- * unbonded atoms, and what the applied arrows did to the atoms they touched —
+ * order: the arrows `applyArrows` skipped and why, a pair moved from one
+ * atom's lone pairs to another's, and what the applied arrows did to the atoms
+ * they touched —
  * a DERIVED hydrogen count that changed, and an atom newly over-valent.
  *
  * The hydrogen check is what catches the arrow set that is wrong in a way
@@ -1208,12 +1297,13 @@ export function mechanismIssues(
 
   for (const move of result.admitted) {
     if (move.electrons === 2 && move.from.kind === "atom" && move.to.kind === "atom") {
+      const between = bondBetween(mol, move.from.atomId, move.to.atomId);
       issues.push(
         refusalIssue(mol, {
           index: move.index,
           kind: "electron-transfer",
           atomIds: [move.from.atomId, move.to.atomId],
-          bondIds: [],
+          bondIds: between === undefined ? [] : [between.id],
           others: [],
         }),
       );
