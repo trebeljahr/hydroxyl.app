@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node scripts/copy-rdkit.mjs && next dev --port ${PORT:-6337}",
+    "dev": "node scripts/dev-preflight.mjs && node scripts/copy-rdkit.mjs && NODE_OPTIONS=\"$NODE_OPTIONS --heapsnapshot-near-heap-limit=1 --diagnostic-dir=.next/heap-snapshots\" next dev --port ${PORT:-6337}",
     "build": "node scripts/copy-rdkit.mjs && next build",
     "start": "next start --port ${PORT:-6337}",
     "lint": "eslint .",

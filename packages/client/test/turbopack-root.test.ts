@@ -2,12 +2,16 @@
  * THE CONSTRAINT THAT DECIDES HOW NARROW THE DEV WATCH SCOPE CAN BE.
  *
  * Turbopack's `root` is its project directory AND its watch scope, and at the
- * monorepo root that scope is four fifths sibling agent worktrees — the
- * measurement is in `next.config.ts` and the consequence is the 2 GB
- * `pnpm dev` crash in manual notes 3. The obvious narrowing, `root:
+ * monorepo root that scope is mostly sibling agent worktrees — the count is in
+ * `next.config.ts`. It was suspected of the 2 GB `pnpm dev` crash in manual
+ * notes 3 and measured innocent on 2026-09-29 (the numbers are there too), so
+ * a narrower root would be tidier, not a fix. The obvious narrowing, `root:
  * packages/client`, does not build: Turbopack resolves through symlinks and
  * then refuses anything whose REAL path is outside the root, and pnpm puts
- * every dependency's real path in `<repo>/node_modules/.pnpm/…`.
+ * every dependency's real path in `<repo>/node_modules/.pnpm/…`. Nor is there
+ * a watch exclude to reach for instead: `TurbopackOptions` in 16.2.12 is
+ * 16.2.6's list, 16.3.6 and 16.4.0-canary.51 add only `chunkLoadingGlobal`,
+ * and `watchOptions` is still `{ pollIntervalMs }` in all of them.
  *
  * Finding that out costs a 65-second build. This file states the rule instead,
  * in the form a future attempt will trip over immediately: every package the
@@ -105,7 +109,8 @@ describe("the Turbopack root", () => {
     // there. If a future layout puts every real path under `packages/client` —
     // a hoisted linker, injected workspace packages, another package manager —
     // this fails, and failing is the good news: the dev watch scope can then
-    // shrink from ~168,000 files to ~2,400.
+    // shrink from the whole repo, other agents' worktrees included, to the
+    // app's own ~2,400 files.
     const needed = [...MUST_BE_INSIDE_THE_ROOT.map(realPackageDir), clientDir];
     expect(root).toBe(deepestContaining(needed));
   });

@@ -9,19 +9,18 @@ const nextConfig: NextConfig = {
   // lockfile and, when dev runs from a git worktree under the main
   // checkout, picks the parent repo and resolves node_modules there.
   //
-  // THE ROOT IS ALSO THE WATCH SCOPE, which is worth knowing before blaming
-  // the app for a `pnpm dev` that eats memory. Counted in the main checkout on
-  // 2026-09-27, and a snapshot rather than a constant — the figure tracks how
-  // many agent worktrees happen to be live, and was ~1% higher a day later:
-  // 134,002 files under this root, of which 98,954 — 74% — live in
-  // `.claude/worktrees/`, i.e. sibling checkouts of this same repo, each with
-  // its own node_modules and .next. Nothing under `packages/` changed during
-  // a 15-minute sample; 1,177 files under `.claude/` did, because other agent
-  // sessions were building there. A dev server started from the MAIN checkout
-  // therefore watches, and reacts to, work that has nothing to do with it; one
-  // started from inside a worktree does not, because the root is then that
-  // worktree. There is no Turbopack ignore list to narrow this with, so the
-  // remedy is where the worktrees live rather than anything in this file.
+  // THE ROOT IS ALSO THE WATCH SCOPE, and at the main checkout that scope is
+  // mostly other agents' worktrees: 469,000 files on 2026-09-29, 434,000 of
+  // them (92%) under `.claude/worktrees/`. It was blamed for the 2 GB
+  // `pnpm dev` crash in manual notes 3, and measurement clears it: with
+  // 446,000 files of cloned worktrees inside the root and ~290,000 file events
+  // churning through them, the server's retained heap stayed flat under
+  // 100 MB on Node 24 and 26 alike. The count is a snapshot, not a constant —
+  // it tracks how many agent sessions are live. Turbopack has no ignore list
+  // to narrow it with (checked up to 16.4.0-canary.51); see
+  // `test/turbopack-root.test.ts` for why the root cannot move, and
+  // `scripts/dev-preflight.mjs` for what the crash left behind and what `dev`
+  // now does about the next one.
   turbopack: { root: path.join(process.cwd(), "..", "..") },
   ...(isDev
     ? {}
