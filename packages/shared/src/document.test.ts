@@ -767,6 +767,27 @@ describe("explicit locants (additive on v2, decision 142)", () => {
     expect(() => withLocants(doc, { constructor: "1" })).toThrow(/does not hold/);
   });
 
+  it("refuses a __proto__ key rather than dropping it with a real locant beside it", () => {
+    // JSON.parse makes "__proto__" an OWN key, which is how a hand-edited
+    // file carries one; a record parser that assigns it sets a prototype and
+    // the entry vanishes. Refused by name, never stripped (decision 110).
+    const molecule = glucose();
+    const c1 = carbohydrates(molecule)[0]!.backbone[0]!;
+    const encoded = JSON.parse(JSON.stringify(encodeDocument(createDocument({ molecule, now: NOW })))) as Record<
+      string,
+      unknown
+    >;
+    for (const text of [`{"${c1}":"1","__proto__":"x"}`, `{"__proto__":"1"}`]) {
+      const locants = JSON.parse(text) as Record<string, string>;
+      expect(Object.hasOwn(locants, "__proto__")).toBe(true);
+      expect(messagesFor({ ...encoded, locants }), text).toContain(
+        "a locant names __proto__, which is not in the molecule",
+      );
+    }
+    // The same map without the key decodes, so the refusal is about the key.
+    expect(safeDecodeDocument({ ...encoded, locants: { [c1]: "1" } }).ok).toBe(true);
+  });
+
   it("prunes the locant of a deleted atom and keeps the rest, by reference when nothing went", () => {
     const molecule = glucose();
     const [unit] = carbohydrates(molecule);

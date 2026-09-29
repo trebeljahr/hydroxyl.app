@@ -1447,6 +1447,29 @@ type AnnotationSchemaIsTotal = (typeof SCHEME_ANNOTATION_KINDS)[number] extends 
 const ANNOTATION_SCHEMA_IS_TOTAL: AnnotationSchemaIsTotal = true;
 void ANNOTATION_SCHEMA_IS_TOTAL;
 
+/**
+ * The explicit-locant map. A `"__proto__"` key is REFUSED here, on the raw
+ * value, because `z.record` builds its output by assignment and assigning
+ * `"__proto__"` sets a prototype instead of a key: the entry would vanish,
+ * and `{"a1": "1", "__proto__": "x"}` would decode clean with one locant
+ * silently dropped (decision 110: refuse, never strip). JSON.parse makes it
+ * an own key, which is how a hand-edited file carries one.
+ */
+const locantsSchema = z.preprocess(
+  (value, ctx) => {
+    if (typeof value === "object" && value !== null && Object.hasOwn(value, "__proto__")) {
+      ctx.addIssue({
+        code: "custom",
+        message: "a locant names __proto__, which is not in the molecule",
+        path: ["__proto__"],
+        input: value,
+      });
+    }
+    return value;
+  },
+  z.record(nonEmptyString, z.string().max(MAX_LOCANT_LENGTH)),
+);
+
 export const sketchDocumentSchema = z
   .strictObject({
     // EXACTLY this version. A newer one is rejected outright; an older one
@@ -1467,7 +1490,7 @@ export const sketchDocumentSchema = z
       .optional(),
     // Optional and additive on v2, like `figure`: a document with no explicit
     // locant has no key. Keys are checked against the molecule below.
-    locants: z.record(nonEmptyString, z.string().max(MAX_LOCANT_LENGTH)).optional(),
+    locants: locantsSchema.optional(),
     metadata: documentMetadataSchema,
   })
   .superRefine((doc, ctx) => {
