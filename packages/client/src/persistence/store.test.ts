@@ -162,7 +162,14 @@ describe("the schema ladder", () => {
     const encoded = JSON.parse(JSON.stringify(encodeDocument(benzeneDoc("doc_1")))) as {
       panels: Record<string, unknown>[];
     };
-    encoded.panels[0]!.view = { kind: "chain" };
+    // `view` itself is known since decision 128, so the newer field is one
+    // inside it: the list of ring assignments decision 162 did not build.
+    encoded.panels[0]!.view = {
+      kind: "ring",
+      template: "haworth",
+      frame: { ringAtomIds: ["a1", "a2", "a3", "a4", "a5", "a6"], assignments: [] },
+      params: { face: "front" },
+    };
     const decoded = decodeStored(encoded);
     expect(decoded.ok).toBe(false);
     if (decoded.ok) return;

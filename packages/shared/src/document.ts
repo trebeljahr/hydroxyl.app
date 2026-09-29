@@ -38,6 +38,8 @@
  */
 
 import {
+  PROJECTION_TEMPLATES,
+  canonicalProjectionView,
   makeAtom,
   emptyMolecule,
   withSpeciesJoins,
@@ -47,8 +49,12 @@ import {
   type BondId,
   type BondOrder,
   type BondStereo,
+  type ChainParams,
   type DoubleBondSide,
   type Molecule,
+  type ProjectionView,
+  type RingConformer,
+  type RingParams,
   type StereoGroup,
   type StereoGroupKind,
 } from "@starter/chem-core";
@@ -88,11 +94,14 @@ import { z } from "zod";
  * not know, so a tab on an older build that opened a newer document dropped
  * the newer field and autosave wrote the loss back — measured for a display
  * flag, and for a whole enhanced-stereo collection, which re-saved a racemate
- * as one enantiomer. Additive optional keys on v2 (`Panel.view` is the next
- * one planned) would repeat that for every future feature. A strict decode
- * turns it into "written by a newer version of the editor", which loses
- * nothing. The only key accepted without being understood is a RETIRED one,
- * listed by name: `showAtomIndices`.
+ * as one enantiomer. Additive optional keys on v2 would repeat that for every
+ * future feature. A strict decode turns it into "written by a newer version
+ * of the editor", which loses nothing. The only key accepted without being
+ * understood is a RETIRED one, listed by name: `showAtomIndices`.
+ *
+ * `Panel.view` (a projection, decision 128) arrived as such a key on v2, with
+ * no second bump: a v2 document without it still decodes to exactly what it
+ * meant, and a build that predates it refuses a panel carrying one.
  */
 export const SCHEMA_VERSION = 2;
 
@@ -187,6 +196,32 @@ export interface Panel {
   readonly representation: Representation;
   /** Figure caption. The key is OMITTED when there is none, never `undefined`. */
   readonly caption?: string;
+  /**
+   * The projection this panel draws the molecule in, when it draws one: a
+   * Fischer, a Haworth, a Newman (decision 128). OMITTED for the plain
+   * drawing, never `undefined`.
+   *
+   * AN AXIS ORTHOGONAL TO `representation.kind`, so a Fischer can be drawn
+   * skeletal or with explicit hydrogens, and a view survives a kind change the
+   * way the display flags do. It is chem-core's `ProjectionView` exactly
+   * (decision 162): `kind` plus `template` name the projection, `frame` the
+   * chemistry it looks at (a backbone, a ring atom-id SET, a sighted bond),
+   * `params` the view knobs, conformation included. Decision 12 puts a torsion
+   * or a chair flip HERE, on the panel, and never on the molecule; so two
+   * panels of one molecule may show two rotamers (decision 160: no shared,
+   * named conformations in v1).
+   *
+   * STORED CANONICAL. `assembleProjectionView` writes angles in [0, 360) and a
+   * ring's atoms as a sorted set, so 370 and 10 are one panel by value and two
+   * spellings of one picture never differ in a file or in the undo history.
+   *
+   * IT MAY NAME ATOMS THE MOLECULE NO LONGER HOLDS. A view is a question about
+   * the molecule, not a part of it: deleting a backbone atom makes the panel
+   * `unavailable: missing-atom` with a sentence, and it is never rewritten to
+   * point at something else. See `prunePanelViews` for the one thing an edit
+   * does prune (decision 175).
+   */
+  readonly view?: ProjectionView;
 }
 
 export interface DocumentMetadata {
@@ -277,6 +312,7 @@ export interface SketchDocument {
 export interface PanelInit {
   readonly representation: Representation;
   readonly caption?: string | undefined;
+  readonly view?: ProjectionView | undefined;
 }
 
 function assemblePanel(id: PanelId, init: PanelInit): Panel {
@@ -291,6 +327,7 @@ function assemblePanel(id: PanelId, init: PanelInit): Panel {
     },
   };
   if (init.caption !== undefined) panel.caption = init.caption;
+  if (init.view !== undefined) panel.view = assembleProjectionView(init.view);
   return panel;
 }
 
@@ -594,6 +631,110 @@ export function pruneLocants(
   const kept = Object.entries(locants).filter(([id]) => Object.hasOwn(molecule.atoms, id));
   if (kept.length === Object.keys(locants).length) return locants;
   return kept.length === 0 ? undefined : Object.freeze(Object.fromEntries(kept));
+}
+
+// ---------------------------------------------------------------------------
+// Projection views (decisions 128, 162)
+// ---------------------------------------------------------------------------
+
+/**
+ * `view` in its one stored spelling: chem-core's canonical view — angles in
+ * [0, 360), a ring's atoms and an overlay's bonds as sets sorted by
+ * `compareIds`, a fixed key order, no key holding `undefined` — so two views
+ * that draw the same picture are deep-equal and encode byte for byte alike.
+ *
+ * chem-core's `canonicalProjectionView` IS the assembler, not a copy of it:
+ * it is also what the engine keys its layouts on, and a second canonical form
+ * here could disagree with it about which two views are one. It builds every
+ * object key by key, so a key a caller's object carries beyond the type is
+ * dropped rather than saved into a file the strict codec would then refuse.
+ * The flip side: a field added to one of chem-core's params types survives a
+ * save only once `canonicalProjectionView` copies it AND the schema below
+ * reads it. The guard beside the schema catches the second; the round-trip
+ * test that carries every optional key catches the first.
+ *
+ * @throws for an angle that is not a finite number: a caller holding one has
+ * a bug, and the codec reports the same thing in a file as an issue.
+ */
+export function assembleProjectionView(view: ProjectionView): ProjectionView {
+  const canonical = canonicalProjectionView(view);
+  if (canonical.kind === "unavailable") {
+    throw new Error(`A ${view.kind} view carries an angle that is not a finite number.`);
+  }
+  return canonical;
+}
+
+/**
+ * Whether `a` and `b` draw the same picture: equal once canonical, so a
+ * torsion of 370 equals one of 10 and a ring named in another order is the
+ * same ring. The canonical form's key order is fixed, which is what lets its
+ * JSON be compared.
+ */
+export function projectionViewsEqual(a: ProjectionView, b: ProjectionView): boolean {
+  if (a === b) return true;
+  return (
+    JSON.stringify(assembleProjectionView(a)) === JSON.stringify(assembleProjectionView(b))
+  );
+}
+
+/**
+ * `panel` drawing `view`, or the plain drawing again with `null`. The one
+ * place a `view` key is written outside the assembler (decision 176).
+ *
+ * Returns `panel` ITSELF when the view it already stores draws the same
+ * picture, so re-choosing the chair a panel shows, or a torsion drag that
+ * ends where it began, is not an undo step (decision 159): the history's
+ * no-op test is reference identity.
+ *
+ * A spread of `panel` is safe for the reason `touchDocument`'s spread is:
+ * nothing in this module stores an `undefined`-valued key, so absent
+ * optionals stay absent.
+ */
+export function panelWithView(panel: Panel, view: ProjectionView | null): Panel {
+  if (view === null) {
+    if (panel.view === undefined) return panel;
+    const { view: _previous, ...rest } = panel;
+    void _previous;
+    return rest;
+  }
+  const next = assembleProjectionView(view);
+  if (panel.view !== undefined && projectionViewsEqual(panel.view, next)) return panel;
+  return { ...panel, view: next };
+}
+
+/**
+ * `panels` after an edit that may have deleted atoms or bonds: the SAME array
+ * when no view had anything to prune, and every untouched panel by reference.
+ * Run in the undo entry of the edit, beside the annotation and locant
+ * pruning, so undo brings the bonds and the panel back together.
+ *
+ * ONLY A SET OF INDEPENDENT MEMBERS IS PRUNED (decision 175): the overlay's
+ * `bondIds`, where each bond carries its own label and a deleted bond simply
+ * stops being labelled. A view's IDENTITY references are never rewritten.
+ * A backbone that lost an atom is not a shorter backbone — that is another
+ * Fischer, drawn without asking — and a ring set that lost members resolves
+ * as a PART of a ring, so pruning it would silently retarget the panel to a
+ * neighbouring ring, the exact failure the atom-id set exists to prevent. So
+ * a deleted backbone, ring or sighted-bond atom stays named, the panel
+ * resolves `unavailable: missing-atom` with a sentence saying to choose
+ * again, and undo restores it. A sighted bond's deleted REFERENCE atom stays
+ * too: the frame falls back to the lowest-id substituent and REPORTS the
+ * fallback, which pruning would turn into a silent "omitted".
+ */
+export function prunePanelViews(
+  panels: readonly Panel[],
+  molecule: Molecule,
+): readonly Panel[] {
+  let changed = false;
+  const next = panels.map((panel) => {
+    const view = panel.view;
+    if (view?.kind !== "annotationOverlay") return panel;
+    const kept = view.frame.bondIds.filter((id) => Object.hasOwn(molecule.bonds, id));
+    if (kept.length === view.frame.bondIds.length) return panel;
+    changed = true;
+    return panelWithView(panel, { ...view, frame: { bondIds: kept } });
+  });
+  return changed ? next : panels;
 }
 
 /** An annotation as a caller adds one: everything but the id, which the
@@ -1371,16 +1512,191 @@ export const representationSchema = z
     }),
   );
 
+/**
+ * The projection value unions chem-core declares as types only, each listed
+ * once with the two-way guard the bond unions above carry, for the same
+ * reason: a member added to the model and not to the codec encodes fine and
+ * then fails to decode, and one panel is enough to lose the document.
+ *
+ * The frame kinds and the templates need no list here. The schema reads
+ * chem-core's `PROJECTION_TEMPLATES` directly, which lists every decision-13
+ * template built or not, so a template is a value a panel may store from the
+ * moment chem-core lists it.
+ */
+export const CHAIN_TOP_VALUES = ["first", "last"] as const satisfies readonly ChainParams["top"][];
+
+type ChainTopListIsTotal =
+  ChainParams["top"] extends (typeof CHAIN_TOP_VALUES)[number] ? true : never;
+const CHAIN_TOP_LIST_IS_TOTAL: ChainTopListIsTotal = true;
+void CHAIN_TOP_LIST_IS_TOTAL;
+
+export const RING_FACE_VALUES = ["front", "back"] as const satisfies readonly RingParams["face"][];
+
+type RingFaceListIsTotal =
+  RingParams["face"] extends (typeof RING_FACE_VALUES)[number] ? true : never;
+const RING_FACE_LIST_IS_TOTAL: RingFaceListIsTotal = true;
+void RING_FACE_LIST_IS_TOTAL;
+
+/**
+ * The puckered forms a ring panel may pin (decision 154). Only the chair
+ * today; a boat, a half-chair and a twist-boat each pin more than one atom,
+ * so they arrive with the chair template as new ARMS of the conformer union,
+ * and the guard below then fails until this list and the schema grow them.
+ */
+export const RING_CONFORMER_FORMS = ["chair"] as const satisfies readonly RingConformer["form"][];
+
+type RingConformerListIsTotal =
+  RingConformer["form"] extends (typeof RING_CONFORMER_FORMS)[number] ? true : never;
+const RING_CONFORMER_LIST_IS_TOTAL: RingConformerListIsTotal = true;
+void RING_CONFORMER_LIST_IS_TOTAL;
+
+/**
+ * An id SET. Order is not significant — the transform stores it sorted — but
+ * an id named twice is a second spelling of a smaller set, refused the way a
+ * species join naming an atom twice is. A number, the shape a ring INDEX into
+ * `rings(mol)` would have, is refused by the element type: indices renumber
+ * on any topology edit, and a panel keyed on one would silently show another
+ * ring.
+ */
+function idSetSchema(what: string) {
+  return z.array(nonEmptyString).superRefine((ids, ctx) => {
+    const seen = new Set<string>();
+    ids.forEach((id, index) => {
+      if (seen.has(id)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `${what} ${id} is named twice; the ${what}s of a view are a set`,
+          path: [index],
+        });
+      }
+      seen.add(id);
+    });
+  });
+}
+
+/**
+ * The stored view, arm by arm, as chem-core types it (decision 162).
+ *
+ * ATOM IDS ARE NOT CHECKED AGAINST THE MOLECULE (decision 175), unlike an
+ * annotation's or a locant's. A view is a question about the molecule — "the
+ * Fischer of this backbone" — and a stale one is an honest state the panel
+ * reports (`unavailable: missing-atom`, "choose again") rather than a corrupt
+ * file: the engine resolves every id with `Object.hasOwn` before any
+ * traversal, so even "constructor" is only a missing atom. Unknown keys ARE
+ * refused (decision 110), at every depth, and so is anything no edit can
+ * produce: a number where an id goes, an id twice in a set, a template of
+ * another frame kind.
+ *
+ * Angles are any finite number here (`z.number` refuses NaN and Infinity) and
+ * are canonicalised by the transform, so a hand-written 370 opens as 10.
+ */
+const projectionViewShapeSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("planar"),
+    template: z.enum(PROJECTION_TEMPLATES.planar),
+    frame: z.strictObject({}),
+    params: z.strictObject({ rotationDeg: z.number(), mirror: z.boolean() }),
+  }),
+  z.strictObject({
+    kind: z.literal("chain"),
+    template: z.enum(PROJECTION_TEMPLATES.chain),
+    // ORDERED, first atom first; not a set. A repeated atom is the engine's
+    // `repeated-atom`, reported on the panel like any other bad backbone.
+    frame: z.strictObject({ backbone: z.array(nonEmptyString) }),
+    params: z.strictObject({ top: z.enum(CHAIN_TOP_VALUES) }),
+  }),
+  z.strictObject({
+    kind: z.literal("ring"),
+    template: z.enum(PROJECTION_TEMPLATES.ring),
+    frame: z.strictObject({
+      ringAtomIds: idSetSchema("ring atom"),
+      referenceAtomId: nonEmptyString.optional(),
+    }),
+    params: z.strictObject({
+      face: z.enum(RING_FACE_VALUES),
+      conformer: z
+        .discriminatedUnion("form", [
+          z.strictObject({ form: z.literal(RING_CONFORMER_FORMS[0]), frontAtomId: nonEmptyString }),
+        ])
+        .optional(),
+    }),
+  }),
+  z.strictObject({
+    kind: z.literal("sightedBond"),
+    template: z.enum(PROJECTION_TEMPLATES.sightedBond),
+    frame: z.strictObject({
+      front: nonEmptyString,
+      back: nonEmptyString,
+      frontReference: nonEmptyString.optional(),
+      backReference: nonEmptyString.optional(),
+    }),
+    // The dihedral (chemistry) and the roll of the whole picture (cosmetic)
+    // are two fields, so "straighten the figure" never rewrites a torsion.
+    params: z.strictObject({ torsionDeg: z.number(), rollDeg: z.number() }),
+  }),
+  z.strictObject({
+    kind: z.literal("annotationOverlay"),
+    template: z.enum(PROJECTION_TEMPLATES.annotationOverlay),
+    frame: z.strictObject({ bondIds: idSetSchema("overlay bond") }),
+    params: z.strictObject({}),
+  }),
+]);
+
+/**
+ * THE SCHEMA MIRRORS CHEM-CORE'S `ProjectionView` EXACTLY, checked in both
+ * directions at compile time (decision 176). Compared after `Plain` strips `readonly` and
+ * the `undefined` zod adds to an optional key, the two types must be
+ * IDENTICAL, arm by arm and key by key, optional keys included: a frame kind,
+ * a template, a params field or a conformer form that one side has and the
+ * other lacks is a type error at the line below, never a panel that saves and
+ * then refuses to open. Mutual assignability would not do: it lets an extra
+ * OPTIONAL key through in either direction, and optional keys are exactly how
+ * this type grows (the steroid acceptance of decision 163 is the next one).
+ *
+ * An object with no keys at all is written `{}` whichever side it came from:
+ * zod types an empty strict object as `Record<string, never>` and chem-core
+ * writes `Readonly<Record<never, never>>`, and both admit exactly `{}`.
+ */
+type Plain<T> = T extends readonly (infer E)[]
+  ? Plain<E>[]
+  : T extends object
+    ? [T] extends [Record<string, never>]
+      ? {}
+      : { -readonly [K in keyof T]: Plain<Exclude<T[K], undefined>> }
+    : T;
+type Identical<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+type ViewSchemaMirrorsModel =
+  Identical<Plain<z.output<typeof projectionViewShapeSchema>>, Plain<ProjectionView>> extends true
+    ? true
+    : never;
+const VIEW_SCHEMA_MIRRORS_MODEL: ViewSchemaMirrorsModel = true;
+void VIEW_SCHEMA_MIRRORS_MODEL;
+
+/**
+ * The decoded view: canonical, through the same assembler every caller's
+ * view goes through. The cast is sound by the guard above; the one thing zod
+ * adds, a present optional key holding `undefined`, is what
+ * `canonicalProjectionView` omits.
+ */
+export const projectionViewSchema = projectionViewShapeSchema.transform(
+  (value): ProjectionView => assembleProjectionView(value as ProjectionView),
+);
+
 export const panelSchema = z
   .strictObject({
     id: nonEmptyString,
     representation: representationSchema,
     caption: z.string().optional(),
+    // Optional and additive on v2 (the epic's one-migration ruling): a panel
+    // drawing the plain structure has no key.
+    view: projectionViewSchema.optional(),
   })
   .transform((value): Panel =>
     assemblePanel(value.id, {
       representation: value.representation,
       caption: value.caption,
+      view: value.view,
     }),
   );
 
@@ -1734,6 +2050,9 @@ function encodePanel(panel: Panel): JsonObject {
     },
   };
   if (panel.caption !== undefined) encoded.caption = panel.caption;
+  // A fresh canonical value, key by key: the stored view already is one, and
+  // re-assembling costs nothing and shares no object with the live document.
+  if (panel.view !== undefined) encoded.view = assembleProjectionView(panel.view);
   return encoded;
 }
 

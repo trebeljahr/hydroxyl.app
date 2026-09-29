@@ -1140,7 +1140,8 @@ describe("the scheme model (schema v2)", () => {
     const encoded = JSON.parse(JSON.stringify(encodeDocument(scheme()))) as Record<string, any>;
     const newer: ((copy: Record<string, any>) => void)[] = [
       (copy) => (copy.somethingNewer = 1),
-      (copy) => (copy.panels[0].view = { kind: "chain" }),
+      // `view` is known since decision 128; a newer build's panel key is not.
+      (copy) => (copy.panels[0].layer = 2),
       (copy) => (copy.molecule.atoms.a1.mapNumber = 3),
       (copy) => (copy.annotations[1].style = "equilibrium"),
       (copy) => (copy.metadata.license = "CC-BY"),
