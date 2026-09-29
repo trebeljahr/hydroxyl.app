@@ -154,10 +154,10 @@ export function onDocumentChange(listener: (change: DocumentChange) => void): ()
  * while the page stays alive — Fast Refresh. `channel` is module scope, so the
  * outgoing module instance's channel, its message handler, and the closure
  * over the editor store that handler reaches are all still registered with the
- * browser while the incoming instance opens a second channel of its own. Edit
- * a file thirty times in a session and thirty channels are listening, each
- * holding a document; that is one of the retainers behind the steady heap
- * climb in manual notes 3.
+ * browser while the incoming instance opens a second channel of its own, and
+ * thirty swaps leave thirty listening, each holding a document. It was first
+ * blamed for the heap climb in manual notes 3; it is not — an edit to this
+ * file full-reloads the page today (see the hook at the bottom).
  *
  * Idempotent, and safe to call when no channel was ever opened: both are
  * ordinary during teardown.
@@ -179,26 +179,18 @@ export function closeDocumentsChannel(): void {
 }
 
 /**
- * DEV ONLY, AND DEAD CODE IN A PRODUCTION BUILD.
+ * DEV ONLY, AND A NO-OP IN A PRODUCTION BUILD, where nothing is swapped.
  *
- * `import.meta.hot` is defined by the dev bundler and replaced with a literal
- * `undefined` in `next build`, so this whole block is dropped from the shipped
- * bundle — it costs the app nothing and exists purely so that `pnpm dev` does
- * not accumulate one `BroadcastChannel`, one message handler and one retained
- * document per Fast Refresh (decision 94).
+ * `turbopackHot`, NOT `hot`. Turbopack's `import.meta` carries `url` and
+ * `turbopackHot` and nothing else — read off the served chunk on 2026-09-29 —
+ * so the first version of this hook, behind a Vite-style `import.meta.hot`,
+ * never ran. Next declares `turbopackHot` in its global types.
  *
- * The cast is the narrowest way to say this without pulling Vite's ambient
- * client types into a Next app: `import.meta.hot` is not in the TypeScript lib
- * and declaring it globally would claim it exists everywhere. TypeScript
- * erases the cast, so the bundler still sees the literal `import.meta.hot`
- * member access it looks for.
+ * Measured the same day, an edit to this file makes Next do a FULL reload,
+ * because it is imported from outside the React tree, and a reload closes the
+ * channel with the page. The hook matters once a copy of this module is
+ * swapped in while the page lives on (decision 94).
  */
-interface HotModule {
-  readonly hot?: { dispose(callback: () => void): void } | undefined;
-}
-
-if ((import.meta as ImportMeta & HotModule).hot) {
-  (import.meta as ImportMeta & HotModule).hot?.dispose(() => {
-    closeDocumentsChannel();
-  });
-}
+import.meta.turbopackHot?.dispose(() => {
+  closeDocumentsChannel();
+});

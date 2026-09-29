@@ -4,19 +4,19 @@
  * `broadcast.ts` keeps ONE `BroadcastChannel` at module scope, which is
  * load-bearing (a channel never delivers to the object that posted, so posting
  * and listening through the same object is what stops a tab reacting to its
- * own writes). Module scope is also what makes it survive a module swap: Fast
- * Refresh replaces the module while the page lives on, so the outgoing
- * instance's channel, its message handler and the closure over the editor
- * store that handler reaches all stay registered with the browser, and the
- * incoming instance opens a second one. Thirty edits in a session, thirty
- * channels, thirty retained documents — one of the retainers behind the steady
- * heap climb in manual notes 3.
+ * own writes). Module scope is also what makes it survive a module swap: if
+ * the module is replaced while the page lives on, the outgoing instance's
+ * channel, its message handler and the closure over the editor store that
+ * handler reaches all stay registered with the browser, and the incoming
+ * instance opens a second one. (Measured on 2026-09-29, an edit to
+ * `broadcast.ts` full-reloads the page instead, so this is a guard for the day
+ * that changes rather than a leak that was being hit.)
  *
  * Decision 94: `closeDocumentsChannel` is the fix, wired to
- * `import.meta.hot.dispose` in the module itself. This file pins both halves.
- * The teardown is exercised for real below; the WIRING is asserted against the
- * source, because `import.meta.hot` is injected per module by the bundler and
- * a test cannot hand another module a fake one.
+ * `import.meta.turbopackHot.dispose` in the module itself. This file pins both
+ * halves. The teardown is exercised for real below; the WIRING is asserted
+ * against the source, because the hot context is injected per module by the
+ * bundler and a test cannot hand another module a fake one.
  */
 
 import { readFileSync } from "node:fs";
@@ -154,12 +154,13 @@ describe("across a simulated Fast Refresh", () => {
 /**
  * THE WIRING, checked against the source.
  *
- * `import.meta.hot` is created per module by the bundler's runtime and handed
- * to the module at evaluation; nothing outside can substitute one, so there is
- * no way to assert from a test that THIS module registered a dispose callback.
- * What can be asserted is that the registration is present, guarded, and calls
- * the teardown the tests above exercise — so removing the hook fails here and
- * breaking the teardown fails there.
+ * `import.meta.turbopackHot` is created per module by the bundler's runtime and
+ * handed to the module at evaluation; nothing outside can substitute one, so
+ * there is no way to assert from a test that THIS module registered a dispose
+ * callback. What can be asserted is that the registration is present, on the
+ * hook Turbopack actually provides, and calls the teardown the tests above
+ * exercise — so removing the hook fails here and breaking the teardown fails
+ * there.
  */
 describe("the dev-only dispose hook", () => {
   const source = readFileSync(
@@ -167,14 +168,16 @@ describe("the dev-only dispose hook", () => {
     "utf8",
   );
 
-  it("registers the teardown with the bundler's hot context", () => {
-    const registration = /import\.meta[^\n]*\)?\.hot\?\.dispose\(\(\) => \{\s*closeDocumentsChannel\(\);/;
+  it("registers the teardown with Turbopack's hot context", () => {
+    const registration =
+      /import\.meta\.turbopackHot\?\.dispose\(\(\) => \{\s*closeDocumentsChannel\(\);/;
     expect(source).toMatch(registration);
   });
 
-  it("guards the registration, so a production bundle drops it", () => {
-    // `import.meta.hot` is replaced with `undefined` in a production build.
-    // Unguarded, this would be a call on `undefined` in the shipped bundle.
-    expect(source).toMatch(/if \(\(import\.meta as [^)]*\)\.hot\) \{/);
+  it("does not register it on Vite's, which Turbopack never defines", () => {
+    // Turbopack's `import.meta` has `url` and `turbopackHot` only. The first
+    // version of this hook sat behind `import.meta.hot`, passed a test of its
+    // shape, and never ran.
+    expect(source).not.toMatch(/import\.meta[^\n`]*\.hot(\?\.|\))/);
   });
 });
