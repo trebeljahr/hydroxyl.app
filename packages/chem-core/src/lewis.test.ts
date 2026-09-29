@@ -210,6 +210,29 @@ describe("lonePairCount", () => {
     expect(drawnLonePairs(hydronium, hydronium.atomIds[0]!)).toBe(1);
   });
 
+  it("counts a silylium ion's empty shell and a chloronium ion's two pairs", () => {
+    // Both hang on the charged-atom valence rule. Si+ reads as aluminium, so
+    // trimethylsilylium takes no hydrogen and 4 − 1 − 3 = 0: a planar cation
+    // with nothing left over. The old rule gave Si+ a valence of 5, filled it
+    // with two phantom hydrogens and called the atom over-subscribed.
+    let silicon = "";
+    const trimethylsilylium = buildMolecule((b) => {
+      silicon = b.atom("Si", vec(0, 0), { charge: 1 });
+      for (const x of [-1, 0, 1]) b.bond(silicon, b.atom("C", vec(x, 1)));
+    });
+    expect(lonePairCount(trimethylsilylium, silicon)).toEqual({
+      kind: "counted",
+      pairs: 0,
+      unpaired: 0,
+    });
+
+    // H2Cl+: Cl+ reads as sulfur, two implicit hydrogens, 7 − 1 − 2 = 4.
+    const chloronium = buildMolecule((b) => {
+      b.atom("Cl", vec(0, 0), { charge: 1 });
+    });
+    expect(drawnLonePairs(chloronium, chloronium.atomIds[0]!)).toBe(2);
+  });
+
   it("reports a radical's unpaired electron beside its pairs", () => {
     // A methyl radical: three implicit hydrogens and one unpaired electron,
     // which together spend all four of carbon's outer electrons.

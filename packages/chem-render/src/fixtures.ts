@@ -183,8 +183,8 @@ export function methyleneCarbene(): Molecule {
  * Both halves of the charged-carbon rule in one picture: the central carbon
  * draws "C+" because a charge needs something to sit on, while its three methyl
  * carbons stay bare vertices. The central carbon carries no hydrogens —
- * chem-core mirrors RDKit's carbon special case, which gives a +1 carbon a
- * target valence of three, all of it used by the three bonds.
+ * chem-core follows RDKit in reading a +1 carbon as boron, a valence of
+ * three, all of it used by the three bonds.
  */
 export function tertButylCation(): Molecule {
   return buildMolecule((b) => {

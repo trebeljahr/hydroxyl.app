@@ -7,9 +7,10 @@
  * them back out, and adding a bond meant deleting hydrogens first and
  * recreating them after.
  *
- * The charge and radical handling mirrors RDKit's `calculateImplicitValence`,
- * carbon special case included, and the resolution of aromatic half-integers
- * follows its `calcExplicitValence` (bar the final integer rounding, which is
+ * The charge and radical handling mirrors RDKit's `calculateImplicitValence`
+ * as of 2024.09 — a charged atom reads as its isoelectronic element, see
+ * `chargedValences` — and the resolution of aromatic half-integers follows
+ * its `calcExplicitValence` (bar the final integer rounding, which is
  * deliberately not ported). Matching them is deliberate: RDKit is the
  * import/export oracle, and a different rule here would show up as hydrogens
  * appearing or vanishing across a SMILES round-trip.
@@ -22,8 +23,8 @@
  * wrong, and for the thiophene formula it used to get wrong.
  */
 
-import { requireElement } from "./elements.js";
-import { bondsAt, getAtom, requireAtom } from "./molecule.js";
+import { elementByZ, requireElement } from "./elements.js";
+import { bondsAt, degree, getAtom, requireAtom } from "./molecule.js";
 import type { AtomId, BondId, Molecule } from "./types.js";
 
 /** An aromatic bond contributes 1.5, so a benzene carbon totals 3. */
@@ -115,32 +116,121 @@ export function outerElectronCount(symbol: string): number | undefined {
 }
 
 /**
- * True when the element sits to the left of carbon in the periodic table, so
- * a positive charge *increases* rather than decreases its bonding capacity.
+ * Whether a negative charge on this atom is read on its OWN valence list,
+ * shifted, rather than on the isoelectronic element's. RDKit's
+ * `canBeHypervalent`, verbatim.
+ *
+ * Phosphorus, sulfur, arsenic and selenium have hypervalent forms, and the
+ * element a negative charge makes them isoelectronic with may not: S- is
+ * chlorine's electron count, and chlorine's `[1]` would call SF5- over-valent.
+ * So once the charge carries one of them past its own row's chalcogen —
+ * beyond sulfur for P and S, beyond selenium for As and Se: S⁻, P²⁻, Se⁻,
+ * As²⁻ — RDKit keeps the atom's own list and counts the charge against the
+ * bonds instead, which is the old additive rule for these four. P⁻ stops at
+ * sulfur, whose `[2, 4, 6]` already covers PF6-.
  */
-function isEarlyAtom(group: number): boolean {
-  // Outer electrons for main-group elements; d-block is handled by having no
-  // default valences at all, so it never reaches this — `chargeAdjustment` is
-  // only called after `valences.length > 0` has been checked, which is the
-  // same guard `outerElectronCount` applies.
-  const outerElectrons = group <= 2 ? group : group - 10;
-  return outerElectrons < 4;
+function canBeHypervalent(z: number, effectiveZ: number): boolean {
+  return (
+    (effectiveZ > 16 && (z === 15 || z === 16)) ||
+    (effectiveZ > 34 && (z === 33 || z === 34))
+  );
+}
+
+/** No hydrogens, and over-valent at any bond count. See `atomValences`. */
+const UNREASONABLE_CHARGE: readonly number[] = Object.freeze([-1]);
+
+/** No hydrogens, no bonds: a bare proton. See `chargedValences`. */
+const NO_ELECTRONS: readonly number[] = Object.freeze([0]);
+
+/**
+ * The valences a charged atom may take, ascending: hydrogens fill it up to
+ * the first entry its bonding reaches, and past the last it is over-valent.
+ *
+ * THE RULE IS RDKIT'S, from `calculateImplicitValence` in
+ * Code/GraphMol/Atom.cpp, as rewritten for 2024.09: a charged atom reads as
+ * the element with the same electron count, atomic number minus charge, and
+ * takes that element's valence list whole. N+ is carbon's `[4]` (ammonium),
+ * O+ is nitrogen's `[3]` (hydronium), C+ is boron's `[3]` and C- nitrogen's
+ * `[3]`, B- is carbon's `[4]` (tetrafluoroborate), P- is sulfur's `[2, 4, 6]`
+ * (hexafluorophosphate), Si+ is aluminium's `[3]` (a silylium ion) and Cl+
+ * is sulfur's `[2, 4, 6]` (a chloronium ion).
+ *
+ * THE RULE IT REPLACED added the charge to every default valence, inverted
+ * it for atoms left of carbon, and inverted it again for a carbocation. At a
+ * charge of one that agreed with the new rule on boron, carbon, nitrogen and
+ * oxygen, which is why the organic cases never noticed, and it disagreed
+ * almost everywhere else: it gave SiH5+ where RDKit gives SiH3+, capped Cl+
+ * at two bonds where RDKit allows it sulfur's four and six, and left an S+
+ * with six bonds unreported while RDKit refused it. Each of those surfaced
+ * as hydrogens gained or lost across a round trip, or as an export failing on
+ * a drawing the editor called clean. There is no carbon, nitrogen or boron
+ * special case any more: the isoelectronic reading gets all of them right on
+ * its own.
+ *
+ * WHAT RDKIT STILL SPECIAL-CASES, and this ports:
+ *
+ *   - Phosphorus, sulfur, arsenic and selenium keep their own list under a
+ *     large enough negative charge. See `canBeHypervalent`.
+ *   - A BARE hydrogen — no bonds, radicals or pinned hydrogens. H+ and H-
+ *     take no hydrogens, and any larger charge on one is refused outright as
+ *     unreasonable. That one depends on the drawing, not the charge — the
+ *     same H²⁻ with a bond is read as lithium like any other charged atom —
+ *     so `atomValences` applies it, not this. RDKit's exception letting H-
+ *     carry two bonds does not survive its own implicit check, which reads
+ *     H- as helium and refuses the first bond; neither does it here.
+ *   - An element with no default valence (the d- and f-blocks) never moves:
+ *     it carries no list, charged or not. The same goes for a charge that
+ *     lands on one, which is why Ca- (scandium's electron count) takes no
+ *     hydrogens.
+ *
+ * Where a charge strips every electron (H+ and beyond, effective number zero
+ * or less), RDKit takes no hydrogens and checks nothing; `[0]` agrees on the
+ * hydrogens and still badges a bond to a bare proton.
+ *
+ * NOT PORTED: RDKit keeps a trailing `-1` on the alkali and alkaline-earth
+ * lists (lithium's reads `[1, -1]`), meaning "anything above is fine", so it
+ * sanitises Mg+ with three bonds or Al+ with five. The hydrogen count is zero
+ * either way; chem-core badges the bonds, which is a warning on a drawing
+ * RDKit would accept, not drift. Nor is the aromatic snap's list split: RDKit
+ * snaps a hypervalent anion against the isoelectronic element's list and
+ * counts hydrogens against its own, which differs only for one of those
+ * anions in an aromatic ring carrying more than two and a half bond orders.
+ */
+function chargedValences(symbol: string, charge: number): readonly number[] {
+  const element = requireElement(symbol);
+  if (element.valences.length === 0 || charge === 0) return element.valences;
+
+  const q = Math.round(charge);
+  const effectiveZ = element.z - q;
+  if (effectiveZ <= 0) return NO_ELECTRONS;
+  if (canBeHypervalent(element.z, effectiveZ)) {
+    return element.valences.map((valence) => valence + q);
+  }
+  return elementByZ(effectiveZ)?.valences ?? [];
 }
 
 /**
- * The charge adjustment applied to a default valence.
+ * The atom's charged valence list: `chargedValences`, plus RDKit's refusal of
+ * a bare hydrogen carrying a charge of two or more. `[-1]` is how that refusal
+ * is said: no hydrogens, and over-valent even with nothing on the atom, so the
+ * badge warns before the export fails.
  *
- * Ammonium N+ can take four bonds (3 + 1); alkoxide O- takes one (2 - 1).
- * Electropositive elements invert, and carbon inverts for positive charge
- * only — without that special case a carbocation would be assigned five
- * bonds instead of three.
+ * Bareness is read off the raw drawing, not `statedValence`: with nothing on
+ * the atom there is no aromatic sum to resolve, and resolving one needs this
+ * list.
  */
-function chargeAdjustment(symbol: string, group: number, charge: number): number {
-  if (charge === 0) return 0;
-  let adjusted = charge;
-  if (isEarlyAtom(group)) adjusted = -adjusted;
-  if (symbol === "C" && adjusted > 0) adjusted = -adjusted;
-  return adjusted;
+function atomValences(mol: Molecule, atomId: AtomId): readonly number[] {
+  const atom = requireAtom(mol, atomId);
+  if (
+    atom.element === "H" &&
+    Math.abs(Math.round(atom.charge)) >= 2 &&
+    atom.radicalElectrons === 0 &&
+    Math.max(0, atom.explicitHydrogenCount ?? 0) === 0 &&
+    degree(mol, atomId) === 0
+  ) {
+    return UNREASONABLE_CHARGE;
+  }
+  return chargedValences(atom.element, atom.charge);
 }
 
 /**
@@ -155,14 +245,11 @@ export function implicitHydrogenCount(mol: Molecule, atomId: AtomId): number {
   const atom = requireAtom(mol, atomId);
   if (atom.explicitHydrogenCount !== undefined) return atom.explicitHydrogenCount;
 
-  const element = requireElement(atom.element);
-  if (element.valences.length === 0) return 0;
+  const valences = atomValences(mol, atomId);
+  if (valences.length === 0) return 0;
 
   const used = explicitValence(mol, atomId);
-  const adjustment = chargeAdjustment(element.symbol, element.group, atom.charge);
-
-  for (const valence of element.valences) {
-    const target = valence + adjustment;
+  for (const target of valences) {
     if (used <= target) return Math.max(0, Math.round(target - used));
   }
   // Over-valent: nothing left to fill. `valenceIssues` reports it separately.
@@ -225,20 +312,17 @@ function resolveAromaticValence(
   atomId: AtomId,
   raw: number,
 ): number {
-  const atom = requireAtom(mol, atomId);
-  const element = requireElement(atom.element);
+  const valences = atomValences(mol, atomId);
   // No default valences means no implicit hydrogens ever, so there is nothing
   // to snap to and nothing downstream that would read it.
-  if (element.valences.length === 0) return raw;
+  if (valences.length === 0) return raw;
   if (!hasAromaticPerception(mol, atomId)) return raw;
 
-  const adjustment = chargeAdjustment(element.symbol, element.group, atom.charge);
-  const lowest = element.valences[0]! + adjustment;
+  const lowest = valences[0]!;
   if (raw <= lowest) return raw;
 
   let resolved = lowest;
-  for (const valence of element.valences) {
-    const target = valence + adjustment;
+  for (const target of valences) {
     if (target > raw) break;
     resolved = target;
   }
@@ -262,8 +346,9 @@ export function totalValence(mol: Molecule, atomId: AtomId): number {
 }
 
 /**
- * Every default valence this element offers, charge adjustment applied, in the
- * element table's ascending order. Empty for a metal, which carries none.
+ * Every valence this atom may take, charge applied — for a charged atom that
+ * is the isoelectronic element's list, see `chargedValences` — ascending.
+ * Empty for a metal, which carries none, and for a charge that lands on one.
  *
  * The LIST, not just its last entry, is what a caller reasoning about a
  * multi-valence element needs. Sulfur allows 2, 4 and 6 and picks whichever
@@ -273,19 +358,16 @@ export function totalValence(mol: Molecule, atomId: AtomId): number {
  * spare, which is true of a sulfone and nonsense for a thiophene.
  */
 export function chargeAdjustedValences(mol: Molecule, atomId: AtomId): number[] {
-  const atom = requireAtom(mol, atomId);
-  const element = requireElement(atom.element);
-  const adjustment = chargeAdjustment(element.symbol, element.group, atom.charge);
-  return element.valences.map((valence) => valence + adjustment);
+  return [...atomValences(mol, atomId)];
 }
 
-/** The highest valence this atom could reach, charge included. */
+/**
+ * The highest valence this atom could reach, charge included. Infinite where
+ * there is no list to top out: a metal, or a charge that lands on one.
+ */
 export function maxValence(mol: Molecule, atomId: AtomId): number {
-  const atom = requireAtom(mol, atomId);
-  const element = requireElement(atom.element);
-  if (element.valences.length === 0) return Infinity;
-  const highest = element.valences[element.valences.length - 1]!;
-  return highest + chargeAdjustment(element.symbol, element.group, atom.charge);
+  const valences = atomValences(mol, atomId);
+  return valences.length === 0 ? Infinity : valences[valences.length - 1]!;
 }
 
 /**

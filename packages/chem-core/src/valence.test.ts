@@ -103,19 +103,22 @@ describe("variable valence", () => {
     // `maxValence` alone cannot answer "how much room does this atom have",
     // because for sulfur the answer depends on which of its three valences the
     // bonding actually reaches. Kekulisation needs the list: thiopyrylium's S+
-    // settles at 3 with one double bond, and measuring it against the 7 at the
+    // settles at 3 with one double bond, and measuring it against the 5 at the
     // top of the same list says it needs no double bond at all.
     const thiophene = buildMolecule((b) => b.atom("S"));
     expect(V.chargeAdjustedValences(thiophene, thiophene.atomIds[0]!)).toEqual([2, 4, 6]);
 
+    // S+ has phosphorus's electron count and takes phosphorus's list. The old
+    // additive rule read it as [3, 5, 7] and let an S+ carry seven bonds.
     const sulfonium = buildMolecule((b) => b.atom("S", undefined, { charge: 1 }));
-    expect(V.chargeAdjustedValences(sulfonium, sulfonium.atomIds[0]!)).toEqual([3, 5, 7]);
-    expect(V.maxValence(sulfonium, sulfonium.atomIds[0]!)).toBe(7);
+    expect(V.chargeAdjustedValences(sulfonium, sulfonium.atomIds[0]!)).toEqual([3, 5]);
+    expect(V.maxValence(sulfonium, sulfonium.atomIds[0]!)).toBe(5);
 
-    // Carbon's positive-charge inversion carries through, as it must: the list
-    // and `maxValence` are two readings of one adjustment, never two rules.
+    // C+ reads as boron. The list and `maxValence` are two readings of one
+    // rule, never two rules.
     const cation = buildMolecule((b) => b.atom("C", undefined, { charge: 1 }));
     expect(V.chargeAdjustedValences(cation, cation.atomIds[0]!)).toEqual([3]);
+    expect(V.maxValence(cation, cation.atomIds[0]!)).toBe(3);
 
     // A metal carries no default valence, so there is nothing to adjust.
     const iron = buildMolecule((b) => b.atom("Fe"));
@@ -140,8 +143,9 @@ describe("charge", () => {
   });
 
   it("gives a carbocation three hydrogens, not five", () => {
-    // Without carbon's special case a positive charge would add capacity
-    // rather than remove it, and CH3+ would come out as CH5+.
+    // C+ reads as boron. A rule that added the charge to carbon's 4 would
+    // hand CH3+ the formula of CH5+; the old additive rule needed a carbon
+    // special case to avoid exactly that.
     const cation = buildMolecule((b) => b.atom("C", undefined, { charge: 1 }));
     expect(V.implicitHydrogenCount(cation, cation.atomIds[0]!)).toBe(3);
   });
@@ -151,8 +155,9 @@ describe("charge", () => {
     expect(V.implicitHydrogenCount(anion, anion.atomIds[0]!)).toBe(3);
   });
 
-  it("inverts for electropositive elements", () => {
-    // Borohydride: B- reaches four bonds where neutral boron manages three.
+  it("gives an electropositive anion MORE room, not less", () => {
+    // Borohydride: B- reads as carbon and reaches four bonds where neutral
+    // boron manages three.
     const borohydride = buildMolecule((b) => b.atom("B", undefined, { charge: -1 }));
     expect(V.maxValence(borohydride, borohydride.atomIds[0]!)).toBe(4);
     expect(V.implicitHydrogenCount(borohydride, borohydride.atomIds[0]!)).toBe(4);
@@ -342,9 +347,15 @@ describe("a pinned hydrogen count counts toward over-valence", () => {
 // ---------------------------------------------------------------------------
 
 /** `centre` with `n` single-bonded `ligand` atoms around it. */
-function star(centre: string, ligand: string, n: number, order: 1 | 2 = 1): Molecule {
+function star(
+  centre: string,
+  ligand: string,
+  n: number,
+  order: 1 | 2 = 1,
+  charge = 0,
+): Molecule {
   return buildMolecule((b) => {
-    const c = b.atom(centre, vec(0, 0));
+    const c = b.atom(centre, vec(0, 0), { charge });
     for (let i = 0; i < n; i++) b.bond(c, b.atom(ligand, fromPolar((2 * Math.PI * i) / n, 1)), order);
   });
 }
@@ -428,6 +439,155 @@ describe("the heavier main-group rows follow RDKit 2025.03", () => {
       b.atom("He", vec(0, 0), { charge: 1 });
     });
     expect(V.implicitHydrogenCount(cation, first(cation))).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Charged atoms
+//
+// RDKit 2024.09 reads a charged atom as the element with its electron count —
+// Si+ as aluminium, Cl+ as sulfur — and the client's valence-table probe holds
+// chem-core to that against the real wasm for every element. These pin the
+// molecules a chemist actually draws, so a regression reads as the wrong
+// formula for tetrafluoroborate rather than as a row in a grid.
+// ---------------------------------------------------------------------------
+
+/** A lone atom carrying `charge`: every hydrogen on it is implicit. */
+function ion(symbol: string, charge: number): Molecule {
+  return buildMolecule((b) => {
+    b.atom(symbol, vec(0, 0), { charge });
+  });
+}
+
+describe("a charged atom reads as its isoelectronic element", () => {
+  it("keeps ammonium and hydronium, and their alkylated forms", () => {
+    // N+ is carbon's electron count and O+ nitrogen's; the old additive rule
+    // agreed on both, which is why the organic cases never noticed the drift.
+    expect(elementCounts(ion("N", 1))).toEqual({ N: 1, H: 4 });
+    expect(elementCounts(ion("O", 1))).toEqual({ O: 1, H: 3 });
+    const tetramethylammonium = star("N", "C", 4, 1, 1);
+    expect(V.implicitHydrogenCount(tetramethylammonium, first(tetramethylammonium))).toBe(0);
+    expect(V.valenceIssues(tetramethylammonium)).toEqual([]);
+    const trimethyloxonium = star("O", "C", 3, 1, 1);
+    expect(V.implicitHydrogenCount(trimethyloxonium, first(trimethyloxonium))).toBe(0);
+    expect(V.valenceIssues(trimethyloxonium)).toEqual([]);
+    // A fifth bond on N+ is still one too many.
+    const five = star("N", "C", 5, 1, 1);
+    expect(V.isOverValent(five, first(five))).toBe(true);
+  });
+
+  it("gives the methyl cation and anion three hydrogens each", () => {
+    // C+ reads as boron and C- as nitrogen: both `[3]`.
+    expect(elementCounts(ion("C", 1))).toEqual({ C: 1, H: 3 });
+    expect(elementCounts(ion("C", -1))).toEqual({ C: 1, H: 3 });
+    const tertButyl = star("C", "C", 3, 1, 1);
+    expect(V.implicitHydrogenCount(tertButyl, first(tertButyl))).toBe(0);
+    expect(V.valenceIssues(tertButyl)).toEqual([]);
+    const tetrahedral = star("C", "C", 4, 1, 1);
+    expect(V.isOverValent(tetrahedral, first(tetrahedral))).toBe(true);
+  });
+
+  it("leaves an alkoxide oxygen with no hydrogen", () => {
+    const methoxide = star("O", "C", 1, 1, -1);
+    expect(V.implicitHydrogenCount(methoxide, first(methoxide))).toBe(0);
+    expect(elementCounts(methoxide)).toEqual({ C: 1, H: 3, O: 1 });
+    expect(V.valenceIssues(methoxide)).toEqual([]);
+  });
+
+  it("draws tetrafluoroborate and hexafluorophosphate clean", () => {
+    // B- reads as carbon: four bonds. P- reads as sulfur, whose `[2, 4, 6]`
+    // takes the six fluorines of PF6- without the hypervalent exception.
+    const bf4 = star("B", "F", 4, 1, -1);
+    expect(V.implicitHydrogenCount(bf4, first(bf4))).toBe(0);
+    expect(V.valenceIssues(bf4)).toEqual([]);
+    expect(elementCounts(bf4)).toEqual({ B: 1, F: 4 });
+
+    const pf6 = star("P", "F", 6, 1, -1);
+    expect(V.chargeAdjustedValences(pf6, first(pf6))).toEqual([2, 4, 6]);
+    expect(V.implicitHydrogenCount(pf6, first(pf6))).toBe(0);
+    expect(V.valenceIssues(pf6)).toEqual([]);
+    expect(elementCounts(pf6)).toEqual({ P: 1, F: 6 });
+  });
+
+  it("gives a silylium ion three hydrogens, not five", () => {
+    // Si+ reads as aluminium. The old rule added the charge to silicon's 4
+    // and drew SiH5+, which RDKit reads back as SiH3+.
+    const silylium = ion("Si", 1);
+    expect(V.chargeAdjustedValences(silylium, first(silylium))).toEqual([3]);
+    expect(elementCounts(silylium)).toEqual({ Si: 1, H: 3 });
+    const trimethylsilylium = star("Si", "C", 3, 1, 1);
+    expect(V.implicitHydrogenCount(trimethylsilylium, first(trimethylsilylium))).toBe(0);
+    expect(V.valenceIssues(trimethylsilylium)).toEqual([]);
+    // RDKit refuses a fourth bond on Si+, so the badge has to say so.
+    const four = star("Si", "C", 4, 1, 1);
+    expect(V.isOverValent(four, first(four))).toBe(true);
+  });
+
+  it("reads a chloronium ion as sulfur: H2Cl+, ClF4+ and ClF6+", () => {
+    // Cl+ takes sulfur's `[2, 4, 6]`. The old rule stopped it at two bonds,
+    // so the fluorochloronium cations drew an over-valence RDKit does not see.
+    const chloronium = ion("Cl", 1);
+    expect(elementCounts(chloronium)).toEqual({ Cl: 1, H: 2 });
+    const dimethyl = star("Cl", "C", 2, 1, 1);
+    expect(V.implicitHydrogenCount(dimethyl, first(dimethyl))).toBe(0);
+    expect(V.valenceIssues(dimethyl)).toEqual([]);
+    for (const n of [2, 4, 6]) {
+      const clFn = star("Cl", "F", n, 1, 1);
+      expect(V.implicitHydrogenCount(clFn, first(clFn)), `ClF${n}+`).toBe(0);
+      expect(V.valenceIssues(clFn), `ClF${n}+`).toEqual([]);
+    }
+  });
+
+  it("badges the charged atoms RDKit refuses", () => {
+    // S+ reads as phosphorus (max 5), P+ as silicon (max 4), I+ as tellurium
+    // (max 6). Each one's ordinary ion stays clean beside it.
+    for (const [label, clean, refused] of [
+      ["S+ with six bonds", star("S", "C", 3, 1, 1), star("S", "C", 6, 1, 1)],
+      ["P+ with five bonds", star("P", "C", 4, 1, 1), star("P", "F", 5, 1, 1)],
+      ["I+ with seven bonds", star("I", "F", 6, 1, 1), star("I", "F", 7, 1, 1)],
+    ] as const) {
+      expect(V.valenceIssues(clean), `${label}: its ordinary ion`).toEqual([]);
+      expect(V.isOverValent(refused, first(refused)), label).toBe(true);
+      expect(V.implicitHydrogenCount(refused, first(refused)), label).toBe(0);
+    }
+  });
+
+  it("keeps sulfur's own list under a negative charge: SF5- and a thiolate", () => {
+    // S- has chlorine's electron count, and chlorine's `[1]` would call SF5-
+    // over-valent. RDKit's hypervalent exception keeps sulfur's list and
+    // counts the charge against it instead.
+    const thiolate = star("S", "C", 1, 1, -1);
+    expect(V.chargeAdjustedValences(thiolate, first(thiolate))).toEqual([1, 3, 5]);
+    expect(V.implicitHydrogenCount(thiolate, first(thiolate))).toBe(0);
+    const sf5 = star("S", "F", 5, 1, -1);
+    expect(V.implicitHydrogenCount(sf5, first(sf5))).toBe(0);
+    expect(V.valenceIssues(sf5)).toEqual([]);
+    const sf6 = star("S", "F", 6, 1, -1);
+    expect(V.isOverValent(sf6, first(sf6))).toBe(true);
+  });
+
+  it("gives a bare proton and a bare hydride no hydrogens and no badge", () => {
+    for (const charge of [1, -1]) {
+      const bare = ion("H", charge);
+      expect(V.implicitHydrogenCount(bare, first(bare)), String(charge)).toBe(0);
+      expect(V.valenceIssues(bare), String(charge)).toEqual([]);
+    }
+    // H- reads as helium, so a bond to it is refused.
+    const bonded = star("H", "C", 1, 1, -1);
+    expect(V.isOverValent(bonded, first(bonded))).toBe(true);
+  });
+
+  it("refuses a larger charge on a bare hydrogen, and only on a bare one", () => {
+    // RDKit calls it an unreasonable formal charge before any valence list is
+    // read. A BONDED H²⁻ is read as lithium like any other charged atom.
+    for (const charge of [2, -2]) {
+      const bare = ion("H", charge);
+      expect(V.implicitHydrogenCount(bare, first(bare)), String(charge)).toBe(0);
+      expect(V.isOverValent(bare, first(bare)), String(charge)).toBe(true);
+    }
+    const bonded = star("H", "C", 1, 1, -2);
+    expect(V.implicitHydrogenCount(bonded, first(bonded))).toBe(0);
+    expect(V.isOverValent(bonded, first(bonded))).toBe(false);
   });
 });
 

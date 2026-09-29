@@ -24,10 +24,11 @@ import { moleculeToMolblock } from "./translate";
  * the old answer. This asks the wasm the app ships, so the next bump that moves
  * a row fails here, by name, instead of in somebody's export.
  *
- * THE PROBE: every element, carrying 0 to 8 single-bonded chlorines, written by
- * the app's own molblock bridge. That bridge asserts nothing about an atom
- * whose hydrogens a reader can derive, so RDKit counts them from ITS table and
- * the comparison is a real one. Two outcomes are possible per row:
+ * THE PROBE: every element, at every formal charge from -4 to +4, carrying 0
+ * to 8 single-bonded chlorines, written by the app's own molblock bridge. That
+ * bridge asserts nothing about an atom whose hydrogens a reader can derive, so
+ * RDKit counts them from ITS table and the comparison is a real one. Two
+ * outcomes are possible per row:
  *
  *   - RDKit sanitises it: its implicit-hydrogen count must equal chem-core's.
  *   - RDKit refuses it: chem-core must report the atom over-valent, so the
@@ -39,11 +40,18 @@ import { moleculeToMolblock } from "./translate";
  * hydrogen count is the same either way, and a badge on a drawing RDKit would
  * accept is a warning, not drift.
  *
- * NEUTRAL ATOMS ONLY. RDKit 2024.09 also changed how a formal charge moves the
- * valence list — it reads a charged atom as the isoelectronic element, so Si+
- * takes aluminium's list — and chem-core still applies the older additive
- * rule. That divergence is real and wider than the table (Si+, Cl+, Pb+, Sn-,
- * Ca- and more), and it lives in `chargeAdjustment`, not in `elements.ts`.
+ * WHY CHARGES, AND WHY THAT WIDE. RDKit 2024.09 also changed how a formal
+ * charge moves the valence list: it reads a charged atom as the isoelectronic
+ * element, so Si+ takes aluminium's list and Cl+ takes sulfur's. chem-core
+ * kept the older additive rule for a while after its neutral rows were brought
+ * back into line, and the probe was neutral-only, so nothing failed. Run at
+ * +-1 and +-2 against that rule it found 295 disagreements — SiH5+ against
+ * RDKit's SiH3+, Cl+ capped at two bonds, S+ with six bonds refused there and
+ * clean here. The range goes to four because it costs nothing and because
+ * +-3 caught the port itself getting one wrong: RDKit refuses an unbonded
+ * hydrogen with a charge of two or more, but reads a BONDED H³⁻ as beryllium
+ * like any other charged atom, and a charge-only rule cannot tell the two
+ * apart. See `chargedValences` and `atomValences` in chem-core's valence.ts.
  */
 
 const require = createRequire(import.meta.url);
@@ -70,9 +78,9 @@ beforeAll(async () => {
 }, 60_000);
 
 /** `symbol` with `n` single-bonded chlorines around it. */
-function chlorinated(symbol: string, n: number): Molecule {
+function chlorinated(symbol: string, n: number, charge: number): Molecule {
   return buildMolecule((b) => {
-    const centre = b.atom(symbol, vec(0, 0));
+    const centre = b.atom(symbol, vec(0, 0), { charge });
     for (let i = 0; i < n; i++) {
       b.bond(centre, b.atom("Cl", fromPolar((2 * Math.PI * i) / Math.max(n, 1), 1)));
     }
@@ -101,6 +109,13 @@ function rdkitHydrogens(molblock: string): number | null {
 }
 
 const MAX_LIGANDS = 8;
+const CHARGES = [-4, -3, -2, -1, 0, 1, 2, 3, 4];
+
+/** "", "(+1)", "(-2)": enough to name the row a drift line is about. */
+function chargeLabel(charge: number): string {
+  if (charge === 0) return "";
+  return `(${charge > 0 ? "+" : ""}${String(charge)})`;
+}
 
 describe("chem-core's valence table against RDKit", () => {
   it("probes the RDKit this repo pins", () => {
@@ -110,33 +125,34 @@ describe("chem-core's valence table against RDKit", () => {
     expect(RDKit.version()).toMatch(/^2025\.03\.4/);
   });
 
-  it("agrees on every element's implicit hydrogens, and badges what RDKit refuses", () => {
-    const drift: string[] = [];
-    for (const element of ELEMENTS) {
-      for (let n = 0; n <= MAX_LIGANDS; n++) {
-        const mol = chlorinated(element.symbol, n);
-        const centre = mol.atomIds[0]!;
-        const written = moleculeToMolblock(mol);
-        if (!written.ok) {
-          drift.push(`${element.symbol}Cl${String(n)}: bridge refused to write it`);
-          continue;
-        }
-        const theirs = rdkitHydrogens(written.value);
-        const ours = implicitHydrogenCount(mol, centre);
-        if (theirs === null) {
-          if (!isOverValent(mol, centre)) {
-            drift.push(
-              `${element.symbol}Cl${String(n)}: RDKit refuses it, chem-core ` +
-                `gives ${String(ours)} H and no over-valence`,
-            );
+  it.each(CHARGES)(
+    "agrees at charge %i on every element's hydrogens, and badges what RDKit refuses",
+    (charge) => {
+      const drift: string[] = [];
+      for (const element of ELEMENTS) {
+        for (let n = 0; n <= MAX_LIGANDS; n++) {
+          const mol = chlorinated(element.symbol, n, charge);
+          const centre = mol.atomIds[0]!;
+          const row = `${element.symbol}${chargeLabel(charge)}Cl${String(n)}`;
+          const written = moleculeToMolblock(mol);
+          if (!written.ok) {
+            drift.push(`${row}: bridge refused to write it`);
+            continue;
           }
-        } else if (theirs !== ours) {
-          drift.push(
-            `${element.symbol}Cl${String(n)}: RDKit ${String(theirs)} H, chem-core ${String(ours)} H`,
-          );
+          const theirs = rdkitHydrogens(written.value);
+          const ours = implicitHydrogenCount(mol, centre);
+          if (theirs === null) {
+            if (!isOverValent(mol, centre)) {
+              drift.push(
+                `${row}: RDKit refuses it, chem-core gives ${String(ours)} H and no over-valence`,
+              );
+            }
+          } else if (theirs !== ours) {
+            drift.push(`${row}: RDKit ${String(theirs)} H, chem-core ${String(ours)} H`);
+          }
         }
       }
-    }
-    expect(drift).toEqual([]);
-  });
+      expect(drift).toEqual([]);
+    },
+  );
 });

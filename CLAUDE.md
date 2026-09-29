@@ -74,8 +74,13 @@ Invariants to preserve when editing it:
   divalent in a thiol and hexavalent in a sulfone. The lists match RDKit's
   default valence table on purpose: RDKit is the import/export oracle, and
   diverging shows up as hydrogens appearing or vanishing across a SMILES
-  round-trip. The charge handling mirrors RDKit's `calculateImplicitValence`,
-  carbon special case included.
+  round-trip. The charge handling mirrors RDKit's 2024.09
+  `calculateImplicitValence`: a charged atom takes the valence list of its
+  isoelectronic element (Z − charge, so Si+ reads as Al, Cl+ as S), with
+  RDKit's two exceptions — P/S/As/Se keep their own list under a large
+  negative charge, and a bare hydrogen with |charge| ≥ 2 is refused. There is
+  no carbon special case any more. `valence-table.node.test.ts` probes the
+  real wasm for every element at charges −4..+4.
 - **The graph is flat and acyclic.** Atoms reference each other only via ids on
   bonds. Ids come from a monotonic counter and are never reused.
 - **Everything is pure.** Molecules are immutable; edits return new ones.
