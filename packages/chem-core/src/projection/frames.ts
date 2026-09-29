@@ -149,6 +149,70 @@ export function canonicalProjectionView(
   }
 }
 
+/**
+ * Why a panel cannot be turned by the angle asked for (decision 209).
+ *
+ *   fischer-quarter-turn  a Fischer turns only by half turns: turned a quarter
+ *                         turn in the page it states the enantiomer at every
+ *                         centre (its horizontal bonds, toward the viewer,
+ *                         become vertical ones, away), and at any other angle
+ *                         its bonds leave the axes its convention reads
+ *   no-page-rotation      the template has no page rotation of its own yet
+ *                         (Natta, Haworth, chair, the torsion overlay); its
+ *                         task gives it one
+ *   invalid-parameter     the angle is not a finite number
+ */
+export type ProjectionRotationRefusal = "fischer-quarter-turn" | "no-page-rotation" | "invalid-parameter";
+
+export type ProjectionRotation =
+  | { readonly kind: "rotated"; readonly view: ProjectionView }
+  | { readonly kind: "refused"; readonly reason: ProjectionRotationRefusal };
+
+/**
+ * `view` turned `degrees` counter-clockwise in the page, or why it cannot be
+ * (decision 209). What turning means is the template's convention, so it
+ * lives here beside the canonical view, never in a gesture handler:
+ *
+ *   planar       adds to `rotationDeg` (the steroid panel too: decision 187
+ *                refuses its mirror, not its rotation)
+ *   sightedBond  adds to `rollDeg`, never to the torsion, which is chemistry
+ *                (the two numbers decision 162 keeps apart)
+ *   Fischer      a multiple of 180 degrees only: a half turn is the other end
+ *                on top, the same configuration; anything else is refused,
+ *                because the convention reads the page axes (T1)
+ *   the rest     refused until their tasks give them a page rotation
+ *
+ * The result is canonical (`canonicalProjectionView`), so a full turn gives
+ * back a view deep-equal to the canonical input.
+ */
+export function rotateProjectionView(view: ProjectionView, degrees: number): ProjectionRotation {
+  const turn = canonicalDegrees(degrees);
+  if (turn === undefined) return Object.freeze({ kind: "refused", reason: "invalid-parameter" });
+  let turned: ProjectionView;
+  switch (view.kind) {
+    case "planar":
+      turned = { ...view, params: { ...view.params, rotationDeg: view.params.rotationDeg + turn } };
+      break;
+    case "sightedBond":
+      turned = { ...view, params: { ...view.params, rollDeg: view.params.rollDeg + turn } };
+      break;
+    case "chain":
+      if (view.template !== "fischer") return Object.freeze({ kind: "refused", reason: "no-page-rotation" });
+      if (turn !== 0 && turn !== 180) return Object.freeze({ kind: "refused", reason: "fischer-quarter-turn" });
+      turned =
+        turn === 0
+          ? view
+          : { ...view, params: { ...view.params, top: view.params.top === "last" ? "first" : "last" } };
+      break;
+    case "ring":
+    case "annotationOverlay":
+      return Object.freeze({ kind: "refused", reason: "no-page-rotation" });
+  }
+  const canonical = canonicalProjectionView(turned);
+  if (canonical.kind === "unavailable") return Object.freeze({ kind: "refused", reason: "invalid-parameter" });
+  return Object.freeze({ kind: "rotated", view: canonical });
+}
+
 /** Whether `template` is one of `kind`'s listed templates (a view from a file). */
 export function isListedProjectionTemplate(view: ProjectionView): boolean {
   const listed: readonly string[] = PROJECTION_TEMPLATES[view.kind];

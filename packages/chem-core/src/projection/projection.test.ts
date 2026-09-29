@@ -44,7 +44,7 @@ import {
   resolveProjectionFrame,
   RESULTS_PER_CONFIGURATION,
 } from "./engine.js";
-import { canonicalProjectionView, restrictStereoConfig, stereoDisagreements } from "./frames.js";
+import { canonicalProjectionView, restrictStereoConfig, rotateProjectionView, stereoDisagreements } from "./frames.js";
 import { condensedGroup, layoutNodeOf, sourceAtomsOf } from "./nodes.js";
 import { placementOfLayout, type LayoutAccess } from "./template.js";
 import {
@@ -916,6 +916,69 @@ describe("frame resolution", () => {
     const config = stereoConfig(mol);
     expect(project(mol, config, planar(370))).toBe(project(mol, config, planar(10)));
     expect(project(mol, config, planar(-60))).toBe(project(mol, config, planar(300)));
+  });
+});
+
+describe("turning a panel (decision 209)", () => {
+  it("adds to a planar panel's rotation, a steroid panel's too, and a full turn gives the view back", () => {
+    const turned = rotateProjectionView(planar(350, true), 30);
+    expect(turned).toEqual({ kind: "rotated", view: planar(20, true) });
+    const steroid: PlanarView = {
+      kind: "planar",
+      template: "steroid",
+      frame: {},
+      params: { rotationDeg: 0, mirror: false, skeleton: { name: "steroid", core: ["a3", "a1", "a2"] } },
+    };
+    const quarter = rotateProjectionView(steroid, 90);
+    expect(quarter.kind === "rotated" && quarter.view).toEqual({
+      ...steroid,
+      params: { ...steroid.params, rotationDeg: 90 },
+    });
+    expect(rotateProjectionView(planar(40), 360)).toEqual({ kind: "rotated", view: canonicalProjectionView(planar(40)) });
+  });
+
+  it("turns a Newman by its roll and never by its torsion, the two numbers decision 162 keeps apart", () => {
+    const turned = rotateProjectionView(newman("a2", "a4"), -90);
+    expect(turned.kind === "rotated" && turned.view.params).toEqual({ torsionDeg: 60, rollDeg: 270 });
+  });
+
+  it("turns a Fischer only by half turns: the other end on top, the same configuration", () => {
+    const mol = load("d-glucose-open.mol");
+    const config = stereoConfig(mol);
+    const half = rotateProjectionView(fischer(GLUCOSE_BACKBONE), 180);
+    expect(half).toEqual({ kind: "rotated", view: fischer(GLUCOSE_BACKBONE, "last") });
+    if (half.kind !== "rotated") throw new Error("refused");
+    expect(letters(mol, readBack(mol, layoutOf(project(mol, config, half.view))))).toEqual({
+      a3: "R",
+      a5: "S",
+      a7: "R",
+      a9: "R",
+    });
+    expect(rotateProjectionView(fischer(GLUCOSE_BACKBONE, "last"), -180)).toEqual({
+      kind: "rotated",
+      view: fischer(GLUCOSE_BACKBONE),
+    });
+    expect(rotateProjectionView(fischer(GLUCOSE_BACKBONE), 720)).toEqual({ kind: "rotated", view: fischer(GLUCOSE_BACKBONE) });
+    // A quarter turn states the enantiomer at every centre (T1): refused by name.
+    for (const degrees of [90, 270, -90, 45, 179.5]) {
+      expect(rotateProjectionView(fischer(GLUCOSE_BACKBONE), degrees)).toEqual({
+        kind: "refused",
+        reason: "fischer-quarter-turn",
+      });
+    }
+  });
+
+  it("refuses a template with no page rotation yet, and an angle that is not a number", () => {
+    const natta: ChainView = { ...fischer(GLUCOSE_BACKBONE), template: "natta" };
+    const overlay: ProjectionView = { kind: "annotationOverlay", template: "torsion", frame: { bondIds: [] }, params: {} };
+    for (const view of [natta, ring(["a1"]), { ...ring(["a1"]), template: "chair" as const }, overlay]) {
+      expect(rotateProjectionView(view, 180)).toEqual({ kind: "refused", reason: "no-page-rotation" });
+    }
+    expect(rotateProjectionView(planar(), Number.NaN)).toEqual({ kind: "refused", reason: "invalid-parameter" });
+    expect(rotateProjectionView(newman("a2", "a4"), Number.POSITIVE_INFINITY)).toEqual({
+      kind: "refused",
+      reason: "invalid-parameter",
+    });
   });
 });
 
