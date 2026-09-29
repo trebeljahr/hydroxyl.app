@@ -34,6 +34,7 @@ import {
   FUNCTIONAL_GROUP_NAMES,
   FUNCTIONAL_GROUPS,
   atomsCentroid,
+  bounds,
   horizontalMirror,
   invertSelection,
   invertStereocentre,
@@ -91,6 +92,7 @@ import { MAX_ZOOM, MIN_ZOOM } from "@/state/viewport";
 import type { EditorState, EditorStore, Selection } from "@/state";
 
 import { cleanUpStructure } from "./cleanup";
+import { clearOfDrawingOffset, revealAtoms } from "./insert";
 import {
   copyFigure,
   copyMolblock,
@@ -359,17 +361,14 @@ export function clipboardMolecule(): Molecule | null {
 }
 
 /**
- * Where a paste or a duplicate lands, relative to the original.
- *
- * Half a bond length down and to the right of the source, in MODEL units —
- * `y` is negative because model coordinates are y-up and the copy should
- * appear BELOW the original on screen. Offsetting at all is what keeps the
- * copy from hiding exactly behind what it was copied from, which reads as
- * nothing having happened.
+ * Where a paste or a duplicate lands: beside its source, never on anything
+ * (decision 200). `clearOfDrawingOffset` holds the rule, beside the insert's
+ * own placement, so all three ways a structure arrives share one gap.
  */
-function pasteOffset(mol: Molecule): Vec2 {
+function copyOffset(mol: Molecule, source: Molecule, sourceIds: readonly AtomId[]): Vec2 {
   const bondLength = isEmpty(mol) ? DEFAULT_BOND_LENGTH : documentBondLength(mol);
-  return { x: bondLength * 0.5, y: -bondLength * 0.5 };
+  const box = bounds(sourceIds.map((id) => source.atoms[id]!.pos));
+  return clearOfDrawingOffset(mol, box, bondLength);
 }
 
 // ---------------------------------------------------------------------------
@@ -984,7 +983,7 @@ const EDIT_COMMANDS: readonly Command[] = [
       const fragment = clipboard;
       if (fragment === null || fragment.atomIds.length === 0) return;
       const state = store.getState();
-      const offset = pasteOffset(state.document.molecule);
+      const offset = copyOffset(state.document.molecule, fragment, fragment.atomIds);
       // The pasted ids are only knowable from the insert's own result, so the
       // molecule is built ONCE outside the edit and the closure returns it.
       // Running `insertFragment` inside the closure and reading its ids
@@ -1000,6 +999,7 @@ const EDIT_COMMANDS: readonly Command[] = [
           annotationIds: [],
         });
       });
+      revealAtoms(store, inserted.atomIds);
     },
   },
   {
@@ -1014,8 +1014,9 @@ const EDIT_COMMANDS: readonly Command[] = [
       const state = store.getState();
       const ids = state.selection.atomIds;
       if (ids.length === 0) return;
-      const copy = guardedOps.duplicateFragment(state.document.molecule, ids, {
-        offset: pasteOffset(state.document.molecule),
+      const mol = state.document.molecule;
+      const copy = guardedOps.duplicateFragment(mol, ids, {
+        offset: copyOffset(mol, mol, ids.filter((id) => Object.hasOwn(mol.atoms, id))),
       });
       state.transact("Duplicate", () => {
         state.applyMoleculeEdit("Duplicate", () => copy.molecule);
@@ -1024,6 +1025,7 @@ const EDIT_COMMANDS: readonly Command[] = [
         // precisely so this is possible.
         state.setSelection({ atomIds: copy.atomIds, bondIds: copy.bondIds, annotationIds: [] });
       });
+      revealAtoms(store, copy.atomIds);
     },
   },
   // The selection as text another program can read. The whole-structure pair

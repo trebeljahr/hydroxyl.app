@@ -4,9 +4,11 @@ import {
   benzene,
   bounds,
   emptyMolecule,
+  insertFragment,
   medianBondLength,
   molecularFormula,
   positions,
+  species,
 } from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
 import { dictionaryEntryById, dictionaryMolecule } from "@starter/chem-core/dictionary";
@@ -15,7 +17,8 @@ import { createDocument } from "@starter/shared";
 import { createEditorStore } from "@/state";
 import type { EditorStore } from "@/state";
 
-import { INSERT_GAP_BONDS, insertOffset, insertStructure } from "./insert";
+import { INSERT_GAP_BONDS, clearOfDrawingOffset, insertOffset, insertStructure } from "./insert";
+import { commandById } from "./registry";
 
 function storeWith(molecule: Molecule): EditorStore {
   return createEditorStore({
@@ -105,3 +108,95 @@ describe("insertOffset", () => {
     expect(b.min.x + offset.x).toBeCloseTo(a.max.x + INSERT_GAP_BONDS, 9);
   });
 });
+
+describe("clearOfDrawingOffset (decision 200)", () => {
+  const GAP = INSERT_GAP_BONDS;
+
+  it("keeps a copy where it is when nothing is in the way", () => {
+    // Cut and pasted back: the drawing no longer holds the source.
+    const ring = benzene();
+    expect(clearOfDrawingOffset(emptyMolecule(), bounds(positions(ring)), 1)).toEqual({ x: 0, y: 0 });
+  });
+
+  it("puts a duplicate the gap to the right of its whole source, level with it", () => {
+    const ring = benzene();
+    const box = bounds(positions(ring));
+    const offset = clearOfDrawingOffset(ring, box, 1);
+    expect(offset.y).toBe(0);
+    expect(box.min.x + offset.x).toBeCloseTo(box.max.x + GAP, 12);
+  });
+
+  it("jumps past every structure already in the row, and only those", () => {
+    // Three benzenes in a row, and one far below them that is not in the way.
+    const ring = benzene();
+    const box = bounds(positions(ring));
+    const step = box.width + GAP;
+    let row = ring;
+    for (const k of [1, 2]) row = insertFragment(row, ring, { offset: { x: k * step, y: 0 } }).molecule;
+    row = insertFragment(row, ring, { offset: { x: 10 * step, y: -10 * box.height } }).molecule;
+    const offset = clearOfDrawingOffset(row, box, 1);
+    expect(offset.y).toBe(0);
+    expect(box.min.x + offset.x).toBeCloseTo(box.max.x + 2 * step + GAP, 12);
+  });
+});
+
+describe("paste and duplicate land clear of the drawing (decision 200)", () => {
+  /** Each structure's atom box. */
+  function speciesBoxes(mol: Molecule): ReturnType<typeof bounds>[] {
+    return species(mol).map((unit) => bounds(unit.atomIds.map((id) => mol.atoms[id]!.pos)));
+  }
+
+  it("duplicates the open-chain glucose twice into one row of three clear structures", () => {
+    const glucose = dictionaryMolecule(dictionaryEntryById("aldehydo-d-glucose")!);
+    const store = storeWith(glucose);
+    store.getState().selectAll();
+    commandById("edit.duplicate").run(store);
+    commandById("edit.duplicate").run(store);
+
+    const boxes = speciesBoxes(store.getState().document.molecule).sort((a, b) => a.min.x - b.min.x);
+    expect(boxes).toHaveLength(3);
+    for (let i = 1; i < boxes.length; i++) {
+      expect(boxes[i]!.min.x - boxes[i - 1]!.max.x).toBeCloseTo(GAP_OF(glucose), 9);
+      expect(boxes[i]!.min.y).toBeCloseTo(boxes[0]!.min.y, 9);
+    }
+  });
+
+  it("pastes beside the structure it was copied from, and back in place after a cut", () => {
+    const store = storeWith(benzene());
+    store.getState().selectAll();
+    commandById("edit.copy").run(store);
+    commandById("edit.paste").run(store);
+    const [left, right] = speciesBoxes(store.getState().document.molecule).sort((a, b) => a.min.x - b.min.x);
+    expect(right!.min.x - left!.max.x).toBeCloseTo(GAP_OF(benzene()), 9);
+
+    const cut = storeWith(benzene());
+    const before = cut.getState().document.molecule;
+    cut.getState().selectAll();
+    commandById("edit.cut").run(cut);
+    commandById("edit.paste").run(cut);
+    const back = cut.getState().document.molecule;
+    expect(bounds(positions(back))).toEqual(bounds(positions(before)));
+  });
+
+  it("fits the view to a copy that lands outside it, and leaves it alone otherwise", () => {
+    const store = storeWith(benzene());
+    store.getState().selectAll();
+    commandById("view.fit").run(store);
+    const fitted = store.getState().viewport;
+    commandById("edit.duplicate").run(store);
+    // The fitted view held one ring; the copy two gaps to its right is outside it.
+    expect(store.getState().viewport).not.toBe(fitted);
+
+    // Zoomed right out, the next copy lands in view and the view stays put.
+    store.getState().selectAtoms([store.getState().document.molecule.atomIds[0]!]);
+    store.getState().setZoom(0.05);
+    const zoomedOut = store.getState().viewport;
+    commandById("edit.duplicate").run(store);
+    expect(store.getState().viewport).toBe(zoomedOut);
+  });
+});
+
+/** The gap in model units at the drawing's own bond length. */
+function GAP_OF(mol: Molecule): number {
+  return INSERT_GAP_BONDS * (medianBondLength(mol) ?? 1);
+}
