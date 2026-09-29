@@ -79,9 +79,11 @@
  * visible; the report is how a caller says so. Which candidate it takes is
  * still a choice among candidates: the LEAST WRONG one, by `compareFallbacks`
  * (decision 45) — off every annotation already placed wherever any candidate
- * is, then reading as its own atom's, then the least glyph ink overprinted
- * (decision 55), then the fewest line hits, then ladder order. An unclear annotation reads as another
- * atom's only when not one candidate reads as its own (two atoms on one spot).
+ * is, then reading as its own atom's, then, among those, one that will be
+ * drawn rather than dropped (decision 188), then the least glyph ink
+ * overprinted (decision 55), then the fewest line hits, then ladder order. An
+ * unclear annotation reads as another atom's only when not one candidate
+ * reads as its own (two atoms on one spot).
  *
  * "Another atom" means a REAL atom of the molecule (decision 46): the hydrogens
  * the explicitH and Lewis views derive and draw are obstacles to avoid, never
@@ -999,6 +1001,12 @@ interface FallbackScore {
   /** Squared distance to the nearest OTHER atom centre; +Infinity if none. */
   readonly nearestOther: number;
   /**
+   * Would `placeAnnotations` drop it: is its ink within the clearance of any
+   * glyph's ink (decisions 58 and 64)? The same test, so the slot the
+   * fallback prefers is never one the drop then throws away (decision 188).
+   */
+  readonly printsOnText: boolean;
+  /**
    * Glyph ink overprinted, px²: the overlap AREA of the annotation's ink box
    * with every glyph's and dot's ink box, unpadded, each glyph once
    * (decision 55). Area rather than a count, so a real overprint always
@@ -1038,9 +1046,11 @@ function fallbackScore(
       if (d < nearestOther) nearestOther = d;
     }
   }
+  let onText = false;
   let glyphHits = 0;
   let lineHits = 0;
   if (countHits) {
+    onText = printsOnText(inkBox, glyphInk);
     for (const glyph of glyphInk) glyphHits += overlapArea(inkBox, glyph);
     for (const segment of context.segments) if (boxMeetsInkedSegment(box, segment)) lineHits++;
     for (const circle of circles) if (boxMeetsCircleOutline(box, circle)) lineHits++;
@@ -1049,6 +1059,7 @@ function fallbackScore(
     overprints: placed.some((other) => boxesOverlap(box, other)),
     own: ownDistance(centre, request),
     nearestOther,
+    printsOnText: onText,
     glyphHits,
     lineHits,
   };
@@ -1071,22 +1082,37 @@ function fallbackClass(score: FallbackScore): number {
  * 2. READS AS ITS OWN ATOM'S (decision 35, heavy atoms only per decision 46).
  *    A number beside the wrong atom is a false statement; a number across a
  *    bond line is visibly crowded.
- * 3. LEAST GLYPH INK OVERPRINTED (decision 55): "(S)" over "OH" is
+ * 3. WOULD BE DRAWN, among candidates that pass rules 1 and 2 (decision
+ *    188): not within the clearance of any glyph's ink, which is exactly
+ *    what `placeAnnotations` drops (decisions 58 and 64). Ranked on ink AREA
+ *    alone, a slot 0.8 px from a "C" overlaps nothing, beats a slot that
+ *    only crosses a bond on line hits, and is then dropped: the fallback
+ *    chose the one candidate the drop refuses, and the steroid's Lewis
+ *    C17 (S) went missing that way.
+ *    ONLY THERE, because drawing is a gain only for a candidate that reads as
+ *    its own and prints over no annotation. Past rule 1 or 2 the drawing IS
+ *    the wrong — a number beside the wrong atom, or on another annotation —
+ *    and reaching for a drawable slot puts it on the page. Measured with the
+ *    key applied in every class, over the set decision 35's independent
+ *    test walks, 20 placements (9 at Publication) that had been dropped were
+ *    drawn beside another atom instead: the steroid's "13" beside its OH,
+ *    both of unmergedDropOverlap's locants. Scoped, 1 is.
+ * 4. LEAST GLYPH INK OVERPRINTED (decision 55): "(S)" over "OH" is
  *    unreadable. Measured as ink-on-ink area, so a candidate that only reaches
  *    a label's clearance padding beats one that prints on the glyph.
- * 4. FEWEST LINE HITS: "(S)" across a bond line is crowded but legible.
- * 5. Ladder order, which the caller keeps by replacing only on "less wrong".
+ * 5. FEWEST LINE HITS: "(S)" across a bond line is crowded but legible.
+ * 6. Ladder order, which the caller keeps by replacing only on "less wrong".
  *
  * An earlier version broke a hit tie by how CLEARLY a candidate was its own
  * (the own-to-nearest-other distance ratio). The ruling has no such key, and
  * a geometric tiebreak on floats is what decision 36 declined elsewhere.
  */
 function compareFallbacks(a: FallbackScore, b: FallbackScore): number {
-  return (
-    fallbackClass(a) - fallbackClass(b) ||
-    a.glyphHits - b.glyphHits ||
-    a.lineHits - b.lineHits
-  );
+  const byClass = fallbackClass(a) - fallbackClass(b);
+  if (byClass !== 0) return byClass;
+  // Equal classes, so testing `a` alone says which class both are in.
+  const byDrop = fallbackClass(a) === 0 ? Number(a.printsOnText) - Number(b.printsOnText) : 0;
+  return byDrop || a.glyphHits - b.glyphHits || a.lineHits - b.lineHits;
 }
 
 const NO_CIRCLES: readonly AnnotationCircle[] = Object.freeze([]);

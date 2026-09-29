@@ -271,20 +271,27 @@ export const PUBLICATION_STYLE: RenderStyle = Object.freeze({
   // under every ruling this pass carries — 45's fallback order, 55's ink-area
   // glyph hits, 57's ink-centre proximity, 58/64's dropping, 59's label-sized
   // rungs, 63's proximity margin, 65's filled-shape ink, 67's near-first
-  // ladder and 68's bond proximity, and with the explicit-H separation pass
-  // in place (`modes/explicitH.ts`):
-  //   80 of 516 reported, 45 of them not drawn (decisions 58 and 64).
-  //   22 of the 28 descriptors are reported, 8 not drawn.
+  // ladder, 68's bond proximity and 188's drawn-before-dropped fallback key,
+  // and with the explicit-H separation pass in place (`modes/explicitH.ts`):
+  //   78 of 516 reported, 22 of them not drawn (decisions 58 and 64).
+  //   22 of the 28 descriptors are reported, 6 not drawn.
   //   Screen, on its 44 px bond, reports 10 and drops 2, no descriptor among
-  //   them. The crowded 0.85 setting reports 106 and drops 56.
+  //   them. The crowded 0.85 setting reports 106 and drops 31.
   //   It was 78 and 43 before that pass: moving a derived hydrogen off
   //   another's ink rearranges the page this ladder searches, and it came
   //   out ahead — three locants that were dropped were drawn, against two
   //   newly reported. It was 80 and 40 (Screen 10 and 3, crowded 104 and
   //   56) before decision 134 moved the hydrogens again, off padded space
   //   and bond lines too: the steroid's C1 and C8 locants and, in Lewis,
-  //   C17's (S) are dropped now, and C17's locant drawn. Only explicitH and
+  //   C17's (S) were dropped then, and C17's locant drawn. Only explicitH and
   //   lewis move; the other two views draw no derived hydrogens.
+  //   It was 80 and 45 (crowded 106 and 56) before decision 188. The
+  //   fallback ranked unclear slots by ink overlapped and the drop by
+  //   clearance, so it could pick a slot 0.8 px from a "C" and lose it. Ranked
+  //   drawn-before-dropped among slots that read as their own, 24
+  //   annotations that were dropped are drawn — the steroid's C17 (S) in
+  //   Lewis and C3 (S) in explicitH among them — and one, unmergedDropOverlap's
+  //   a3 locant in Lewis, which was drawn nearer a2 than a3, is dropped.
   //
   // DECISION 67 IS WHAT MAKES THE NEAR SLOTS REACHABLE: the search starts
   // 0.45 of a bond from the anchor (10.8 px at Publication, 19.8 at Screen)
@@ -303,8 +310,7 @@ export const PUBLICATION_STYLE: RenderStyle = Object.freeze({
   // reports none of them. Notable, all pinned by id in annotations.test.ts:
   //   - the steroid's C13, C17, C10 and C3 descriptors in every view, drawn
   //     in skeletal and kekule; in explicitH and Lewis the derived hydrogens
-  //     leave no clearance and C13's, C10's, (in explicitH) C3's and (in
-  //     Lewis) C17's are dropped.
+  //     leave no clearance and C13's and C10's are dropped.
   //   - butan-2-ol's C2 (R) in every view, drawn in skeletal and kekule and
   //     dropped once the hydrogens are drawn.
   //   - chrysene's a16 locant, and the locants of atoms whose numbering
@@ -316,7 +322,7 @@ export const PUBLICATION_STYLE: RenderStyle = Object.freeze({
   // bond-segment proximity were measured against each other and ruled as a
   // set. The reports above are the intended output, not a defect to tune
   // away: at Publication all four of the steroid's (S) are DRAWN and legible
-  // in the skeletal and kekule views (explicitH and lewis each drop three of
+  // in the skeletal and kekule views (explicitH and lewis each drop two of
   // them, as the view-by-view counts above record),
   // and the report is how an author finds the crowded ones. The status bar
   // counts only what is missing from the drawing (decision 70). Changing any

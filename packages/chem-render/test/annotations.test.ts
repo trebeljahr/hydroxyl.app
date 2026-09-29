@@ -499,6 +499,11 @@ describe("decision 35: an annotation reads as its own atom's", () => {
     // not be — decision 45 takes the least wrong candidate when none reads as
     // its own — and every such case is counted below and pinned, so a new one
     // is a failure rather than a silent change.
+    //
+    // Pinned WITH whether it is drawn (decision 188). A dropped one is off the
+    // page; a drawn one is a number beside the wrong atom. Keyed by id alone,
+    // a fallback that drew 20 of them which had been dropped changed the list
+    // by one entry.
     let checked = 0;
     const notOwn = new Set<string>();
     const molecules: [string, Molecule, Readonly<Record<AtomId, string>>][] = [
@@ -550,7 +555,7 @@ describe("decision 35: an annotation reads as its own atom's", () => {
               if (own <= 0.85 * 0.85 * d2(c, other.at)) continue;
               // A clear placement never reads as another atom's.
               expect(placed.clear, `${where} nearer ${other.id}`).toBe(false);
-              notOwn.add(where);
+              notOwn.add(`${where}${placed.drawn ? "" : " (dropped)"}`);
             }
           }
         }
@@ -773,24 +778,25 @@ describe("decision 58: a reported annotation that would print on text is not dra
   it("keeps the steroid's reported descriptors that only cross lines, drops the ones on text", () => {
     // Every one of the four is reported at 8 pt: even from the near ladder
     // (decision 67) an "(S)" beside a fused-ring junction touches a bond.
-    // C17's crosses lines only and is drawn in the skeletal and explicitH
-    // views; in the views that draw hydrogens, C13's and C10's would land on
-    // an "H" and are dropped (decisions 58 and 64).
+    // C17's and C3's cross lines only and are drawn in every view; in the
+    // views that draw hydrogens, every slot of C13's and C10's that reads as
+    // their own and clears the other descriptors lands on a label glyph or
+    // within a pixel of one, and they are dropped (decisions 58 and 64).
     //
-    // IN LEWIS C17'S IS DROPPED TOO, since decision 134. The separation search
-    // turned C17's hydrogen off C16's, out of the slot beside C17's own "C".
-    // That slot now overprints no ink and crosses fewer lines than the one
-    // C17's (S) used to take, so the fallback ladder (decision 45) prefers it
-    // — and decision 64 then drops it, 0.8 px from the "C", inside the 1 px
-    // clearance. The fallback ranks by ink overlapped, the drop by clearance;
-    // the two disagreeing is the annotation pass's to settle.
+    // C17'S WAS DROPPED IN LEWIS between decisions 134 and 188. The separation
+    // search turned C17's hydrogen out of the slot beside C17's own "C"; that
+    // slot overprinted no ink and crossed fewer lines than the one in ring D,
+    // so the fallback took it, and decision 64 dropped it 0.8 px from the
+    // "C". Decision 188 ranks a slot that will be drawn first, and C17's (S)
+    // is back in ring D. The same key draws C3's in explicitH, which before
+    // it took a slot within the clearance of C3's own "C".
     const { molecule, locants } = steroidSkeletonWithLocants();
     const idOf = (locant: string): string =>
       `atom:${Object.entries(locants).find(([, text]) => text === locant)![0]}:descriptor`;
     const expected: Record<string, readonly string[]> = {
       skeletal: [],
-      explicitH: [idOf("13"), idOf("10"), idOf("3")],
-      lewis: [idOf("13"), idOf("10"), idOf("17")],
+      explicitH: [idOf("13"), idOf("10")],
+      lewis: [idOf("13"), idOf("10")],
     };
     for (const view of ["skeletal", "explicitH", "lewis"] as const) {
       const rep = representation(view, { showStereoDescriptors: true });
@@ -798,9 +804,9 @@ describe("decision 58: a reported annotation that would print on text is not dra
       const dropped = layout.unplaced.filter((u) => u.dropped).map((u) => u.id);
       expect(new Set(dropped), view).toEqual(new Set(expected[view]));
       const ids = buildScene(molecule, PUBLICATION_STYLE, rep).primitives.map((p) => p.id);
-      if (view !== "lewis") {
-        expect(layout.unplaced.some((u) => u.id === idOf("17") && !u.dropped), view).toBe(true);
-        expect(ids.includes(idOf("17")), view).toBe(true);
+      for (const drawn of [idOf("17"), idOf("3")]) {
+        expect(layout.unplaced.some((u) => u.id === drawn && !u.dropped), `${view}/${drawn}`).toBe(true);
+        expect(ids.includes(drawn), `${view}/${drawn}`).toBe(true);
       }
       for (const id of expected[view]!) expect(ids.includes(id), `${view}/${id}`).toBe(false);
     }
@@ -936,19 +942,24 @@ describe("decision 64: drawn means a clearance from every glyph, not just no ove
     const chosen = crowded.placements[0]!;
     expect(chosen.clear).toBe(false);
     expect(chosen.drawn).toBe(true);
-    // A "C" just above the chosen slot's ink, touching nothing: "13" that
-    // near a letter reads as 13-C.
-    const beside = (gap: number): LabelBox => ({
-      minX: chosen.inkBox.minX,
-      minY: chosen.inkBox.minY - gap - 4,
-      maxX: chosen.inkBox.maxX,
-      maxY: chosen.inkBox.minY - gap,
-    });
+    // Glyph ink over the whole page but a hole `gap` wider than the chosen
+    // slot's ink on every side: "13" that near a letter reads as 13-C. Every
+    // other candidate prints on the frame, so the fallback keeps the chosen
+    // slot either way and this isolates the drop threshold. With one "C"
+    // beside it and room elsewhere, decision 188 moves off it instead — the
+    // test below.
+    const ink = chosen.inkBox;
+    const frame = (gap: number): LabelBox[] => [
+      { minX: -far, minY: -far, maxX: far, maxY: ink.minY - gap },
+      { minX: -far, minY: ink.maxY + gap, maxX: far, maxY: far },
+      { minX: -far, minY: ink.minY - gap, maxX: ink.minX - gap, maxY: ink.maxY + gap },
+      { minX: ink.maxX + gap, minY: ink.minY - gap, maxX: far, maxY: ink.maxY + gap },
+    ];
     const at = (gap: number) =>
       placeAnnotations([request("locant", "a1", "13")], {
         ...EMPTY_CONTEXT,
         segments: lines,
-        glyphInk: [beside(gap)],
+        glyphInk: frame(gap),
       });
     const near = at(0.5);
     expect(near.placements[0]!.origin).toEqual(chosen.origin);
@@ -958,6 +969,63 @@ describe("decision 64: drawn means a clearance from every glyph, not just no ove
     expect(clearOfIt.placements[0]!.origin).toEqual(chosen.origin);
     expect(clearOfIt.placements[0]!.drawn).toBe(true);
     expect(clearOfIt.unplaced.map((u) => [u.dropped, u.reason])).toEqual([[false, "crowded"]]);
+  });
+});
+
+describe("decision 188: the fallback prefers a slot that will be drawn", () => {
+  const far = 1e4;
+  /** Nothing is clear, and it is not glyph ink, so it ranks nothing. */
+  const blanket = { kind: "rect" as const, box: { minX: -far, minY: -far, maxX: far, maxY: far } };
+  /** A "C": a 4 px glyph `gap` above an ink box, as wide as it, touching none of it. */
+  const above = (ink: LabelBox, gap: number): LabelBox => ({
+    minX: ink.minX,
+    minY: ink.minY - gap - 4,
+    maxX: ink.maxX,
+    maxY: ink.minY - gap,
+  });
+  const dropReport = (layout: ReturnType<typeof placeAnnotations>) =>
+    layout.unplaced.map((u) => [u.dropped, u.reason]);
+
+  it("moves off a slot half a pixel from a glyph, and draws it", () => {
+    // The first candidate overprints no ink with the "C" 0.5 px above it, so
+    // by ink area it ties every other candidate and wins on ladder order —
+    // and decision 64 then drops it. The steroid's Lewis C17 (S) was lost
+    // exactly so, beside its own "C".
+    const first = placeAnnotation(request("locant", "a1", "13"), { ...EMPTY_CONTEXT, obstacles: [blanket] });
+    const layout = placeAnnotations([request("locant", "a1", "13")], {
+      ...EMPTY_CONTEXT,
+      obstacles: [blanket],
+      glyphInk: [above(first.inkBox, 0.5)],
+    });
+    const placed = layout.placements[0]!;
+    expect(placed.clear).toBe(false);
+    expect(placed.origin).not.toEqual(first.origin);
+    expect(placed.drawn).toBe(true);
+    expect(dropReport(layout)).toEqual([[false, "crowded"]]);
+  });
+
+  it("does so only among slots that read as its own atom's", () => {
+    // The same "C", but nothing reads as a1's: 64 atoms two px out are nearer
+    // every candidate. A drawn slot there is a number beside the wrong atom,
+    // so the order stays decision 45's — the first candidate — and it is
+    // dropped rather than moved to where it would print.
+    const ring = Array.from({ length: 64 }, (_, i) => {
+      const angle = (i / 64) * 2 * Math.PI;
+      return { atomId: `r${i}`, centre: { x: 2 * Math.cos(angle), y: 2 * Math.sin(angle) } };
+    });
+    const context: AnnotationContext = {
+      ...EMPTY_CONTEXT,
+      obstacles: [blanket],
+      atomCentres: [{ atomId: "a1", centre: ORIGIN_PX }, ...ring],
+    };
+    const first = placeAnnotation(request("locant", "a1", "13"), context);
+    const layout = placeAnnotations([request("locant", "a1", "13")], {
+      ...context,
+      glyphInk: [above(first.inkBox, 0.5)],
+    });
+    expect(layout.placements[0]!.origin).toEqual(first.origin);
+    expect(layout.placements[0]!.drawn).toBe(false);
+    expect(dropReport(layout)).toEqual([[true, "printsOnText"]]);
   });
 });
 
@@ -1477,7 +1545,7 @@ describe("decision 54: Publication annotations at the 8 pt floor", () => {
     expect([...sizes]).toEqual([PUBLICATION_STYLE.fontSizePx * PUBLICATION_STYLE.stereoDescriptorScale]);
   });
 
-  it("reports what style.ts records: 80 of 516 at 0.80 (22 of 28 descriptors), 45 not drawn", () => {
+  it("reports what style.ts records: 78 of 516 at 0.80 (22 of 28 descriptors), 22 not drawn", () => {
     // 78 and 43 before the explicit-H separation pass. Moving derived
     // hydrogens off each other's ink rearranges the page the annotation
     // ladder searches, and it came out ahead: three locants that used to be
@@ -1492,15 +1560,24 @@ describe("decision 54: Publication annotations at the 8 pt floor", () => {
     // 58 test), and draws C17's locant in both instead; unmergedDropOverlap,
     // two fragments dropped on each other on purpose, drops two locants in
     // explicitH. Every other subject is untouched.
+    //
+    // 80 and 45 before decision 188, which ranks a slot that will be drawn
+    // above one that will be dropped, among slots that read as their own. 24
+    // annotations that had been dropped are drawn: the steroid's C17 (S) in
+    // Lewis and C3 (S) in explicitH, four chrysene and two phenanthrene
+    // locants in each hydrogen view, and more. Two of the steroid's C3
+    // locants turn clear. One is newly dropped: unmergedDropOverlap's a3
+    // locant in Lewis, which was drawn nearer a2 than a3 — a2's own locant,
+    // now drawn, has the room. No descriptor is newly dropped.
     expect(counts(PUBLICATION_STYLE)).toEqual({
       total: 516,
       descriptors: 28,
-      unplaced: 80,
+      unplaced: 78,
       unplacedDescriptors: 22,
-      dropped: 45,
+      dropped: 22,
     });
     // Screen, on its 44 px bond, has room for nearly everything. It dropped 3
-    // before decision 134.
+    // before decision 134. Decision 188 moves none of these.
     expect(counts(SCREEN_STYLE)).toEqual({
       total: 516,
       descriptors: 28,
@@ -1511,12 +1588,18 @@ describe("decision 54: Publication annotations at the 8 pt floor", () => {
     // The pre-decision-44 scale, for the record style.ts keeps beside it.
     // With the ladder sized from the label (decision 59) the scale no longer
     // changes how far the search reaches, and here not the count either.
+    // Decision 188 took its drops from 56 to 31: 33 drawn that were dropped,
+    // and 10 locants dropped that were drawn, each in a drawing where
+    // annotations placed before it, dropped until then, are now drawn — in
+    // skeletal and kekule the steroid's C13 locant is drawn and C17's is not.
+    // The pass is greedy in priority and id order, so a drawn annotation
+    // claims room a later one used to have.
     expect(counts(CROWDED_PUBLICATION_STYLE)).toEqual({
       total: 516,
       descriptors: 28,
       unplaced: 106,
       unplacedDescriptors: 22,
-      dropped: 56,
+      dropped: 31,
     });
   });
 
@@ -1529,27 +1612,27 @@ describe("decision 54: Publication annotations at the 8 pt floor", () => {
         "butan2olWedged/kekule/a2:descriptor",
         "butan2olWedged/lewis/a2:descriptor (dropped)",
         "butan2olWedged/skeletal/a2:descriptor",
-        "chrysene/explicitH/a15:locant (dropped)",
-        "chrysene/explicitH/a16:locant (dropped)",
-        "chrysene/explicitH/a24:locant (dropped)",
-        "chrysene/explicitH/a25:locant (dropped)",
-        "chrysene/lewis/a15:locant (dropped)",
-        "chrysene/lewis/a16:locant (dropped)",
-        "chrysene/lewis/a24:locant (dropped)",
-        "chrysene/lewis/a25:locant (dropped)",
+        "chrysene/explicitH/a15:locant",
+        "chrysene/explicitH/a16:locant",
+        "chrysene/explicitH/a24:locant",
+        "chrysene/explicitH/a25:locant",
+        "chrysene/lewis/a15:locant",
+        "chrysene/lewis/a16:locant",
+        "chrysene/lewis/a24:locant",
+        "chrysene/lewis/a25:locant",
         "chrysene/skeletal/a16:locant",
         "dimethylSulfone/explicitH/a1:locant",
         "dimethylSulfone/kekule/a1:locant",
         "dimethylSulfone/lewis/a1:locant",
         "dimethylSulfone/skeletal/a1:locant",
-        "phenanthrene/explicitH/a15:locant (dropped)",
-        "phenanthrene/explicitH/a16:locant (dropped)",
-        "phenanthrene/lewis/a15:locant (dropped)",
-        "phenanthrene/lewis/a16:locant (dropped)",
+        "phenanthrene/explicitH/a15:locant",
+        "phenanthrene/explicitH/a16:locant",
+        "phenanthrene/lewis/a15:locant",
+        "phenanthrene/lewis/a16:locant",
         "phenanthrene/skeletal/a16:locant",
         "steroidSkeleton/explicitH/C10:descriptor (dropped)",
         "steroidSkeleton/explicitH/C10:locant (dropped)",
-        "steroidSkeleton/explicitH/C11:locant (dropped)",
+        "steroidSkeleton/explicitH/C11:locant",
         "steroidSkeleton/explicitH/C12:locant",
         "steroidSkeleton/explicitH/C13:descriptor (dropped)",
         "steroidSkeleton/explicitH/C13:locant (dropped)",
@@ -1557,11 +1640,10 @@ describe("decision 54: Publication annotations at the 8 pt floor", () => {
         "steroidSkeleton/explicitH/C17:descriptor",
         "steroidSkeleton/explicitH/C17:locant",
         "steroidSkeleton/explicitH/C19:locant (dropped)",
-        "steroidSkeleton/explicitH/C1:locant (dropped)",
-        "steroidSkeleton/explicitH/C3:descriptor (dropped)",
-        "steroidSkeleton/explicitH/C3:locant (dropped)",
+        "steroidSkeleton/explicitH/C1:locant",
+        "steroidSkeleton/explicitH/C3:descriptor",
         "steroidSkeleton/explicitH/C7:locant",
-        "steroidSkeleton/explicitH/C8:locant (dropped)",
+        "steroidSkeleton/explicitH/C8:locant",
         "steroidSkeleton/explicitH/C9:locant",
         "steroidSkeleton/kekule/C10:descriptor",
         "steroidSkeleton/kekule/C10:locant",
@@ -1572,19 +1654,18 @@ describe("decision 54: Publication annotations at the 8 pt floor", () => {
         "steroidSkeleton/kekule/C3:descriptor",
         "steroidSkeleton/lewis/C10:descriptor (dropped)",
         "steroidSkeleton/lewis/C10:locant (dropped)",
-        "steroidSkeleton/lewis/C11:locant (dropped)",
+        "steroidSkeleton/lewis/C11:locant",
         "steroidSkeleton/lewis/C12:locant",
         "steroidSkeleton/lewis/C13:descriptor (dropped)",
         "steroidSkeleton/lewis/C13:locant (dropped)",
         "steroidSkeleton/lewis/C14:locant (dropped)",
-        "steroidSkeleton/lewis/C17:descriptor (dropped)",
+        "steroidSkeleton/lewis/C17:descriptor",
         "steroidSkeleton/lewis/C17:locant",
         "steroidSkeleton/lewis/C19:locant (dropped)",
-        "steroidSkeleton/lewis/C1:locant (dropped)",
+        "steroidSkeleton/lewis/C1:locant",
         "steroidSkeleton/lewis/C3:descriptor",
-        "steroidSkeleton/lewis/C3:locant (dropped)",
         "steroidSkeleton/lewis/C7:locant",
-        "steroidSkeleton/lewis/C8:locant (dropped)",
+        "steroidSkeleton/lewis/C8:locant",
         "steroidSkeleton/lewis/C9:locant",
         "steroidSkeleton/skeletal/C10:descriptor",
         "steroidSkeleton/skeletal/C10:locant",
@@ -1595,13 +1676,13 @@ describe("decision 54: Publication annotations at the 8 pt floor", () => {
         "steroidSkeleton/skeletal/C3:descriptor",
         "trans2Butene/explicitH/b3:descriptor",
         "trans2Butene/lewis/b3:descriptor",
-        "unmergedDropOverlap/explicitH/a2:locant (dropped)",
+        "unmergedDropOverlap/explicitH/a2:locant",
         "unmergedDropOverlap/explicitH/a3:locant (dropped)",
         "unmergedDropOverlap/explicitH/a6:locant (dropped)",
         "unmergedDropOverlap/kekule/a3:locant (dropped)",
         "unmergedDropOverlap/kekule/a6:locant",
-        "unmergedDropOverlap/lewis/a2:locant (dropped)",
-        "unmergedDropOverlap/lewis/a3:locant",
+        "unmergedDropOverlap/lewis/a2:locant",
+        "unmergedDropOverlap/lewis/a3:locant (dropped)",
         "unmergedDropOverlap/lewis/a6:locant (dropped)",
         "unmergedDropOverlap/skeletal/a3:locant (dropped)",
         "unmergedDropOverlap/skeletal/a6:locant",
@@ -2420,44 +2501,53 @@ function boxMeetsSegment(box: LabelBox, a: ScenePoint, b: ScenePoint): boolean {
 /**
  * Reported placements that read as another atom's, because every slot that
  * reads as their own prints over an annotation already placed (decision 45's
- * first key). Only at the crowded setting's 14 px run.
+ * first key), each marked "(dropped)" when it is off the page (decisions 58
+ * and 64). Decision 188 ranks drawn above dropped only among candidates that
+ * read as their own, so a drawn entry here is decision 45's ruling, not a
+ * slot the fallback reached for.
  */
 const NOT_OWN_REPORTED: readonly string[] = [
+  // The steroid's C13 locant (a3), placed after four descriptors that have
+  // already taken the room at its junction. Its C10 locant (a13) with
+  // hydrogens shown, since decision 188: C9's "9" (a6, placed first) used to
+  // be dropped and is now drawn, and its box covers every slot that reads as
+  // C10's, so C10's "10" is left only slots nearer C4 and C5. Without C9's
+  // locant it is back beside C10 (and dropped there, 11 px from it).
+  "steroidSkeleton/publication@13.3px/kekule/atom:a3:locant",
+  "steroidSkeleton/publication@13.3px/skeletal+H/atom:a13:locant",
+  "steroidSkeleton/publication@13.3px/skeletal+H/atom:a3:locant (dropped)",
+  "steroidSkeleton/publication@13.3px/skeletal/atom:a3:locant",
   // Both of unmergedDropOverlap's locants, on the pair of atoms that
   // fixture draws a third of a bond apart — no slot there is 15% nearer
-  // one than the other — and the steroid's C13 locant, placed after four
-  // descriptors that have already taken the room at its junction.
-  "steroidSkeleton/publication@13.3px/kekule/atom:a3:locant",
-  "steroidSkeleton/publication@13.3px/skeletal+H/atom:a3:locant",
-  "steroidSkeleton/publication@13.3px/skeletal/atom:a3:locant",
-  "unmergedDropOverlap/publication-crowded@14.2px/explicitH/atom:a3:locant",
-  "unmergedDropOverlap/publication-crowded@14.2px/explicitH/atom:a6:locant",
+  // one than the other.
+  "unmergedDropOverlap/publication-crowded@14.2px/explicitH/atom:a3:locant (dropped)",
+  "unmergedDropOverlap/publication-crowded@14.2px/explicitH/atom:a6:locant (dropped)",
   "unmergedDropOverlap/publication-crowded@14.2px/kekule/atom:a3:locant",
-  "unmergedDropOverlap/publication-crowded@14.2px/kekule/atom:a6:locant",
-  "unmergedDropOverlap/publication-crowded@14.2px/lewis/atom:a3:locant",
-  "unmergedDropOverlap/publication-crowded@14.2px/lewis/atom:a6:locant",
-  "unmergedDropOverlap/publication-crowded@14.2px/skeletal+H/atom:a3:locant",
-  "unmergedDropOverlap/publication-crowded@14.2px/skeletal+H/atom:a6:locant",
+  "unmergedDropOverlap/publication-crowded@14.2px/kekule/atom:a6:locant (dropped)",
+  "unmergedDropOverlap/publication-crowded@14.2px/lewis/atom:a3:locant (dropped)",
+  "unmergedDropOverlap/publication-crowded@14.2px/lewis/atom:a6:locant (dropped)",
+  "unmergedDropOverlap/publication-crowded@14.2px/skeletal+H/atom:a3:locant (dropped)",
+  "unmergedDropOverlap/publication-crowded@14.2px/skeletal+H/atom:a6:locant (dropped)",
   "unmergedDropOverlap/publication-crowded@14.2px/skeletal/atom:a3:locant",
-  "unmergedDropOverlap/publication-crowded@14.2px/skeletal/atom:a6:locant",
-  "unmergedDropOverlap/publication@13.3px/explicitH/atom:a3:locant",
-  "unmergedDropOverlap/publication@13.3px/explicitH/atom:a6:locant",
-  "unmergedDropOverlap/publication@13.3px/kekule/atom:a3:locant",
+  "unmergedDropOverlap/publication-crowded@14.2px/skeletal/atom:a6:locant (dropped)",
+  "unmergedDropOverlap/publication@13.3px/explicitH/atom:a3:locant (dropped)",
+  "unmergedDropOverlap/publication@13.3px/explicitH/atom:a6:locant (dropped)",
+  "unmergedDropOverlap/publication@13.3px/kekule/atom:a3:locant (dropped)",
   "unmergedDropOverlap/publication@13.3px/kekule/atom:a6:locant",
   "unmergedDropOverlap/publication@13.3px/lewis/atom:a3:locant",
-  "unmergedDropOverlap/publication@13.3px/lewis/atom:a6:locant",
-  "unmergedDropOverlap/publication@13.3px/skeletal+H/atom:a3:locant",
-  "unmergedDropOverlap/publication@13.3px/skeletal+H/atom:a6:locant",
-  "unmergedDropOverlap/publication@13.3px/skeletal/atom:a3:locant",
+  "unmergedDropOverlap/publication@13.3px/lewis/atom:a6:locant (dropped)",
+  "unmergedDropOverlap/publication@13.3px/skeletal+H/atom:a3:locant (dropped)",
+  "unmergedDropOverlap/publication@13.3px/skeletal+H/atom:a6:locant (dropped)",
+  "unmergedDropOverlap/publication@13.3px/skeletal/atom:a3:locant (dropped)",
   "unmergedDropOverlap/publication@13.3px/skeletal/atom:a6:locant",
-  "unmergedDropOverlap/screen@13.6px/explicitH/atom:a3:locant",
+  "unmergedDropOverlap/screen@13.6px/explicitH/atom:a3:locant (dropped)",
   "unmergedDropOverlap/screen@13.6px/explicitH/atom:a6:locant",
   "unmergedDropOverlap/screen@13.6px/kekule/atom:a3:locant",
   "unmergedDropOverlap/screen@13.6px/kekule/atom:a6:locant",
-  "unmergedDropOverlap/screen@13.6px/lewis/atom:a3:locant",
+  "unmergedDropOverlap/screen@13.6px/lewis/atom:a3:locant (dropped)",
   "unmergedDropOverlap/screen@13.6px/lewis/atom:a6:locant",
   "unmergedDropOverlap/screen@13.6px/skeletal+H/atom:a3:locant",
-  "unmergedDropOverlap/screen@13.6px/skeletal+H/atom:a6:locant",
+  "unmergedDropOverlap/screen@13.6px/skeletal+H/atom:a6:locant (dropped)",
   "unmergedDropOverlap/screen@13.6px/skeletal/atom:a3:locant",
   "unmergedDropOverlap/screen@13.6px/skeletal/atom:a6:locant",
 ];
