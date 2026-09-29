@@ -29,7 +29,7 @@
 import { speciesIndexOf, species as speciesOfMolecule } from "@starter/chem-core";
 import type { AtomId, Molecule } from "@starter/chem-core";
 
-import type { LabelBox } from "../label/placement.js";
+import type { AtomLabelPlacement, LabelBox } from "../label/placement.js";
 import type { RenderStyle } from "../style.js";
 import type { SchemeLayerSite } from "./layer.js";
 
@@ -87,6 +87,21 @@ export class SpeciesBoxes {
     if (index === undefined) return undefined;
     if (!this.#boxes.has(index)) this.#boxes.set(index, this.#measure(index));
     return this.#boxes.get(index);
+  }
+
+  /**
+   * The labels drawn on the atoms of `atomId`'s species, in the species'
+   * atom order; empty for an unknown atom or an all-skeletal species.
+   */
+  labelsOf(atomId: AtomId): readonly AtomLabelPlacement[] {
+    const index = this.speciesIndex(atomId);
+    if (index === undefined) return [];
+    const out: AtomLabelPlacement[] = [];
+    for (const member of speciesOfMolecule(this.#source)[index]?.atomIds ?? []) {
+      const label = this.#site.placements.get(member);
+      if (label !== undefined) out.push(label);
+    }
+    return out;
   }
 
   /** The union of the boxes of every species the atoms name. */

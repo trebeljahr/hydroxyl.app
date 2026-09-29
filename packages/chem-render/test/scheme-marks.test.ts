@@ -570,6 +570,43 @@ describe("the scheme plus and the coefficient are not charges (decision 204)", (
     const again = build(fixture.molecule, doubled, style).schemeAnnotations.coefficients;
     expect(again.find((c) => c.annotationId === "ann_6")).toMatchObject({ primitives: [], findings: [{ kind: "duplicate-coefficient" }] });
   });
+
+  it("sits each 2 on the baseline of the formula it multiplies, the subscript of H2O notwithstanding (decision 217)", () => {
+    const fixture = methaneCombustion();
+    for (const style of STYLES) {
+      const { scene, schemeAnnotations } = build(fixture.molecule, fixture.annotations, style);
+      for (const [id, atomId] of [
+        ["ann_1", fixture.oxygen],
+        ["ann_4", fixture.water],
+      ] as const) {
+        const two = byId<TextRunPrimitive>(scene.primitives, `annotation:${id}:coefficient`);
+        const formula = byId<TextRunPrimitive>(scene.primitives, `atom:${atomId}:label`);
+        expect(textOf(formula), style.name).toBe(atomId === fixture.water ? "H2O" : "O");
+        expect(two.origin.y, `${style.name} ${id}`).toBe(formula.origin.y);
+        expect(schemeAnnotations.coefficients.find((c) => c.annotationId === id)?.sitsOn).toBe(atomId);
+      }
+    }
+  });
+
+  it("centres a coefficient on a skeletal species with no label across its middle (decision 217)", () => {
+    // Two equivalents of acetone in the proline aldol: its only label is the
+    // carbonyl O at the top, so there is no line to sit on.
+    const aldol = prolineAldol();
+    const twice = [...aldol.annotations, mark(9, { kind: "coefficient", species: aldol.acetone, value: 2 })];
+    for (const style of STYLES) {
+      const { scene, schemeAnnotations } = build(aldol.molecule, twice, style);
+      const layout = schemeAnnotations.coefficients.find((c) => c.annotationId === "ann_9")!;
+      expect(layout.sitsOn).toBeUndefined();
+      expect(layout.findings).toEqual([]);
+      const two = byId<TextRunPrimitive>(scene.primitives, "annotation:ann_9:coefficient");
+      const middle = (layout.speciesBox.minY + layout.speciesBox.maxY) / 2;
+      expect(two.origin.y - (EM_CAP_HEIGHT * style.fontSizePx) / 2).toBeCloseTo(middle, 9);
+      const oxygen = scene.primitives.find(
+        (p): p is TextRunPrimitive => p.type === "textRun" && p.source.kind === "atom" && textOf(p as TextRunPrimitive) === "O",
+      )!;
+      expect(two.origin.y).toBeGreaterThan(oxygen.origin.y + style.fontSizePx / 2);
+    }
+  });
 });
 
 describe("brackets carry their charge outside, top right (decisions 194, 204, 212)", () => {
