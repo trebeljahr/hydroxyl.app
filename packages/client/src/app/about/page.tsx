@@ -11,13 +11,22 @@ import type { Metadata } from "next";
 import type { ReactElement } from "react";
 
 import { Landing } from "@/components/landing/Landing";
+import { landingSocialMetadata } from "@/components/landing/metadata";
 import { editorHref, recentsHref } from "@/lib/deployment";
+import { SITE_NAME } from "@/lib/site";
+
+const DESCRIPTION =
+  "Draw a molecule once and export it as skeletal, Lewis or condensed-formula panels, " +
+  "sized for a journal column. Runs in the browser with no account.";
 
 export const metadata: Metadata = {
   title: "About",
-  description:
-    "Draw a molecule once and export it as skeletal, Lewis or condensed-formula panels, " +
-    "sized for a journal column. Runs in the browser with no account.",
+  description: DESCRIPTION,
+  ...landingSocialMetadata({
+    path: "/about",
+    title: `About ${SITE_NAME}`,
+    description: DESCRIPTION,
+  }),
 };
 
 export default function AboutPage(): ReactElement {

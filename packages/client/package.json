@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node scripts/dev-preflight.mjs && node scripts/copy-rdkit.mjs && NODE_OPTIONS=\"$NODE_OPTIONS --heapsnapshot-near-heap-limit=1 --diagnostic-dir=.next/heap-snapshots\" next dev --port ${PORT:-6337}",
-    "build": "node scripts/copy-rdkit.mjs && next build",
+    "dev": "node scripts/dev-preflight.mjs && node scripts/copy-rdkit.mjs && node scripts/build-social-card.mjs && NODE_OPTIONS=\"$NODE_OPTIONS --heapsnapshot-near-heap-limit=1 --diagnostic-dir=.next/heap-snapshots\" next dev --port ${PORT:-6337}",
+    "build": "node scripts/copy-rdkit.mjs && node scripts/build-social-card.mjs && next build",
     "start": "next start --port ${PORT:-6337}",
     "lint": "eslint .",
     "test": "node scripts/copy-rdkit.mjs && vitest run",
@@ -34,6 +34,7 @@
   },
   "devDependencies": {
     "@rdkit/rdkit": "2025.3.4-1.0.0",
+    "@resvg/resvg-wasm": "2.6.2",
     "@tailwindcss/postcss": "^4.3.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

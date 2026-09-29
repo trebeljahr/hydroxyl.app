@@ -109,6 +109,9 @@ importers:
       '@rdkit/rdkit':
         specifier: 2025.3.4-1.0.0
         version: 2025.3.4-1.0.0
+      '@resvg/resvg-wasm':
+        specifier: 2.6.2
+        version: 2.6.2
       '@tailwindcss/postcss':
         specifier: ^4.3.0
         version: 4.3.0
@@ -1161,6 +1164,10 @@ packages:
 
   '@rdkit/rdkit@2025.3.4-1.0.0':
     resolution: {integrity: sha512-MJzNoeW2SWt2KCdIibfY213uLWyHZjFfS2ntJ/HuYNHdu6dEiim7jb6ZMU9wnt9Oovkc85BHMuupxkufIMvftQ==}
+
+  '@resvg/resvg-wasm@2.6.2':
+    resolution: {integrity: sha512-FqALmHI8D4o6lk/LRWDnhw95z5eO+eAa6ORjVg09YRR7BkcM6oPHU9uyC0gtQG5vpFLvgpeU4+zEAz2H8APHNw==}
+    engines: {node: '>= 10'}
 
   '@rolldown/binding-android-arm64@1.0.1':
     resolution: {integrity: sha512-fJI3I0r3C3Oj/zdBCpaCmBRZYf07xpaq4yCfDDoSFm+beWNzbIl26puW8RraUdugoJw/95zerNOn6jasAhzSmg==}
@@ -4220,6 +4227,8 @@ snapshots:
   '@radix-ui/rect@1.1.3': {}
 
   '@rdkit/rdkit@2025.3.4-1.0.0': {}
+
+  '@resvg/resvg-wasm@2.6.2': {}
 
   '@rolldown/binding-android-arm64@1.0.1':
     optional: true

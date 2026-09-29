@@ -31,6 +31,12 @@ import { formatPt, prepareFigure } from "@/lib/export/figure";
 
 import { exampleDocument } from "./example-document";
 
+/** What the figure shows, for a reader who cannot see it: the landing page's
+ *  `aria-label` and the social card's `og:image:alt`. */
+export const EXAMPLE_FIGURE_ALT =
+  "Acetic acid in four panels: (a) skeletal, (b) explicit hydrogens, " +
+  "(c) Lewis structure with lone pairs, (d) condensed formula CH3C(=O)OH.";
+
 export interface ExampleFigure {
   /** Inline SVG markup with no XML declaration. Its px `width`/`height` are
    *  the scene's own; the page's CSS sizes it to the column instead. */
@@ -80,4 +86,13 @@ export function exampleFigure(): ExampleFigure {
     styleLabelSize: `${formatPt(size.naturalFontSizePt)} pt`,
     panelCount: figure.cells.length,
   };
+}
+
+/** The sentence printed under the figure, on the landing page and on the
+ *  social card. Every number in it comes from `exampleFigure()`. */
+export function exampleCaption(example: ExampleFigure): string {
+  return (
+    `Acetic acid, drawn once and exported by the editor as ${example.panelCount} panels. ` +
+    `At single-column width it prints ${example.printedSize}, with ${example.labelSize} labels.`
+  );
 }

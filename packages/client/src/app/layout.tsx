@@ -2,15 +2,18 @@ import type { Metadata } from "next";
 import "@/styles/globals.css";
 
 import { DonationReturn } from "@/components/DonationReturn";
+import { siteUrl } from "@/lib/deployment";
+import { SITE_DESCRIPTION, SITE_NAME } from "@/lib/site";
 
 export const metadata: Metadata = {
+  // Makes the landing pages' relative `og:image` and `og:url` absolute, on
+  // the domain in .hatchkit.json (decisions 122 and 138).
+  metadataBase: new URL(siteUrl()),
   title: {
-    default: "Chemistry Sketcher",
-    template: "%s | Chemistry Sketcher",
+    default: SITE_NAME,
+    template: `%s | ${SITE_NAME}`,
   },
-  description:
-    "A chemical structure editor for publication figures. Draw a molecule once and " +
-    "export skeletal, Lewis and formula views as one figure, sized for a journal column.",
+  description: SITE_DESCRIPTION,
 };
 
 export default function RootLayout({

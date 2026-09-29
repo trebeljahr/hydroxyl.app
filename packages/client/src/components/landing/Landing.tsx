@@ -36,8 +36,9 @@ import {
 } from "@/lib/deployment";
 import { DONATE_URL } from "@/lib/donation";
 
+import { LANDING_HEADLINE } from "./copy";
 import { LANDING_EXAMPLE } from "./example-document";
-import { exampleFigure } from "./example-figure";
+import { EXAMPLE_FIGURE_ALT, exampleCaption, exampleFigure } from "./example-figure";
 
 function Section({
   id,
@@ -77,7 +78,7 @@ export function Landing(): ReactElement {
             data-landing="headline"
             className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl"
           >
-            Draw the molecule once. Export every view your figure needs.
+            {LANDING_HEADLINE}
           </h1>
           <p className="text-muted-foreground mt-5 max-w-prose text-lg leading-relaxed">
             A figure that needs the skeletal structure beside the Lewis structure usually means
@@ -105,14 +106,13 @@ export function Landing(): ReactElement {
           <div
             className="rounded-lg border bg-white p-4 shadow-sm [&>svg]:h-auto [&>svg]:w-full"
             role="img"
-            aria-label="Acetic acid in four panels: (a) skeletal, (b) explicit hydrogens, (c) Lewis structure with lone pairs, (d) condensed formula CH3C(=O)OH."
+            aria-label={EXAMPLE_FIGURE_ALT}
             // Markup this app generated from its own scene graph at build
             // time, never from anyone's file — there is no untrusted input.
             dangerouslySetInnerHTML={{ __html: example.svg }}
           />
           <figcaption className="text-muted-foreground mt-3 text-sm leading-snug">
-            Acetic acid, drawn once and exported by the editor as {example.panelCount} panels. At
-            single-column width it prints {example.printedSize}, with {example.labelSize} labels.
+            {exampleCaption(example)}
           </figcaption>
           {/* A plain anchor, like "New sketch": see `@/lib/deployment` for why
               the static export needs a full page load here. The editor opens

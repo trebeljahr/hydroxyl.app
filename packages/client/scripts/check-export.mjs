@@ -20,6 +20,10 @@
  *   3. `sitemap.xml` and `robots.txt` are emitted, name the domain in
  *      `.hatchkit.json`, and every sitemap entry is a file the export really
  *      contains (decision 122). `e2e/seo.spec.ts` checks the standalone side.
+ *   4. The social card rides the same `public/` copy: `out/` holds a 1200×630
+ *      PNG, and the two landing pages point `og:image` and `twitter:image`
+ *      at it on that domain (decision 138). `e2e/social-metadata.spec.ts`
+ *      checks the standalone side.
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -103,6 +107,34 @@ if (sitemap !== null) {
   }
 }
 
+const card = (() => {
+  try {
+    return readFileSync(path.join(out, "social-card.png"));
+  } catch {
+    return null;
+  }
+})();
+if (card === null) {
+  problems.push("out/social-card.png is missing; see scripts/build-social-card.mjs");
+} else {
+  // The PNG signature, then IHDR: width and height are the first two fields.
+  const isPng = card.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  const size = isPng ? `${card.readUInt32BE(16)}×${card.readUInt32BE(20)}` : "not a PNG";
+  if (size !== "1200×630") problems.push(`out/social-card.png is ${size}, not 1200×630`);
+}
+
+const cardUrl = `${site}social-card.png`;
+for (const page of ["index.html", "about.html"]) {
+  const html = readOut(page);
+  if (html === null) continue;
+  for (const key of ['property="og:image"', 'name="twitter:image"']) {
+    const content = new RegExp(`<meta ${key} content="([^"]*)"`).exec(html)?.[1];
+    if (content !== cardUrl) {
+      problems.push(`out/${page}: ${key} is ${content ?? "missing"}, expected ${cardUrl}`);
+    }
+  }
+}
+
 const robots = readOut("robots.txt");
 if (robots !== null) {
   for (const line of ["Disallow: /editor", `Sitemap: ${site}sitemap.xml`]) {
@@ -116,5 +148,5 @@ if (problems.length > 0) {
 }
 console.log(
   "static export: every page at the root, RDKit assets and notice present, " +
-    `sitemap.xml and robots.txt name ${site}`,
+    `sitemap.xml, robots.txt and the social card name ${site}`,
 );
