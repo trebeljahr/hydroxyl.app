@@ -287,9 +287,6 @@ function undo(draft: PlacedLayout, centre: AtomId, candidate: Candidate): void {
  */
 const EQUAL_GAP = Math.PI / 18;
 
-/** A candidate place nearer than this many `b` to another node is crowded (decision 157's half bond). */
-const CROWDED = 0.5;
-
 /**
  * One bond length from the centre, on the bisector of the widest angular gap
  * between its drawn bonds. Gaps within ten degrees of the widest are equals,
@@ -331,7 +328,7 @@ function revealedHydrogenPosition(mol: Molecule, draft: PlacedLayout, centre: At
     x: origin.x + length * Math.cos(g.bisector),
     y: origin.y + length * Math.sin(g.bisector),
   }));
-  const limit = CROWDED * draft.bondLength;
+  const limit = CHARACTERISTIC_LENGTHS.planar.revealedHydrogenClearance * draft.bondLength;
   const clear = places.find((place) => {
     for (const [node, at] of draft.positions) {
       if (node === centre) continue;

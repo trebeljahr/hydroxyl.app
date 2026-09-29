@@ -146,6 +146,13 @@ export interface ProjectionTemplateImplementation<V extends ProjectionView, S> {
     view: V,
     frame: ResolvedProjectionFrame,
   ): ProjectionTemplateResolution<S>;
+  /**
+   * A refusal that depends on the view's PARAMS alone (the steroid panel's
+   * mirror, decision 187), asked after `resolve` and before `place`. It
+   * cannot live in `resolve`, whose cache key leaves rotation and mirror
+   * out. Omitted by a template that draws every parameter.
+   */
+  refuseParams?(view: V): ProjectionUnavailable | undefined;
   place(
     mol: Molecule,
     config: StereoConfig,

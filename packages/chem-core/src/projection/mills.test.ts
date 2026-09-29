@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 
 import { readMolblock } from "../molblock-read.js";
 import { setAtomPosition } from "../ops.js";
+import { compareIds } from "../selection.js";
 import { rings, ringMembership } from "../rings.js";
 import { descriptorFromConfig, stereoConfig, type StereoConfig } from "../stereo-config.js";
 import type { AtomId, Molecule } from "../types.js";
@@ -175,6 +176,25 @@ describe("what Mills keeps and what it changes", () => {
     expect(result.reason).toBe("bridged-ring-system");
     // The bicyclo[3.2.1]octane: eight atoms.
     expect(result.atomIds).toHaveLength(8);
+  });
+
+  it("measures a peri-fused system and refuses one whose polygons do not close, naming it (decision 186)", () => {
+    const millsFixture = (file: string) => readMolblock(readFileSync(join(ROOT, "mills", file), "utf8")).molecule;
+    // Pyrene's four hexagons tile the plane: every ring comes out regular.
+    const pyrene = millsFixture("pyrene.mol");
+    const laid = layoutOf(project(pyrene, stereoConfig(pyrene), mills()));
+    expect(rings(pyrene)).toHaveLength(4);
+    expectRegularRings(pyrene, laid);
+    // Acenaphthene's five-membered ring cannot sit on naphthalene's peri
+    // position as a regular pentagon; cubane's squares cannot lie flat.
+    for (const [file, atoms] of [["acenaphthene.mol", 12], ["cubane.mol", 8]] as const) {
+      const mol = millsFixture(file);
+      const result = project(mol, stereoConfig(mol), mills());
+      expect(result, file).toMatchObject({ kind: "unavailable", reason: "no-regular-layout" });
+      // Every atom of either is in the ring system, and all are named.
+      if (result.kind === "unavailable") expect(result.atomIds, file).toEqual([...mol.atomIds].sort(compareIds));
+      expect(mol.atomIds, file).toHaveLength(atoms);
+    }
   });
 
   it("emits the same bytes from two independent loads", () => {

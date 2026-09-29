@@ -14,9 +14,15 @@
  * the table's standard orientation (rings A to D left to right), reflected
  * when that fits better — the same molecule seen from the other side, since
  * the marks are written afterwards from the configuration — and then the
- * panel's own rotation and mirror. So a steroid drawn upside down, or drawn
- * as seen from below, comes out in the standard orientation, and one drawn
- * with distorted rings keeps its distortion.
+ * panel's own rotation. So a steroid drawn upside down, or drawn as seen from
+ * below, comes out in the standard orientation, and one drawn with distorted
+ * rings keeps its distortion.
+ *
+ * NEVER MIRRORED (decision 187). A mirrored panel would show the molecule
+ * from its alpha face, rings A to D right to left and every beta ligand
+ * hashed beside a "β" label, which is the opposite of what this panel is
+ * for; `mirror: true` is `unavailable: mirror-not-drawn`. Turning it is fine:
+ * beta stays toward the viewer.
  *
  * BETA IS A WEDGE BY READ-BACK, NOT BY RULE. The author's centre marks are
  * dropped and every centre gets one mark by the policy (marks.ts, decision
@@ -62,6 +68,9 @@ export const planarSteroidTemplate: ProjectionTemplateImplementation<PlanarView,
     if (labels === undefined) return projectionUnavailable("skeleton-not-accepted");
     return { kind: "available", skeleton: labels };
   },
+  refuseParams(view) {
+    return view.params.mirror ? projectionUnavailable("mirror-not-drawn") : undefined;
+  },
   place(mol, config, view, skeleton, toPlace, reach) {
     const b = projectionBondLength(mol);
     const drawnCore = skeleton.core.map((id) => mol.atoms[id]!.pos);
@@ -78,7 +87,8 @@ export const planarSteroidTemplate: ProjectionTemplateImplementation<PlanarView,
       const atom = mol.atoms[atomId];
       if (atom !== undefined) oriented.set(atomId, toStandard(atom.pos));
     }
-    const move = pageMotion([...oriented.values()], view.params.rotationDeg, view.params.mirror);
+    // Never mirrored: `refuseParams` turned a mirrored view away.
+    const move = pageMotion([...oriented.values()], view.params.rotationDeg, false);
 
     const draft = emptyPlacedLayout(WEDGE_HASH, b);
     for (const [atomId, pos] of oriented) placeLayoutAtom(draft, atomId, move(pos));

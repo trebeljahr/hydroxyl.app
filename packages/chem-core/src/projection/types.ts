@@ -327,12 +327,16 @@ export type Conformation =
  *                             to carry a centre's wedge (decision 178): a
  *                             wedge shorter than a bond is a blob once its
  *                             "H" label trims it
+ *   planar.revealedHydrogenClearance
+ *                       0.5   a place for that hydrogen nearer than this to
+ *                             another node is crowded and passed over while
+ *                             another is clear (decision 157's half bond)
  *
  * Otherwise the planar and overlay frames draw the author's bonds, which ARE
  * `b` by definition, and Mills re-lays its rings with edges of `b`.
  */
 export const CHARACTERISTIC_LENGTHS = Object.freeze({
-  planar: Object.freeze({ revealedHydrogen: 1 }),
+  planar: Object.freeze({ revealedHydrogen: 1, revealedHydrogenClearance: 0.5 }),
   chain: Object.freeze({ rung: 1, arm: 1 }),
   ring: Object.freeze({ edge: 1, substituent: 0.75, chairBond: 1 }),
   sightedBond: Object.freeze({ radius: 0.5, spoke: 1 }),
@@ -619,6 +623,17 @@ export type ProjectionUnavailableReason =
    * kaurane's C/D rings), so no layout of regular polygons exists.
    */
   | "bridged-ring-system"
+  /**
+   * Mills: the ring system's regular polygons do not close on one another
+   * (acenaphthene's peri-fused five-membered ring, a cage such as cubane),
+   * found by measuring every bond of the built system (decision 186).
+   */
+  | "no-regular-layout"
+  /**
+   * The template draws one side of the page only, and the view is mirrored:
+   * the steroid panel keeps beta toward the viewer (decision 187).
+   */
+  | "mirror-not-drawn"
   /** The steroid template, with no skeleton accepted for the panel (decision 163). */
   | "skeleton-not-accepted"
   /**

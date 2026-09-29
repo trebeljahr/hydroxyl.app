@@ -269,6 +269,10 @@ const PROJECTION_MESSAGES: Readonly<
   "id-conflict": () => "An atom id in this file clashes with a drawn label's id.",
   "bridged-ring-system": () =>
     "Two rings here share more than one bond, so they cannot be drawn as regular polygons; use the wedge-dash view.",
+  "no-regular-layout": () =>
+    "These rings cannot all be drawn as regular polygons in one plane; use the wedge-dash view.",
+  "mirror-not-drawn": () =>
+    "The steroid view keeps the beta face toward the viewer, so it cannot be mirrored; turn it instead.",
   "skeleton-not-accepted": () => "Accept the suggested steroid numbering to draw this view.",
   "skeleton-mismatch": () =>
     "The steroid core has changed since its numbering was accepted; accept the numbering again.",

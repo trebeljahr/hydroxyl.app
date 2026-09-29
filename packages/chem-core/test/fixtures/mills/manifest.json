@@ -1,0 +1,25 @@
+{
+  "generated": "2026-09-29",
+  "purpose": "Ring systems Mills must measure before it claims regular polygons (decision 186). Read by projection/mills.test.ts only.",
+  "rdkit": "@rdkit/rdkit 2025.03.4 (MinimalLib): get_mol(smiles); set_new_coords(); get_molblock(). Header line 1 is the name, line 3 the SMILES. SMILES from PubChem (source per row).",
+  "fixtures": [
+    {
+      "file": "acenaphthene.mol",
+      "name": "acenaphthene",
+      "smiles": "C1CC2=CC=CC3=C2C1=CC=C3",
+      "source": "PubChem CID 6734: a five-membered ring peri-fused on naphthalene; no-regular-layout"
+    },
+    {
+      "file": "cubane.mol",
+      "name": "cubane",
+      "smiles": "C12C3C4C1C5C2C3C45",
+      "source": "PubChem CID 136090: a cage whose rings share one bond each; no-regular-layout"
+    },
+    {
+      "file": "pyrene.mol",
+      "name": "pyrene",
+      "smiles": "C1=CC2=C3C(=C1)C=CC4=CC=CC(=C43)C=C2",
+      "source": "PubChem CID 31423: peri-fused hexagons that tile the plane; drawn regular"
+    }
+  ]
+}

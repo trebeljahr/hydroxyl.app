@@ -25,6 +25,14 @@
  * `bridged-ring-system`, naming those rings' atoms, rather than draw a
  * distorted one that claims to be regular.
  *
+ * NOR DOES EVERY OTHER SYSTEM (decision 186). A peri-fused ring keeps the
+ * atoms its neighbours placed, which is exact only where the polygons tile
+ * the plane (pyrene, phenalene, triphenylene). So the built system is
+ * MEASURED: any bond between two of its atoms that is not one edge long —
+ * acenaphthene's five-membered ring bends a hexagon edge to 1.19 b, cubane
+ * draws a bond 3 b long — makes the panel `no-regular-layout`, naming the
+ * system's atoms.
+ *
  * EVERYTHING ELSE KEEPS ITS DRAWN DIRECTION. Only ring atoms get template
  * coordinates. Each connected piece of non-ring atoms moves by the mean
  * displacement of the ring atoms it hangs from: for a substituent that is one
@@ -170,7 +178,13 @@ export function resolveMills(mol: Molecule): ProjectionTemplateResolution<Omit<M
   const systems: SystemLayout[] = [];
   for (const group of groups.values()) {
     const local = layoutSystem(group);
-    systems.push({ atomIds: mol.atomIds.filter((id) => local.has(id)), local });
+    const atomIds = mol.atomIds.filter((id) => local.has(id));
+    // Checked, not assumed (decision 186): a ring that had to keep atoms
+    // placed for its neighbours is only regular if the polygons tile.
+    if (!everyBondOneEdge(mol, local)) {
+      return projectionUnavailable("no-regular-layout", [...atomIds].sort(compareIds));
+    }
+    systems.push({ atomIds, local });
   }
 
   // Pieces of non-ring atoms, by breadth-first search that never enters a ring.
@@ -251,6 +265,25 @@ function layoutSystem(system: readonly Ring[]): Map<AtomId, Vec2> {
     placed.push(ring);
   }
   return pos;
+}
+
+/** How far from one edge a bond of a unit layout may be and still count as regular. */
+const EDGE_TOLERANCE = 1e-6;
+
+/**
+ * Whether every bond between two atoms of a unit layout, ring edge or chord,
+ * is one edge long: the layout really is regular polygons, not a peri-fused
+ * five-membered ring or a cage the builder had to bend.
+ */
+function everyBondOneEdge(mol: Molecule, local: ReadonlyMap<AtomId, Vec2>): boolean {
+  for (const bondId of mol.bondIds) {
+    const bond = mol.bonds[bondId]!;
+    const p = local.get(bond.from);
+    const q = local.get(bond.to);
+    if (p === undefined || q === undefined) continue;
+    if (Math.abs(Math.hypot(q.x - p.x, q.y - p.y) - 1) > EDGE_TOLERANCE) return false;
+  }
+  return true;
 }
 
 /** The first walk index `i` whose edge (i, i+1) has both atoms placed. */

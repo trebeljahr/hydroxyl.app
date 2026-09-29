@@ -224,6 +224,29 @@ describe("the steroid template", () => {
     expect(ent.faceLabels.map((l) => l.face)).toEqual(layout.faceLabels.map((l) => (l.face === "alpha" ? "beta" : "alpha")));
   });
 
+  it("refuses a mirrored panel, which would hash every beta ligand, and turns one with beta still wedged (decision 187)", () => {
+    const mol = load("cholesterol.mol");
+    const config = stereoConfig(mol);
+    const accepted = accept(mol);
+    expect(project(mol, config, view("steroid", accepted, 0, true))).toEqual({
+      kind: "unavailable",
+      reason: "mirror-not-drawn",
+      atomIds: [],
+      bondIds: [],
+    });
+    // With nothing accepted, accepting comes first.
+    expect(project(mol, config, view("steroid", undefined, 0, true))).toMatchObject({ reason: "skeleton-not-accepted" });
+    // Turned half a revolution the panel is upside down and beta is still
+    // toward the viewer: the same marks, the same labels.
+    const upright = layoutOf(project(mol, config, view("steroid", accepted)));
+    const turned = layoutOf(project(mol, config, view("steroid", accepted, 180)));
+    expect(labelTexts(upright)).toEqual(["17β", "14α-H", "13β", "9α-H", "8β-H", "10β", "3β-OH"]);
+    expect(turned.faceLabels).toEqual(upright.faceLabels);
+    expect(turned.marks).toEqual(upright.marks);
+    // Wedge-dash keeps its mirror: there the marks are the view the author chose.
+    expect(project(mol, config, view("wedgeDash", accepted, 0, true)).kind).toBe("available");
+  });
+
   it("states faces only for the centres its layout states", () => {
     const mol = load("cholesterol.mol");
     const config = stereoConfig(mol);

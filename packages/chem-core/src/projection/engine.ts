@@ -293,6 +293,8 @@ function computeProjection(
   const template = templateFor(view);
   if (template === undefined || topology.template === undefined) return projectionUnavailable("template-not-built");
   if (topology.template.kind !== "available") return topology.template;
+  const refusal = template.refuseParams?.(view);
+  if (refusal !== undefined) return refusal;
 
   const mismatch = configMismatch(mol, config);
   if (mismatch !== undefined) return mismatch;

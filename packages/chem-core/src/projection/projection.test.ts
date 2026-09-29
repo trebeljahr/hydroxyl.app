@@ -1184,6 +1184,18 @@ describe("the engine's own sources", () => {
   it("names rings by atom set and never keeps an index into rings(mol)", () => {
     for (const [file, code] of sources) expect(code, file).not.toMatch(/rings\([^)]*\)\s*\[/);
   });
+
+  it("scales by the bond length only lengths declared in CHARACTERISTIC_LENGTHS (decision 145)", () => {
+    let scaled = 0;
+    for (const [file, code] of sources) {
+      for (const match of code.matchAll(/([\w.]+)\s*\*\s*(?:draft\.)?bondLength\b/g)) {
+        scaled++;
+        expect(match[1], `${file}: ${match[0]}`).toMatch(/^(?:CHARACTERISTIC_LENGTHS\.[\w.]+|LAYOUT_COLLISION_DISTANCE)$/);
+      }
+    }
+    // The revealed hydrogen's length and clearance, and the collision distance.
+    expect(scaled).toBeGreaterThanOrEqual(3);
+  });
 });
 
 /** A finished layout as `placementOfLayout` reads it, as `readProjection` builds it. */
