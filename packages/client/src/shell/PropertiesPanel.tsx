@@ -35,12 +35,13 @@
 import { useState } from "react";
 import type { ReactElement, ReactNode } from "react";
 
-import { normalizeElementInput } from "@starter/chem-core";
+import { atomNumbering, locantOf, normalizeElementInput } from "@starter/chem-core";
 import type { Atom, Bond } from "@starter/chem-core";
 import {
   BOND_ORDER_VALUES,
   BOND_STEREO_VALUES,
   DOUBLE_BOND_SIDE_VALUES,
+  MAX_LOCANT_LENGTH,
 } from "@starter/shared";
 
 import {
@@ -246,6 +247,8 @@ function AtomProperties({ atom }: { readonly atom: Atom }): ReactElement {
         />
       </div>
 
+      <LocantField atom={atom} />
+
       <Field
         label="Display label"
         hint="Cosmetic only — valence and formula still use the element. A labelled atom cannot be written to a molfile, so Clean up structure will refuse."
@@ -268,6 +271,77 @@ function AtomProperties({ atom }: { readonly atom: Atom }): ReactElement {
         />
       </Field>
     </div>
+  );
+}
+
+/**
+ * The atom's explicit locant (decisions 142 and 169), kept on the DOCUMENT so
+ * every panel of the figure numbers the atom the same way.
+ *
+ * Three states, because `""` is a value and not a clear: no explicit locant
+ * (the field is blank and its placeholder shows what the sugar and amino-acid
+ * rules derive), an explicit one (typed), and a hidden one (`""`, which stops
+ * a derived number being drawn). Emptying the field returns to the derived
+ * number; the button beside it hides or shows. Each change is one undo entry
+ * through `setAtomLocant`.
+ */
+function LocantField({ atom }: { readonly atom: Atom }): ReactElement {
+  const molecule = useEditorStore((state) => state.document.molecule);
+  const locants = useEditorStore((state) => state.document.locants);
+  const explicit =
+    locants !== undefined && Object.hasOwn(locants, atom.id) ? locants[atom.id] : undefined;
+  // The rules' number alone, without the explicit map: it is what the field
+  // falls back to, so it is what the placeholder promises.
+  const derived = locantOf(atomNumbering(molecule), atom.id);
+  const hidden = explicit === "";
+  const hint = hidden
+    ? "Hidden: no number is drawn on this atom."
+    : derived === undefined
+      ? "Blank leaves the atom unnumbered."
+      : `Blank uses the derived number, ${derived}.`;
+
+  const setLocant = (next: string | undefined): void => {
+    editorStore.getState().setAtomLocant(atom.id, next);
+  };
+
+  return (
+    <Field label="Locant" hint={hint}>
+      <div className="flex gap-1">
+        <input
+          type="text"
+          data-shell="locant-field"
+          className={cn(inputClass, "min-w-0 flex-1")}
+          key={`${atom.id}:locant:${explicit ?? ""}`}
+          defaultValue={explicit ?? ""}
+          placeholder={hidden ? "hidden" : (derived ?? "none")}
+          maxLength={MAX_LOCANT_LENGTH}
+          onBlur={(event) => {
+            const raw = event.target.value.trim();
+            event.target.value = raw;
+            if (raw === "") {
+              // Blank means "derived" — but a hidden locant already shows a
+              // blank field, and leaving it must not quietly un-hide it.
+              if (explicit !== undefined && !hidden) setLocant(undefined);
+              return;
+            }
+            if (raw !== explicit) setLocant(raw);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+          }}
+        />
+        {hidden || derived !== undefined || explicit !== undefined ? (
+          <button
+            type="button"
+            data-shell="locant-visibility"
+            className="border-input hover:bg-muted h-8 shrink-0 rounded-md border px-2 text-xs"
+            onClick={() => setLocant(hidden ? undefined : "")}
+          >
+            {hidden ? "Show" : "Hide"}
+          </button>
+        ) : null}
+      </div>
+    </Field>
   );
 }
 

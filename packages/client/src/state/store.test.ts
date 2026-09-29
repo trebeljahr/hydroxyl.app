@@ -11,9 +11,11 @@
  */
 
 import {
+  atomNumbering,
   benzene,
   buildMolecule,
   carbohydrates,
+  locantOf,
   readMolblock,
   requireAtom,
   type AtomId,
@@ -971,6 +973,38 @@ describe("explicit locants ride in the document", () => {
     expect(store.getState().document.locants).toBe(locants);
     store.getState().applyMoleculeEdit("Delete", (mol) => guardedOps.removeAtoms(mol, [c1, c2]));
     expect(Object.hasOwn(store.getState().document, "locants")).toBe(false);
+  });
+
+  it("sets, hides and clears one atom's locant, one undo entry each", () => {
+    const { store, c1, c2 } = glucoseStore();
+    const entries = store.getState().history.past.length;
+    store.getState().setAtomLocant(c1, "C-1");
+    // Unchanged: `setAtomLocant` hands the same document back, so no step.
+    store.getState().setAtomLocant(c1, "C-1");
+    // `""` is a value: it hides the derived locant rather than clearing.
+    store.getState().setAtomLocant(c2, "");
+    store.getState().setAtomLocant(c1, undefined);
+    const state = store.getState();
+    expect(state.document.locants).toEqual({ [c2]: "" });
+    expect(state.history.past.slice(entries).map((entry) => entry.label)).toEqual([
+      "Set locant",
+      "Hide locant",
+      "Clear locant",
+    ]);
+    const numbering = atomNumbering(state.document.molecule, state.document.locants);
+    expect(locantOf(numbering, c1)).toBe("1");
+    expect(locantOf(numbering, c2)).toBeUndefined();
+
+    state.undo();
+    expect(store.getState().document.locants).toEqual({ [c1]: "C-1", [c2]: "" });
+  });
+
+  it("ignores an atom that is gone, as a field committing on blur after a delete would", () => {
+    const { store } = glucoseStore();
+    const before = store.getState().document;
+    store.getState().setAtomLocant("a999", "9");
+    store.getState().setAtomLocant("constructor", "9");
+    expect(store.getState().document).toBe(before);
   });
 });
 

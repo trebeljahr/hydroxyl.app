@@ -33,6 +33,7 @@ import {
   attachGroupToAtom as coreAttachGroupToAtom,
   attachRingToAtom as coreAttachRingToAtom,
   cycleBondOrder as coreCycleBondOrder,
+  cycliseSugar as coreCycliseSugar,
   duplicateFragment as coreDuplicateFragment,
   extractFragment as coreExtractFragment,
   flipBond as coreFlipBond,
@@ -41,6 +42,7 @@ import {
   insertFragment as coreInsertFragment,
   invertStereocentre as coreInvertStereocentre,
   mergeAtoms as coreMergeAtoms,
+  openRing as coreOpenRing,
   removeAtoms as coreRemoveAtoms,
   removeBonds as coreRemoveBonds,
   rotateAtoms as coreRotateAtoms,
@@ -201,6 +203,15 @@ export const guardedOps = {
   /** The functional-group tool's one edit. Mints the group's atoms and the
    *  linking bond, so it belongs to the same class as the ring gestures. */
   attachGroupToAtom: guard("attachGroupToAtom", coreAttachGroupToAtom),
+
+  /**
+   * The ring-chain edit's two directions, called by the sugar palette
+   * commands (decision 169). `cycliseSugar` mints the ring bond and
+   * `openRing` rebuilds the bond records around the old anomeric carbon, so
+   * both belong to the class that must never read a proxy.
+   */
+  cycliseSugar: guard("cycliseSugar", coreCycliseSugar),
+  openRing: guard("openRing", coreOpenRing),
 
   /**
    * Written out rather than wrapped, because BOTH arguments are molecules —

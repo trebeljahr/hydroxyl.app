@@ -9,7 +9,8 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { benzene, buildMolecule } from "@starter/chem-core";
+import { benzene, buildMolecule, carbohydrates, readMolblock } from "@starter/chem-core";
+import { dictionaryEntryById } from "@starter/chem-core/dictionary";
 import { createDocument } from "@starter/shared";
 
 import { handleEditorKeyDown } from "@/editor/useKeyBindings";
@@ -143,6 +144,78 @@ describe("PropertiesPanel — an atom", () => {
     render(<PropertiesPanel />);
     select(["a1"]);
     expect(screen.queryByText(/aromatic/i)).toBeNull();
+  });
+});
+
+describe("PropertiesPanel — a locant", () => {
+  /** Open-chain D-glucose, with its C1 selected. */
+  function glucoseC1(): string {
+    const molecule = readMolblock(dictionaryEntryById("aldehydo-d-glucose")!.molblock).molecule;
+    act(() => {
+      editorStore
+        .getState()
+        .openDocument(createDocument({ molecule, now: "2024-01-01T00:00:00.000Z" }));
+    });
+    const c1 = carbohydrates(molecule)[0]!.backbone[0]!;
+    select([c1]);
+    return c1;
+  }
+
+  const locants = () => editorStore.getState().document.locants;
+
+  it("offers the derived number, sets an explicit one, and clears back to it", () => {
+    render(<PropertiesPanel />);
+    const c1 = glucoseC1();
+    const input = field("Locant");
+    expect(input.value).toBe("");
+    expect(input.placeholder).toBe("1");
+    expect(screen.getByText("Blank uses the derived number, 1.")).toBeTruthy();
+
+    act(() => {
+      fireEvent.change(input, { target: { value: " 1′ " } });
+      fireEvent.blur(input);
+    });
+    expect(locants()).toEqual({ [c1]: "1′" });
+    expect(field("Locant").value).toBe("1′");
+
+    act(() => {
+      fireEvent.change(field("Locant"), { target: { value: "" } });
+      fireEvent.blur(field("Locant"));
+    });
+    expect(locants()).toBeUndefined();
+
+    act(() => {
+      editorStore.getState().undo();
+    });
+    expect(locants()).toEqual({ [c1]: "1′" });
+  });
+
+  it("hides and shows a derived number with the button, without un-hiding on blur", () => {
+    render(<PropertiesPanel />);
+    const c1 = glucoseC1();
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Hide" }));
+    });
+    expect(locants()).toEqual({ [c1]: "" });
+    expect(field("Locant").placeholder).toBe("hidden");
+
+    // A blank field is how a hidden locant looks, so leaving it changes nothing.
+    act(() => {
+      fireEvent.blur(field("Locant"));
+    });
+    expect(locants()).toEqual({ [c1]: "" });
+
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Show" }));
+    });
+    expect(locants()).toBeUndefined();
+  });
+
+  it("offers no hide button on an atom nothing numbers", () => {
+    render(<PropertiesPanel />);
+    select(["a1"]);
+    expect(field("Locant").placeholder).toBe("none");
+    expect(screen.queryByRole("button", { name: "Hide" })).toBeNull();
   });
 });
 

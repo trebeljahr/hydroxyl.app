@@ -116,6 +116,22 @@ import {
   clearStereoGroup,
   markStereoGroup,
 } from "./stereo-groups";
+import {
+  ANOMERS,
+  OPEN_RING_ID,
+  OPEN_RING_KEYWORDS,
+  OPEN_RING_TITLE,
+  SUGAR_RING_FORMS,
+  canCyclise,
+  canOpenRing,
+  cycliseCommandId,
+  cycliseDisabledReason,
+  cycliseKeywords,
+  cycliseSelectedSugar,
+  cycliseTitle,
+  openRingDisabledReason,
+  openSelectedSugarRing,
+} from "./sugar";
 
 export type CommandGroup =
   | "file"
@@ -1238,6 +1254,37 @@ const STRUCTURE_COMMANDS: readonly Command[] = [
       canClearStereoGroup(state) ? undefined : NOTHING_TO_CLEAR_REASON,
     run: (store) => {
       clearStereoGroup(store);
+    },
+  },
+  // The ring-chain edit, decision 169: one row per ring form and anomer, since
+  // chem-core requires the anomer (decision 143) and a row is how it is stated
+  // without a default, plus the inverse. Palette-only for decision 89's reason.
+  // Generated from the two lists in `./sugar`, whose word tables are
+  // `Record`-total over the same unions.
+  ...SUGAR_RING_FORMS.flatMap((form) =>
+    ANOMERS.map(
+      (anomer): Command => ({
+        id: cycliseCommandId(form, anomer),
+        title: cycliseTitle(form, anomer),
+        keywords: [...cycliseKeywords(form, anomer)],
+        group: "structure",
+        enabled: (state) => canCyclise(state, form),
+        disabledReason: (state) => cycliseDisabledReason(state, form),
+        run: (store) => {
+          cycliseSelectedSugar(store, form, anomer);
+        },
+      }),
+    ),
+  ),
+  {
+    id: OPEN_RING_ID,
+    title: OPEN_RING_TITLE,
+    keywords: [...OPEN_RING_KEYWORDS],
+    group: "structure",
+    enabled: canOpenRing,
+    disabledReason: openRingDisabledReason,
+    run: (store) => {
+      openSelectedSugarRing(store);
     },
   },
 ];

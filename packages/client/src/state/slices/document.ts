@@ -37,6 +37,7 @@ import {
   DISPLAY_FLAG_KEYS,
   createPanel,
   pruneLocants,
+  setAtomLocant as withAtomLocant,
   touchDocument,
   withFigureLayout,
   withLocants,
@@ -519,6 +520,14 @@ export function createDocumentSlice(
         const next = withFigureLayout(before, columns === null ? null : { columns });
         if ((next.figure?.columns ?? null) === (before.figure?.columns ?? null)) return;
         commitDocument(columns === null ? "Reset figure columns" : "Set figure columns", next);
+      },
+
+      setAtomLocant(atomId, locant) {
+        const before = get().document;
+        if (!Object.hasOwn(before.molecule.atoms, atomId)) return;
+        const label =
+          locant === undefined ? "Clear locant" : locant === "" ? "Hide locant" : "Set locant";
+        commitDocument(label, withAtomLocant(before, atomId, locant));
       },
 
       beginTransaction(label) {

@@ -302,6 +302,14 @@ export interface DocumentSlice {
   movePanel(id: PanelId, delta: -1 | 1): void;
   /** Panels per row in the exported figure; null returns to the default. */
   setFigureColumns(columns: number | null): void;
+  /**
+   * One atom's explicit locant, as one undo entry (decisions 142 and 169): a
+   * string sets it, `""` hides the locant the rules would derive, `undefined`
+   * clears it back to the derived one. Records nothing when the value is
+   * unchanged or the atom is gone — a field can commit on blur after its atom
+   * was deleted under it.
+   */
+  setAtomLocant(atomId: AtomId, locant: string | undefined): void;
 
   beginTransaction(label: string): void;
   commitTransaction(): void;
