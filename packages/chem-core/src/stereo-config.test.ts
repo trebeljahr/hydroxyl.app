@@ -1511,7 +1511,11 @@ describe("chem-core exports", () => {
       readdirSync(join(srcDir, dir))
         .filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts") && f !== "index.ts")
         .map((f) => `${prefix}${f}`);
-    const modules = [...sourceFiles(".", ""), ...sourceFiles("projection", "projection/")];
+    const modules = [
+      ...sourceFiles(".", ""),
+      ...sourceFiles("projection", "projection/"),
+      ...sourceFiles("skeleton", "skeleton/"),
+    ];
     expect(modules).toContain("projection/engine.ts");
     const owners = new Map<string, string[]>();
     const declaration =
@@ -1542,6 +1546,8 @@ describe("chem-core exports", () => {
     expect(owners.get("project")).toEqual(["projection/engine.ts"]);
     expect(owners.get("readProjection")).toEqual(["projection/engine.ts"]);
     expect(owners.get("PlacedMark")).toEqual(["stereo-config.ts"]);
+    expect(owners.get("suggestSteroidSkeleton")).toEqual(["skeleton/steroid.ts"]);
+    expect(owners.get("skeletonFaces")).toEqual(["skeleton/table.ts"]);
 
     // The structure dictionary is the one deliberate exception: ~80 kB of
     // molblock text that only the insert box needs, so it is served from its

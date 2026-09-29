@@ -61,6 +61,12 @@
       "name": "17alpha-methyltestosterone",
       "smiles": "C[C@]12CCC(=O)C=C1CC[C@@H]3[C@@H]2CC[C@]4([C@H]3CC[C@]4(C)O)C",
       "source": "PubChem CID 6010, (8R,9S,10R,13S,14S,17S): C17 is a gem-disubstituted ring stereocentre"
+    },
+    {
+      "file": "cortisol.mol",
+      "name": "cortisol",
+      "smiles": "C[C@]12CCC(=O)C=C1CC[C@@H]3[C@@H]2[C@H](C[C@]4([C@H]3CC[C@@]4(C(=O)CO)O)C)O",
+      "source": "PubChem CID 5754, (8S,9S,10R,11S,13S,14S,17R): an 11beta substituent on ring C, and a pregnane side chain"
     }
   ]
 }
