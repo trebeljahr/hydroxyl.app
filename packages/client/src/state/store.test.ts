@@ -35,6 +35,7 @@ import {
   createDocument,
   defaultRepresentation,
   panelWithView,
+  projectionViewsEqual,
   type Panel,
   type SketchDocument,
 } from "@starter/shared";
@@ -1132,6 +1133,44 @@ describe("a panel's projection view rides in the document", () => {
     store.getState().abortTransaction();
     expect(store.getState().document).toBe(document);
     expect(panelOf(store, SKELETAL)).toBe(before);
+  });
+
+  it("leaves a drag back to its starting angle to the gesture: a commit records it, an abort does not", () => {
+    // What panelWithView's and PanelPatch.view's comments promise. A single
+    // update is compared by value against the panel as it is; a transaction
+    // is committed by document identity, as an atom dragged back to its
+    // pixel is (history.ts). So the store does NOT drop a full turn; the
+    // gesture sees it with projectionViewsEqual and aborts.
+    const { store } = glucoseViews();
+    store.getState().updatePanel(SKELETAL, { view: newman(60) });
+    const before = panelOf(store, SKELETAL);
+    const document = store.getState().document;
+    const past = store.getState().history.past.length;
+    const fullTurn = [68, 60, 120, 240, 359, 420];
+
+    store.getState().beginTransaction("Turn torsion");
+    for (const angle of fullTurn) store.getState().updatePanel(SKELETAL, { view: newman(angle) });
+    const final = panelOf(store, SKELETAL).view!;
+    // The same picture as the base, by value, but not the same panel.
+    expect(projectionViewsEqual(final, before.view!)).toBe(true);
+    expect(final).toEqual(before.view);
+    expect(panelOf(store, SKELETAL)).not.toBe(before);
+    store.getState().commitTransaction();
+    expect(store.getState().history.past).toHaveLength(past + 1);
+    store.getState().undo();
+    expect(store.getState().document).toBe(document);
+
+    // The gesture's own check, as editor-projection-commands-and-gestures
+    // must write it: equal by value, so abort, and nothing is recorded.
+    store.getState().beginTransaction("Turn torsion");
+    for (const angle of fullTurn) store.getState().updatePanel(SKELETAL, { view: newman(angle) });
+    if (projectionViewsEqual(panelOf(store, SKELETAL).view!, before.view!)) {
+      store.getState().abortTransaction();
+    } else {
+      store.getState().commitTransaction();
+    }
+    expect(store.getState().document).toBe(document);
+    expect(store.getState().history.past).toHaveLength(past);
   });
 
   it("keeps the view across a kind change and a caption edit", () => {

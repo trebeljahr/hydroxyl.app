@@ -257,9 +257,13 @@ export interface PanelPatch {
    * The panel's projection (decision 128): a view to draw, or `null` for the
    * plain drawing again; omitted, the view stays as it is. Compared by
    * canonical value, so a patch naming the picture the panel already shows —
-   * a re-click, a torsion dragged back to where it began — is a no-op and no
-   * undo step (decisions 159, 176). Build it OUTSIDE any immer recipe: the
-   * store refuses a draft, because the engine keys its caches on real values.
+   * a re-click, 370 after 10 — is a no-op and no undo step (decisions 159,
+   * 176). A TRANSACTION is not compared that way: a drag that returns to the
+   * angle it began from still commits one entry, because
+   * `commitTransaction` compares documents by identity. A gesture that ends
+   * where it began should abort instead. Build it OUTSIDE any immer recipe:
+   * the store refuses a draft, because the engine keys its caches on real
+   * values.
    */
   readonly view?: ProjectionView | null;
 }
