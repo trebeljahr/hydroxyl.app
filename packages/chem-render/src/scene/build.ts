@@ -25,7 +25,7 @@ import {
   stereoGroupTag,
 } from "@starter/chem-core";
 import type { FormulaPart } from "@starter/chem-core";
-import type { AtomId, BondId, Molecule } from "@starter/chem-core";
+import type { AtomId, BondId, DerivedNode, Molecule, ProjectedLayout } from "@starter/chem-core";
 
 import { aromaticCircleId, inscribedCircle } from "../bond/aromatic.js";
 import {
@@ -93,6 +93,13 @@ import { modelToPx } from "../style.js";
 import type { RenderStyle } from "../style.js";
 import { measurerFor, measureTextRun, textRunRect } from "../text/measurer.js";
 import { sceneBounds } from "./bounds.js";
+import {
+  derivedNodeLabel,
+  layoutDrawing,
+  projectedPrimitiveId,
+  projectedSource,
+} from "./projected.js";
+import type { LayoutDrawing } from "./projected.js";
 import type {
   CirclePrimitive,
   LinePrimitive,
@@ -198,6 +205,14 @@ export interface SceneBuildOptions {
   readonly locants?:
     | Readonly<Record<AtomId, string>>
     | ((atomId: AtomId) => string | undefined);
+  /**
+   * A projection of `mol` to draw INSTEAD of its drawn coordinates: chem-core's
+   * `project(mol, config, view)`, in model units, y up (scene/projected.ts).
+   * Positions and marks come from the layout; labels, hydrogen counts and
+   * stereo descriptors still come from `mol`, whose chemistry the layout only
+   * re-poses. Ignored by the two text views, which have no coordinates.
+   */
+  readonly layout?: ProjectedLayout;
 }
 
 /**
@@ -342,7 +357,7 @@ export function atomLabelPlacements(
  * carbon's label three times over.
  */
 function buildStructural(
-  mol: Molecule,
+  source: Molecule,
   style: RenderStyle,
   representation: StructuralRepresentation,
   options: SceneBuildOptions | undefined,
@@ -353,13 +368,26 @@ function buildStructural(
 } {
   const primitives: ScenePrimitive[] = [];
 
+  // A projection is drawn through every pass below from its layout's
+  // positions and marks (scene/projected.ts); its chemistry — labels,
+  // hydrogen counts, descriptors — is still `source`'s. Without a layout the
+  // two are one molecule and nothing below changes.
+  const drawing = options?.layout === undefined ? undefined : layoutDrawing(source, options.layout);
+  const mol = drawing?.geometry ?? source;
+
   const centres = new Map<AtomId, ScenePoint>();
   for (const atomId of mol.atomIds) {
     const atom = getAtom(mol, atomId);
-    if (atom === undefined) continue;
+    if (atom === undefined || drawing?.hidden.has(atomId) === true) continue;
     centres.set(atomId, modelToPx(style, atom.pos));
   }
   const placements = atomLabelPlacements(mol, style, representation);
+  if (drawing !== undefined) {
+    for (const atomId of drawing.hidden) placements.delete(atomId);
+    for (const [atomId, node] of drawing.condensedAt) {
+      placements.set(atomId, condensedPlacement(mol, atomId, node, centres, style));
+    }
+  }
 
   const circles = representation.flags.aromaticCircles
     ? aromaticCirclePrimitives(mol, style, centres)
@@ -399,6 +427,27 @@ function buildStructural(
     // "does it have a charge" — would be a place the two could disagree, and
     // the symptom is an atom drawn twice or not at all.
     const placement = placements.get(atomId);
+
+    // A projection's condensed group, sitting on the atom it is attached by:
+    // the group's word, sourced to the group so a click selects every atom
+    // in it, and nothing of the atom's own (its dots belong to a label the
+    // group replaced).
+    const condensed = drawing?.condensedAt.get(atomId);
+    if (condensed !== undefined && drawing !== undefined && placement !== undefined) {
+      const run: TextRunPrimitive = {
+        id: projectedPrimitiveId(condensed.id, "label"),
+        source: projectedSource(drawing.layout, condensed),
+        type: "textRun",
+        origin: placement.run.origin,
+        spans: placement.run.spans,
+        fontFamily: style.fontFamily,
+        fontSizePx: placement.run.fontSizePx,
+        fill: { color: style.colors.label },
+        anchor: placement.run.anchor,
+      };
+      primitives.push(run);
+      continue;
+    }
 
     if (placement === undefined) {
       // The dot marks a BARE vertex only. A labelled atom must never also
@@ -484,11 +533,31 @@ function buildStructural(
     }
   }
 
-  const hydrogens = phantomHydrogens(mol, style, representation, placements);
+  // A projection places some hydrogens itself (a Fischer arm's H) and folds
+  // others into a group's word ("CH2OH"); the explicit-H view must not fan a
+  // second set off those atoms, nor off an atom the projection does not show.
+  // Filtered AFTER the fan, so a dropped host's hydrogens still took part in
+  // the fan's crowding search and may have turned a kept neighbour's; the
+  // exact fix is a skip set inside `phantomHydrogens`, left for the pass
+  // `explicit-h-publication-crowding` (decision 134) is reworking.
+  const fanned = phantomHydrogens(mol, style, representation, placements);
+  const hydrogens =
+    drawing === undefined
+      ? fanned
+      : fanned.filter(
+          (h) =>
+            !drawing.hidden.has(h.hostAtomId) &&
+            !drawing.condensedAt.has(h.hostAtomId) &&
+            !drawing.hydrogenHosts.has(h.hostAtomId),
+        );
   pushHydrogenPrimitives(primitives, style, hydrogens, centres, placements, drawn);
+  const projectedHydrogens =
+    drawing === undefined ? [] : pushProjectedHydrogens(primitives, style, drawing, centres, placements, drawn);
 
+  // Chemistry from the SOURCE molecule: a descriptor is the configuration's,
+  // which a projection re-poses and never changes; positions from `centres`.
   const { requests, prefixText } = annotationRequests(
-    mol,
+    source,
     representation,
     centres,
     corridors,
@@ -540,10 +609,10 @@ function buildStructural(
       vertexDots.push({ centre, radius: style.atomDotRadiusPx });
     }
   }
-  for (const hydrogen of hydrogens) {
-    obstacles.push(...hydrogen.placement.obstacles);
-    obstacles.push(...glyphBandObstacles(hydrogen.placement.run, style));
-    glyphInk.push(...hydrogen.placement.inkBoxes);
+  for (const placement of [...hydrogens.map((h) => h.placement), ...projectedHydrogens]) {
+    obstacles.push(...placement.obstacles);
+    obstacles.push(...glyphBandObstacles(placement.run, style));
+    glyphInk.push(...placement.inkBoxes);
   }
   // Decision 65: a FILLED shape is ink like a glyph — a solid wedge is a
   // black triangle, and a locant printed inside one is as unreadable as one
@@ -833,6 +902,90 @@ function pushHydrogenPrimitives(
     };
     primitives.push(run);
   }
+}
+
+/**
+ * A projection's condensed group, placed as the label of the atom it is
+ * attached by: that atom's symbol on the node, the rest of the word on the
+ * side the group was spelled for. Bonds meeting the atom are then trimmed
+ * against the whole word by the ordinary ray-exit rule.
+ */
+function condensedPlacement(
+  mol: Molecule,
+  atomId: AtomId,
+  node: DerivedNode,
+  centres: ReadonlyMap<AtomId, ScenePoint>,
+  style: RenderStyle,
+): AtomLabelPlacement | undefined {
+  const centre = centres.get(atomId);
+  if (centre === undefined) return undefined;
+  const neighbourCentres = neighborIds(mol, atomId).flatMap((id) => {
+    const point = centres.get(id);
+    return point === undefined ? [] : [point];
+  });
+  const { label, side } = derivedNodeLabel(node, getAtom(mol, atomId)?.element ?? "C");
+  return placeAtomLabel({ atomId, centre, neighbourCentres, label, style, side });
+}
+
+/**
+ * A projection's synthetic hydrogens (a Fischer arm's H): a stem from the host
+ * and an "H", exactly as the explicit-H view draws its derived ones, but at
+ * the layout's position and sourced to the layout node. Returns their label
+ * placements, which the annotation pass must see as ink.
+ */
+function pushProjectedHydrogens(
+  primitives: ScenePrimitive[],
+  style: RenderStyle,
+  drawing: LayoutDrawing,
+  centres: ReadonlyMap<AtomId, ScenePoint>,
+  placements: ReadonlyMap<AtomId, AtomLabelPlacement | undefined>,
+  drawn: AnnotationSegment[],
+): AtomLabelPlacement[] {
+  const placed: AtomLabelPlacement[] = [];
+  const positions = drawing.layout.positions;
+  for (const node of drawing.hydrogens) {
+    const hostCentre = centres.get(node.host);
+    const pos = Object.hasOwn(positions, node.id) ? positions[node.id] : undefined;
+    if (hostCentre === undefined || pos === undefined) continue;
+    const centre = modelToPx(style, pos);
+    const { label, side } = derivedNodeLabel(node, "H");
+    const placement = placeAtomLabel({
+      atomId: node.id,
+      centre,
+      neighbourCentres: [hostCentre],
+      label,
+      style,
+      side,
+    });
+    const source = projectedSource(drawing.layout, node);
+    const axis = bondAxis(hostCentre, centre, placements.get(node.host), placement, style.bondLineWidthPx);
+    if (axis !== undefined) {
+      const stem: LinePrimitive = {
+        id: projectedPrimitiveId(node.id, "line"),
+        source,
+        type: "line",
+        a: axis.a,
+        b: axis.b,
+        stroke: { color: style.colors.bond, width: style.bondLineWidthPx },
+      };
+      primitives.push(stem);
+      drawn.push({ a: axis.a, b: axis.b, halfWidth: style.bondLineWidthPx / 2 });
+    }
+    const run: TextRunPrimitive = {
+      id: projectedPrimitiveId(node.id, "label"),
+      source,
+      type: "textRun",
+      origin: placement.run.origin,
+      spans: placement.run.spans,
+      fontFamily: style.fontFamily,
+      fontSizePx: placement.run.fontSizePx,
+      fill: { color: style.colors.label },
+      anchor: placement.run.anchor,
+    };
+    primitives.push(run);
+    placed.push(placement);
+  }
+  return placed;
 }
 
 /**

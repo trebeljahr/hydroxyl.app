@@ -64,6 +64,8 @@ interface SourceAttrs {
   readonly "data-ring-atom-ids"?: string;
   readonly "data-hydrogen-host"?: string;
   readonly "data-hydrogen-index"?: string;
+  readonly "data-projected-node"?: string;
+  readonly "data-projected-atom-ids"?: string;
   readonly "data-decoration"?: string;
 }
 
@@ -297,6 +299,16 @@ function sourceAttrs(id: string, source: SceneSource): SourceAttrs {
       return {
         "data-primitive-id": id,
         "data-ring-atom-ids": source.atomIds.join(" "),
+      };
+    case "projected":
+      // A projection's derived node (a Fischer's synthetic H, a condensed
+      // CH2OH). NOT `data-atom-id`: the pointer layer sizes an atom's pick
+      // target from those, and a whole condensed word filed under one atom
+      // would swallow its neighbours' clicks. Its atoms travel beside it.
+      return {
+        "data-primitive-id": id,
+        "data-projected-node": source.nodeId,
+        "data-projected-atom-ids": source.atomIds.join(" "),
       };
     case "decoration":
       // No model entity to point at; the flag exists so a consumer walking the

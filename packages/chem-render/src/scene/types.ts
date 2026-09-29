@@ -51,6 +51,14 @@ export interface ScenePoint {
  * switch on `SceneSource` a compile error until it is handled, which is how
  * the SVG serialiser and the canvas layer learned about it.
  *
+ * `projected` is a node a PROJECTION drew that is not one atom: a Fischer
+ * arm's synthetic hydrogen (`a3.H`), a condensed "CH2OH" (`a11.CH2OH`). It
+ * names the layout node and every source atom the node stands for — the
+ * layout's provenance (decision 147) — so a click on "CH2OH" selects C6 AND
+ * O6, and a synthetic H selects its centre. Not the `atom` arm, for the
+ * reason `hydrogen` is not: filing a condensed label under one atom would
+ * grow that atom's pick target to the whole word and select half the group.
+ *
  * `decoration` covers the things that belong to no model entity — the
  * background rect, a frame, the glyph run of a sum formula. Hit-testing
  * ignores them, and they must never be handed an atom or bond id just to make
@@ -64,6 +72,11 @@ export type SceneSource =
       readonly kind: "hydrogen";
       readonly hostAtomId: AtomId;
       readonly index: number;
+    }
+  | {
+      readonly kind: "projected";
+      readonly nodeId: string;
+      readonly atomIds: readonly AtomId[];
     }
   | { readonly kind: "decoration" };
 

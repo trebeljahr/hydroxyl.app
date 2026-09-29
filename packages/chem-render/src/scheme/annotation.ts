@@ -434,6 +434,13 @@ export function sceneAnchorPlacement(
       case "hydrogen":
         atoms.add(source.hostAtomId);
         break;
+      case "projected":
+        // A node standing for ONE atom draws it (a condensed CH3, or a
+        // synthetic H, whose one atom is its centre). A condensed group of
+        // several draws none of them anywhere an arrow could point: the O of
+        // a Fischer's "CH2OH" is a letter in a word, not a place.
+        if (source.atomIds.length === 1) atoms.add(source.atomIds[0]!);
+        break;
       case "decoration":
         break;
       default: {

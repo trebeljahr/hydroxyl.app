@@ -109,6 +109,14 @@ export interface AtomLabelInput {
   readonly derivedHydrogenDirections?: readonly ScenePoint[];
   readonly label: ComposedLabel;
   readonly style: RenderStyle;
+  /**
+   * The orientation, when the caller already knows it. A projection's
+   * condensed group arrives spelled for the side it hangs on — "CH2OH" on a
+   * Fischer's right arm, "HOH2C" on its left — and choosing a side here from
+   * the bonds could put "H2OH" before a "C" that was meant to lead. Omitted,
+   * the side follows the hydrogens as for any atom.
+   */
+  readonly side?: LabelSide;
 }
 
 export interface AtomLabelPlacement {
@@ -694,11 +702,11 @@ export function placeAtomLabel(input: AtomLabelInput): AtomLabelPlacement {
   const free = freeDirection(centre, input.neighbourCentres);
   const hydrogenSide =
     label.hydrogens.length > 0
-      ? chooseHydrogenSide(bondDirections, free, label.element)
+      ? (input.side ?? chooseHydrogenSide(bondDirections, free, label.element))
       : undefined;
   // With no hydrogen block the two orientations produce the same run, so the
   // choice is arbitrary and must not be reported as if it meant something.
-  const side: LabelSide = hydrogenSide ?? "east";
+  const side: LabelSide = hydrogenSide ?? input.side ?? "east";
 
   const spans = labelSpans(label, side);
   const symbolIndex = symbolSpanIndex(label, side);

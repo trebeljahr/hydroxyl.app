@@ -98,6 +98,13 @@ function sourceAttr(source: SceneSource): string {
       // else. The set IS the ring's name: chem-core gives a ring no id of its
       // own, only an index into a list whose order is insertion order.
       return attr("data-ring", source.atomIds.join(" "));
+    case "projected":
+      // The layout node, and the atoms it stands for: a hit on "CH2OH"
+      // resolves to both of its atoms without re-deriving the provenance.
+      return (
+        attr("data-projected-node", source.nodeId) +
+        attr("data-projected-atoms", source.atomIds.join(" "))
+      );
     case "decoration":
       // No model entity to point at; the flag exists so hit-testing can skip it.
       return attr("data-decoration", "true");

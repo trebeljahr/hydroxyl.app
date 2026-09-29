@@ -26,8 +26,18 @@ import {
   canCondense,
   isKnownElement,
   lonePairCount,
+  project,
+  stereoConfig,
 } from "@starter/chem-core";
-import type { AtomId, LonePairReason, Molecule } from "@starter/chem-core";
+import type {
+  AtomId,
+  LonePairReason,
+  Molecule,
+  ProjectedLayout,
+  ProjectionUnavailableReason,
+  ProjectionView,
+  StereoConfig,
+} from "@starter/chem-core";
 
 import { labelOverride } from "./label/visibility.js";
 import { isTextViewKind, VIEW_KINDS } from "./representation.js";
@@ -161,6 +171,104 @@ export function representationAvailability(
 
   return AVAILABLE;
 }
+
+/**
+ * A panel with a projection (decision 128) can be drawn, needs a choice, or
+ * cannot be drawn — the three-valued answer `representationAvailability`
+ * extends to. `needsChoice` is not a failure: three rings and a ring view
+ * that names none of them is a question for the chemist, with the
+ * candidates to offer, never an empty cell.
+ */
+export type ProjectedViewAvailability =
+  | { readonly status: "available"; readonly layout: ProjectedLayout }
+  | {
+      readonly status: "needsChoice";
+      readonly message: string;
+      /** Complete ring atom-id sets, ready to store as the frame's ring. */
+      readonly candidates: readonly (readonly AtomId[])[];
+    }
+  | {
+      readonly status: "unavailable";
+      readonly reason: UnavailableReason | ProjectionUnavailableReason | "text-view";
+      readonly message: string;
+      readonly atomIds: readonly AtomId[];
+    };
+
+/**
+ * Whether `kind` can be drawn in `view` for `mol`, and the layout to draw it
+ * with when it can (hand it to `buildScene` as `options.layout`).
+ *
+ * The representation's own verdict comes first, for the reason the checks
+ * above run most-general first: a molecule with an "R" on it is not "a Fischer
+ * cannot be drawn", it is a structure nothing can be computed for. A text view
+ * has no coordinates to project. `config` defaults to the configuration the
+ * drawing states.
+ */
+export function projectedViewAvailability(
+  mol: Molecule,
+  kind: ViewKind,
+  view: ProjectionView,
+  config?: StereoConfig,
+): ProjectedViewAvailability {
+  const base = representationAvailability(mol, kind);
+  if (!base.available) {
+    return { status: "unavailable", reason: base.reason, message: base.message, atomIds: base.atomIds };
+  }
+  if (isTextViewKind(kind)) {
+    return {
+      status: "unavailable",
+      reason: "text-view",
+      message: "A formula has no drawing to project; choose a structural view.",
+      atomIds: [],
+    };
+  }
+  const result = project(mol, config ?? stereoConfig(mol), view);
+  switch (result.kind) {
+    case "available":
+      return { status: "available", layout: result.layout };
+    case "needsChoice":
+      return {
+        status: "needsChoice",
+        message: `${result.candidates.length} rings fit this view; choose the one to draw.`,
+        candidates: result.candidates,
+      };
+    case "unavailable":
+      return {
+        status: "unavailable",
+        reason: result.reason,
+        message: PROJECTION_MESSAGES[result.reason](mol, result.atomIds),
+        atomIds: result.atomIds,
+      };
+  }
+}
+
+/**
+ * One sentence per projection refusal, ready for the cell. A TOTAL mapping, so
+ * a reason chem-core adds is a compile error here rather than a blank cell.
+ */
+const PROJECTION_MESSAGES: Readonly<
+  Record<ProjectionUnavailableReason, (mol: Molecule, atomIds: readonly AtomId[]) => string>
+> = {
+  "empty-molecule": () => "Nothing has been drawn yet.",
+  "unknown-element": (mol, ids) =>
+    `${describe(mol, ids, "is")} not in the periodic table, so the configuration cannot be derived.`,
+  "missing-atom": () => "This view names an atom that has since been deleted; choose again.",
+  "missing-bond": () => "This view names a bond that has since been deleted; choose again.",
+  "repeated-atom": () => "The backbone lists an atom twice.",
+  "not-a-path": () => "The backbone atoms are not bonded one after another.",
+  "backbone-too-short": () => "A backbone needs at least three atoms.",
+  "backbone-in-ring": () => "The backbone runs through a ring, which a vertical chain cannot draw.",
+  "too-many-substituents": () => "A backbone atom has more than the two arms a cross offers.",
+  "substituent-too-large": () => "A substituent contains a ring, which cannot be written as a label.",
+  "no-ring": () => "There is no ring to draw in this view.",
+  "not-a-ring": () => "The chosen atoms are not one ring of this structure.",
+  "ring-size": () => "This view draws five- and six-membered rings only.",
+  "not-bonded": () => "The two atoms of the sighted bond are not bonded.",
+  "invalid-parameter": () => "A view angle is not a number.",
+  "config-mismatch": () => "The configuration belongs to a different structure.",
+  "id-conflict": () => "An atom id in this file clashes with a drawn label's id.",
+  "template-not-built": () => "This projection is not available yet.",
+};
 
 /** Every view, with its verdict — what a panel picker and the contact sheet
  *  both want, and cheaper than calling the above six times from a loop that
