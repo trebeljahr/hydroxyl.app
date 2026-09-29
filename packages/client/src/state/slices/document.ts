@@ -36,7 +36,9 @@ import { pruneSchemeAnnotations } from "@starter/chem-render";
 import {
   DISPLAY_FLAG_KEYS,
   createPanel,
+  panelWithView,
   pruneLocants,
+  prunePanelViews,
   setAtomLocant as withAtomLocant,
   touchDocument,
   withFigureLayout,
@@ -128,11 +130,20 @@ function sameApartFromModifiedAt(a: SketchDocument, b: SketchDocument): boolean 
 // ---------------------------------------------------------------------------
 // Panel helpers
 //
-// Panels are rebuilt field by field rather than spread, for the same reason
-// @starter/shared assembles them by hand: `caption` must be an ABSENT key when
-// there is none, never a key holding `undefined`. A document that carries
-// `{ caption: undefined }` stops being deep-equal to its own round trip, and
-// the undo entry that should have been a no-op becomes a step.
+// No panel here ever carries a key holding `undefined`: `caption` and `view`
+// are ABSENT when there is none, the rule @starter/shared assembles panels
+// by. A document that carries `{ caption: undefined }` stops being deep-equal
+// to its own round trip, and the undo entry that should have been a no-op
+// becomes a step.
+//
+// So a STORED panel may be spread — `touchDocument`'s argument: a spread
+// copies own keys, and absent optionals stay absent — and it must be, rather
+// than rebuilt from a list of the fields this file knows. The rebuild these
+// helpers used to do copied `id`, `representation` and `caption`, so the
+// first kind change after `Panel.view` arrived would have dropped the
+// panel's projection without a word. Only the field being changed is written
+// by hand, and an optional one goes through its own writer (`panelWithView`),
+// which omits rather than assigns `undefined`.
 // ---------------------------------------------------------------------------
 
 function displayEqual(
@@ -165,37 +176,45 @@ function mergeDisplay(
  * A kind change KEEPS the display flags. They are stored per panel so that
  * flipping between skeletal and Kekule and back does not lose the "show lone
  * pairs" the chemist turned on — see the note on `RepresentationDisplay` in
- * @starter/shared.
+ * @starter/shared. It keeps the projection `view` for the same reason (a
+ * Fischer drawn skeletal is the same Fischer drawn with explicit hydrogens,
+ * decision 128), even onto a text kind, where the panel reports that a
+ * formula has nothing to project rather than forgetting the view.
+ *
+ * The view is compared by canonical VALUE (`panelWithView`), not by
+ * reference: a view arrives as a fresh object from every click and every
+ * pointer frame, and one that draws the picture the panel already shows must
+ * not become an undo step (decision 159).
  */
 function patchPanel(panel: Panel, patch: PanelPatch): Panel {
   const kind = patch.kind ?? panel.representation.kind;
   const display = mergeDisplay(panel.representation.display, patch.display);
+  const viewed = patch.view === undefined ? panel : panelWithView(panel, patch.view);
   if (
     kind === panel.representation.kind &&
     displayEqual(display, panel.representation.display)
   ) {
-    return panel;
+    return viewed;
   }
   const representation: Representation = { kind, display };
-  const next: { -readonly [K in keyof Panel]: Panel[K] } = {
-    id: panel.id,
-    representation,
-  };
-  if (panel.caption !== undefined) next.caption = panel.caption;
-  return next;
+  return { ...viewed, representation };
 }
 
 function panelWithCaption(panel: Panel, caption: string | null): Panel {
   if (caption === null ? panel.caption === undefined : panel.caption === caption) {
     return panel;
   }
-  const next: { -readonly [K in keyof Panel]: Panel[K] } = {
-    id: panel.id,
-    representation: panel.representation,
-  };
   // Omitted, not assigned `undefined` — see the section header.
-  if (caption !== null) next.caption = caption;
-  return next;
+  const { caption: _previous, ...rest } = panel;
+  void _previous;
+  return caption === null ? rest : { ...rest, caption };
+}
+
+/** The undo label for a panel patch: a projection change reads as one. */
+function panelPatchLabel(before: Panel, after: Panel): string {
+  return before.representation === after.representation
+    ? "Change projection"
+    : "Change representation";
 }
 
 export interface DocumentSliceOptions {
@@ -386,7 +405,12 @@ export function createDocumentSlice(
         // reason (decision 142): a saved document never names an atom it does
         // not hold. The same map comes back when no numbered atom went.
         const locants = pruneLocants(before.document.locants, molecule);
-        const edited: SketchDocument = { ...before.document, molecule, annotations };
+        // A panel view keeps the atoms it names even when they are gone — the
+        // panel then says "choose again" — and only a torsion overlay's bond
+        // SET drops deleted members, in this same entry (decision 175). The
+        // same array comes back when no view named anything deleted.
+        const panels = prunePanelViews(before.document.panels, molecule);
+        const edited: SketchDocument = { ...before.document, molecule, annotations, panels };
         commit(label, {
           document: touchDocument(
             locants === before.document.locants ? edited : withLocants(edited, locants ?? null),
@@ -475,16 +499,22 @@ export function createDocumentSlice(
       },
 
       updatePanel(id, patch) {
+        // The view is read by chem-core's canonicaliser and later handed to
+        // the projection engine, which caches on real values: a draft slipped
+        // in from inside someone's recipe fails HERE, loudly, not as a cache
+        // that never hits. The panel itself is computed below, outside any
+        // recipe, and assigned wholesale by `commit`.
+        assertNotDraft(patch.view, "updatePanel(view)");
         const panels = get().document.panels;
-        let changed = false;
+        let label: string | undefined;
         const next = panels.map((panel) => {
           if (panel.id !== id) return panel;
           const patched = patchPanel(panel, patch);
-          if (patched !== panel) changed = true;
+          if (patched !== panel) label = panelPatchLabel(panel, patched);
           return patched;
         });
-        if (!changed) return;
-        commitPanels("Change representation", next);
+        if (label === undefined) return;
+        commitPanels(label, next);
       },
 
       setPanelCaption(id, caption) {

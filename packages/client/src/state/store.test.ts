@@ -15,15 +15,29 @@ import {
   benzene,
   buildMolecule,
   carbohydrates,
+  descriptorFromConfig,
   locantOf,
+  project,
   readMolblock,
   requireAtom,
+  stereoConfig,
   type AtomId,
+  type ChainView,
   type Molecule,
+  type ProjectionView,
+  type SightedBondView,
   type Vec2,
 } from "@starter/chem-core";
 import { dictionaryEntryById } from "@starter/chem-core/dictionary";
-import { SCHEMA_VERSION, createDocument, type SketchDocument } from "@starter/shared";
+import { projectedViewAvailability } from "@starter/chem-render";
+import {
+  SCHEMA_VERSION,
+  createDocument,
+  defaultRepresentation,
+  panelWithView,
+  type Panel,
+  type SketchDocument,
+} from "@starter/shared";
 import { createDraft, isDraft, produce } from "immer";
 import { describe, expect, it } from "vitest";
 import { guardedOps } from "./chem-guard";
@@ -1007,6 +1021,196 @@ describe("explicit locants ride in the document", () => {
     store.getState().setAtomLocant("a999", "9");
     store.getState().setAtomLocant("constructor", "9");
     expect(store.getState().document).toBe(before);
+  });
+});
+
+describe("a panel's projection view rides in the document", () => {
+  /**
+   * Open-chain D-glucose with a skeletal panel and a torsion overlay on its
+   * backbone bonds. C1 a6, C2 a5, C3 a4, C4 a3, C5 a2, C6 a1; the backbone
+   * bonds are b13-b17, and b15/b16 are the two at C3.
+   */
+  function glucoseViews(): { store: EditorStore; backbone: readonly AtomId[] } {
+    const now = fakeClock();
+    const molecule = readMolblock(dictionaryEntryById("aldehydo-d-glucose")!.molblock).molecule;
+    const backbone = carbohydrates(molecule)[0]!.backbone;
+    const overlay = panelWithView(
+      { id: "panel-torsions", representation: defaultRepresentation("skeletal") },
+      {
+        kind: "annotationOverlay",
+        template: "torsion",
+        frame: { bondIds: ["b13", "b14", "b15", "b16", "b17"] },
+        params: {},
+      },
+    );
+    const panels = [...createDocument({ molecule }).panels, overlay];
+    const document = createDocument({ molecule, panels, now: now() });
+    return { store: createEditorStore({ document, now }), backbone };
+  }
+
+  const SKELETAL = "panel-skeletal";
+
+  function fischer(backbone: readonly AtomId[]): ChainView {
+    return { kind: "chain", template: "fischer", frame: { backbone }, params: { top: "first" } };
+  }
+
+  /** Newman down C2–C3 (a5–a4), each end referenced to its hydroxyl O. */
+  function newman(torsionDeg: number): SightedBondView {
+    return {
+      kind: "sightedBond",
+      template: "newman",
+      frame: { front: "a5", back: "a4", frontReference: "a8", backReference: "a9" },
+      params: { torsionDeg, rollDeg: 0 },
+    };
+  }
+
+  function panelOf(store: EditorStore, id: string): Panel {
+    const found = store.getState().document.panels.find((p) => p.id === id);
+    if (!found) throw new Error(`no panel ${id}`);
+    return found;
+  }
+
+  it("sets a view as one undoable step that projects, and a re-click with an equal view is none", () => {
+    const { store, backbone } = glucoseViews();
+    store.getState().updatePanel(SKELETAL, { view: fischer(backbone) });
+    expect(store.getState().history.past).toHaveLength(1);
+    expect(store.getState().undoLabel()).toBe("Change projection");
+
+    // Computed outside the recipe and stored as a plain value the engine
+    // projects: D-glucose's four centres, (2R,3S,4R,5R), all placed.
+    const stored = panelOf(store, SKELETAL).view!;
+    expect(isDraft(stored)).toBe(false);
+    const mol = store.getState().document.molecule;
+    const result = project(mol, stereoConfig(mol), stored);
+    expect(result.kind).toBe("available");
+    if (result.kind === "available") {
+      expect(result.layout.unplaced).toEqual([]);
+      expect(result.layout.coverage.centres).toEqual(["a2", "a3", "a4", "a5"]);
+      const config = stereoConfig(mol);
+      const letters = config.centres.map((c) => descriptorFromConfig(mol, c, config)?.kind);
+      expect(letters).toEqual(["R", "R", "S", "R"]);
+    }
+
+    // The same picture again, as a fresh object: nothing is recorded, and the
+    // document is the same object, so nothing re-renders either.
+    const document = store.getState().document;
+    store.getState().updatePanel(SKELETAL, { view: structuredClone(fischer(backbone)) });
+    store.getState().updatePanel("panel-sum-formula", { view: null });
+    expect(store.getState().document).toBe(document);
+    expect(store.getState().history.past).toHaveLength(1);
+
+    store.getState().updatePanel(SKELETAL, { view: null });
+    expect(Object.hasOwn(panelOf(store, SKELETAL), "view")).toBe(false);
+    store.getState().undo();
+    expect(panelOf(store, SKELETAL).view).toBe(stored);
+  });
+
+  it("coalesces a 40-frame torsion drag into one entry, and an aborted one restores the panel by reference", () => {
+    const { store } = glucoseViews();
+    store.getState().updatePanel(SKELETAL, { view: newman(60) });
+    const before = panelOf(store, SKELETAL);
+    const past = store.getState().history.past.length;
+
+    store.getState().beginTransaction("Turn torsion");
+    for (let frame = 1; frame <= 40; frame += 1) {
+      store.getState().updatePanel(SKELETAL, { view: newman(60 + 8 * frame) });
+    }
+    store.getState().commitTransaction();
+    expect(store.getState().history.past).toHaveLength(past + 1);
+    expect(store.getState().undoLabel()).toBe("Turn torsion");
+    // 60 + 320 = 380 wraps past 360 and is stored canonical, as 20.
+    expect(panelOf(store, SKELETAL).view).toEqual(newman(20));
+    store.getState().undo();
+    expect(panelOf(store, SKELETAL)).toBe(before);
+
+    const document = store.getState().document;
+    store.getState().beginTransaction("Turn torsion");
+    for (let frame = 1; frame <= 12; frame += 1) {
+      store.getState().updatePanel(SKELETAL, { view: newman(60 - 5 * frame) });
+    }
+    expect((panelOf(store, SKELETAL).view as SightedBondView).params.torsionDeg).toBe(0);
+    store.getState().abortTransaction();
+    expect(store.getState().document).toBe(document);
+    expect(panelOf(store, SKELETAL)).toBe(before);
+  });
+
+  it("keeps the view across a kind change and a caption edit", () => {
+    const { store, backbone } = glucoseViews();
+    store.getState().updatePanel(SKELETAL, { view: fischer(backbone) });
+    const view = panelOf(store, SKELETAL).view;
+
+    store.getState().updatePanel(SKELETAL, { kind: "explicitH" });
+    expect(store.getState().undoLabel()).toBe("Change representation");
+    expect(panelOf(store, SKELETAL).view).toBe(view);
+    store.getState().setPanelCaption(SKELETAL, "D-glucose");
+    expect(panelOf(store, SKELETAL).view).toBe(view);
+    store.getState().setPanelCaption(SKELETAL, null);
+    expect(panelOf(store, SKELETAL).view).toBe(view);
+    expect(Object.hasOwn(panelOf(store, SKELETAL), "caption")).toBe(false);
+    // Even onto a formula, which has nothing to project and says so.
+    store.getState().updatePanel(SKELETAL, { kind: "sumFormula" });
+    expect(panelOf(store, SKELETAL).view).toBe(view);
+    const verdict = projectedViewAvailability(
+      store.getState().document.molecule,
+      "sumFormula",
+      view!,
+    );
+    expect(verdict.status === "unavailable" && verdict.reason).toBe("text-view");
+  });
+
+  it("degrades a view naming a deleted atom, prunes the overlay's bonds, all in the edit's one entry", () => {
+    const { store, backbone } = glucoseViews();
+    store.getState().updatePanel(SKELETAL, { view: fischer(backbone) });
+    const before = store.getState().document;
+    const fischerPanel = panelOf(store, SKELETAL);
+    const c3 = "a4";
+
+    store.getState().applyMoleculeEdit("Delete", (mol) => guardedOps.removeAtoms(mol, [c3]));
+    const after = store.getState().document;
+    expect(store.getState().history.past).toHaveLength(2);
+    // The Fischer keeps its backbone, C3 and all, and the panel says why it
+    // cannot draw it rather than throwing from inside a traversal.
+    expect(panelOf(store, SKELETAL)).toBe(fischerPanel);
+    const verdict = projectedViewAvailability(after.molecule, "skeletal", fischerPanel.view!);
+    expect(verdict.status).toBe("unavailable");
+    if (verdict.status === "unavailable") {
+      expect(verdict.reason).toBe("missing-atom");
+      expect(verdict.atomIds).toEqual([c3]);
+    }
+    // The overlay loses the two bonds that went with C3.
+    const overlay = panelOf(store, "panel-torsions").view;
+    expect(overlay?.kind === "annotationOverlay" && overlay.frame.bondIds).toEqual([
+      "b13",
+      "b14",
+      "b17",
+    ]);
+
+    store.getState().undo();
+    expect(store.getState().document).toBe(before);
+  });
+
+  it("leaves the panel list itself untouched by an edit that names nothing in a view", () => {
+    const { store, backbone } = glucoseViews();
+    store.getState().updatePanel(SKELETAL, { view: fischer(backbone) });
+    const panels = store.getState().document.panels;
+    // O6 on C6: drawn, but in no view's frame and on no overlay bond.
+    store.getState().applyMoleculeEdit("Delete", (mol) => guardedOps.removeAtoms(mol, ["a7"]));
+    expect(store.getState().document.panels).toBe(panels);
+  });
+
+  it("refuses a view handed in from inside an immer recipe", () => {
+    const { store, backbone } = glucoseViews();
+    store.getState().updatePanel(SKELETAL, { view: fischer(backbone) });
+    const document = store.getState().document;
+    expect(() =>
+      produce(document, (draft) => {
+        const drafted = draft.panels.find((p) => p.id === SKELETAL)!.view!;
+        store
+          .getState()
+          .updatePanel("panel-sum-formula", { view: drafted as unknown as ProjectionView });
+      }),
+    ).toThrow(/updatePanel\(view\) received an immer draft/);
+    expect(store.getState().document).toBe(document);
   });
 });
 
