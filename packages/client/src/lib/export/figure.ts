@@ -43,10 +43,10 @@
  * The same check covers every annotation a figure draws (decision 60):
  * `annotationSizeNotice` names which of them print small, and
  * `ANNOTATION_CHECKS` is total over `AnnotationKind` so a new one cannot ship
- * outside the check. Descriptors, group tags and the `rac-`/`rel-` prefix can
- * reach it today — nothing numbers atoms yet, so no figure draws a locant
- * (decision 37) and that part of the check is deliberately unexercised rather
- * than untested. Publication sets descriptors at exactly 8 pt (decision 54), so
+ * outside the check. Descriptors, group tags, the `rac-`/`rel-` prefix and
+ * locants reach it — locants since the figure draws the document's numbering
+ * (decision 168), which sets them at the descriptor's scale, so they go under
+ * on the same scaling the descriptors do. Publication sets descriptors at exactly 8 pt (decision 54), so
  * ANY scaling to fit takes them under while the labels, at 10 pt, still have
  * room; it sets a group tag at 6 pt (decision 123), so a tag is under the
  * minimum at EVERY width; and it sets the prefix at the descriptor's scale
@@ -74,7 +74,12 @@ import type {
 } from "@starter/chem-render";
 import type { SketchDocument } from "@starter/shared";
 
-import { STYLE_PRESET_TITLES, renderStyleFor, toRenderRepresentation } from "@/canvas/scene-bridge";
+import {
+  STYLE_PRESET_TITLES,
+  documentNumbering,
+  renderStyleFor,
+  toRenderRepresentation,
+} from "@/canvas/scene-bridge";
 import { fileBaseName } from "@/lib/io/save";
 import type { FigureExportSettings, FigureStyleChoice } from "@/state/types";
 
@@ -137,7 +142,10 @@ export function documentFigure(doc: SketchDocument, choice: FigureStyleChoice): 
       representation: toRenderRepresentation(panel.representation),
       caption: panel.caption,
     })),
-    { columns: doc.figure?.columns },
+    // The canvas's own numbering, from the canvas's own function (decision
+    // 168): every panel gets it, and each draws it only while its
+    // `showLocants` is on, exactly as that panel does on the canvas.
+    { columns: doc.figure?.columns, locants: documentNumbering(doc).locants },
   );
 }
 

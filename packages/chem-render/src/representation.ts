@@ -26,7 +26,8 @@ export interface DisplayFlags {
    * Draw each atom's CHEMICAL locant — "1", "4a", "C3′" — beside it.
    *
    * Real numbering only (decision 18). The numbers come from the caller
-   * (`SceneBuildOptions.locants`; later the document-level numbering map), and
+   * (`SceneBuildOptions.locants`, `FigureOptions.locants`; the editor passes
+   * chem-core's `atomNumbering` of the document, decision 168), and
    * an atom with no locant draws nothing. It NEVER falls back to the atom's
    * position in `atomIds` or to its id: ids come from a monotonic counter and
    * are never reused, so an unrelated deletion would renumber everything

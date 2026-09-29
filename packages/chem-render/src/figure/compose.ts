@@ -53,6 +53,7 @@ import { VIEW_KIND_TITLES } from "../representation.js";
 import type { Representation } from "../representation.js";
 import { sceneBounds } from "../scene/bounds.js";
 import { buildScene } from "../scene/build.js";
+import type { SceneBuildOptions } from "../scene/build.js";
 import type {
   PolygonPrimitive,
   RenderScene,
@@ -75,6 +76,16 @@ export interface FigurePanelSpec {
 export interface FigureOptions {
   /** Panels per row. Clamped to [1, panel count]; see `defaultFigureColumns`. */
   readonly columns?: number | undefined;
+  /**
+   * The document's locants, handed to EVERY panel's scene exactly as the
+   * canvas hands them to its own (`SceneBuildOptions.locants`), so the file
+   * and the editor draw the same numbers (decision 21). ONE map for the whole
+   * figure, never one per panel: the same atom carries the same number in
+   * each panel it appears in. A panel still draws them only while its own
+   * `showLocants` is on, so passing them changes nothing for a panel that
+   * has the flag off.
+   */
+  readonly locants?: SceneBuildOptions["locants"];
 }
 
 /**
@@ -208,7 +219,7 @@ export function composeFigure(
   // Pass 1: each panel's content and natural size.
   const natural = panels.map((panel, index) => {
     const letter = panelLetter(index);
-    const content = cellContent(mol, style, panel.representation, text);
+    const content = cellContent(mol, style, panel.representation, text, options.locants);
     const primitives =
       content.kind === "scene" ? content.scene.primitives : content.primitives;
     const ink = sceneBounds(primitives, inkStyle);
@@ -429,10 +440,12 @@ function cellContent(
   style: RenderStyle,
   representation: Representation,
   text: TextMetrics,
+  locants: FigureOptions["locants"],
 ): FigureCellContent {
   const availability = representationAvailability(mol, representation.kind);
   if (availability.available) {
-    return { kind: "scene", scene: buildScene(mol, style, representation) };
+    const options = locants === undefined ? undefined : { locants };
+    return { kind: "scene", scene: buildScene(mol, style, representation, options) };
   }
   return {
     kind: "unavailable",

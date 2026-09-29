@@ -9,7 +9,15 @@ import {
   butan2olWedged,
   ethanol,
 } from "@starter/chem-render";
-import { benzene, buildMolecule, emptyMolecule, linearChain, withStereoGroups } from "@starter/chem-core";
+import {
+  benzene,
+  buildMolecule,
+  emptyMolecule,
+  linearChain,
+  readMolblock,
+  withStereoGroups,
+} from "@starter/chem-core";
+import { dictionaryEntryById } from "@starter/chem-core/dictionary";
 import type { Molecule } from "@starter/chem-core";
 import { createDocument, createPanel, defaultPanelsFor } from "@starter/shared";
 import type { SketchDocument } from "@starter/shared";
@@ -558,6 +566,42 @@ describe("annotations below 8 pt (decision 60)", () => {
     );
     // A warning, not a refusal: the prefix is in the file.
     expect(figureSvgForFile(p)).toContain("rac-");
+  });
+
+  it("names the locants, now that the figure draws the document's numbering (decision 168)", () => {
+    // L-cysteine in three panels with locants on. Locants share the
+    // descriptor's scale, so the 10% scaling that takes descriptors to 7.2 pt
+    // takes these too.
+    const withLocants = (panel: ReturnType<typeof createPanel>) => ({
+      ...panel,
+      representation: {
+        ...panel.representation,
+        display: { ...panel.representation.display, showLocants: true },
+      },
+    });
+    const doc = createDocument({
+      molecule: readMolblock(dictionaryEntryById("l-cysteine")!.molblock).molecule,
+      stylePreset: "publication",
+      panels: [
+        withLocants(createPanel("skeletal", undefined, "publication")),
+        withLocants(createPanel("kekule", undefined, "publication")),
+        withLocants(createPanel("lewis", undefined, "publication")),
+      ],
+      now: NOW,
+    });
+    const natural = prepared(doc, custom(60)).size.naturalWidthCm;
+    expect(annotationSizeNotice(prepared(doc, custom(60)), custom(60))).toBeNull();
+    const settings = custom(natural * 0.9);
+    const p = prepared(doc, settings);
+    expect(p.size.scaled).toBe(true);
+    const notice = annotationSizeNotice(p, settings)!;
+    expect(notice.kinds).toEqual(["locant"]);
+    expect(notice.fontSizePt).toBeCloseTo(7.2, 6);
+    expect(notice.summary).toBe(
+      `Locants print at ${formatPt(notice.fontSizePt)} pt, below the 8 pt minimum ACS asks for in figures.`,
+    );
+    // A warning, not a refusal: the locants are in the file.
+    expect(figureSvgForFile(p)).toMatch(/:locant"[^>]*><tspan>1</);
   });
 
   it("says nothing when the figure draws no annotation, flag on or off", () => {

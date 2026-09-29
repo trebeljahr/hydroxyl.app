@@ -226,6 +226,7 @@ describe("the view options' states", () => {
   });
 
   it("keeps the genuinely disabled label in the muted ink, and the box unusable", () => {
+    // Genuinely disabled because benzene numbers no atom (decision 168).
     render(<RepresentationSwitcher />);
     openViewOptions();
     const locants = document.querySelector<HTMLInputElement>('[data-view-flag="showLocants"]')!;

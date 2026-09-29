@@ -8,11 +8,13 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { ELEMENTS, benzene, buildMolecule, elementCounts } from "@starter/chem-core";
+import { ELEMENTS, alphaAminoAcids, benzene, buildMolecule, elementCounts, readMolblock } from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
+import { dictionaryEntryById } from "@starter/chem-core/dictionary";
 import { PUBLICATION_STYLE, serializeFigure } from "@starter/chem-render";
 import { createDocument } from "@starter/shared";
 
+import { buildCanvasScene } from "@/canvas/scene-bridge";
 import { documentFigure } from "@/lib/export/figure";
 import { createEditorStore, MAX_ZOOM, MIN_ZOOM } from "@/state";
 import type { EditorStore } from "@/state";
@@ -350,9 +352,10 @@ describe("view commands", () => {
   });
 
   it("lists the locants toggle disabled, with its reason, while nothing numbers the atoms", () => {
-    // Decision 37. The command exists — a chemist searching "locant" learns
-    // the feature is coming — but a switch that draws nothing would read as
-    // broken, so it is off and says why. showLocants itself defaults off.
+    // Decisions 37 and 168. The command exists — a chemist searching "locant"
+    // learns the feature is there — but over benzene, which no rule numbers, a
+    // switch that draws nothing would read as broken, so it is off and says
+    // why. showLocants itself defaults off.
     const store = storeWith(benzene());
     const command = commandById("view.show-locants");
     expect(command.title).toBe("Toggle locants");
@@ -387,6 +390,45 @@ describe("view commands", () => {
     const before = JSON.stringify(store.getState().document.panels);
     command.run(store);
     expect(JSON.stringify(store.getState().document.panels)).toBe(before);
+  });
+
+  it("enables the locants toggle over a document that numbers an atom, and draws them (decision 168)", () => {
+    // L-cysteine: C1 the carboxyl, C2 the alpha carbon, C3 the CH2SH.
+    const cysteine = readMolblock(dictionaryEntryById("l-cysteine")!.molblock).molecule;
+    const store = storeWith(cysteine);
+    const command = commandById("view.show-locants");
+    expect(command.enabled(store.getState())).toBe(true);
+    expect(command.disabledReason?.(store.getState())).toBeUndefined();
+
+    command.run(store);
+    const shown = (): readonly string[] =>
+      buildCanvasScene(store.getState().document, store.getState().ui.activePanelId)
+        .primitives.flatMap((p) =>
+          p.type === "textRun" && p.id.endsWith(":locant") ? [p.spans.map((s) => s.text).join("")] : [],
+        );
+    expect([...shown()].sort()).toEqual(["1", "2", "3"]);
+    // The export draws the same three (decision 21).
+    const svg = serializeFigure(documentFigure(store.getState().document, "canvas"));
+    expect([...svg.matchAll(/:locant"[^>]*><tspan>([^<]*)</g)].map((m) => m[1]).sort()).toEqual(["1", "2", "3"]);
+
+    // Still live once on, and switches back off.
+    expect(command.enabled(store.getState())).toBe(true);
+    command.run(store);
+    expect(shown()).toEqual([]);
+    expect(command.enabled(store.getState())).toBe(true);
+  });
+
+  it("keeps the toggle disabled when explicit empty locants hide every derived one", () => {
+    const cysteine = readMolblock(dictionaryEntryById("l-cysteine")!.molblock).molecule;
+    const hidden = Object.fromEntries(alphaAminoAcids(cysteine)[0]!.backbone.map((id) => [id, ""]));
+    const store = createEditorStore({
+      document: createDocument({ molecule: cysteine, locants: hidden, now: "2024-01-01T00:00:00.000Z" }),
+      viewportSize: { width: 800, height: 600 },
+      now: () => "2024-01-01T00:00:00.000Z",
+    });
+    const command = commandById("view.show-locants");
+    expect(command.enabled(store.getState())).toBe(false);
+    expect(command.disabledReason?.(store.getState())).toMatch(/numbering/i);
   });
 
   it("gives no other display toggle a disabled reason while it can be used", () => {

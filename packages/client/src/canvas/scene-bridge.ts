@@ -23,10 +23,13 @@
  * the mistake compiles anywhere the fields happen not to be touched.
  */
 
+import { atomNumbering } from "@starter/chem-core";
+import type { AtomNumbering } from "@starter/chem-core";
 import {
   RENDER_STYLES,
   buildAnnotatedScene,
   buildScene,
+  isStructural,
   isStructuralViewKind,
   representation,
   representationAvailability,
@@ -37,6 +40,7 @@ import type {
   RenderStyle,
   RenderStyleName,
   Representation as RenderRepresentation,
+  SceneBuildOptions,
   ViewKind,
 } from "@starter/chem-render";
 import type {
@@ -151,6 +155,56 @@ export function panelToDraw(doc: SketchDocument, panelId?: PanelId): Panel | und
 }
 
 /**
+ * The document's locants: chem-core's `atomNumbering` of its molecule, with
+ * the explicit `SketchDocument.locants` first (decision 142).
+ *
+ * ONE MAP FOR EVERY DRAWING OF THE DOCUMENT (decisions 21, 168). The canvas
+ * scene, the figure export, the library thumbnail and the locants toggle all
+ * read this function, so a number cannot be on the canvas and missing from
+ * the file, and the toggle cannot be live over a document that draws nothing.
+ *
+ * Memoised on the `SketchDocument` like `canvasAnnotatedScene`, so the scene,
+ * the export and the toggle share one numbering per document. A drag mints a
+ * new document per pointer move and so misses here, but the chain rules
+ * underneath are memoised on the TOPOLOGY in chem-core, which a drag keeps:
+ * all a frame pays is re-reading the record.
+ */
+const numberingCache = weakCache<SketchDocument, AtomNumbering>("document");
+
+export function documentNumbering(doc: SketchDocument): AtomNumbering {
+  let numbering = numberingCache.get(doc);
+  if (numbering === undefined) {
+    numbering = atomNumbering(doc.molecule, doc.locants);
+    numberingCache.set(doc, numbering);
+  }
+  return numbering;
+}
+
+/**
+ * Whether any atom of `doc` has a locant to draw. What makes the locants
+ * toggle live (decision 168): an explicit `""` that hides the only derived
+ * locant leaves nothing, so it does not count.
+ */
+export function documentNumbersAtoms(doc: SketchDocument): boolean {
+  return Object.keys(documentNumbering(doc).locants).length > 0;
+}
+
+/**
+ * What a scene of `doc` drawn through `rep` needs beyond the molecule.
+ *
+ * The numbering is asked for only while `rep` draws locants: with the flag
+ * off the scene would ignore it, and a drag with locants off (every default
+ * panel) then pays nothing for it.
+ */
+function sceneOptionsFor(
+  doc: SketchDocument,
+  rep: RenderRepresentation,
+): SceneBuildOptions | undefined {
+  if (!isStructural(rep) || !rep.flags.showLocants) return undefined;
+  return { locants: documentNumbering(doc).locants };
+}
+
+/**
  * The scene for `doc`, drawn through the given panel's representation.
  *
  * Everything that comes back is in FINAL PX WITH Y ALREADY FLIPPED — see the
@@ -168,7 +222,7 @@ export function buildDocumentScene(
     panel === undefined
       ? representation("skeletal")
       : toRenderRepresentation(panel.representation);
-  return buildScene(doc.molecule, renderStyleFor(doc), rep);
+  return buildScene(doc.molecule, renderStyleFor(doc), rep, sceneOptionsFor(doc, rep));
 }
 
 /**
@@ -246,7 +300,7 @@ export function canvasAnnotatedScene(
   const panel = panelToDraw(doc, canvasPanelFor(doc, activePanelId)?.id);
   const rep =
     panel === undefined ? representation("skeletal") : toRenderRepresentation(panel.representation);
-  const built = buildAnnotatedScene(doc.molecule, renderStyleFor(doc), rep);
+  const built = buildAnnotatedScene(doc.molecule, renderStyleFor(doc), rep, sceneOptionsFor(doc, rep));
   byPanel.set(activePanelId, built);
   return built;
 }

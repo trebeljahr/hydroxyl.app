@@ -14,7 +14,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { benzene, buildMolecule, linearChain } from "@starter/chem-core";
+import { atomNumbering, benzene, buildMolecule, linearChain, readMolblock } from "@starter/chem-core";
+import { dictionaryEntryById } from "@starter/chem-core/dictionary";
 
 import {
   acetate,
@@ -215,6 +216,44 @@ describe("serializeFigure — the exported file", () => {
     ]);
     expect(svg.match(/>\(R\)</g) ?? []).toHaveLength(2);
     writeOutput("descriptors-per-panel.svg", svg);
+  });
+
+  it("draws the document's locants in each panel whose flag is on, and only there", () => {
+    // Decision 168: one map for the whole figure, handed to every panel the
+    // way the canvas hands it to its scene. Open-chain D-glucose numbers
+    // C1 (the aldehyde) to C6. Screen, because at Publication the 10 pt OH
+    // labels leave no clear slot for C2, C3 and C5, and those three are
+    // dropped (decision 58) — which the lone-scene equality below covers.
+    const glucose = readMolblock(dictionaryEntryById("aldehydo-d-glucose")!.molblock).molecule;
+    const { locants } = atomNumbering(glucose);
+    const flags = { showLocants: true };
+    const figure = composeFigure(
+      glucose,
+      SCREEN_STYLE,
+      [
+        panel("left", representation("skeletal", flags)),
+        panel("right", representation("kekule", flags)),
+        panel("plain", representation("skeletal")),
+      ],
+      { locants },
+    );
+    for (const cell of figure.cells) {
+      if (cell.content.kind !== "scene") throw new Error("expected a scene");
+      // Exactly what a lone scene draws with the same map: the figure adds
+      // nothing and drops nothing.
+      const alone = buildScene(glucose, SCREEN_STYLE, cell.representation, { locants });
+      expect(cell.content.scene.primitives).toEqual(alone.primitives);
+    }
+    const svg = serializeFigure(figure);
+    const drawn = (panelId: string): string[] =>
+      [...svg.matchAll(/<text id="([^"]*):locant"[^>]*><tspan>([^<]*)</g)]
+        .filter((m) => (m[1] ?? "").startsWith(panelIdPrefix(panelId)))
+        .map((m) => m[2] ?? "");
+    const expected = ["1", "2", "3", "4", "5", "6"];
+    expect(drawn("left").sort()).toEqual(expected);
+    expect(drawn("right").sort()).toEqual(expected);
+    expect(drawn("plain")).toEqual([]);
+    writeOutput("locants-per-panel.svg", svg);
   });
 
   it("escapes panel ids injectively, so hostile ids cannot share a namespace", () => {

@@ -10,7 +10,8 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { benzene } from "@starter/chem-core";
+import { benzene, readMolblock } from "@starter/chem-core";
+import { dictionaryEntryById } from "@starter/chem-core/dictionary";
 import { createDocument } from "@starter/shared";
 
 import { COMMANDS, commandById } from "@/editor/commands/registry";
@@ -75,7 +76,7 @@ describe("CommandPalette", () => {
     expect(paste?.getAttribute("data-disabled")).toBe("true");
   });
 
-  it("greys out the locants toggle and shows why (decision 37)", () => {
+  it("greys out the locants toggle over benzene, which nothing numbers, and shows why (decision 37)", () => {
     open();
     const locants = document.querySelector<HTMLElement>('[data-palette-command="view.show-locants"]');
     expect(locants).not.toBeNull();
@@ -116,6 +117,27 @@ describe("CommandPalette", () => {
     const again = document.querySelector<HTMLElement>('[data-palette-command="view.show-locants"]');
     expect(again!.getAttribute("data-disabled")).toBe("true");
     expect(again!.querySelector("[data-disabled-reason]")?.textContent).toMatch(/numbering/i);
+  });
+
+  it("offers the locants toggle over a numbered document, and switches them on (decision 168)", () => {
+    act(() => {
+      editorStore.getState().openDocument(
+        createDocument({
+          molecule: readMolblock(dictionaryEntryById("aldehydo-d-glucose")!.molblock).molecule,
+          now: "2024-01-01T00:00:00.000Z",
+        }),
+      );
+    });
+    open();
+    const locants = document.querySelector<HTMLElement>('[data-palette-command="view.show-locants"]');
+    expect(locants!.getAttribute("data-disabled")).not.toBe("true");
+    expect(locants!.querySelector("[data-disabled-reason]")).toBeNull();
+    act(() => {
+      fireEvent.click(locants!);
+    });
+    expect(
+      editorStore.getState().document.panels.some((p) => p.representation.display.showLocants),
+    ).toBe(true);
   });
 
   it("runs a command and closes itself", () => {

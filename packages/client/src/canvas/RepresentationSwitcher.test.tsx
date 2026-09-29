@@ -1,14 +1,17 @@
 /**
  * The switcher's view options are a second door onto the display flags, so
  * they must say what the palette says: every flag listed, the locants toggle
- * named as locants (decision 18) and disabled with the registry's reason
- * (decision 37) — except while locants are on, when it is live so it can
- * switch them off (decision 56).
+ * named as locants (decision 18), disabled with the registry's reason over a
+ * document that numbers nothing (decision 37), live over one that numbers an
+ * atom (decision 168), and live while locants are on, so it can switch them
+ * off (decision 56).
  */
 
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { readMolblock } from "@starter/chem-core";
+import { dictionaryEntryById } from "@starter/chem-core/dictionary";
 import { ethanol } from "@starter/chem-render";
 import { DISPLAY_FLAG_KEYS, createDocument } from "@starter/shared";
 
@@ -16,7 +19,7 @@ import { commandById } from "@/editor/commands/registry";
 import { editorStore } from "@/state";
 
 import { RepresentationSwitcher } from "./RepresentationSwitcher";
-import { canvasPanelFor } from "./scene-bridge";
+import { buildCanvasScene, canvasPanelFor } from "./scene-bridge";
 
 beforeEach(() => {
   act(() => {
@@ -51,7 +54,7 @@ describe("RepresentationSwitcher view options", () => {
     expect(document.body.textContent).not.toMatch(/atom ind/i);
   });
 
-  it("shows the locants toggle disabled, with the registry's reason", () => {
+  it("shows the locants toggle disabled over ethanol, which nothing numbers, with the registry's reason", () => {
     openOptions();
     const locants = checkbox("showLocants");
     expect(locants.disabled).toBe(true);
@@ -103,6 +106,35 @@ describe("RepresentationSwitcher view options", () => {
       fireEvent.click(off);
     });
     expect(shown()).toBe(false);
+  });
+
+  it("enables the locants box over a numbered document, and the canvas draws them (decision 168)", () => {
+    // Beta-D-glucopyranose: the ring carbons C1 to C5, and C6.
+    act(() => {
+      editorStore.getState().openDocument(
+        createDocument({
+          molecule: readMolblock(dictionaryEntryById("beta-d-glucopyranose")!.molblock).molecule,
+          now: "2024-01-01T00:00:00.000Z",
+        }),
+      );
+    });
+    openOptions();
+    const locants = checkbox("showLocants");
+    expect(locants.checked).toBe(false);
+    expect(locants.disabled).toBe(false);
+    expect(locants.closest("label")!.querySelector("[data-disabled-reason]")).toBeNull();
+
+    act(() => {
+      fireEvent.click(locants);
+    });
+    const state = editorStore.getState();
+    const drawn = buildCanvasScene(state.document, state.ui.activePanelId).primitives.flatMap((p) =>
+      p.type === "textRun" && p.id.endsWith(":locant") ? [p.spans.map((s) => s.text).join("")] : [],
+    );
+    expect(drawn.sort()).toEqual(["1", "2", "3", "4", "5", "6"]);
+    // On, and still live: it can be switched back off.
+    expect(checkbox("showLocants").checked).toBe(true);
+    expect(checkbox("showLocants").disabled).toBe(false);
   });
 
   it("leaves every other flag live, with no reason attached", () => {

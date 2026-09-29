@@ -64,7 +64,7 @@ import {
   VIEW_KINDS,
 } from "@starter/shared";
 import { VIEW_KIND_TITLES, panelLetter, representationAvailability } from "@starter/chem-render";
-import type { DisplayFlagKey } from "@starter/shared";
+import type { DisplayFlagKey, SketchDocument } from "@starter/shared";
 
 import { fitBounds } from "@/canvas/metrics";
 import {
@@ -72,6 +72,7 @@ import {
   STYLE_PRESET_TITLES,
   buildCanvasScene,
   canvasPanelFor,
+  documentNumbersAtoms,
   renderStyleFor,
 } from "@/canvas/scene-bridge";
 import { referenceZoom } from "@/canvas/view-scale";
@@ -695,17 +696,21 @@ const DISPLAY_FLAG_LABELS = {
     keywords: ["wedge", "hash", "stereo", "bond", "display"],
   },
   // Chemical locants only (decision 18): with no numbering for an atom it
-  // draws nothing, and it never shows an atom's id or position. Nothing in
-  // the document numbers atoms yet, so the toggle would be a switch that does
-  // nothing: listed, disabled, and saying why (decision 37) until a
-  // numbering source exists — EXCEPT while the flag is on (decision 56). A
-  // document from a newer build can carry showLocants: true, and it must not
-  // be stuck with a flag no control can clear. On, the command is enabled so
-  // it can be switched off; off, it disables again with the reason.
+  // draws nothing, and it never shows an atom's id or position. Over a
+  // document that numbers nothing — no sugar, no alpha-amino acid, no locant
+  // typed — the toggle would be a switch that does nothing, so it is listed,
+  // disabled and says why (decision 37), and it is live as soon as ANY atom
+  // has a locant (decision 168). Whatever the document, it stays live while
+  // the flag is on (decision 56): a document can carry showLocants: true
+  // after its numbered atoms are deleted, and it must not be stuck with a
+  // flag no control can clear.
   showLocants: {
     title: "Toggle locants",
     keywords: ["locant", "numbering", "number", "display"],
-    unavailable: "No numbering source yet: the document does not number its atoms",
+    needs: {
+      met: documentNumbersAtoms,
+      reason: "No atom here is numbered: numbering covers sugars and alpha-amino acids",
+    },
   },
   showStereoDescriptors: {
     title: "Toggle R/S and E/Z descriptors",
@@ -718,11 +723,15 @@ const DISPLAY_FLAG_LABELS = {
     readonly keywords: readonly string[];
     readonly shortcut?: string;
     /**
-     * Set: the command cannot switch the flag ON, and is disabled with this
-     * as its reason whenever the flag is off. While the flag is on it stays
-     * enabled, so it can be switched off (decision 56).
+     * Set: the command can switch the flag ON only over a document for which
+     * `met` holds, and is otherwise disabled with `reason` while the flag is
+     * off. While the flag is on it stays enabled, so it can always be
+     * switched off (decision 56).
      */
-    readonly unavailable?: string;
+    readonly needs?: {
+      readonly met: (doc: SketchDocument) => boolean;
+      readonly reason: string;
+    };
   }
 >;
 
@@ -765,17 +774,24 @@ const DISPLAY_FLAG_COMMANDS: readonly Command[] = DISPLAY_FLAG_KEYS.map((key) =>
     },
   };
   if ("shortcut" in label) command.shortcut = label.shortcut;
-  if ("unavailable" in label) {
-    const reason = label.unavailable;
-    const isOn = (state: EditorState): boolean =>
-      canvasPanelFor(state.document, state.ui.activePanelId)?.representation.display[key] === true;
-    command.enabled = isOn;
-    command.disabledReason = (state) => (isOn(state) ? undefined : reason);
+  if ("needs" in label) {
+    const { met, reason } = label.needs;
+    const panelOf = (state: EditorState) => canvasPanelFor(state.document, state.ui.activePanelId);
+    // The flag first: it is a field read, and while it is on the answer is
+    // yes whatever the document numbers.
+    const enabled = (state: EditorState): boolean => {
+      const panel = panelOf(state);
+      if (panel === undefined) return false;
+      return panel.representation.display[key] || met(state.document);
+    };
+    command.enabled = enabled;
+    command.disabledReason = (state) =>
+      panelOf(state) === undefined ? REASONS.noCanvasPanel : enabled(state) ? undefined : reason;
     const toggle = command.run;
-    // Off only: `enabled` already says so, but a shortcut or a caller that
-    // skips the check must not be able to switch on what nothing can draw.
+    // `enabled` already says so, but a shortcut or a caller that skips the
+    // check must not be able to switch on what nothing can draw.
     command.run = (store) => {
-      if (isOn(store.getState())) toggle(store);
+      if (enabled(store.getState())) toggle(store);
     };
   }
   return command;

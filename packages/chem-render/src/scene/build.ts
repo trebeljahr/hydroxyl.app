@@ -190,8 +190,9 @@ export function buildAnnotatedScene(
  * Inputs to a scene that do not live on the molecule.
  *
  * INJECTED rather than read from anywhere, so every existing call site stays
- * untouched and chem-render keeps its one dependency. The document-level
- * numbering map a later task adds is what a caller will pass here.
+ * untouched and chem-render keeps its one dependency. The editor passes
+ * chem-core's `atomNumbering(doc.molecule, doc.locants)` here, the same map
+ * it passes to `composeFigure` (decision 168).
  */
 export interface SceneBuildOptions {
   /**

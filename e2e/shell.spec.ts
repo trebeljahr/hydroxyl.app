@@ -799,8 +799,9 @@ async function runPickerColourChecks(
   // The sum-formula panel button is a TEXT view: the canvas cannot draw through
   // it, but the click is accepted and the strip explains itself, so it is not
   // unavailable and must not wear the unavailable colour. The locants label in
-  // the view options is genuinely disabled — the registry refuses it until
-  // something numbers the atoms — and is the reference grey.
+  // the view options is genuinely disabled — the registry refuses it while the
+  // document numbers no atom, and benzene numbers none (decision 168) — and is
+  // the reference grey.
   const usable = await paintedText(page, '[data-switcher-panel="panel-sum-formula"]');
   expect(usable.contrast).toBeGreaterThanOrEqual(4.5);
 
