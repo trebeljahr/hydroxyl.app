@@ -29,6 +29,7 @@
  * R-groups, bond topology, Sgroups, templates).
  */
 
+import type { StatedAtomParity } from "./atom-parity.js";
 import { elementBySymbol, normalizeElementInput, requireElement } from "./elements.js";
 import { kekulizeWithReport, type KekulizeResult } from "./aromatic.js";
 import { MoleculeBuilder } from "./builders.js";
@@ -268,6 +269,16 @@ export interface MolblockReadResult {
   /** Header line 3, trailing whitespace removed. */
   readonly comment: string;
   readonly warnings: readonly MolblockWarning[];
+  /**
+   * The V2000 atom parity column (`sss`), by atom id, for every atom whose
+   * value is 1 (odd), 2 (even) or 3 (either); empty when the file states
+   * none, and for V3000, whose `CFG=` keyword is not read yet. Returned
+   * BESIDE the molecule and never applied to it: the wedges stay the model's
+   * statement of configuration (decision 24), and
+   * `stereoConfigFromAtomParities` reads this for a caller that wants the
+   * file's other one (decision 207). Read with `Object.hasOwn`.
+   */
+  readonly atomParities: Readonly<Record<AtomId, StatedAtomParity>>;
 }
 
 /**
@@ -443,6 +454,8 @@ interface AtomRow {
   readonly z: number;
   readonly massDiff: number;
   readonly legacyCharge: number;
+  /** `sss`, the atom stereo parity: 0 none, 1 odd, 2 even, 3 either. */
+  readonly parity: number;
   readonly hydrogenField: number;
   readonly valenceField: number;
 }
@@ -480,6 +493,8 @@ interface ParsedAtom {
    */
   readonly hydrogenField: number;
   readonly valenceField: number;
+  /** The stated atom parity (decision 207), or 0; never applied to the atom. */
+  readonly parity: number;
 }
 
 /**
@@ -676,14 +691,14 @@ export function readMolblock(
   // of the available failures.
   if (counts.isV3000) {
     const body = readV3000Body(v30Entries(lines, start + 4), warnings);
-    const molecule = assembleMolecule(
+    const { molecule, atomParities } = assembleMolecule(
       body.atoms,
       body.bonds,
       body.collections,
       scale,
       warnings,
     );
-    return { molecule, title, comment, warnings };
+    return { molecule, title, comment, warnings, atomParities };
   }
 
   // -------------------------------------------------------------------------
@@ -715,8 +730,13 @@ export function readMolblock(
     const z = readFloat(line, 20, 30);
     const massDiff = readInt(line, 34, 36);
     const legacyCharge = readInt(line, 36, 39);
+    const parity = readInt(line, 39, 42);
     const hydrogenField = readInt(line, 42, 45);
     const valenceField = readInt(line, 48, 51);
+    // Anything but 0-3 is not a parity; read as "none" and said so, reusing
+    // the unreadable-field warning rather than adding a kind the client's
+    // warning table would have to grow.
+    const parityOutOfRange = !parity.bad && (parity.value < 0 || parity.value > 3);
 
     for (const [field, parsed] of [
       ["x", x],
@@ -724,6 +744,7 @@ export function readMolblock(
       ["z", z],
       ["mass difference", massDiff],
       ["charge", legacyCharge],
+      ["stereo parity", parityOutOfRange ? { ...parity, bad: true } : parity],
       ["hydrogen count", hydrogenField],
       ["valence", valenceField],
     ] as const) {
@@ -747,6 +768,7 @@ export function readMolblock(
       z: z.value,
       massDiff: massDiff.value,
       legacyCharge: legacyCharge.value,
+      parity: parity.bad || parityOutOfRange ? 0 : parity.value,
       hydrogenField: hydrogenField.value,
       valenceField: valenceField.value,
     });
@@ -1001,11 +1023,12 @@ export function readMolblock(
       isotope,
       hydrogenField: atom.hydrogenField,
       valenceField: atom.valenceField,
+      parity: atom.parity,
     };
   });
 
-  const molecule = assembleMolecule(parsed, bondRows, [], scale, warnings);
-  return { molecule, title, comment, warnings };
+  const { molecule, atomParities } = assembleMolecule(parsed, bondRows, [], scale, warnings);
+  return { molecule, title, comment, warnings, atomParities };
 }
 
 /**
@@ -1020,7 +1043,7 @@ function assembleMolecule(
   collections: readonly StereoCollectionRow[],
   scale: number,
   warnings: MolblockWarning[],
-): Molecule {
+): { readonly molecule: Molecule; readonly atomParities: Readonly<Record<AtomId, StatedAtomParity>> } {
 
   // Through MoleculeBuilder: `addAtom`/`addBond` copy the whole record on every
   // call, so a loop over them is quadratic.
@@ -1242,7 +1265,17 @@ function assembleMolecule(
     molecule = withStereoGroups(molecule, groups);
   }
 
-  return molecule;
+  // The parity column, by the id each row became (decision 207). Keyed on
+  // ids the builder minted, so no row number from the file is ever a key.
+  const atomParities: Record<AtomId, StatedAtomParity> = {};
+  for (const atom of atomRows) {
+    const id = rowToAtomId[atom.row];
+    if (id !== undefined && (atom.parity === 1 || atom.parity === 2 || atom.parity === 3)) {
+      atomParities[id] = atom.parity;
+    }
+  }
+
+  return { molecule, atomParities: Object.freeze(atomParities) };
 }
 
 /**
@@ -1907,6 +1940,8 @@ function readV3000Atom(
       // thing without being a query.
       hydrogenField: 0,
       valenceField,
+      // `CFG=` on an atom is V3000's parity; not read yet (decision 207).
+      parity: 0,
     },
   };
 }

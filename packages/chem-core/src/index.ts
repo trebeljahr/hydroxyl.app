@@ -58,6 +58,9 @@ export * from "./mechanism.js";
 // Coordinate-free configuration and reading conventions, built on stereo.ts's
 // CIP ranking.
 export * from "./stereo-config.js";
+// The V2000 atom parity column as a StereoConfig and back (decision 207).
+// The molblock writer calls it; it reads stereo-config's parity arithmetic.
+export * from "./atom-parity.js";
 // Achirality proved by an atom mapping; reads stereo-config.
 export * from "./achirality.js";
 // One centre on a synthetic Fischer cross, read through stereo-config: the

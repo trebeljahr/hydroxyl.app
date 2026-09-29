@@ -30,8 +30,10 @@
  * and as the payload of a content hash.
  */
 
+import { molfileAtomParity, type MolfileAtomParity } from "./atom-parity.js";
 import { hasAromaticFlags, kekulize } from "./aromatic.js";
 import { requireAtom, requireBond } from "./molecule.js";
+import type { StereoConfig } from "./stereo-config.js";
 import { stereoGroupTag, stereoGroupsOf } from "./stereo-groups.js";
 import type { AtomId, BondStereo, Molecule, StereoGroup } from "./types.js";
 import { bondOrderSum, implicitHydrogenCount } from "./valence.js";
@@ -146,6 +148,15 @@ export interface MolblockWriteOptions {
   /** See `MolblockVersion`. Defaults to `"V2000"`, which is what every reader
    *  takes and what a molecule with no stereo groups should still be. */
   readonly version?: MolblockVersion | undefined;
+  /**
+   * Write each stereocentre's V2000 atom parity (`sss`) from this
+   * configuration of `mol` (decision 207; atom-parity.ts has the rule).
+   * Omitted, the column is 0 and the wedges alone carry configuration, as
+   * they always have. For a drawing with no mark to carry its configuration
+   * (a Fischer), this is the only statement the file makes. V2000 only: a
+   * V3000 request with it refuses rather than drop it.
+   */
+  readonly atomParity?: StereoConfig | undefined;
 }
 
 /**
@@ -516,6 +527,25 @@ export function writeMolblock(mol: Molecule, options: MolblockWriteOptions = {})
   const rowOf = new Map<AtomId, number>();
   mol.atomIds.forEach((id, index) => rowOf.set(id, index + 1));
 
+  // Decision 207: the parity column, only when asked for, and never silently
+  // dropped by a generation that does not write it yet.
+  const parities = new Map<AtomId, MolfileAtomParity>();
+  if (options.atomParity !== undefined) {
+    if (version === "V3000") {
+      throw new Error(
+        "Atom parity is written in the V2000 sss column only; V3000's CFG= atom keyword is not written yet, " +
+          "so a V3000 file would silently drop the configuration the caller asked to state.",
+      );
+    }
+    for (const centre of options.atomParity.centres) {
+      if (!rowOf.has(centre.atomId)) {
+        throw new Error(`The atom-parity configuration names ${centre.atomId}, which is not in the molecule.`);
+      }
+      const code = molfileAtomParity(mol, centre, (id) => rowOf.get(id) ?? Number.MAX_SAFE_INTEGER);
+      if (code !== 0) parities.set(centre.atomId, code);
+    }
+  }
+
   // The counts-line chiral flag: 1 when the drawing states a configuration at
   // all, which for this model means a wedge or a hash somewhere.
   //
@@ -556,7 +586,7 @@ export function writeMolblock(mol: Molecule, options: MolblockWriteOptions = {})
   const body =
     version === "V3000"
       ? writeV3000(mol, hSource, rowOf, chiral, scale, assertion, groups)
-      : writeV2000(mol, hSource, rowOf, chiral, scale, assertion);
+      : writeV2000(mol, hSource, rowOf, chiral, scale, assertion, parities);
 
   return `${[...header, ...body].join("\n")}\n`;
 }
@@ -570,6 +600,7 @@ function writeV2000(
   chiral: number,
   scale: number,
   assertion: HydrogenAssertion,
+  parities: ReadonlyMap<AtomId, MolfileAtomParity>,
 ): string[] {
   if (mol.atomIds.length > MAX_V2000_COUNT || mol.bondIds.length > MAX_V2000_COUNT) {
     throw new Error(
@@ -661,9 +692,10 @@ function writeV2000(
         // beyond +-3, and the spec says an `M  CHG` line supersedes it
         // wholesale anyway.
         `  0` +
-        // sss atom stereo parity: derived from the bond wedges by the reader,
-        // never stored here.
-        `  0` +
+        // sss atom stereo parity: 0 unless the caller passed `atomParity`
+        // (decision 207). The reader still derives configuration from the
+        // wedges; this column is for a drawing that has none to carry it.
+        `${int(parities.get(atomId) ?? 0, 3)}` +
         `${int(hydrogenField, 3)}` +
         // bbb stereo care box (a query feature), then vvv valence. vvv is 0 —
         // "use the element's default" — for every atom whose hydrogens fit in
