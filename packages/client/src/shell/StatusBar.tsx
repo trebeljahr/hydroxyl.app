@@ -51,6 +51,14 @@
  * link to an outside payment page. Below `lg` it is the first item the bar
  * gives up (decision 139): it says nothing about the drawing, and the landing
  * page's footer carries the same link.
+ *
+ * ── THE FEEDBACK LINK STAYS IN EVERY BUILD (decisions 140 and 167) ─────────
+ *
+ * It sits just before Donate and hides with it below `lg`, for the same
+ * reason. It is NOT left out of the static export: the store rule is about
+ * payment pages, and an email address is a contact. No new tab either: a
+ * mailto link hands the address to the mail program and the page stays where
+ * it is. The address is its title, for a chemist with no mail program set up.
  */
 
 import type { ReactElement } from "react";
@@ -63,6 +71,7 @@ import { displayZoom } from "@/canvas/view-scale";
 import { commandById } from "@/editor/commands/registry";
 import { isFileExportBuild } from "@/lib/deployment";
 import { DONATE_URL } from "@/lib/donation";
+import { FEEDBACK_ADDRESS, FEEDBACK_HREF } from "@/lib/feedback";
 import { useSaveState } from "@/persistence/save-state";
 import { moleculeMass } from "@/editor/derived";
 import { cn } from "@/lib/utils";
@@ -246,9 +255,10 @@ export function StatusBar(): ReactElement {
     //
     // Once those two are at zero, what gives way is decided by priority
     // (decision 139), because the readouts alone are wider than a portrait
-    // tablet: Donate hides below `lg`, then the exact mass below 900px, whose
-    // value stays in the MW readout's title. Fit, Reset, − and + are never
-    // hidden: on a tablet they are the navigation decision 106 promises.
+    // tablet: Donate and Feedback hide below `lg` (decision 167), then the
+    // exact mass below 900px, whose value stays in the MW readout's title.
+    // Fit, Reset, − and + are never hidden: on a tablet they are the
+    // navigation decision 106 promises.
     <footer
       data-shell="status-bar"
       className="bg-background text-muted-foreground flex h-8 shrink-0 items-center gap-4 border-t px-3 text-xs whitespace-nowrap"
@@ -326,6 +336,15 @@ export function StatusBar(): ReactElement {
         {Math.round(displayZoom(zoom, renderStyleFor(doc)) * 100)}%
       </span>
       <ViewButton id="view.zoom-in" label="+" named />
+
+      <a
+        href={FEEDBACK_HREF}
+        title={FEEDBACK_ADDRESS}
+        data-status="feedback"
+        className="hover:bg-muted hover:text-foreground rounded px-2 py-0.5 max-lg:hidden"
+      >
+        Feedback
+      </a>
 
       {isFileExportBuild() ? null : (
         <a

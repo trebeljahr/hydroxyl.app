@@ -295,7 +295,9 @@ test("the status bar reports the formula, the masses and the chemistry errors", 
  * benzene and at 900 with two errors in the counter. Nowrap alone turned that
  * into horizontal overflow that pushed + and Donate off a 768px tablet, so
  * decision 139 hides Donate below 1024 and the exact mass below 900, with the
- * exact mass kept in the MW readout's title.
+ * exact mass kept in the MW readout's title. The Feedback link hides with
+ * Donate (decision 167); at 1024 with two errors, the message and the save
+ * state still have 62px between them.
  *
  * Numbers rather than a screenshot: the claim is about the flex algorithm,
  * and heights and overflow are what it is made of. Benzene has the plain
@@ -330,6 +332,7 @@ test("the status bar keeps every readout on one line from 768 to 1280", async ({
             .every(shown),
           exactMass: shown('[data-status="exact-mass"]'),
           donate: shown('[data-status="donate"]'),
+          feedback: shown('[data-status="feedback"]'),
         };
       });
 
@@ -340,8 +343,10 @@ test("the status bar keeps every readout on one line from 768 to 1280", async ({
         tall: [],
         controls: true,
         // Decision 139's order: Donate gives way first, then the exact mass.
+        // Feedback goes with Donate (decision 167).
         exactMass: width >= 900,
         donate: width >= 1024,
+        feedback: width >= 1024,
       });
     }
   };

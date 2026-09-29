@@ -35,6 +35,7 @@ import {
   thirdPartyNoticesHref,
 } from "@/lib/deployment";
 import { DONATE_URL } from "@/lib/donation";
+import { FEEDBACK_ADDRESS, FEEDBACK_HREF } from "@/lib/feedback";
 
 import { LANDING_HEADLINE } from "./copy";
 import { LANDING_EXAMPLE } from "./example-document";
@@ -207,6 +208,12 @@ export function Landing(): ReactElement {
         <span>Chemistry Sketcher</span>
         <a href={thirdPartyNoticesHref()} className="hover:text-foreground underline-offset-2 hover:underline">
           Third-party licences
+        </a>
+        {/* The address itself, so a visitor with no mail program set up can
+            still copy it. In every build, the static export too (decision
+            167): an email address is a contact, not a payment page. */}
+        <a href={FEEDBACK_HREF} className="hover:text-foreground underline-offset-2 hover:underline">
+          {FEEDBACK_ADDRESS}
         </a>
         {/* Not in the static export an app-store shell would package, for the
             reason given in shell/StatusBar.tsx. New tab, like the editor's. */}

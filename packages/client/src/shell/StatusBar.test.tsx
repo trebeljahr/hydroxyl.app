@@ -446,3 +446,31 @@ describe("StatusBar — the Donate link", () => {
     expect(screen.queryByRole("link", { name: "Donate" })).toBeNull();
   });
 });
+
+describe("StatusBar — the Feedback link (decisions 140 and 167)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("is a bare mailto link that carries nothing from the open sketch", () => {
+    vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "0");
+    render(<StatusBar />);
+    const link = screen.getByRole("link", { name: "Feedback" });
+    // The whole href, so a `?body=` built from the benzene on the canvas
+    // would fail here: a drawn structure must not leave the browser.
+    expect(link).toHaveAttribute("href", "mailto:feedback@chemistry.trebeljahr.com");
+    expect(link).toHaveAttribute("title", "feedback@chemistry.trebeljahr.com");
+    // A mail program takes it; the page stays, so no new tab.
+    expect(link).not.toHaveAttribute("target");
+  });
+
+  it("stays in the static export, where Donate does not", () => {
+    vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "1");
+    render(<StatusBar />);
+    expect(screen.getByRole("link", { name: "Feedback" })).toHaveAttribute(
+      "href",
+      "mailto:feedback@chemistry.trebeljahr.com",
+    );
+    expect(screen.queryByRole("link", { name: "Donate" })).toBeNull();
+  });
+});
