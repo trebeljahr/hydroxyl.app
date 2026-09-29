@@ -13,6 +13,7 @@ import {
   aromaticRings,
   canCondense,
   cipDescriptor,
+  derivedBondId,
   condensedParts,
   descriptorText,
   doubleBondDescriptor,
@@ -25,7 +26,7 @@ import {
   stereoGroupTag,
 } from "@starter/chem-core";
 import type { FormulaPart } from "@starter/chem-core";
-import type { AtomId, BondId, DerivedNode, Molecule, ProjectedLayout } from "@starter/chem-core";
+import type { AtomId, BondId, BondStereo, DerivedNode, Molecule, ProjectedLayout } from "@starter/chem-core";
 
 import {
   drawSchemeAnnotations,
@@ -52,6 +53,7 @@ import {
   crossedDouble,
   hashBars,
   hashPathData,
+  reversedAxis,
   STEREO_MARKS,
   wavyPathData,
   wedgePoints,
@@ -730,7 +732,9 @@ function buildMolecularLayers(
   );
   pushHydrogenPrimitives(primitives, style, hydrogens, centres, placements, drawn);
   const projectedHydrogens =
-    drawing === undefined ? [] : pushProjectedHydrogens(primitives, style, drawing, centres, placements, drawn);
+    drawing === undefined
+      ? []
+      : pushProjectedHydrogens(primitives, style, representation, drawing, centres, placements, drawn);
 
   // What a scheme annotation resolves against, gathered here so every return
   // below carries it: this panel's centres and labels, and its bonds as drawn.
@@ -1203,6 +1207,7 @@ function projectedHostPlacement(
 function pushProjectedHydrogens(
   primitives: ScenePrimitive[],
   style: RenderStyle,
+  representation: StructuralRepresentation,
   drawing: LayoutDrawing,
   centres: ReadonlyMap<AtomId, ScenePoint>,
   placements: ReadonlyMap<AtomId, AtomLabelPlacement | undefined>,
@@ -1226,7 +1231,18 @@ function pushProjectedHydrogens(
     });
     const source = projectedSource(drawing.layout, node);
     const axis = bondAxis(hostCentre, centre, placements.get(node.host), placement, style.bondLineWidthPx);
-    if (axis !== undefined) {
+    // A hydrogen the layout marks (decision 179: a steroid panel's 5α-H) is
+    // drawn with its wedge or hash, narrow at its host, exactly as a marked
+    // bond would be.
+    const lineId = derivedBondId(node.id);
+    const mark = Object.hasOwn(drawing.layout.marks, lineId) ? drawing.layout.marks[lineId] : undefined;
+    const marked =
+      axis !== undefined &&
+      representation.flags.showStereoBonds &&
+      mark !== undefined &&
+      mark.narrowEnd === node.host &&
+      pushStereoMark(primitives, drawn, style, axis, mark.stereo, (part) => projectedPrimitiveId(node.id, part), source);
+    if (axis !== undefined && !marked) {
       const stem: LinePrimitive = {
         id: projectedPrimitiveId(node.id, "line"),
         source,
@@ -1300,7 +1316,17 @@ function pushProjectedHydrogens(
  * BOTH ARE GATED ON `showStereoDescriptors` (decision 40) — they are
  * stereochemistry, and the flag is the one switch a figure has for it.
  *
- * alphaBeta and torsion have no producer yet; the pass accepts them.
+ * ALPHA/BETA COMES FROM A LAYOUT (decision 182). A panel whose accepted
+ * skeleton states faces carries them in `layout.faceLabels`, for covered
+ * centres only; each is printed as "3β-OH", "5α-H", "10β", one run per
+ * centre, and a centre that carries one prints no (R)/(S) beside it. Gated on
+ * `showStereoDescriptors` with the rest of the stereochemistry.
+ *
+ * A LAYOUT'S LOCANTS (an accepted skeleton's numbering) fill in under the
+ * caller's: an atom the caller's numbering names, even as "" to hide it,
+ * keeps that; any other takes the layout's.
+ *
+ * torsion has no producer yet; the pass accepts it.
  */
 function annotationRequests(
   mol: Molecule,
@@ -1320,7 +1346,7 @@ function annotationRequests(
 } {
   const requests: AnnotationRequest[] = [];
   const descriptors = representation.flags.showStereoDescriptors;
-  const locants = representation.flags.showLocants ? options?.locants : undefined;
+  const locants = representation.flags.showLocants ? mergedLocants(options?.locants, layout?.locants) : undefined;
   if (!descriptors && locants === undefined) return { requests };
   // A molecule with no groups asks nothing new of the pass — no coverage query,
   // no tag, no prefix — which is what keeps every committed golden byte-
@@ -1352,6 +1378,15 @@ function annotationRequests(
   const statedBonds = layout === undefined ? undefined : new Set(layout.coverage.doubleBonds);
   const drawnAsItself = (atomId: AtomId): boolean =>
     layout === undefined || (Object.hasOwn(layout.drawnAs, atomId) && layout.drawnAs[atomId] === atomId);
+  // Decision 182: one alpha/beta run per centre, its statements in the
+  // layout's order.
+  const faces = new Map<AtomId, string[]>();
+  if (descriptors && layout !== undefined) {
+    for (const label of layout.faceLabels) {
+      const text = `${label.locant}${label.face === "alpha" ? "α" : "β"}${label.group === undefined ? "" : `-${label.group}`}`;
+      faces.set(label.atomId, [...(faces.get(label.atomId) ?? []), text]);
+    }
+  }
 
   for (const atomId of mol.atomIds) {
     const centre = centres.get(atomId);
@@ -1361,7 +1396,22 @@ function annotationRequests(
     const preferredDirection = (): ScenePoint =>
       (preferred ??= atomAnnotationDirection(mol, atomId, centre, centres));
 
-    if (descriptors && (statedCentres === undefined || statedCentres.has(atomId))) {
+    const faceText = faces.get(atomId);
+    if (faceText !== undefined) {
+      requests.push({
+        kind: "alphaBeta",
+        source,
+        text: faceText.join(", "),
+        anchor: centre,
+        preferred: preferredDirection(),
+      });
+    }
+
+    if (
+      descriptors &&
+      faceText === undefined &&
+      (statedCentres === undefined || statedCentres.has(atomId))
+    ) {
       const text = descriptorText(cipDescriptor(mol, atomId));
       if (text !== undefined) {
         requests.push({
@@ -1439,6 +1489,25 @@ function annotationRequests(
   }
 
   return prefixText === undefined ? { requests } : { requests, prefixText };
+}
+
+/**
+ * The caller's locants, with a layout's filling in where the caller's say
+ * nothing about an atom. A caller's entry wins even when it is "" (an
+ * explicit "hide this one", decision 142), so a document can still hide a
+ * steroid locant it does not want.
+ */
+function mergedLocants(
+  own: SceneBuildOptions["locants"],
+  fromLayout: Readonly<Record<AtomId, string>> | undefined,
+): SceneBuildOptions["locants"] {
+  if (fromLayout === undefined || Object.keys(fromLayout).length === 0) return own;
+  if (own === undefined) return fromLayout;
+  return (atomId) => {
+    const mine = typeof own === "function" ? own(atomId) : Object.hasOwn(own, atomId) ? own[atomId] : undefined;
+    if (mine !== undefined) return mine;
+    return Object.hasOwn(fromLayout, atomId) ? fromLayout[atomId] : undefined;
+  };
 }
 
 /**
@@ -1563,72 +1632,13 @@ function pushBondPrimitives(
   // bond — which an importer can hand you — draws as an ordinary double rather
   // than as a triangle asserting a configuration nobody can read off it.
   if (representation.flags.showStereoBonds) {
-    if (bond.order === 1 && bond.stereo === "wedge") {
-      const points = wedgePoints(axis, style.stereoWedgeWidthPx);
-      const wedge: PolygonPrimitive = {
-        id: `bond:${bondId}:wedge`,
-        source: { kind: "bond", bondId },
-        type: "polygon",
-        points,
-        fill: { color: style.colors.bond },
-      };
-      primitives.push(wedge);
-      pushOutline(drawn, points);
-      return;
-    }
-    if (bond.order === 1 && bond.stereo === "hash") {
-      const hash: PathPrimitive = {
-        id: `bond:${bondId}:hash`,
-        source: { kind: "bond", bondId },
-        type: "path",
-        d: hashPathData(
-          axis,
-          style.stereoWedgeWidthPx,
-          style.stereoHashPeriodPx,
-          style.coordinatePrecision,
-          `bond:${bondId}:hash`,
-        ),
-        stroke,
-      };
-      primitives.push(hash);
-      const bars = hashBars(axis, style.stereoWedgeWidthPx, style.stereoHashPeriodPx);
-      for (const bar of bars) drawn.push({ a: bar.a, b: bar.b, halfWidth });
-      const firstBar = bars[0];
-      const lastBar = bars[bars.length - 1];
-      if (firstBar !== undefined && lastBar !== undefined) {
-        drawn.push(
-          { a: firstBar.a, b: lastBar.a, halfWidth },
-          { a: firstBar.b, b: lastBar.b, halfWidth },
-        );
-      }
-      return;
-    }
-    if (bond.order === 1 && bond.stereo === "wavy") {
-      const wavy: PathPrimitive = {
-        id: `bond:${bondId}:wavy`,
-        source: { kind: "bond", bondId },
-        type: "path",
-        d: wavyPathData(
-          axis,
-          style.stereoWavyPeriodPx,
-          style.coordinatePrecision,
-          `bond:${bondId}:wavy`,
-        ),
-        stroke,
-      };
-      primitives.push(wavy);
-      // The wave's envelope: two rails at its amplitude either side of the
-      // axis (already in the corridors). A box that clears all three cannot
-      // reach the curve between them.
-      const amplitude = style.stereoWavyPeriodPx * STEREO_MARKS.wavyAmplitudeRatio;
-      const normal = leftNormal(axis.unit);
-      for (const side of [amplitude, -amplitude]) {
-        drawn.push({
-          a: { x: axis.a.x + normal.x * side, y: axis.a.y + normal.y * side },
-          b: { x: axis.b.x + normal.x * side, y: axis.b.y + normal.y * side },
-          halfWidth,
-        });
-      }
+    if (
+      bond.order === 1 &&
+      pushStereoMark(primitives, drawn, style, axis, bond.stereo, (part) => `bond:${bondId}:${part}`, {
+        kind: "bond",
+        bondId,
+      })
+    ) {
       return;
     }
     if (bond.order === 2 && bond.stereo === "either") {
@@ -1708,6 +1718,94 @@ function pushBondPrimitives(
 }
 
 /** A closed polygon's edges, as segments. */
+/**
+ * A single bond's wedge, hash or wavy line, drawn INSTEAD of its line along
+ * `axis` (narrow end at `axis.a`), with what it inked pushed to `drawn`.
+ * Returns false, drawing nothing, for any other mark.
+ *
+ * Shared by the bond pass and a projection's marked hydrogen (decision 179),
+ * so a hashed 5α-H is the same ladder as a hashed bond.
+ *
+ * THE HASHED WEDGE'S NARROW END IS A STYLE SWITCH (decision 177). By default
+ * it is at the stereocentre, as IUPAC 2006 draws it (ST-0.3); a house style
+ * that draws the perspective convention sets `hashedWedgeNarrowEnd:
+ * "substituent"`, and only the ladder turns end for end. What the mark
+ * states does not change: that is chem-core's, at the NAMED narrow end.
+ */
+function pushStereoMark(
+  primitives: ScenePrimitive[],
+  drawn: AnnotationSegment[],
+  style: RenderStyle,
+  axis: BondAxis,
+  stereo: BondStereo,
+  idOf: (part: "wedge" | "hash" | "wavy") => string,
+  source: SceneSource,
+): boolean {
+  const halfWidth = style.bondLineWidthPx / 2;
+  const stroke = { color: style.colors.bond, width: style.bondLineWidthPx };
+  if (stereo === "wedge") {
+    const points = wedgePoints(axis, style.stereoWedgeWidthPx);
+    const wedge: PolygonPrimitive = {
+      id: idOf("wedge"),
+      source,
+      type: "polygon",
+      points,
+      fill: { color: style.colors.bond },
+    };
+    primitives.push(wedge);
+    pushOutline(drawn, points);
+    return true;
+  }
+  if (stereo === "hash") {
+    const ladder = style.hashedWedgeNarrowEnd === "substituent" ? reversedAxis(axis) : axis;
+    const id = idOf("hash");
+    const hash: PathPrimitive = {
+      id,
+      source,
+      type: "path",
+      d: hashPathData(ladder, style.stereoWedgeWidthPx, style.stereoHashPeriodPx, style.coordinatePrecision, id),
+      stroke,
+    };
+    primitives.push(hash);
+    const bars = hashBars(ladder, style.stereoWedgeWidthPx, style.stereoHashPeriodPx);
+    for (const bar of bars) drawn.push({ a: bar.a, b: bar.b, halfWidth });
+    const firstBar = bars[0];
+    const lastBar = bars[bars.length - 1];
+    if (firstBar !== undefined && lastBar !== undefined) {
+      drawn.push(
+        { a: firstBar.a, b: lastBar.a, halfWidth },
+        { a: firstBar.b, b: lastBar.b, halfWidth },
+      );
+    }
+    return true;
+  }
+  if (stereo === "wavy") {
+    const id = idOf("wavy");
+    const wavy: PathPrimitive = {
+      id,
+      source,
+      type: "path",
+      d: wavyPathData(axis, style.stereoWavyPeriodPx, style.coordinatePrecision, id),
+      stroke,
+    };
+    primitives.push(wavy);
+    // The wave's envelope: two rails at its amplitude either side of the
+    // axis (already in the corridors). A box that clears all three cannot
+    // reach the curve between them.
+    const amplitude = style.stereoWavyPeriodPx * STEREO_MARKS.wavyAmplitudeRatio;
+    const normal = leftNormal(axis.unit);
+    for (const side of [amplitude, -amplitude]) {
+      drawn.push({
+        a: { x: axis.a.x + normal.x * side, y: axis.a.y + normal.y * side },
+        b: { x: axis.b.x + normal.x * side, y: axis.b.y + normal.y * side },
+        halfWidth,
+      });
+    }
+    return true;
+  }
+  return false;
+}
+
 function pushOutline(drawn: AnnotationSegment[], points: readonly ScenePoint[]): void {
   for (let i = 0; i < points.length; i++) {
     const a = points[i];

@@ -16,7 +16,7 @@
  * network and no dev server running.
  */
 
-import { mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -30,11 +30,12 @@ import {
 import { buildScene } from "../src/scene/build.js";
 import type { SceneBuildOptions } from "../src/scene/build.js";
 import type { RenderScene } from "../src/scene/types.js";
-import { RENDER_STYLES } from "../src/style.js";
+import { RENDER_STYLES, withStyle } from "../src/style.js";
 import type { RenderStyle, RenderStyleName } from "../src/style.js";
 import { serializeScene } from "../src/svg/serialize.js";
 import type { Representation, ViewKind } from "../src/representation.js";
-import type { Molecule } from "@starter/chem-core";
+import { project, readMolblock, stereoConfig, suggestSteroidSkeleton } from "@starter/chem-core";
+import type { Molecule, PlanarView, ProjectedLayout } from "@starter/chem-core";
 
 const OUTPUT_DIR = join(dirname(fileURLToPath(import.meta.url)), "output");
 const OUTPUT_FILE = join(OUTPUT_DIR, "contact-sheet.html");
@@ -92,6 +93,10 @@ interface Row {
   readonly label: string;
   readonly note: string | undefined;
   readonly representation: Representation;
+  /** Applied over each preset, for a row about one style switch. */
+  readonly style?: Partial<RenderStyle>;
+  /** Scene options of the row's own, a projection's layout among them. */
+  readonly options?: SceneBuildOptions;
 }
 
 /**
@@ -241,7 +246,9 @@ function renderRow(
   options?: SceneBuildOptions,
 ): string {
   const cells = PRESET_NAMES.map((presetName) => {
-    const cell = buildCell(fixture, row.representation, RENDER_STYLES[presetName], options);
+    const base = RENDER_STYLES[presetName];
+    const style = row.style === undefined ? base : withStyle(base, row.style);
+    const cell = buildCell(fixture, row.representation, style, row.options ?? options);
     const body =
       cell.unavailable === undefined
         ? `          <div class="stage stage--${presetName}">${cell.svg}</div>`
@@ -272,6 +279,58 @@ function renderRow(
     cells,
     `      </div>`,
   ].join("\n");
+}
+
+/**
+ * The PLANAR FRAME section (decisions 164, 177-182): one steroid, as its
+ * steroid panel with the accepted skeleton at BOTH hashed-wedge conventions
+ * — the only place the switch is seen — and as a Mills panel. Read from
+ * chem-core's checked-in fixture, as the projection tests read it.
+ */
+export const PLANAR_SECTION_NAME = "5alpha-cholestane (planar frame: steroid and Mills panels)";
+
+function planarSection(): { readonly molecule: Molecule; readonly rows: readonly Row[] } {
+  const file = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "chem-core", "test", "fixtures", "steroid", "5alpha-cholestane.mol");
+  const molecule = readMolblock(readFileSync(file, "utf8")).molecule;
+  const suggestion = suggestSteroidSkeleton(molecule);
+  if (suggestion.kind !== "match") throw new Error("the steroid fixture no longer matches the steroid skeleton");
+  const layoutOf = (view: PlanarView): ProjectedLayout => {
+    const result = project(molecule, stereoConfig(molecule), view);
+    if (result.kind !== "available") throw new Error(`${view.template}: ${result.kind}`);
+    return result.layout;
+  };
+  const steroid = layoutOf({
+    kind: "planar",
+    template: "steroid",
+    frame: {},
+    params: { rotationDeg: 0, mirror: false, skeleton: suggestion.skeleton },
+  });
+  const mills = layoutOf({ kind: "planar", template: "mills", frame: {}, params: { rotationDeg: 0, mirror: false } });
+  const labelled = representation("skeletal", { showStereoDescriptors: true, showLocants: true });
+  return {
+    molecule,
+    rows: Object.freeze([
+      Object.freeze({
+        label: "steroid panel",
+        note: "alpha/beta + locants, hashed wedge narrow at the centre (IUPAC)",
+        representation: labelled,
+        options: { layout: steroid },
+      }),
+      Object.freeze({
+        label: "steroid panel",
+        note: "hashed wedge narrow at the substituent (perspective)",
+        representation: representation("skeletal"),
+        style: { hashedWedgeNarrowEnd: "substituent" as const },
+        options: { layout: steroid },
+      }),
+      Object.freeze({
+        label: "Mills panel",
+        note: "rings re-laid as regular polygons, marks after",
+        representation: representation("skeletal"),
+        options: { layout: mills },
+      }),
+    ]),
+  };
 }
 
 function renderSection(name: string, rows: readonly string[]): string {
@@ -305,6 +364,13 @@ export function renderContactSheet(): string {
         ),
       ),
     ),
+    (() => {
+      const planar = planarSection();
+      return renderSection(
+        PLANAR_SECTION_NAME,
+        planar.rows.map((row) => renderRow(row, planar)),
+      );
+    })(),
   ].join("\n");
 
   return `<!doctype html>

@@ -20,6 +20,7 @@ import { VIEW_KINDS } from "../src/representation.js";
 
 import {
   ANNOTATED_SECTION_NAME,
+  PLANAR_SECTION_NAME,
   contactSheetPath,
   MECHANISM_SECTION_PREFIX,
   contactSheetUrl,
@@ -71,9 +72,19 @@ describe("contact sheet", () => {
     expect(html).toContain("<em>kekule alternation</em>");
     expect(html).toContain("<em>stereo descriptors</em>");
     const cells = html.split('class="cell"').length - 1;
+    // Plus the planar frame section's three rows, each in both presets.
     expect(cells).toBe(
-      FIXTURES.length * (VIEW_KINDS.length + 2) * 2 + 2 * 2 + MECHANISM_FIXTURES.length * 2 * 2,
+      FIXTURES.length * (VIEW_KINDS.length + 2) * 2 + 2 * 2 + MECHANISM_FIXTURES.length * 2 * 2 + 3 * 2,
     );
+  });
+
+  it("draws a steroid panel at both hashed-wedge conventions, and a Mills panel (decision 177)", () => {
+    expect(html).toContain(`<h2>${PLANAR_SECTION_NAME}</h2>`);
+    expect(html).toContain("hashed wedge narrow at the centre (IUPAC)");
+    expect(html).toContain("hashed wedge narrow at the substituent (perspective)");
+    expect(html).toContain("rings re-laid as regular polygons, marks after");
+    expect(html).toMatch(/id="atom:a\d+:alphaBeta"/);
+    expect(html).toMatch(/id="projected:a\d+\.H:hash"/);
   });
 
   it("carries the fused-ring annotation section, locants drawn", () => {

@@ -281,10 +281,14 @@ function widthAdvice(
  * takes it under the floor — the identical gap decision 60 exists to close, on
  * the one group mark that reliably draws at Publication.
  *
- * `alphaBeta` and `torsion` are declared kinds with no producer: nothing
- * requests them, so no figure draws one and the check cannot reach them. They
- * say so here rather than being absent, so the day one gains a producer the
- * choice is made deliberately.
+ * `alphaBeta` is checked because a steroid panel now produces it (decision
+ * 182): it is set at the DESCRIPTOR scale, 8 pt at Publication, so any
+ * scale-to-fit takes it under the floor exactly as it does `stereoPrefix`.
+ *
+ * `torsion` is a declared kind with no producer: nothing requests it, so no
+ * figure draws one and the check cannot reach it. It says so here rather than
+ * being absent, so the day it gains a producer the choice is made
+ * deliberately.
  */
 type AnnotationCheck = { readonly name: string } | { readonly unchecked: string };
 
@@ -292,7 +296,7 @@ const ANNOTATION_CHECKS = {
   descriptor: { name: "Stereo descriptors" },
   stereoGroup: { name: "Stereo group tags" },
   stereoPrefix: { name: "Stereo prefixes (rac-/rel-)" },
-  alphaBeta: { unchecked: "no producer requests it, so no figure draws one" },
+  alphaBeta: { name: "Alpha/beta labels" },
   locant: { name: "Locants" },
   torsion: { unchecked: "no producer requests it, so no figure draws one" },
 } as const satisfies Readonly<Record<AnnotationKind, AnnotationCheck>>;

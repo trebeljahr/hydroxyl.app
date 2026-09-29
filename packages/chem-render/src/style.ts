@@ -87,6 +87,22 @@ export interface RenderStyle {
   /** Centre-to-centre spacing of the bars of a hashed wedge, px. */
   readonly stereoHashPeriodPx: number;
   /**
+   * Which end of a HASHED wedge is drawn narrow (decision 177).
+   *
+   * `"centre"`, both presets: narrow at the stereocentre, as IUPAC 2006
+   * draws it (Pure Appl. Chem. 78, 1897, ST-0.3: read "from the narrow end to
+   * the wide end", the wide end further from the viewer), and as the solid
+   * wedge is. `"substituent"` is the perspective convention ST-0.3 rejects —
+   * the far end drawn narrow — kept for a house style or a reproduction of an
+   * older figure that uses it.
+   *
+   * DRAWING ONLY. A mark states the configuration of the atom at its named
+   * narrow end whichever way the ladder is drawn, so the reader, the molblock
+   * and every descriptor are the same under both settings. Solid wedges are
+   * not switched.
+   */
+  readonly hashedWedgeNarrowEnd: "centre" | "substituent";
+  /**
    * Full period of a wavy bond, px — one complete swing out and back.
    *
    * FIXED, and deliberately not derived from the bond length: a wavy bond is a
@@ -230,6 +246,7 @@ export const PUBLICATION_STYLE: RenderStyle = Object.freeze({
   aromaticCircleRatio: 0.75,
   stereoWedgeWidthPx: 4.2,
   stereoHashPeriodPx: 3,
+  hashedWedgeNarrowEnd: "centre",
   stereoWavyPeriodPx: 8,
   explicitHydrogenLengthRatio: 0.66,
   explicitHydrogenMinStemRatio: 0.2,
@@ -363,6 +380,7 @@ export const SCREEN_STYLE: RenderStyle = Object.freeze({
   aromaticCircleRatio: 0.75,
   stereoWedgeWidthPx: 7,
   stereoHashPeriodPx: 5,
+  hashedWedgeNarrowEnd: "centre",
   stereoWavyPeriodPx: 15,
   explicitHydrogenLengthRatio: 0.66,
   explicitHydrogenMinStemRatio: 0.2,

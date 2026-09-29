@@ -123,7 +123,7 @@ export function projectedSource(layout: ProjectedLayout, node: DerivedNode): Sce
 }
 
 /** `projected:a11.CH2OH:label`: the node's own id, never a counter. */
-export function projectedPrimitiveId(nodeId: string, part: "label" | "line"): string {
+export function projectedPrimitiveId(nodeId: string, part: "label" | "line" | "wedge" | "hash" | "wavy"): string {
   return `projected:${nodeId}:${part}`;
 }
 

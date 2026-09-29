@@ -11,6 +11,9 @@
  * a bond, an atom id or any id list: turning the bond round is `flipBond`'s
  * job, and the depiction inverts because `axis.a` moved. That is the whole of
  * "flipBond inverts the depiction" — there is no second rule to keep in step.
+ * The one exception is a style's, not a bond's: a house style that draws a
+ * hashed wedge wide at the stereocentre (decision 177) hands the ladder
+ * `reversedAxis(axis)`, and nothing else changes.
  *
  * EVERY MARK IS BUILT ON THE ALREADY-TRIMMED `BondAxis`, so it inherits the
  * label clearance the plain line gets for free. The wedge's wide end is the
@@ -87,6 +90,27 @@ export function wedgePoints(axis: BondAxis, widthPx: number): readonly ScenePoin
   const normal = leftNormal(axis.unit);
   const half = widthPx / 2;
   return [axis.a, shift(axis.b, normal, half), shift(axis.b, normal, -half)];
+}
+
+/**
+ * `axis` end for end: `a` and `b` exchanged, the direction negated, and the
+ * untrimmed ends swapped with it, so a mark built on it has its narrow end at
+ * the old `b`. The hashed-wedge convention switch (decision 177) is this and
+ * nothing else; negating a direction vector is not a y-flip.
+ */
+export function reversedAxis(axis: BondAxis): BondAxis {
+  return {
+    a: axis.b,
+    b: axis.a,
+    unit: { x: 0 - axis.unit.x, y: 0 - axis.unit.y },
+    length: axis.length,
+    untrimmed: {
+      from: axis.untrimmed.to,
+      to: axis.untrimmed.from,
+      placementFrom: axis.untrimmed.placementTo,
+      placementTo: axis.untrimmed.placementFrom,
+    },
+  };
 }
 
 /** One bar of a hash ladder, as its two endpoints. */
