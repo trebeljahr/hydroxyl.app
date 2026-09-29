@@ -3,8 +3,10 @@
  * amino-acid.ts: the longest run of acyclic carbons, and an honest refusal
  * where two runs tie.
  *
- * Internal. Not re-exported from the package root: the chain is a detail of
- * how those two modules number atoms, not a chemistry query of its own.
+ * Exported from the package root only because the export audit
+ * (stereo-config.test.ts, "chem-core exports") requires every module in the
+ * barrel. The names are helpers of those two numbering rules, not chemistry
+ * queries of their own; nothing outside sugar.ts and amino-acid.ts calls them.
  *
  * A CHAIN CARBON is a carbon that is in no ring and not aromatic, reached over
  * a single, non-aromatic bond. Ring atoms end a chain (phenylalanine's chain
@@ -17,6 +19,14 @@
  * numbered. Choosing by id would give the same molecule drawn twice two
  * different numberings. Recursion is avoided so a 20k-atom chain does not
  * blow the stack.
+ *
+ * ONE ANCHOR PER SKELETON (decision 156). `extendChain` walks the whole
+ * acyclic skeleton it starts in, so calling it once per carbonyl or alpha
+ * carbon is quadratic when one skeleton holds many (a 4000-carbon polyketone
+ * took two seconds). `chainSkeletons` labels every skeleton once, and a
+ * numbering rule skips a skeleton holding more than one of its anchors before
+ * it walks anything: which of two carbonyls is C1, or which of two carboxyls,
+ * needs principal-chain rules these modules do not have.
  */
 
 import { isRingAtom } from "./rings.js";
@@ -38,6 +48,46 @@ export function chainCarbonNeighbours(mol: Molecule, atomId: AtomId): AtomId[] {
     if (isChainCarbon(mol, other)) out.push(other);
   }
   return out;
+}
+
+let chainVisits = 0;
+
+/**
+ * Testing hook: how many chain carbons `extendChain` and `chainSkeletons`
+ * have visited, in total. What pins the numbering rules as linear.
+ */
+export function chainCarbonVisitCount(): number {
+  return chainVisits;
+}
+
+/**
+ * Which acyclic carbon skeleton each of `seeds` lies in, as a small integer
+ * label: two seeds share a label when chain carbons joined by single,
+ * non-aromatic bonds connect them. Every chain carbon of a skeleton holding a
+ * seed is labelled; a seed that is not a chain carbon (proline's ring alpha
+ * carbon) is not. Linear in the atoms reached: each skeleton is walked once.
+ */
+export function chainSkeletons(
+  mol: Molecule,
+  seeds: Iterable<AtomId>,
+): ReadonlyMap<AtomId, number> {
+  const label = new Map<AtomId, number>();
+  let next = 0;
+  for (const seed of seeds) {
+    if (label.has(seed) || !isChainCarbon(mol, seed)) continue;
+    const id = next++;
+    label.set(seed, id);
+    const queue = [seed];
+    for (let i = 0; i < queue.length; i++) {
+      chainVisits++;
+      for (const other of chainCarbonNeighbours(mol, queue[i]!)) {
+        if (label.has(other)) continue;
+        label.set(other, id);
+        queue.push(other);
+      }
+    }
+  }
+  return label;
 }
 
 export interface ChainExtension {
@@ -82,6 +132,7 @@ export function extendChain(
   }
   for (let i = 0; i < order.length; i++) {
     const atom = order[i]!;
+    chainVisits++;
     for (const next of chainCarbonNeighbours(mol, atom)) {
       if (seen.has(next)) continue;
       seen.add(next);

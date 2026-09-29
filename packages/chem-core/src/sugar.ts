@@ -43,8 +43,11 @@
  * heteroatom (the ring heteroatom counts for the ring-closing carbon), so
  * oxan-2-ol is a hemiacetal ring but not numbered 1 to 5 (decision 142).
  * Where the parent chain ties (two branches of one length, or a ketone equally
- * far from both ends) numbering stops rather than choosing by atom id. A
- * nucleoside's sugar is primed, 1′ to 5′; other residues are not.
+ * far from both ends) numbering stops rather than choosing by atom id. An
+ * acyclic skeleton holding two carbonyls (an osone, a dialdose, streptose's
+ * formyl branch) is not numbered at all: which one is C1 needs principal-chain
+ * rules this module does not have (decision 156). A nucleoside's sugar is
+ * primed, 1′ to 5′; other residues are not.
  *
  * TWO REFERENCE ATOMS. `configurationalAtom` — the highest-numbered
  * stereocentre of the chain — fixes D/L. `anomericReferenceAtom` is what
@@ -86,6 +89,7 @@
 
 import {
   chainCarbonNeighbours,
+  chainSkeletons,
   extendChain,
   isChainCarbon,
   type ChainExtension,
@@ -632,18 +636,23 @@ function computePerception(mol: Molecule): SugarPerception {
   const anchors = mol.atomIds
     .map((id) => carbonylAnchor(mol, id))
     .filter((anchor): anchor is CarbonylAnchor => anchor !== undefined);
-  const anchorIds = new Set(anchors.map((anchor) => anchor.carbon));
+  // Two carbonyls in one acyclic skeleton (an osone, a dialdose, a 3-C-formyl
+  // branched sugar) anchor it twice, and neither anchor is the one a name
+  // would pick without the principal-chain rules this module does not have
+  // (decision 156). Counted per skeleton BEFORE any chain is walked, so a
+  // polyketone costs one walk, not one per carbonyl.
+  const skeleton = chainSkeletons(
+    mol,
+    anchors.map((anchor) => anchor.carbon),
+  );
+  const perSkeleton = new Map<number, number>();
   for (const anchor of anchors) {
+    const label = skeleton.get(anchor.carbon)!;
+    perSkeleton.set(label, (perSkeleton.get(label) ?? 0) + 1);
+  }
+  for (const anchor of anchors) {
+    if (perSkeleton.get(skeleton.get(anchor.carbon)!)! > 1) continue;
     const sides = openChainSides(mol, anchor);
-    const chain = [
-      ...sides.left.path,
-      ...sides.right.path,
-      ...sides.left.beyondTie,
-      ...sides.right.beyondTie,
-    ];
-    // Two carbonyls on one chain (an osone, a dialdose) anchor it twice, and
-    // neither anchor is the one a name would pick without more rules.
-    if (chain.some((id) => anchorIds.has(id))) continue;
     if (!isPolyhydroxy(mol, sides)) continue;
     units.push(
       makeCarbohydrate(

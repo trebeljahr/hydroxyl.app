@@ -9,13 +9,14 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { assembleMolecule } from "./builders.js";
+import { assembleMolecule, buildMolecule } from "./builders.js";
+import { chainCarbonVisitCount } from "./carbon-chain.js";
 import { dictionaryEntryById } from "./dictionary.js";
 import { insertFragment } from "./fragment.js";
-import { makeAtom } from "./molecule.js";
+import { bondBetween, makeAtom } from "./molecule.js";
 import { readMolblock } from "./molblock-read.js";
 import { atomNumbering, locantOf } from "./numbering.js";
-import { removeAtoms } from "./ops.js";
+import { removeAtoms, updateBond } from "./ops.js";
 import { carbohydrates } from "./sugar.js";
 import type { Molecule } from "./types.js";
 
@@ -98,12 +99,50 @@ describe("atomNumbering", () => {
     const mol = fixture("projection", "beta-d-glucopyranose.mol");
     const before = atomNumbering(mol);
     const [unit] = carbohydrates(mol);
-    // Delete C6's oxygen: C6 is still a carbon of the chain.
     const c6 = unit!.backbone[5]!;
+    expect(locantOf(before, c6)).toBe("6");
     const o6 = mol.atomIds.find(
       (id) => mol.atoms[id]!.element === "O" && Object.values(mol.bonds).some((b) => (b.from === id && b.to === c6) || (b.to === id && b.from === c6)),
     )!;
-    const after = atomNumbering(removeAtoms(mol, [o6]));
-    for (const id of Object.keys(before.locants)) expect(locantOf(after, id), id).toBe(locantOf(before, id));
+    // Delete C6 itself, a NUMBERED atom, with its oxygen: C6's locant goes,
+    // even when an explicit map still names it, and C1 to C5 keep theirs.
+    const after = atomNumbering(removeAtoms(mol, [c6, o6]), { [c6]: "6" });
+    expect(locantOf(after, c6)).toBeUndefined();
+    expect(Object.hasOwn(after.locants, c6)).toBe(false);
+    const kept = Object.keys(before.locants).filter((id) => id !== c6);
+    expect(kept).toHaveLength(5);
+    for (const id of kept) expect(locantOf(after, id), id).toBe(locantOf(before, id));
+  });
+
+  it("numbers nothing on a skeleton with two carbonyls, and walks such a skeleton once", () => {
+    // D-glucosone (D-arabino-hexos-2-ulose): glucose with C2 oxidised to a
+    // ketone. Aldehyde and ketone both anchor the one chain, and which is C1
+    // is not these rules' call (decision 156).
+    const glucose = fixture("projection", "d-glucose-open.mol");
+    const [unit] = carbohydrates(glucose);
+    const c2 = unit!.backbone[1]!;
+    const o2 = glucose.atomIds.find(
+      (id) => glucose.atoms[id]!.element === "O" && bondBetween(glucose, id, c2) !== undefined,
+    )!;
+    const glucosone = updateBond(glucose, bondBetween(glucose, c2, o2)!.id, { order: 2, stereo: "none" });
+    expect(carbohydrates(glucosone)).toEqual([]);
+    expect(atomNumbering(glucosone).locants).toEqual({});
+
+    // A polyketone of 3000 carbons: one skeleton, 1499 ketones. Every ketone
+    // used to walk the whole skeleton (2.2 s at 4000 carbons); now the
+    // skeleton is labelled once and no chain is walked at all.
+    const n = 3000;
+    const polyketone = buildMolecule((b) => {
+      let previous: string | undefined;
+      for (let i = 0; i < n; i++) {
+        const c = b.atom("C", { x: i, y: i % 2 });
+        if (previous !== undefined) b.bond(previous, c);
+        if (i % 2 === 1 && i < n - 1) b.bond(c, b.atom("O", { x: i, y: 2 }), 2);
+        previous = c;
+      }
+    });
+    const visits = chainCarbonVisitCount();
+    expect(atomNumbering(polyketone).locants).toEqual({});
+    expect(chainCarbonVisitCount() - visits).toBeLessThanOrEqual(2 * n);
   });
 });

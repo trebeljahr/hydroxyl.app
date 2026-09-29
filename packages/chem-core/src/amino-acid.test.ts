@@ -14,10 +14,13 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { alphaAminoAcids, aminoAcidSeries, type AlphaAminoAcid } from "./amino-acid.js";
+import { buildMolecule } from "./builders.js";
+import { chainCarbonVisitCount } from "./carbon-chain.js";
 import { dictionaryEntryById } from "./dictionary.js";
 import { fischerSide } from "./fischer-side.js";
-import { bondsAt, otherEnd } from "./molecule.js";
+import { addAtom, addBond, bondsAt, otherEnd } from "./molecule.js";
 import { readMolblock } from "./molblock-read.js";
+import { atomNumbering } from "./numbering.js";
 import { invertStereocentre } from "./ops.js";
 import { cipDescriptor } from "./stereo.js";
 import { rotateAtoms } from "./transform.js";
@@ -187,6 +190,57 @@ describe("amino-acid numbering", () => {
     expect(only(proline).backbone).toHaveLength(2);
     // The chain ends, the side chain does not: proline's D/L still reads.
     expect(aminoAcidSeries(proline, only(proline)).kind).toBe("L");
+  });
+
+  it("numbers nothing where two alpha carbons share a skeleton, and still reads their D/L", () => {
+    // 2,6-Diaminopimelic acid, drawn from L-lysine by putting a carboxyl on
+    // its epsilon carbon: two alpha carbons, two carboxyls, one chain. Either
+    // carboxyl could be C1 (decision 156), so neither numbering is drawn, but
+    // lysine's own alpha carbon is still L.
+    const lysine = dictionary("l-lysine");
+    const unit = only(lysine);
+    const c6 = unit.backbone[5]!;
+    const at = lysine.atoms[c6]!.pos;
+    const carboxyl = addAtom(lysine, { element: "C", pos: { x: at.x + 1, y: at.y } });
+    let dap = addBond(carboxyl.molecule, { from: c6, to: carboxyl.id }).molecule;
+    const oxo = addAtom(dap, { element: "O", pos: { x: at.x + 1.5, y: at.y + 0.87 } });
+    dap = addBond(oxo.molecule, { from: carboxyl.id, to: oxo.id, order: 2 }).molecule;
+    const hydroxy = addAtom(dap, { element: "O", pos: { x: at.x + 1.5, y: at.y - 0.87 } });
+    dap = addBond(hydroxy.molecule, { from: carboxyl.id, to: hydroxy.id }).molecule;
+
+    const units = alphaAminoAcids(dap);
+    expect(new Set(units.map((u) => u.alphaCarbon))).toEqual(new Set([unit.alphaCarbon, c6]));
+    expect(units.map((u) => u.backbone)).toEqual([[], []]);
+    expect(Object.values(atomNumbering(dap).sources)).not.toContain("aminoAcid");
+    const lysineAlpha = units.find((u) => u.alphaCarbon === unit.alphaCarbon)!;
+    expect(["R", "S"]).toContain(cipDescriptor(dap, unit.alphaCarbon)?.kind);
+    expect(aminoAcidSeries(dap, lysineAlpha)).toEqual({ kind: "L", atomId: unit.alphaCarbon });
+  });
+
+  it("walks a long backbone of alpha carbons once, not once per alpha carbon", () => {
+    // -CH2-CH(NH2)(COOH)- repeated 1500 times on one carbon chain.
+    const n = 3000;
+    const polymer = buildMolecule((b) => {
+      let previous: string | undefined;
+      for (let i = 0; i < n; i++) {
+        const c = b.atom("C", { x: i, y: 0 });
+        if (previous !== undefined) b.bond(previous, c);
+        if (i % 2 === 1) {
+          b.bond(c, b.atom("N", { x: i, y: 1 }));
+          const acid = b.atom("C", { x: i, y: -1 });
+          b.bond(c, acid);
+          b.bond(acid, b.atom("O", { x: i + 0.5, y: -2 }), 2);
+          b.bond(acid, b.atom("O", { x: i - 0.5, y: -2 }));
+        }
+        previous = c;
+      }
+    });
+    const visits = chainCarbonVisitCount();
+    const units = alphaAminoAcids(polymer);
+    expect(units).toHaveLength(n / 2);
+    expect(units.every((u) => u.backbone.length === 0)).toBe(true);
+    // Every chain carbon (the backbone and its carboxyls) at most twice.
+    expect(chainCarbonVisitCount() - visits).toBeLessThanOrEqual(2 * (n + n / 2));
   });
 
   it("finds the fixtures' amino acids too", () => {

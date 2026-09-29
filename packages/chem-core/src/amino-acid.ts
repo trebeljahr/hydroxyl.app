@@ -23,14 +23,16 @@
  * no number, and threonine runs C1 to C4 through its methyl, not its oxygen.
  * Where two branches tie, the numbering stops (valine stops at C3, leucine at
  * C4) rather than choosing a methyl by atom id (decision 142). Ring atoms end
- * the chain: phenylalanine is C1 to C3 and proline C1 to C2.
+ * the chain: phenylalanine is C1 to C3 and proline C1 to C2. An acyclic
+ * skeleton with two alpha carbons (diaminopimelic acid) is not numbered at
+ * all, since either carboxyl could be C1 (decision 156).
  *
  * D/L: the alpha carbon with the carboxyl carbon UP and the next chain carbon
  * DOWN; the nitrogen on the right is D. Glycine's alpha carbon is not a
  * stereocentre and is refused as achiral rather than given either letter.
  */
 
-import { chainCarbonNeighbours, extendChain } from "./carbon-chain.js";
+import { chainCarbonNeighbours, chainSkeletons, extendChain } from "./carbon-chain.js";
 import { cipTopologyFingerprint } from "./cip.js";
 import { fischerSide, type DLConfiguration } from "./fischer-side.js";
 import { bondsAt, getAtom, otherEnd } from "./molecule.js";
@@ -41,12 +43,17 @@ import type { AtomId, Molecule } from "./types.js";
 
 export interface AlphaAminoAcid {
   readonly alphaCarbon: AtomId;
-  /** C1: the carboxyl, carboxylate, ester or amide carbon. */
+  /**
+   * The carboxyl, carboxylate, ester or amide carbon on the alpha carbon: C1
+   * whenever the unit is numbered.
+   */
   readonly carboxylCarbon: AtomId;
   readonly nitrogen: AtomId;
   /**
    * The numbered parent chain in locant order: `backbone[i]` is C(i + 1), so
    * `backbone[0]` is the carboxyl carbon and `backbone[1]` the alpha carbon.
+   * EMPTY when another alpha carbon shares the acyclic skeleton, since either
+   * carboxyl could be C1 (decision 156); D/L is still read.
    */
   readonly backbone: readonly AtomId[];
   /** Where the parent chain stopped because two branches tied. */
@@ -69,8 +76,14 @@ function isCarboxylType(mol: Molecule, atomId: AtomId): boolean {
   return carbonylO === 1 && singleHetero === 1;
 }
 
+interface AlphaCandidate {
+  readonly alphaCarbon: AtomId;
+  readonly carboxylCarbon: AtomId;
+  readonly nitrogen: AtomId;
+}
+
 function perceive(mol: Molecule): readonly AlphaAminoAcid[] {
-  const out: AlphaAminoAcid[] = [];
+  const candidates: AlphaCandidate[] = [];
   for (const id of mol.atomIds) {
     const atom = mol.atoms[id]!;
     if (atom.element !== "C" || atom.aromatic) continue;
@@ -85,14 +98,41 @@ function perceive(mol: Molecule): readonly AlphaAminoAcid[] {
       else if (element === "C" && isCarboxylType(mol, other)) carboxyls.push(other);
     }
     if (nitrogens.length !== 1 || carboxyls.length !== 1) continue;
-    const carboxyl = carboxyls[0]!;
+    candidates.push({ alphaCarbon: id, carboxylCarbon: carboxyls[0]!, nitrogen: nitrogens[0]! });
+  }
+
+  // Two alpha carbons in one acyclic skeleton (diaminopimelic acid, a
+  // poly(amino acid) drawn as one chain) would each number it from their own
+  // carboxyl, and which is C1 needs rules this module does not have
+  // (decision 156). Such a unit keeps its D/L and loses its numbers. Counted
+  // per skeleton before any chain is walked, so a long backbone costs one
+  // walk, not one per alpha carbon. A ring alpha carbon (proline) lies in no
+  // skeleton and never conflicts.
+  const skeleton = chainSkeletons(
+    mol,
+    candidates.map((c) => c.alphaCarbon),
+  );
+  const perSkeleton = new Map<number, number>();
+  for (const c of candidates) {
+    const label = skeleton.get(c.alphaCarbon);
+    if (label !== undefined) perSkeleton.set(label, (perSkeleton.get(label) ?? 0) + 1);
+  }
+
+  const out: AlphaAminoAcid[] = [];
+  for (const { alphaCarbon: id, carboxylCarbon: carboxyl, nitrogen } of candidates) {
+    const label = skeleton.get(id);
+    if (label !== undefined && perSkeleton.get(label)! > 1) {
+      // Still an alpha-amino acid, with a D/L of its own: only unnumbered.
+      out.push(Object.freeze({ alphaCarbon: id, carboxylCarbon: carboxyl, nitrogen, backbone: Object.freeze([]) }));
+      continue;
+    }
     const side = chainCarbonNeighbours(mol, id).filter((other) => other !== carboxyl);
     const chain = extendChain(mol, id, side, new Set([carboxyl]));
     out.push(
       Object.freeze({
         alphaCarbon: id,
         carboxylCarbon: carboxyl,
-        nitrogen: nitrogens[0]!,
+        nitrogen,
         backbone: Object.freeze([carboxyl, id, ...chain.path]),
         ...(chain.tiedAt === undefined ? {} : { tiedAt: chain.tiedAt }),
       }),
