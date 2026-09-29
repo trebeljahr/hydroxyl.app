@@ -57,3 +57,6 @@ export * from "./issues.js";
 export * from "./stereo-config.js";
 // Achirality proved by an atom mapping; reads stereo-config.
 export * from "./achirality.js";
+// One implicit hydrogen drawn as a real atom for an arrow to reach (decision
+// 131). Reads stereo-config to keep a centre's configuration, so it sits last.
+export * from "./promote-hydrogen.js";
