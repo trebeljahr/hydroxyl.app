@@ -24,6 +24,7 @@
  * where it goes.
  */
 
+import { ProjectDonateLink } from "../project-donate-link";
 import type { ReactElement, ReactNode } from "react";
 
 import { JOURNAL_WIDTHS_CM, MIN_PRINTED_LABEL_PT } from "@starter/chem-render";
@@ -218,14 +219,14 @@ export function Landing(): ReactElement {
         {/* Not in the static export an app-store shell would package, for the
             reason given in shell/StatusBar.tsx. New tab, like the editor's. */}
         {isFileExportBuild() ? null : (
-          <a
+          <ProjectDonateLink
             href={DONATE_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="hover:text-foreground underline-offset-2 hover:underline"
           >
             Donate
-          </a>
+          </ProjectDonateLink>
         )}
       </footer>
     </div>

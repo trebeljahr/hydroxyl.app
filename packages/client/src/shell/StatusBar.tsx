@@ -61,6 +61,7 @@
  * it is. The address is its title, for a chemist with no mail program set up.
  */
 
+import { ProjectDonateLink } from "../components/project-donate-link";
 import type { ReactElement } from "react";
 import { AlertTriangleIcon } from "lucide-react";
 
@@ -347,7 +348,7 @@ export function StatusBar(): ReactElement {
       </a>
 
       {isFileExportBuild() ? null : (
-        <a
+        <ProjectDonateLink
           href={DONATE_URL}
           target="_blank"
           rel="noopener noreferrer"
@@ -355,7 +356,7 @@ export function StatusBar(): ReactElement {
           className="hover:bg-muted hover:text-foreground rounded px-2 py-0.5 max-lg:hidden"
         >
           Donate
-        </a>
+        </ProjectDonateLink>
       )}
     </footer>
   );

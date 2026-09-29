@@ -439,7 +439,7 @@ describe("StatusBar — the Donate link", () => {
     vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "0");
     render(<StatusBar />);
     const link = screen.getByRole("link", { name: "Donate" });
-    expect(link).toHaveAttribute("href", "https://ricos.site/donate?from=chemistry-sketcher");
+    expect(link).toHaveAttribute("href", "https://ricos.site/donate/chemistry-sketcher");
     // A new tab, so the drawing is never navigated away from.
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("rel", "noopener noreferrer");

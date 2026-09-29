@@ -20,7 +20,7 @@
  * a copied link would otherwise record a donation that never happened.
  */
 
-export const DONATE_URL = "https://ricos.site/donate?from=chemistry-sketcher";
+export const DONATE_URL = "https://ricos.site/donate/chemistry-sketcher";
 
 export const DONATION_SUPPORTED_KEY = "donation-supported-at";
 
