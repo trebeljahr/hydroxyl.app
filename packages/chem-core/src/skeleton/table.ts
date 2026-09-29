@@ -40,6 +40,7 @@
  */
 
 import { bondBetween, bondsAt, neighborIds, otherEnd } from "../molecule.js";
+import { rings } from "../rings.js";
 import { compareIds } from "../selection.js";
 import {
   readConfig,
@@ -174,7 +175,8 @@ export class SkeletonSearchLimit extends Error {
  *
  * Any element and any bond order match; what must hold is the graph: every
  * core bond present (bar `skip`), and NO other bond between two core atoms,
- * so a bridged or extra-fused system does not pass for the table's.
+ * so a bridged system does not pass for the table's. A ring fused ONTO the
+ * core is not seen here; `extraFusedCarbocycles` is the caller's check.
  *
  * Throws `SkeletonSearchLimit` when `budget.nodes` runs out.
  */
@@ -250,10 +252,57 @@ export function skeletonEmbeddings(
 }
 
 /**
+ * A fused carbocycle this large or larger makes the core part of another
+ * retained skeleton (decision 185): lupane's and hopane's ring A.
+ */
+export const FUSED_CARBOCYCLE_MIN_SIZE = 5;
+
+/**
+ * The rings fused onto an embedded core that make it part of a LARGER
+ * carbocyclic system (decision 185), each as its atoms in walk order: a
+ * perceived ring that shares a bond between two core atoms, is not one of the
+ * table's rings, has `FUSED_CARBOCYCLE_MIN_SIZE` atoms or more, and holds
+ * only carbon.
+ *
+ * The embedding already forbids an extra bond between two core atoms, but
+ * not a ring fused onto them: a pentacyclic triterpene embeds four of its
+ * five rings as a steroid's A-D (betulin's B-E), and steroid numbering on it
+ * is wrong. A small carbocycle and any ring with a heteroatom are left alone:
+ * cyproterone's 1,2-methylene, drospirenone's 6,7- and 15,16-methylenes,
+ * stanozolol's pyrazole and triamcinolone acetonide's 16,17-acetonide are
+ * fused onto a steroid and keep its numbering.
+ */
+export function extraFusedCarbocycles(
+  mol: Molecule,
+  table: SkeletonTable,
+  core: readonly AtomId[],
+): readonly (readonly AtomId[])[] {
+  const inCore = new Set(core);
+  const tableRings = new Set(table.rings.map((ring) => setKey(ring.map((index) => core[index]!))));
+  const out: (readonly AtomId[])[] = [];
+  for (const ring of rings(mol)) {
+    if (ring.size < FUSED_CARBOCYCLE_MIN_SIZE || tableRings.has(setKey(ring.atomIds))) continue;
+    if (!ring.atomIds.every((id) => mol.atoms[id]!.element === "C")) continue;
+    const fused = ring.bondIds.some((bondId) => {
+      const bond = mol.bonds[bondId]!;
+      return inCore.has(bond.from) && inCore.has(bond.to);
+    });
+    if (fused) out.push(ring.atomIds);
+  }
+  return out;
+}
+
+function setKey(atomIds: readonly AtomId[]): string {
+  return [...atomIds].sort(compareIds).join("\u0000");
+}
+
+/**
  * The atoms that keep a stored acceptance from fitting `mol` any more, or
  * undefined when it fits: an id the molecule no longer has, an atom named
- * twice, a core bond gone, or a new bond between two core atoms. Ids are read
- * with `Object.hasOwn`, so "constructor" is simply missing.
+ * twice, a core bond gone, a new bond between two core atoms, or a carbocycle
+ * fused onto the core since (decision 185), so an acceptance never outlives
+ * what the suggestion would still match. Ids are read with `Object.hasOwn`,
+ * so "constructor" is simply missing.
  */
 export function acceptedSkeletonMisfit(
   mol: Molecule,
@@ -281,6 +330,8 @@ export function acceptedSkeletonMisfit(
       }
     }
   }
+  if (bad.size > 0) return [...bad].sort(compareIds);
+  for (const ring of extraFusedCarbocycles(mol, table, core)) for (const id of ring) bad.add(id);
   return bad.size > 0 ? [...bad].sort(compareIds) : undefined;
 }
 

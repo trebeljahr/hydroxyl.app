@@ -17,20 +17,35 @@
  * with every one of its 20 bonds present and no other bond between two of
  * its atoms. Any element (an aza-steroid keeps its numbering) and any bond
  * order (estradiol's aromatic ring A) match. The core has no symmetry, so one
- * embedding numbers it. Refused, in this order:
+ * embedding numbers it. Rings fused ONTO the core are allowed unless one is a
+ * carbocycle of five or more atoms (decision 185): cyproterone's
+ * 1,2-methylene, stanozolol's pyrazole and triamcinolone acetonide's
+ * 16,17-acetonide are steroids, lupane and hopane are not.
  *
- *   wrong-fusion-topology  a ring system of exactly four rings of 6, 6, 6 and
- *                          5 atoms that does not embed the core: ring sizes
+ * The answer, in the order it is decided (decision 185, refining 181):
+ *
+ *   match                  exactly one core, in no larger carbocyclic system
+ *   several-cores          two or more such cores: one acceptance holds one
+ *   larger-ring-system     every core found has a carbocycle of five or more
+ *                          atoms fused onto it: a pentacyclic triterpene
+ *                          (betulin, lupeol, hopane) has its own numbering;
+ *                          the fused rings' atoms are named
+ *   wrong-fusion-topology  no core embeds, and a ring system of exactly four
+ *                          rings of 6, 6, 6 and 5 atoms exists: ring sizes
  *                          alone would claim ent-kaurene, whose C/D rings are
  *                          a bridged bicyclo[3.2.1]octane
  *   partial-core           the core with exactly ONE of its 20 bonds missing,
- *                          named by its locants: cholecalciferol is 9,10-seco,
- *                          and a ring not yet closed while drawing is the same
- *   several-cores          two distinct embeddings
- *   search-limit           the embedding search ran out of budget; never a guess
+ *                          named by its locants, and that ring really open (no
+ *                          ring holds both its atoms): cholecalciferol is
+ *                          9,10-seco, and a ring not yet closed while drawing
+ *                          is the same
+ *   none                   anything else: a perhydrophenanthrene, an
+ *                          all-six-membered pentacyclic triterpene (beta-
+ *                          amyrin, friedelin) and a D-homo steroid are not
+ *                          offered as a broken steroid
  *
- * Anything else is `none`: a perhydrophenanthrene or a pentacyclic triterpene
- * is not offered as a broken steroid.
+ * and `search-limit` wherever the embedding search runs out of budget; never
+ * a guess.
  *
  * THE NUMBERING IS A LOOKUP TABLE, NOT A SEARCH. A lowest-locant search gives
  * a different, defensible-looking, wrong answer. Locants 1-17 come from the
@@ -56,6 +71,7 @@ import { compareIds } from "../selection.js";
 import type { StereoConfig } from "../stereo-config.js";
 import type { AtomId, Molecule } from "../types.js";
 import {
+  extraFusedCarbocycles,
   SKELETON_SEARCH_BUDGET,
   SkeletonSearchLimit,
   skeletonEmbeddings,
@@ -96,7 +112,12 @@ export const STEROID_SKELETON: SkeletonTable = Object.freeze({
   betaFace: "front",
 });
 
-export type SkeletonRefusalReason = "wrong-fusion-topology" | "partial-core" | "several-cores" | "search-limit";
+export type SkeletonRefusalReason =
+  | "larger-ring-system"
+  | "several-cores"
+  | "wrong-fusion-topology"
+  | "partial-core"
+  | "search-limit";
 
 export type SkeletonSuggestion =
   | {
@@ -125,25 +146,44 @@ export function suggestSteroidSkeleton(mol: Molecule): SkeletonSuggestion {
   const table = STEROID_SKELETON;
   const budget = { nodes: SKELETON_SEARCH_BUDGET };
   try {
+    // A core inside a larger carbocyclic system (a pentacyclic triterpene)
+    // is set aside, never matched (decision 185).
     const full = skeletonEmbeddings(mol, table, undefined, budget);
-    if (full.length === 1) {
-      const core = Object.freeze([...full[0]!]);
+    const larger: AtomId[] = [];
+    const cores = full.filter((core) => {
+      const extra = extraFusedCarbocycles(mol, table, core);
+      for (const ring of extra) larger.push(...ring);
+      return extra.length === 0;
+    });
+    if (cores.length === 1) {
+      const core = Object.freeze([...cores[0]!]);
       return Object.freeze({
         kind: "match",
         skeleton: Object.freeze({ name: table.name, core }),
         locants: steroidNumbering(mol, core),
       });
     }
-    if (full.length > 1) return refused("several-cores", full.flat());
+    if (cores.length > 1) return refused("several-cores", cores.flat());
+    if (full.length > 0) return refused("larger-ring-system", larger);
+    // No core embeds: every 5-6-6-6 system found now has the wrong fusion.
     const wrong = fourRingSystems(mol);
     if (wrong.length > 0) return refused("wrong-fusion-topology", wrong);
+    const membership = ringMembership(mol);
+    const shareRing = (a: AtomId, b: AtomId): boolean => {
+      const of = membership.atoms[b] ?? [];
+      return (membership.atoms[a] ?? []).some((index) => of.includes(index));
+    };
     for (let skip = 0; skip < table.bonds.length; skip++) {
-      const partial = skeletonEmbeddings(mol, table, skip, budget);
-      if (partial.length === 0) continue;
       const [p, q] = table.bonds[skip]!;
+      // Only a ring really left open is a seco-steroid: in a D-homo steroid
+      // or an oleanane the "missing" 13-17 bond's atoms still share a ring.
+      const partial = skeletonEmbeddings(mol, table, skip, budget).find(
+        (core) => !shareRing(core[p]!, core[q]!) && extraFusedCarbocycles(mol, table, core).length === 0,
+      );
+      if (partial === undefined) continue;
       const pair = [table.locants[p]!, table.locants[q]!].sort((a, b) => Number(a) - Number(b));
       return Object.freeze({
-        ...refused("partial-core", partial[0]!),
+        ...refused("partial-core", partial),
         missingBond: Object.freeze([pair[0]!, pair[1]!] as const),
       });
     }
@@ -207,36 +247,46 @@ function fourRingSystems(mol: Molecule): AtomId[] {
 // Numbering
 // ---------------------------------------------------------------------------
 
-interface SideChainNode {
+export interface SideChainNode {
   readonly locant: string;
   /** Index of the parent node in the same list; -1 for C20, bonded to C17. */
   readonly parent: number;
 }
 
-const CHOLESTANE: readonly SideChainNode[] = [
-  { locant: "20", parent: -1 },
-  { locant: "21", parent: 0 },
-  { locant: "22", parent: 0 },
-  { locant: "23", parent: 2 },
-  { locant: "24", parent: 3 },
-  { locant: "25", parent: 4 },
-  { locant: "26", parent: 5 },
-  { locant: "27", parent: 5 },
-];
+const node = (locant: string, parent: number): SideChainNode => Object.freeze({ locant, parent });
+
+const CHOLESTANE: readonly SideChainNode[] = Object.freeze([
+  node("20", -1),
+  node("21", 0),
+  node("22", 0),
+  node("23", 2),
+  node("24", 3),
+  node("25", 4),
+  node("26", 5),
+  node("27", 5),
+]);
+
+export interface SideChainParent {
+  readonly name: string;
+  readonly nodes: readonly SideChainNode[];
+}
+
+const sideChainParent = (name: string, nodes: readonly SideChainNode[]): SideChainParent =>
+  Object.freeze({ name, nodes: Object.freeze([...nodes]) });
 
 /**
  * The side-chain parents whose numbering the steroid rules retain, as carbon
  * trees rooted at C20. A side chain is numbered only when its carbon skeleton
- * IS one of these.
+ * IS one of these. Frozen all the way down: it is exported, and a caller
+ * must not be able to renumber every steroid by editing it.
  */
-export const SIDE_CHAIN_PARENTS: readonly { readonly name: string; readonly nodes: readonly SideChainNode[] }[] =
-  Object.freeze([
-    { name: "pregnane", nodes: [{ locant: "20", parent: -1 }, { locant: "21", parent: 0 }] },
-    { name: "cholane", nodes: CHOLESTANE.slice(0, 5) },
-    { name: "cholestane", nodes: CHOLESTANE },
-    { name: "ergostane", nodes: [...CHOLESTANE, { locant: "28", parent: 4 }] },
-    { name: "stigmastane", nodes: [...CHOLESTANE, { locant: "28", parent: 4 }, { locant: "29", parent: 8 }] },
-  ]);
+export const SIDE_CHAIN_PARENTS: readonly SideChainParent[] = Object.freeze([
+  sideChainParent("pregnane", [node("20", -1), node("21", 0)]),
+  sideChainParent("cholane", CHOLESTANE.slice(0, 5)),
+  sideChainParent("cholestane", CHOLESTANE),
+  sideChainParent("ergostane", [...CHOLESTANE, node("28", 4)]),
+  sideChainParent("stigmastane", [...CHOLESTANE, node("28", 4), node("29", 8)]),
+]);
 
 /**
  * The steroid numbering of `mol` given its core (locants 1-17 in order): the

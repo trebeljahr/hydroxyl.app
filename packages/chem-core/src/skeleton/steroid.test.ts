@@ -28,9 +28,10 @@ import { carbohydrates, anomericConfiguration } from "../sugar.js";
 import { descriptorFromConfig, stereoConfig, type StereoConfig } from "../stereo-config.js";
 import { flipAtoms, rotateAtoms, verticalMirror } from "../transform.js";
 import type { AtomId, Molecule } from "../types.js";
-import { STEROID_SKELETON, steroidFaces, steroidNumbering, suggestSteroidSkeleton } from "./steroid.js";
+import { SIDE_CHAIN_PARENTS, STEROID_SKELETON, steroidFaces, steroidNumbering, suggestSteroidSkeleton } from "./steroid.js";
 import {
   acceptedSkeletonMisfit,
+  extraFusedCarbocycles,
   SKELETON_SEARCH_BUDGET,
   SkeletonSearchLimit,
   skeletonEmbeddings,
@@ -43,6 +44,32 @@ const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "test
 function load(file: string): Molecule {
   return readMolblock(readFileSync(join(FIXTURES, file), "utf8")).molecule;
 }
+
+/**
+ * test/fixtures/skeleton: what the suggestion must refuse, or must still
+ * match with a ring fused on (decision 185). PubChem SMILES drawn by RDKit,
+ * as above, in their own folder because they are recognition cases only.
+ */
+const SKELETON_FIXTURES = join(FIXTURES, "..", "skeleton");
+
+function loadSkeleton(file: string): Molecule {
+  return readMolblock(readFileSync(join(SKELETON_FIXTURES, file), "utf8")).molecule;
+}
+
+/** RDKit's letters for the skeleton fixtures, atom a<i+1> for RDKit atom i. */
+const SKELETON_LETTERS: Readonly<Record<string, Readonly<Record<AtomId, string>>>> = {
+  "betulin.mol": { a4: "R", a7: "S", a8: "R", a9: "R", a12: "R", a13: "R", a16: "S", a18: "R", a21: "R", a22: "R" },
+  "hopane.mol": { a4: "R", a7: "S", a8: "S", a11: "R", a12: "R", a15: "R", a16: "R", a19: "S", a20: "S" },
+  "beta-amyrin.mol": { a2: "R", a5: "S", a9: "R", a10: "R", a13: "R", a14: "R", a17: "S", a24: "R" },
+  "d-homoestrone.mol": { a2: "S", a5: "S", a6: "R", a7: "S" },
+  "stanozolol.mol": { a2: "S", a5: "S", a6: "R", a7: "S", a10: "S", a15: "S", a16: "S" },
+  "cyproterone-acetate.mol": { a4: "R", a7: "S", a8: "S", a11: "S", a12: "R", a19: "R", a21: "S", a22: "S" },
+  "triamcinolone-acetonide.mol": { a2: "S", a4: "S", a5: "R", a6: "S", a7: "S", a9: "R", a10: "S", a28: "S" },
+  "oppenauer-scheme.mol": {
+    a2: "R", a9: "R", a12: "S", a13: "R", a16: "S", a17: "S", a21: "R", a24: "S",
+    a30: "R", a37: "R", a40: "S", a41: "R", a44: "S", a45: "S", a54: "R",
+  },
+};
 
 function letters(mol: Molecule, config: StereoConfig): Record<AtomId, string> {
   const out: Record<AtomId, string> = {};
@@ -113,6 +140,17 @@ describe("the steroid fixtures, before anything is recognised", () => {
   });
 });
 
+describe("the skeleton fixtures, before anything is recognised", () => {
+  it("has eight molecules and every stereocentre reads RDKit's letter", () => {
+    const files = readdirSync(SKELETON_FIXTURES).filter((f) => f.endsWith(".mol")).sort();
+    expect(files).toEqual(Object.keys(SKELETON_LETTERS).sort());
+    for (const file of files) {
+      const mol = loadSkeleton(file);
+      expect(letters(mol, stereoConfig(mol)), file).toEqual(SKELETON_LETTERS[file]);
+    }
+  });
+});
+
 describe("the standard orientation", () => {
   it("builds rings A to D left to right, C ring above B, ring A's C1 on top", () => {
     const p = standardOrientation(STEROID_SKELETON);
@@ -162,6 +200,74 @@ describe("recognition (decision 181)", () => {
     if (suggestion.kind === "refused") expect(suggestion.atomIds).toHaveLength(17);
   });
 
+  it("refuses a pentacyclic triterpene that holds the whole core, naming the ring fused onto it (decision 185)", () => {
+    // Betulin (a lupane): rings B-E embed the gonane core, and ring A (C1,
+    // C2, C3 with its OH, C4 with its gem-dimethyl, C5, C10) is fused on.
+    const betulin = loadSkeleton("betulin.mol");
+    expect(skeletonEmbeddings(betulin, STEROID_SKELETON, undefined, { nodes: SKELETON_SEARCH_BUDGET })).toHaveLength(1);
+    expect(suggestSteroidSkeleton(betulin)).toEqual({
+      kind: "refused",
+      name: "steroid",
+      reason: "larger-ring-system",
+      atomIds: ids([13, 14, 15, 16, 17, 18]),
+    });
+    // Hopane, 6-6-6-6-5, the same way: its ring A is the carbocycle named.
+    const hopane = loadSkeleton("hopane.mol");
+    const refusal = suggestSteroidSkeleton(hopane);
+    expect(refusal).toMatchObject({ kind: "refused", reason: "larger-ring-system" });
+    if (refusal.kind !== "refused") return;
+    expect(refusal.atomIds).toHaveLength(6);
+    for (const id of refusal.atomIds) expect(hopane.atoms[id]!.element).toBe("C");
+  });
+
+  it("offers partial-core only for a ring really left open: an oleanane and a D-homo steroid are none", () => {
+    // Both embed the core minus its 13-17 bond, but their six-membered ring D
+    // still holds both atoms: nothing is open, so nothing is offered.
+    expect(suggestSteroidSkeleton(loadSkeleton("beta-amyrin.mol"))).toEqual({ kind: "none" });
+    expect(suggestSteroidSkeleton(loadSkeleton("d-homoestrone.mol"))).toEqual({ kind: "none" });
+    // Cholecalciferol's C9 and C10 share no ring: still 9,10-seco.
+    expect(suggestSteroidSkeleton(load("cholecalciferol.mol"))).toMatchObject({ reason: "partial-core" });
+  });
+
+  it("still matches a steroid with a small carbocycle or a heterocycle fused on, and reads its faces", () => {
+    const pins: readonly [string, readonly number[], Record<string, string>][] = [
+      // 17α-methyl-2'H-5α-androst-2-eno[3,2-c]pyrazol-17β-ol.
+      [
+        "stanozolol.mol",
+        [17, 18, 19, 20, 15, 14, 13, 6, 5, 16, 4, 3, 2, 7, 8, 9, 10],
+        { "5/H": "alpha", "17/O:a12": "beta", "17/C:a11": "alpha", "10/C:a24": "beta" },
+      ],
+      // The 1α,2α-methylene: its carbon, a20, is alpha at both C1 and C2.
+      [
+        "cyproterone-acetate.mol",
+        [21, 19, 17, 16, 15, 14, 13, 12, 11, 22, 10, 9, 8, 7, 6, 5, 4],
+        { "1/C:a20": "alpha", "2/C:a20": "alpha", "17/O:a26": "alpha", "17/C:a2": "beta" },
+      ],
+      // 9α-fluoro-11β-hydroxy-16α,17α-(isopropylidenedioxy).
+      [
+        "triamcinolone-acetonide.mol",
+        [27, 26, 24, 23, 22, 21, 20, 6, 5, 28, 4, 3, 2, 7, 8, 9, 10],
+        { "9/F:a30": "alpha", "11/O:a31": "beta", "16/O:a13": "alpha", "17/O:a11": "alpha", "17/C:a16": "beta" },
+      ],
+    ];
+    for (const [file, numbers, faces] of pins) {
+      const mol = loadSkeleton(file);
+      const suggestion = suggestSteroidSkeleton(mol);
+      expect(suggestion.kind, file).toBe("match");
+      if (suggestion.kind !== "match") continue;
+      expect(suggestion.skeleton.core, file).toEqual(ids(numbers));
+      expect(extraFusedCarbocycles(mol, STEROID_SKELETON, suggestion.skeleton.core), file).toEqual([]);
+      expect(faceTable(mol, steroidFaces(mol, stereoConfig(mol), suggestion.skeleton.core)), file).toMatchObject(faces);
+    }
+  });
+
+  it("refuses two steroid species in one drawing as several-cores: one acceptance holds one core", () => {
+    const scheme = loadSkeleton("oppenauer-scheme.mol");
+    const suggestion = suggestSteroidSkeleton(scheme);
+    expect(suggestion).toMatchObject({ kind: "refused", reason: "several-cores" });
+    if (suggestion.kind === "refused") expect(suggestion.atomIds).toHaveLength(34);
+  });
+
   it("says nothing about a molecule with no steroid in it", () => {
     const glucoside = load("cholesteryl-alpha-d-glucopyranoside.mol");
     expect(suggestSteroidSkeleton(glucoside).kind).toBe("match");
@@ -188,9 +294,29 @@ describe("recognition (decision 181)", () => {
     [swapped[12], swapped[13]] = [swapped[13]!, swapped[12]!];
     expect(acceptedSkeletonMisfit(mol, STEROID_SKELETON, { ...accepted, core: swapped })).not.toBeUndefined();
   });
+
+  it("does not let an acceptance outlive a carbocycle fused onto its core (decision 185)", () => {
+    // Betulin's embedded core, as if accepted before its ring A was drawn.
+    const betulin = loadSkeleton("betulin.mol");
+    const [core] = skeletonEmbeddings(betulin, STEROID_SKELETON, undefined, { nodes: SKELETON_SEARCH_BUDGET });
+    expect(core).toBeDefined();
+    expect(acceptedSkeletonMisfit(betulin, STEROID_SKELETON, { name: "steroid", core: core! })).toEqual(
+      ids([13, 14, 15, 16, 17, 18]),
+    );
+  });
 });
 
 describe("numbering (decision 181)", () => {
+  it("exports its side-chain table frozen all the way down", () => {
+    expect(Object.isFrozen(SIDE_CHAIN_PARENTS)).toBe(true);
+    for (const parent of SIDE_CHAIN_PARENTS) {
+      expect(Object.isFrozen(parent), parent.name).toBe(true);
+      expect(Object.isFrozen(parent.nodes), parent.name).toBe(true);
+      for (const node of parent.nodes) expect(Object.isFrozen(node), `${parent.name} ${node.locant}`).toBe(true);
+    }
+    expect(SIDE_CHAIN_PARENTS.map((p) => p.name)).toEqual(["pregnane", "cholane", "cholestane", "ergostane", "stigmastane"]);
+  });
+
   it("numbers cholesterol's core, C-18 on C-13, C-19 on C-10, and the cholestane side chain, 26 and 27 left blank", () => {
     const mol = load("cholesterol.mol");
     const locants = steroidNumbering(mol, coreOf(mol));
