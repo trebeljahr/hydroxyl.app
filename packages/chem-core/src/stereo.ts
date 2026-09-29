@@ -405,7 +405,7 @@ export type StereoGroupCoverage =
  * `stereocenterAtoms` is the set, deliberately: it INCLUDES centres whose
  * descriptor is undetermined, so a racemate drawn with no wedges at all still
  * reads `rac-` rather than losing its prefix for want of a letter. KNOWN LIMIT
- * on that case, decision 95: such a molecule reads `rac-` here and in the file,
+ * on that case, decision 125: such a molecule reads `rac-` here and in the file,
  * but RDKit-based tools drop the collection back off it — see
  * `wedgelessStereoGroupAtoms` below, which is what the export dialog warns
  * from.
@@ -453,7 +453,7 @@ export function stereoGroupCoverage(mol: Molecule): StereoGroupCoverage {
 }
 
 /**
- * Decision 95's KNOWN LIMIT, as a list of atoms: the grouped atoms that an
+ * Decision 125's KNOWN LIMIT, as a list of atoms: the grouped atoms that an
  * RDKit-based reader will silently drop out of their collection.
  *
  * WHY THIS EXISTS. A flat skeleton marked racemic is an ordinary thing to draw
@@ -468,7 +468,7 @@ export function stereoGroupCoverage(mol: Molecule): StereoGroupCoverage {
  * the export dialog can then name exactly what will be lost.
  *
  * NOT A REFUSAL, and deliberately not a repair. Refusing the mark was rejected
- * (decision 95) and inventing a wedge would state a configuration the author
+ * (decision 125) and inventing a wedge would state a configuration the author
  * did not draw. The limit is RDKit's, so it is reported where the file leaves
  * this app and re-proved by a test every run — the `RDKIT_MOLFILE_STEREO_BLIND`
  * precedent — and the list comes back empty the day RDKit reads a collection

@@ -212,7 +212,7 @@ describe("RDKit reads this app's V3000 stereo groups", () => {
     expect(group?.rows).toEqual(Array.from({ length: 18 }, (_, i) => 2 + i * 2));
   });
 
-  it("re-proves decision 95: RDKit drops a grouped atom that carries no mark", () => {
+  it("re-proves decision 125: RDKit drops a grouped atom that carries no mark", () => {
     // THE KNOWN LIMIT, measured every run rather than trusted — the
     // `RDKIT_MOLFILE_STEREO_BLIND` precedent. Every other fixture in this file
     // comes from an RDKit SMILES carrying `@`/`@@`, so every grouped atom always
@@ -220,7 +220,7 @@ describe("RDKit reads this app's V3000 stereo groups", () => {
     // be built deliberately.
     //
     // A flat skeleton marked racemic is an ordinary scheme drawing, so refusing
-    // the mark was rejected (decision 95). This app states it correctly at every
+    // the mark was rejected (decision 125). This app states it correctly at every
     // layer and RDKit still will not read it back.
     const drawn = readMolblock(rdkitMolblock(RACEMATE_SMILES)).molecule;
     const flat = bonds(drawn).reduce((mol, bond) => setBondStereo(mol, bond.id, "none"), drawn);

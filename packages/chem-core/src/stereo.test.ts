@@ -880,7 +880,7 @@ describe("decision 40: what the groups say about the whole molecule", () => {
   });
 });
 
-describe("decision 95: which grouped atoms an RDKit reader will drop", () => {
+describe("decision 125: which grouped atoms an RDKit reader will drop", () => {
   function chlorobutanol(): { readonly mol: Molecule; readonly c2: AtomId; readonly c3: AtomId } {
     let c2: AtomId = "";
     let c3: AtomId = "";

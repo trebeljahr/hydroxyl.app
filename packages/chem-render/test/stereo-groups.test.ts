@@ -172,7 +172,7 @@ describe("decision 40: a grouped centre carries its collection's tag", () => {
 
   it("places and draws the tag where the centre has room for it", () => {
     // SCREEN, where butan-2-ol's C2 has room for the letter AND the tag.
-    // Publication is asserted separately, in decision 93's block: it needed the
+    // Publication is asserted separately, in decision 123's block: it needed the
     // tag's own smaller scale before the tag was drawn there at all.
     const mol = withStereoGroups(butan2olWedged(), [
       { kind: "abs", index: ABS_STEREO_GROUP_INDEX, atomIds: [BUTANOL_C2] },
@@ -284,10 +284,10 @@ describe("decision 40: a grouped centre carries its collection's tag", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Decision 93: the tag's own scale
+// Decision 123: the tag's own scale
 // ---------------------------------------------------------------------------
 
-describe("decision 93: a per-centre tag is set smaller than the letter beside it", () => {
+describe("decision 123: a per-centre tag is set smaller than the letter beside it", () => {
   it("carries the measured scale on both presets, under the 8 pt floor at Publication", () => {
     expect(PUBLICATION_STYLE.stereoGroupTagScale).toBe(0.6);
     expect(SCREEN_STYLE.stereoGroupTagScale).toBe(0.7);
@@ -298,7 +298,7 @@ describe("decision 93: a per-centre tag is set smaller than the letter beside it
     }
     // 50/3 px is Publication's 10 pt label (decision 26), so the tag prints at
     // exactly 6 pt — deliberately UNDER the 8 pt ACS artwork floor decision 51
-    // cites, which is why decision 93 also requires the export dialog's check to
+    // cites, which is why decision 123 also requires the export dialog's check to
     // cover this kind and name it.
     const pt = (px: number): number => (px * 10) / (50 / 3);
     expect(pt(annotationFontSizePx("stereoGroup", PUBLICATION_STYLE))).toBeCloseTo(6, 12);
@@ -323,7 +323,7 @@ describe("decision 93: a per-centre tag is set smaller than the letter beside it
   });
 
   it("DRAWS butan-2-ol's tag at Publication, which the descriptor scale did not", () => {
-    // Decision 93's whole reason, as the measurement that produced it: with the
+    // Decision 123's whole reason, as the measurement that produced it: with the
     // tag sized at `stereoDescriptorScale` this tag came back `drawn: false`,
     // `clear: false` in ALL FOUR views — decision 40's per-centre half invisible
     // in exactly the figures that get published. The letter beside it is

@@ -124,7 +124,7 @@ export function molblockVersionNotice(mol: Molecule): string | null {
 }
 
 /**
- * DECISION 95's KNOWN LIMIT, as the sentence the export dialog shows — or `null`
+ * DECISION 125's KNOWN LIMIT, as the sentence the export dialog shows — or `null`
  * when it does not apply.
  *
  * WHY IT IS A WARNING AND NOT A REFUSAL. A flat skeleton marked racemic is a

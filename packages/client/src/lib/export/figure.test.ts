@@ -444,8 +444,8 @@ describe("annotations below 8 pt (decision 60)", () => {
     expect(figureSvgForFile(p)).toContain("(R)");
   });
 
-  it("names the stereo group tags, which are under 8 pt at EVERY width (decision 93)", () => {
-    // Decision 93 gave the per-centre tag its own smaller scale so it would be
+  it("names the stereo group tags, which are under 8 pt at EVERY width (decision 123)", () => {
+    // Decision 123 gave the per-centre tag its own smaller scale so it would be
     // drawn at all, and 0.60 of Publication's 10 pt label is 6 pt — under the
     // floor even at the natural width, where the descriptors sit at exactly 8 and
     // the check is otherwise silent. So the ruling required this check to cover

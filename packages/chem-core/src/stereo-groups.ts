@@ -109,7 +109,7 @@ export function stereoGroupTag(group: StereoGroup): string {
  * MAX PLUS ONE, not count plus one: deleting AND group 1 must not hand the next
  * group the number an undo entry still refers to.
  *
- * THE GAP THAT LEAVES IS A RULING, decision 94: gaps are accepted and nothing
+ * THE GAP THAT LEAVES IS A RULING, decision 124: gaps are accepted and nothing
  * compacts them. Compacting would contradict decision 92's premise — an index
  * is a group's stored identity, not its position in a list — so renumbering the
  * survivors after a delete would change what an unrelated group's `STERAC<n>`

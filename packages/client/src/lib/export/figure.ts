@@ -48,7 +48,7 @@
  * (decision 37) and that part of the check is deliberately unexercised rather
  * than untested. Publication sets descriptors at exactly 8 pt (decision 54), so
  * ANY scaling to fit takes them under while the labels, at 10 pt, still have
- * room; it sets a group tag at 6 pt (decision 93), so a tag is under the
+ * room; it sets a group tag at 6 pt (decision 123), so a tag is under the
  * minimum at EVERY width; and it sets the prefix at the descriptor's scale
  * (decision 98), so the prefix goes under on exactly the same scaling that
  * takes the descriptors under.
@@ -261,7 +261,7 @@ function widthAdvice(
  * counterpart on the export side, so a seventh kind is a COMPILE ERROR here
  * rather than a silent omission from a figure's warning.
  *
- * `stereoGroup` is checked because decision 93 put it here: its own scale is
+ * `stereoGroup` is checked because decision 123 put it here: its own scale is
  * below the descriptor's, so at Publication a tag prints at 6 pt — under the
  * floor at every width, not only a scaled-down one.
  *

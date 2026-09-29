@@ -135,7 +135,7 @@ export function ExportDialog(): ReactElement {
   // handing the file to old instrument software needs to know it is not V2000.
   // The sentence is `translate.ts`'s, so it cannot disagree with the bytes.
   const molfileNotice = molblockVersionNotice(doc.molecule);
-  // Decision 95: the collection this app writes is correct, and an RDKit-based
+  // Decision 125: the collection this app writes is correct, and an RDKit-based
   // reader will still drop the grouped atoms that carry no wedge. Named here,
   // beside the generation sentence, because both are about what the molfile will
   // mean to the next program rather than about how the figure looks.

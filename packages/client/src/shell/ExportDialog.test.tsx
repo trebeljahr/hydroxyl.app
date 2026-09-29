@@ -123,13 +123,13 @@ describe("ExportDialog molfile generation notice (decision 49)", () => {
   });
 });
 
-describe("ExportDialog wedgeless stereo group notice (decision 95)", () => {
+describe("ExportDialog wedgeless stereo group notice (decision 125)", () => {
   const notice = (): HTMLElement | null =>
     document.querySelector<HTMLElement>('[data-shell="wedgeless-stereo-group"]');
 
   it("names the grouped atoms an RDKit reader will drop, and still exports", () => {
     // A flat skeleton marked racemic is an ordinary scheme drawing, so the mark is
-    // not refused (decision 95) — but RDKit builds its collection out of the atoms
+    // not refused (decision 125) — but RDKit builds its collection out of the atoms
     // carrying a chiral tag, and this one has none. The dialog says what will be
     // lost and names the atoms, since the drop is per atom.
     const doc = descriptorDoc(true);

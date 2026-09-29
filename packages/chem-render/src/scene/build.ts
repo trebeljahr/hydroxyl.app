@@ -495,7 +495,7 @@ function buildStructural(
     options,
   );
   // The prefix alone is enough to go on: a racemate drawn with no wedges has no
-  // letter to place and still has to say `rac-`. (Decision 95's known limit is
+  // letter to place and still has to say `rac-`. (Decision 125's known limit is
   // about the FILE, not the figure: such a molecule draws `rac-` here and writes
   // its COLLECTION line correctly, and it is an RDKit-based reader downstream
   // that drops the collection back off it — `wedgelessStereoGroupAtoms` in

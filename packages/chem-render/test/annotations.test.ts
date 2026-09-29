@@ -1455,7 +1455,7 @@ describe("decision 54: Publication annotations at the 8 pt floor", () => {
     expect(PUBLICATION_STYLE.fontSizePx).toBe(50 / 3);
     const pt = (px: number): number => (px * 10) / (50 / 3);
     expect(pt(PUBLICATION_STYLE.fontSizePx * PUBLICATION_STYLE.stereoDescriptorScale)).toBeCloseTo(8, 12);
-    // One annotation size per figure, with the one exception decision 93 argued
+    // One annotation size per figure, with the one exception decision 123 argued
     // for: locants, alpha/beta, torsion and the rac-/rel- prefix all share the
     // descriptor's scale, and only the per-centre stereo group tag does not. The
     // steroid states no group, so this layout carries exactly one size.

@@ -582,7 +582,7 @@ export function structurePrefixRequest(text: string, ink: LabelBox): AnnotationR
  * Size of an annotation's run, px.
  *
  * ONE EXCEPTION, and it is the whole reason this function takes a kind: the
- * per-centre `stereoGroup` tag is set at `stereoGroupTagScale` (decision 93),
+ * per-centre `stereoGroup` tag is set at `stereoGroupTagScale` (decision 123),
  * smaller than everything else. Every other kind shares the descriptor's scale,
  * because they are all small print set beside a structure and a figure mixing
  * annotation sizes reads as annotations making different kinds of claim.

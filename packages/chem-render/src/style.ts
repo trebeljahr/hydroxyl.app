@@ -152,7 +152,7 @@ export interface RenderStyle {
   readonly stereoDescriptorScale: number;
   /**
    * Size of a per-centre stereo group tag (`abs`, `and1`, `or1`), as a fraction
-   * of `fontSizePx`. Decision 93.
+   * of `fontSizePx`. Decision 123.
    *
    * ITS OWN SCALE, and the second annotation size a figure may carry, for
    * exactly the reason decision 54 gave Publication its own smaller descriptor
@@ -303,7 +303,7 @@ export const PUBLICATION_STYLE: RenderStyle = Object.freeze({
   // one of these numbers needs a new ruling, and re-measuring every count and
   // id pinned in annotations.test.ts.
   stereoDescriptorScale: 0.8,
-  // DECISION 93, MEASURED 2026-09-27 on the two molecules the ruling names,
+  // DECISION 123, MEASURED 2026-09-27 on the two molecules the ruling names,
   // 3-chlorobutan-2-ol and butan-2-ol, over all four views. At the descriptor
   // scale (0.80, 8 pt) sizing the tag too, 4 of 20 tags were drawn and butan-
   // 2-ol's `abs` was drawn in NO view — decision 40's per-centre half was
@@ -325,7 +325,7 @@ export const PUBLICATION_STYLE: RenderStyle = Object.freeze({
   // decision 54 already reports as crowded. The report is how an author finds
   // them; tuning until every tag placed would mean a scale nobody can print.
   //
-  // UNDER THE 8 pt ACS ARTWORK FLOOR, knowingly. Decision 93 requires the
+  // UNDER THE 8 pt ACS ARTWORK FLOOR, knowingly. Decision 123 requires the
   // export dialog's after-scaling check (decisions 51 and 60) to cover the tag
   // kind and NAME it, which `CHECKED_ANNOTATION_KINDS` in the client's
   // export/figure.ts does: an invisible label states nothing, and a small one
@@ -364,7 +364,7 @@ export const SCREEN_STYLE: RenderStyle = Object.freeze({
   explicitHydrogenLengthRatio: 0.66,
   explicitHydrogenMinStemRatio: 0.2,
   stereoDescriptorScale: 0.85,
-  // Decision 93 at Screen, measured the same way: 0.70 of 16 px is 11.2 px, and
+  // Decision 123 at Screen, measured the same way: 0.70 of 16 px is 11.2 px, and
   // it is the LARGEST scale that draws every tag in the measurement set — 84 of
   // 84 at 0.70 and below, 82 at 0.71, 80 at 0.72, 77 at the descriptor scale.
   // Larger than Publication's 0.60 because a 44 px bond has the room; measured

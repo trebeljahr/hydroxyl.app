@@ -221,7 +221,7 @@ describe("clearStereoGroup", () => {
     expect(stereoGroupsOf(store.getState().document.molecule)).toEqual([]);
     expect(store.getState().history.past.length).toBe(entries + 1);
     expect(store.getState().history.past.at(-1)?.label).toBe(CLEAR_STEREO_GROUP_TITLE);
-    // Decision 96: the count is of COLLECTIONS, and the atoms are named,
+    // Decision 126: the count is of COLLECTIONS, and the atoms are named,
     // because clearing stays wide and a rubber band can take collections the
     // author was not thinking about.
     expect(store.getState().ui.statusMessage).toBe(
@@ -272,7 +272,7 @@ describe("clearStereoGroup", () => {
   });
 
   it("names every collection it cleared, and the atoms, when a selection spans two", () => {
-    // Decision 96's reason, at the case that motivated it: a rubber band over the
+    // Decision 126's reason, at the case that motivated it: a rubber band over the
     // whole structure takes collections the author was not thinking about, so the
     // message has to say how many went and where. One undo puts them back.
     const store = storeWith(

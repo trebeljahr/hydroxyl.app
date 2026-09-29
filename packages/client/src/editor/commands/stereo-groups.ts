@@ -23,7 +23,7 @@
  * means every centre, not every atom. `stereocenterAtoms` is the set,
  * deliberately the same one decision 40's coverage query uses — it includes a
  * centre whose descriptor is undetermined, so a racemate drawn with no wedges
- * at all can still be marked. (Decision 95's limit rides on that: such a mark is
+ * at all can still be marked. (Decision 125's limit rides on that: such a mark is
  * stored and written correctly, and an RDKit-based reader will drop it.)
  *
  * CLEARING IS ALLOWED WHERE MARKING IS NOT. An imported file may put a
@@ -34,14 +34,14 @@
  * flag no control could switch off. So "Clear" is enabled when the selection
  * holds a stereocentre OR an atom that is in a group.
  *
- * DECISION 96 SETTLES THAT WIDTH AND PAYS FOR IT IN THE STATUS LINE. Clear stays
+ * DECISION 126 SETTLES THAT WIDTH AND PAYS FOR IT IN THE STATUS LINE. Clear stays
  * wide, and the message names how many collections went and on which atoms,
  * because a rubber band over a whole structure removes collections the author
  * was not thinking about. One undo puts them back; a confirmation dialog was
  * rejected, because this editor does not put a modal in front of an undoable
  * edit.
  *
- * A WEDGELESS GROUP IS A DIFFERENT MATTER, and not this file's (decision 95): a
+ * A WEDGELESS GROUP IS A DIFFERENT MATTER, and not this file's (decision 125): a
  * centre may be marked with no wedge on it, the mark is stored and written
  * correctly, and it is an RDKit-based reader downstream that drops it. The export
  * dialog says so, from `wedgelessStereoGroupNotice`.
@@ -147,7 +147,7 @@ function selectedGrouped(state: EditorState): readonly AtomId[] {
 }
 
 /**
- * What "Clear" reports, decision 96: how many COLLECTIONS it touched, which
+ * What "Clear" reports, decision 126: how many COLLECTIONS it touched, which
  * ones, and which atoms.
  *
  * The count is of collections and not of atoms because that is what the command
