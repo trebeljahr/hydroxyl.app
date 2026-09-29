@@ -1429,9 +1429,14 @@ describe("chem-core exports", () => {
   const srcDir = dirname(fileURLToPath(import.meta.url));
 
   it("has no exported name declared by two modules (export * drops them silently)", () => {
-    const modules = readdirSync(srcDir).filter(
-      (f) => f.endsWith(".ts") && !f.endsWith(".test.ts") && f !== "index.ts",
-    );
+    // The projection engine's modules live one level down and are audited as
+    // `projection/<file>`, so a name colliding across the two levels is caught.
+    const sourceFiles = (dir: string, prefix: string): string[] =>
+      readdirSync(join(srcDir, dir))
+        .filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts") && f !== "index.ts")
+        .map((f) => `${prefix}${f}`);
+    const modules = [...sourceFiles(".", ""), ...sourceFiles("projection", "projection/")];
+    expect(modules).toContain("projection/engine.ts");
     const owners = new Map<string, string[]>();
     const declaration =
       /^export\s+(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?(?:function\*?|const|let|var|class|type|interface|enum)\s+([A-Za-z_$][\w$]*)/gm;
@@ -1458,6 +1463,9 @@ describe("chem-core exports", () => {
     expect(owners.get("unrepresentableStereo")).toEqual(["stereo-axes.ts"]);
     expect(owners.get("atomSymmetryClasses")).toEqual(["symmetry.ts"]);
     expect(owners.get("StereoDescriptor")).toEqual(["stereo.ts"]);
+    expect(owners.get("project")).toEqual(["projection/engine.ts"]);
+    expect(owners.get("readProjection")).toEqual(["projection/engine.ts"]);
+    expect(owners.get("PlacedMark")).toEqual(["stereo-config.ts"]);
 
     // The structure dictionary is the one deliberate exception: ~80 kB of
     // molblock text that only the insert box needs, so it is served from its
