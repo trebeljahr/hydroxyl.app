@@ -21,7 +21,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { representationAvailability } from "../src/availability.js";
-import { MECHANISM_FIXTURES, steroidSkeletonWithLocants, FIXTURES } from "../src/fixtures.js";
+import { MECHANISM_FIXTURES, SCHEME_FIXTURES, steroidSkeletonWithLocants, FIXTURES } from "../src/fixtures.js";
 import {
   isStructuralViewKind,
   representation,
@@ -240,6 +240,22 @@ const MECHANISM_ROWS: readonly Row[] = Object.freeze([
   }),
 ]);
 
+/**
+ * The SCHEME sections: several species with the straight arrows, plus signs,
+ * coefficients, brackets, conditions and transition-state marks between them
+ * (decisions 201-205, 212-214). Skeletal only: a scheme's marks are placed
+ * against its species' ink, and the skeletal figure is the one a scheme is
+ * printed in.
+ */
+export const SCHEME_SECTION_PREFIX = "scheme: ";
+const SCHEME_ROWS: readonly Row[] = Object.freeze([
+  Object.freeze({
+    label: "skeletal",
+    note: "reaction arrows, conditions, brackets",
+    representation: representation("skeletal"),
+  }),
+]);
+
 function renderRow(
   row: Row,
   fixture: { readonly molecule: Molecule },
@@ -360,6 +376,14 @@ export function renderContactSheet(): string {
       renderSection(
         MECHANISM_SECTION_PREFIX + fixture.name,
         MECHANISM_ROWS.map((row) =>
+          renderRow(row, fixture, { schemeAnnotations: fixture.annotations }),
+        ),
+      ),
+    ),
+    ...SCHEME_FIXTURES.map((fixture) =>
+      renderSection(
+        SCHEME_SECTION_PREFIX + fixture.name,
+        SCHEME_ROWS.map((row) =>
           renderRow(row, fixture, { schemeAnnotations: fixture.annotations }),
         ),
       ),

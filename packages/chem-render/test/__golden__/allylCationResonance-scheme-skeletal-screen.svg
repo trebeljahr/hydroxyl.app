@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-30.75 -55.53 453.82 93.04" width="453.82px" height="93.04px">
+  <rect data-decoration="background" x="-30.75" y="-55.53" width="453.82" height="93.04" fill="#ffffff"/>
+  <line id="bond:b3:line" data-bond="b3" x1="-1.75" y1="-3.03" x2="36.36" y2="-25.03" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b3:line2" data-bond="b3" x1="1.75" y1="3.03" x2="39.86" y2="-18.97" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b5:line" data-bond="b5" x1="38.11" y1="-22" x2="67.43" y2="-5.07" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b8:line" data-bond="b8" x1="323.5" y1="-8.95" x2="346.11" y2="-22" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b10:line" data-bond="b10" x1="347.86" y1="-25.03" x2="385.96" y2="-3.03" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b10:line2" data-bond="b10" x1="344.36" y1="-18.97" x2="382.46" y2="3.03" stroke="#1f2937" stroke-width="2"/>
+  <circle id="atom:a1:dot" data-atom="a1" cx="0" cy="0" r="2" fill="#111827"/>
+  <circle id="atom:a2:dot" data-atom="a2" cx="38.11" cy="-22" r="2" fill="#111827"/>
+  <text id="atom:a4:label" data-atom="a4" x="70.43" y="5.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start"><tspan>C</tspan><tspan>H</tspan><tspan font-size="11.52" dy="4">2</tspan><tspan font-size="11.52" dy="-9.6">+</tspan></text>
+  <text id="atom:a6:label" data-atom="a6" x="284.26" y="5.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start"><tspan>H</tspan><tspan font-size="11.52" dy="4">2</tspan><tspan dy="-4">C</tspan><tspan font-size="11.52" dy="-5.6">+</tspan></text>
+  <circle id="atom:a7:dot" data-atom="a7" cx="346.11" cy="-22" r="2" fill="#111827"/>
+  <circle id="atom:a9:dot" data-atom="a9" cx="384.21" cy="0" r="2" fill="#111827"/>
+  <line id="annotation:ann_1:shaft" data-annotation="ann_1" x1="169.34" y1="-8.26" x2="222.34" y2="-8.26" stroke="#1f2937" stroke-width="2"/>
+  <polygon id="annotation:ann_1:head" data-annotation="ann_1" points="239.84,-8.26 219.84,-13.26 222.34,-8.26 219.84,-3.26" fill="#1f2937"/>
+  <polygon id="annotation:ann_1:tail-head" data-annotation="ann_1" points="151.84,-8.26 171.84,-3.26 169.34,-8.26 171.84,-13.26" fill="#1f2937"/>
+  <polyline id="annotation:ann_2:open" data-annotation="ann_2" points="-4.95,-37.03 -13.75,-37.03 -13.75,20.5 -4.95,20.5" fill="none" stroke="#1f2937" stroke-width="2"/>
+  <polyline id="annotation:ann_2:close" data-annotation="ann_2" points="389.16,-37.03 397.96,-37.03 397.96,20.5 389.16,20.5" fill="none" stroke="#1f2937" stroke-width="2"/>
+  <text id="annotation:ann_2:charge" data-annotation="ann_2" x="400.34" y="-29.11" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="11.52" fill="#111827" text-anchor="start"><tspan>+</tspan></text>
+</svg>

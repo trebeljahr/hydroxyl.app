@@ -216,6 +216,9 @@ describe("decision 17: who gets a contested slot", () => {
       "descriptor",
       "stereoGroup",
       "stereoPrefix",
+      // Decision 205: a stored delta, under the stereo band and over every
+      // derived kind, so it can never move a configuration statement.
+      "partialCharge",
       "alphaBeta",
       "locant",
       "torsion",
@@ -248,6 +251,7 @@ describe("decision 17: who gets a contested slot", () => {
       request("stereoPrefix", "structure"),
       request("stereoGroup", "a1"),
       request("descriptor", "a1"),
+      request("partialCharge", "a1"),
     ];
     const table = [...ANNOTATION_PRIORITY];
     for (let rotation = 0; rotation < requests.length; rotation++) {

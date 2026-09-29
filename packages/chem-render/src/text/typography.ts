@@ -31,7 +31,7 @@
  * for a whole scene; decision 206), never thrown on.
  */
 
-import type { RenderScene, SceneSource, ScenePrimitive } from "../scene/types.js";
+import type { RenderScene, SceneSource, ScenePrimitive, TextSpan } from "../scene/types.js";
 import { measurerFor } from "./measurer.js";
 import type { Measurer } from "./measurer.js";
 
@@ -130,4 +130,18 @@ export function unmeasuredTextRuns(scene: RenderScene): readonly UnmeasuredTextR
   };
   scene.primitives.forEach(visit);
   return out;
+}
+
+/**
+ * True when a run's spaces only survive if the SVG says to keep them: a span
+ * that starts or ends with whitespace (the space between `H2SO4` and
+ * `(cat.)` falls at a span boundary, after the subscript), or two spaces in a
+ * row. Without `xml:space="preserve"` librsvg drops a space at a span edge and
+ * every renderer collapses a double one, so the run draws narrower than it
+ * was measured and sits off-centre over its shaft. The measurer counts every
+ * space, so the emitters keep every space; a run with none of these draws the
+ * same either way and is emitted exactly as before.
+ */
+export function needsPreservedSpace(spans: readonly TextSpan[]): boolean {
+  return spans.some((span) => /^\s|\s$|\s\s/.test(span.text));
 }

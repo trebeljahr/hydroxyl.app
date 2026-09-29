@@ -82,5 +82,16 @@ export * from "./annotation/anchor.js";
 export * from "./annotation/curve.js";
 export * from "./annotation/arrowhead.js";
 export * from "./annotation/curly.js";
+// The straight furniture of a scheme (decisions 201-205, 212-214): what the
+// marks share, each species' drawn box, conditions as text, straight arrows
+// and the plus, brackets, coefficients and free labels, and a transition
+// state's partial bonds and deltas.
+export * from "./annotation/scheme-mark.js";
+export * from "./annotation/species-box.js";
+export * from "./annotation/conditions.js";
+export * from "./annotation/reaction.js";
+export * from "./annotation/bracket.js";
+export * from "./annotation/scheme-text.js";
+export * from "./annotation/transition-state.js";
 export * from "./annotation/layer.js";
 export * from "./fixtures.js";

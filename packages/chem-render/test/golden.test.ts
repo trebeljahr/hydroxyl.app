@@ -30,6 +30,7 @@ import {
   FIXTURES,
   MECHANISM_FIXTURES,
   naphthalene,
+  SCHEME_FIXTURES,
   trans2Butene,
   wedgeOnNonStereocentre,
 } from "../src/fixtures.js";
@@ -255,5 +256,22 @@ describe("golden SVG", () => {
       );
       await expectMatchesGolden(svg, `${fixture.name}-curly-arrows-lewis-publication.svg`);
     });
+  }
+
+  // Schemes: straight arrows with their conditions, plus signs, coefficients,
+  // brackets with charge and dagger, partial bonds and deltas, each sourced
+  // to its annotation. Skeletal at both presets freezes the placement against
+  // the species' ink and every stated length.
+  for (const fixture of SCHEME_FIXTURES) {
+    for (const preset of PRESETS) {
+      it(`renders the ${fixture.name} scheme skeletal in the ${preset} style`, async () => {
+        const svg = serializeScene(
+          buildScene(fixture.molecule, RENDER_STYLES[preset], representation("skeletal"), {
+            schemeAnnotations: fixture.annotations,
+          }),
+        );
+        await expectMatchesGolden(svg, `${fixture.name}-scheme-skeletal-${preset}.svg`);
+      });
+    }
   }
 });

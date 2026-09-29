@@ -36,7 +36,7 @@
 
 import type { ReactElement } from "react";
 
-import { formatNumber, scriptDyPx } from "@starter/chem-render";
+import { formatNumber, needsPreservedSpace, scriptDyPx } from "@starter/chem-render";
 import type {
   RenderScene,
   SceneFill,
@@ -212,10 +212,7 @@ function primitiveElement(primitive: ScenePrimitive, f: Format): ReactElement {
  * the exporter, because browsers and print pipelines disagree about how far it
  * shifts; an explicit `dy` lands identically everywhere.
  *
- * No structural representation emits a textRun today — atom labels are a later
- * rendering task — so this arm currently only fires for a condensed or
- * sum-formula panel. It is written out in full anyway: the alternative is a
- * panel that silently renders blank the day one lands.
+ * Every label, annotation, condition and formula is one of these.
  */
 function textRunElement(
   p: TextRunPrimitive,
@@ -235,6 +232,9 @@ function textRunElement(
       fontSize={num(f, p.fontSizePx, p.id)}
       fill={p.fill.color}
       textAnchor={p.anchor}
+      // A space at a span edge (after a subscript in a reaction condition)
+      // is kept, as the exporter keeps it: the run was measured with it.
+      {...(needsPreservedSpace(p.spans) ? { xmlSpace: "preserve" } : {})}
     >
       {p.spans.map((span, index) => {
         // Through chem-render's own `scriptDyPx`, never a local copy of the

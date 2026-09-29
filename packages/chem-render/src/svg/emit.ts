@@ -28,6 +28,7 @@ import type {
   TextRunPrimitive,
 } from "../scene/types.js";
 import { scriptDyPx, scriptFontSizePx } from "../text/metrics.js";
+import { needsPreservedSpace } from "../text/typography.js";
 
 /*
  * No `dominant-baseline` is emitted, not even `alphabetic`: every run's `y` is
@@ -172,6 +173,9 @@ function textRunMarkup(e: Emitter, p: TextRunPrimitive): string {
     attr("font-size", num(e, p.fontSizePx, p.id)) +
     attr("fill", p.fill.color) +
     attr("text-anchor", p.anchor) +
+    // Only where a space would otherwise be dropped (typography.ts), so every
+    // run without one is emitted byte for byte as before.
+    (needsPreservedSpace(p.spans) ? attr("xml:space", "preserve") : "") +
     `>`;
 
   // `dy` is a *relative* shift that persists for the rest of the run, so each

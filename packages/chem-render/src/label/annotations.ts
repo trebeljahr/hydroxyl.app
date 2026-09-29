@@ -1,7 +1,7 @@
 /**
  * Where every small annotation goes: stereo descriptors, enhanced-stereo group
- * tags, the rac-/rel- prefix, alpha/beta labels, locants and torsion labels —
- * ONE pass, ONE search.
+ * tags, the rac-/rel- prefix, a transition state's delta+/delta- labels,
+ * alpha/beta labels, locants and torsion labels — ONE pass, ONE search.
  *
  * An annotation is the opposite of an atom label. The label has to sit ON its
  * atom and the bonds get out of its way; an annotation has to find the space
@@ -19,7 +19,8 @@
  * obstacle for every annotation placed after it.
  *
  * WHO GETS A CONTESTED SLOT is decision 17, a fixed priority table:
- * descriptor > stereoGroup > stereoPrefix > alphaBeta > locant > torsion. The
+ * descriptor > stereoGroup > stereoPrefix > partialCharge > alphaBeta >
+ * locant > torsion. The
  * requests are SORTED by that
  * table before anything is placed, so the higher-priority annotation claims
  * its slot first and the loser takes its next candidate — whatever order the
@@ -129,6 +130,13 @@ export type AnnotationKind =
   | "stereoGroup"
   /** Decision 88's `rac-` / `rel-`, above the whole structure's ink. */
   | "stereoPrefix"
+  /**
+   * A STORED delta+ or delta- on a transition-state atom (decision 205): the
+   * one kind here the author drew rather than the renderer derived. Below the
+   * stereo band, so it can never move a configuration statement; above every
+   * derived kind, because the author asked for it.
+   */
+  | "partialCharge"
   | "alphaBeta"
   | "locant"
   | "torsion";
@@ -146,6 +154,8 @@ export const ANNOTATION_PRIORITY = [
   // module header for why the three do not share one index.
   "stereoGroup",
   "stereoPrefix",
+  // Decision 205: after the stereo band, before alpha/beta.
+  "partialCharge",
   "alphaBeta",
   "locant",
   "torsion",

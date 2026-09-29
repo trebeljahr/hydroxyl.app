@@ -15,7 +15,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 
 import { afterAll, describe, expect, it } from "vitest";
 
-import { FIXTURES, MECHANISM_FIXTURES } from "../src/fixtures.js";
+import { FIXTURES, MECHANISM_FIXTURES, SCHEME_FIXTURES } from "../src/fixtures.js";
 import { VIEW_KINDS } from "../src/representation.js";
 
 import {
@@ -23,6 +23,7 @@ import {
   PLANAR_SECTION_NAME,
   contactSheetPath,
   MECHANISM_SECTION_PREFIX,
+  SCHEME_SECTION_PREFIX,
   contactSheetUrl,
   writeContactSheet,
 } from "./contact-sheet.js";
@@ -61,12 +62,14 @@ describe("contact sheet", () => {
       //
       // The fused-ring annotation section adds two more skeletal rows of its
       // own: the bare steroid, and the steroid with descriptors and locants.
-      // Each mechanism section adds a skeletal row and a Lewis row.
+      // Each mechanism section adds a skeletal row and a Lewis row, and each
+      // scheme section a skeletal row.
       const rows = html.split(`class="kind">${kind}`).length - 1;
       expect(rows, kind).toBe(
         FIXTURES.length * (kind === "skeletal" ? 3 : 1) +
           (kind === "skeletal" ? 2 : 0) +
-          (kind === "skeletal" || kind === "lewis" ? MECHANISM_FIXTURES.length : 0),
+          (kind === "skeletal" || kind === "lewis" ? MECHANISM_FIXTURES.length : 0) +
+          (kind === "skeletal" ? SCHEME_FIXTURES.length : 0),
       );
     }
     expect(html).toContain("<em>kekule alternation</em>");
@@ -74,7 +77,11 @@ describe("contact sheet", () => {
     const cells = html.split('class="cell"').length - 1;
     // Plus the planar frame section's three rows, each in both presets.
     expect(cells).toBe(
-      FIXTURES.length * (VIEW_KINDS.length + 2) * 2 + 2 * 2 + MECHANISM_FIXTURES.length * 2 * 2 + 3 * 2,
+      FIXTURES.length * (VIEW_KINDS.length + 2) * 2 +
+        2 * 2 +
+        MECHANISM_FIXTURES.length * 2 * 2 +
+        SCHEME_FIXTURES.length * 2 +
+        3 * 2,
     );
   });
 
@@ -102,6 +109,21 @@ describe("contact sheet", () => {
       }
     }
     expect(html).toContain("<em>curly arrows from the drawn lone pairs</em>");
+  });
+
+  it("carries a section per scheme, every mark drawn", () => {
+    for (const fixture of SCHEME_FIXTURES) {
+      expect(html).toContain(`<h2>${SCHEME_SECTION_PREFIX}${fixture.name}</h2>`);
+      for (const annotation of fixture.annotations) {
+        // A delta is drawn by the label pass, under its atom's id.
+        if (annotation.kind === "partialCharge") {
+          expect(html).toContain(`id="atom:${annotation.atomId}:partialCharge"`);
+        } else {
+          expect(html).toContain(`data-annotation="${annotation.id}"`);
+        }
+      }
+    }
+    expect(html).toContain("<em>reaction arrows, conditions, brackets</em>");
   });
 
   it("embeds the SVG rather than linking it", () => {

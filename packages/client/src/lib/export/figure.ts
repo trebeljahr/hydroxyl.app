@@ -290,6 +290,10 @@ function widthAdvice(
  * 182): it is set at the DESCRIPTOR scale, 8 pt at Publication, so any
  * scale-to-fit takes it under the floor exactly as it does `stereoPrefix`.
  *
+ * `partialCharge` is checked because decision 205 put a stored delta+/delta-
+ * into this pass at the DESCRIPTOR scale: 8 pt at Publication, so any
+ * scale-to-fit takes it under the floor exactly as it does the letters.
+ *
  * `torsion` is a declared kind with no producer: nothing requests it, so no
  * figure draws one and the check cannot reach it. It says so here rather than
  * being absent, so the day it gains a producer the choice is made
@@ -301,6 +305,7 @@ const ANNOTATION_CHECKS = {
   descriptor: { name: "Stereo descriptors" },
   stereoGroup: { name: "Stereo group tags" },
   stereoPrefix: { name: "Stereo prefixes (rac-/rel-)" },
+  partialCharge: { name: "Partial charges (δ+/δ−)" },
   alphaBeta: { name: "Alpha/beta labels" },
   locant: { name: "Locants" },
   torsion: { unchecked: "no producer requests it, so no figure draws one" },

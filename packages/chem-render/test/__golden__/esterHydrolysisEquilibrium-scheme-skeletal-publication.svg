@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-8.9 -53.901 448.987 74.343" width="448.987px" height="74.343px">
+  <line id="bond:b3:line" data-bond="b3" x1="0" y1="0" x2="20.785" y2="-12" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b5:line" data-bond="b5" x1="18.685" y1="-12" x2="18.685" y2="-28.667" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b5:line2" data-bond="b5" x1="22.885" y1="-12" x2="22.885" y2="-28.667" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b7:line" data-bond="b7" x1="20.785" y1="-12" x2="33.487" y2="-4.666" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b9:line" data-bond="b9" x1="49.651" y1="-4.666" x2="62.354" y2="-12" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b11:line" data-bond="b11" x1="62.354" y1="-12" x2="83.138" y2="0" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b15:line" data-bond="b15" x1="288" y1="0" x2="308.785" y2="-12" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b17:line" data-bond="b17" x1="306.685" y1="-12" x2="306.685" y2="-28.667" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b17:line2" data-bond="b17" x1="310.885" y1="-12" x2="310.885" y2="-28.667" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b19:line" data-bond="b19" x1="308.785" y1="-12" x2="321.487" y2="-4.666" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b22:line" data-bond="b22" x1="372" y1="0" x2="392.785" y2="-12" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b24:line" data-bond="b24" x1="392.785" y1="-12" x2="405.487" y2="-4.666" stroke="#000000" stroke-width="1"/>
+  <circle id="atom:a1:dot" data-atom="a1" cx="0" cy="0" r="0.9" fill="#000000"/>
+  <circle id="atom:a2:dot" data-atom="a2" cx="20.785" cy="-12" r="0.9" fill="#000000"/>
+  <text id="atom:a4:label" data-atom="a4" x="14.303" y="-30.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>O</tspan></text>
+  <text id="atom:a6:label" data-atom="a6" x="35.087" y="5.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>O</tspan></text>
+  <circle id="atom:a8:dot" data-atom="a8" cx="62.354" cy="-12" r="0.9" fill="#000000"/>
+  <circle id="atom:a10:dot" data-atom="a10" cx="83.138" cy="0" r="0.9" fill="#000000"/>
+  <text id="atom:a12:label" data-atom="a12" x="106.808" y="5.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan><tspan font-size="12" dy="4.167">2</tspan><tspan dy="-4.167">O</tspan></text>
+  <circle id="atom:a13:dot" data-atom="a13" cx="288" cy="0" r="0.9" fill="#000000"/>
+  <circle id="atom:a14:dot" data-atom="a14" cx="308.785" cy="-12" r="0.9" fill="#000000"/>
+  <text id="atom:a16:label" data-atom="a16" x="302.303" y="-30.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>O</tspan></text>
+  <text id="atom:a18:label" data-atom="a18" x="323.087" y="5.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>O</tspan><tspan>H</tspan></text>
+  <circle id="atom:a20:dot" data-atom="a20" cx="372" cy="0" r="0.9" fill="#000000"/>
+  <circle id="atom:a21:dot" data-atom="a21" cx="392.785" cy="-12" r="0.9" fill="#000000"/>
+  <text id="atom:a23:label" data-atom="a23" x="407.087" y="5.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>O</tspan><tspan>H</tspan></text>
+  <path id="annotation:ann_1:plus" data-annotation="ann_1" d="M91.307 -8.003 L100.907 -8.003 M96.107 -12.803 L96.107 -3.203" fill="none" stroke="#000000" stroke-width="1"/>
+  <line id="annotation:ann_2:forward-shaft" data-annotation="ann_2" x1="179.775" y1="-19.103" x2="236.26" y2="-19.103" stroke="#000000" stroke-width="1"/>
+  <polygon id="annotation:ann_2:forward-head" data-annotation="ann_2" points="245.01,-19.103 235.01,-21.603 236.26,-19.103" fill="#000000"/>
+  <line id="annotation:ann_2:reverse-shaft" data-annotation="ann_2" x1="266.755" y1="-14.903" x2="166.78" y2="-14.903" stroke="#000000" stroke-width="1"/>
+  <polygon id="annotation:ann_2:reverse-head" data-annotation="ann_2" points="158.03,-14.903 168.03,-12.403 166.78,-14.903" fill="#000000"/>
+  <text id="annotation:ann_2:conditions-above-0" data-annotation="ann_2" x="212.392" y="-30.813" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="middle" xml:space="preserve"><tspan>H</tspan><tspan font-size="12" dy="4.167">2</tspan><tspan dy="-4.167">SO</tspan><tspan font-size="12" dy="4.167">4</tspan><tspan dy="-4.167"> (cat.)</tspan></text>
+  <text id="annotation:ann_2:conditions-below-0" data-annotation="ann_2" x="212.392" y="1.563" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="middle"><tspan>reflux</tspan></text>
+  <path id="annotation:ann_3:plus" data-annotation="ann_3" d="M354.114 -10.753 L363.714 -10.753 M358.914 -15.553 L358.914 -5.953" fill="none" stroke="#000000" stroke-width="1"/>
+</svg>

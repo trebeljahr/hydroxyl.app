@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-21.78 -24.98 638 52.93" width="638px" height="52.93px">
+  <rect data-decoration="background" x="-21.78" y="-24.98" width="638" height="52.93" fill="#ffffff"/>
+  <line id="bond:b4:line" data-bond="b4" x1="150.02" y1="-3.5" x2="175.58" y2="-3.5" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b4:line2" data-bond="b4" x1="150.02" y1="3.5" x2="175.58" y2="3.5" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b7:line" data-bond="b7" x1="361.22" y1="-3.5" x2="396" y2="-3.5" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b7:line2" data-bond="b7" x1="361.22" y1="3.5" x2="396" y2="3.5" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b9:line" data-bond="b9" x1="396" y1="-3.5" x2="430.78" y2="-3.5" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b9:line2" data-bond="b9" x1="396" y1="3.5" x2="430.78" y2="3.5" stroke="#1f2937" stroke-width="2"/>
+  <text id="atom:a1:label" data-atom="a1" x="-5.78" y="5.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start"><tspan>C</tspan><tspan>H</tspan><tspan font-size="11.52" dy="4">4</tspan></text>
+  <text id="atom:a2:label" data-atom="a2" x="134.58" y="5.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start"><tspan>O</tspan></text>
+  <text id="atom:a3:label" data-atom="a3" x="178.58" y="5.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start"><tspan>O</tspan></text>
+  <circle id="atom:a5:dot" data-atom="a5" cx="396" cy="0" r="2" fill="#111827"/>
+  <text id="atom:a6:label" data-atom="a6" x="345.78" y="5.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start"><tspan>O</tspan></text>
+  <text id="atom:a8:label" data-atom="a8" x="433.78" y="5.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start"><tspan>O</tspan></text>
+  <text id="atom:a10:label" data-atom="a10" x="569.82" y="5.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start"><tspan>H</tspan><tspan font-size="11.52" dy="4">2</tspan><tspan dy="-4">O</tspan></text>
+  <text id="annotation:ann_1:coefficient" data-annotation="ann_1" x="131.34" y="5.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="end"><tspan>2</tspan></text>
+  <text id="annotation:ann_4:coefficient" data-annotation="ann_4" x="567.13" y="7.42" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="end"><tspan>2</tspan></text>
+  <path id="annotation:ann_2:plus" data-annotation="ann_2" d="M64.12 0.94 L81.72 0.94 M72.92 -7.86 L72.92 9.74" fill="none" stroke="#1f2937" stroke-width="2"/>
+  <line id="annotation:ann_3:shaft" data-annotation="ann_3" x1="224.4" y1="1.07" x2="294.9" y2="1.07" stroke="#1f2937" stroke-width="2"/>
+  <polygon id="annotation:ann_3:head" data-annotation="ann_3" points="312.4,1.07 292.4,-3.93 294.9,1.07 292.4,6.07" fill="#1f2937"/>
+  <path id="annotation:ann_5:plus" data-annotation="ann_5" d="M493.04 0.94 L510.64 0.94 M501.84 -7.86 L501.84 9.74" fill="none" stroke="#1f2937" stroke-width="2"/>
+</svg>

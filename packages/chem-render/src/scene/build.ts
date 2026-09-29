@@ -98,7 +98,9 @@ import type {
   PlacedTextRun,
 } from "../label/placement.js";
 import { isStructural } from "../representation.js";
-import type { SchemeAnnotation } from "../scheme/annotation.js";
+import { anchorPlacementOf } from "../scheme/annotation.js";
+import type { SchemeAnnotation, SchemeAnnotationId } from "../scheme/annotation.js";
+import { partialBondSegment, partialChargeText } from "../annotation/transition-state.js";
 import type {
   Representation,
   StructuralRepresentation,
@@ -156,9 +158,11 @@ import type {
  * everything else first: an annotation looks for the hole nothing else wanted.
  *
  * `options` carries what the molecule itself does not: the locants, a
- * projection's layout, and the document's stored scheme annotations, whose
- * curly arrows are drawn LAST, on top of everything (annotation/layer.ts).
- * Omitting it changes nothing about any scene built before it existed.
+ * projection's layout, and the document's stored scheme annotations — drawn
+ * after the structure in decision 213's order, curly arrows LAST, on top of
+ * everything (annotation/layer.ts), except a transition state's deltas, which
+ * join the label pass above (decision 205). Omitting it changes nothing about
+ * any scene built before it existed.
  */
 export function buildScene(
   mol: Molecule,
@@ -176,8 +180,8 @@ export interface AnnotatedScene {
   readonly annotations: AnnotationLayout;
   /**
    * The stored scheme annotations this build drew and the ones it could not
-   * place, with each drawn arrow's findings. A text view places no atom, so
-   * every arrow is unresolved there.
+   * place, with each drawn mark's findings. A text view places no atom, so
+   * every annotation is unresolved there.
    */
   readonly schemeAnnotations: SchemeAnnotationLayout;
 }
@@ -245,11 +249,10 @@ export interface SceneBuildOptions {
    */
   readonly layout?: ProjectedLayout;
   /**
-   * The document's stored scheme annotations. Each curly arrow whose every
-   * anchor this panel places is drawn on top of the structure, resolved
-   * against THIS panel's geometry — a projection's layout when there is one —
-   * and the others are listed as unresolved (annotation/layer.ts). The other
-   * annotation kinds are not drawn yet.
+   * The document's stored scheme annotations. Each one whose every anchor
+   * this panel places is drawn on top of the structure, resolved against
+   * THIS panel's geometry — a projection's layout when there is one — and
+   * the others are listed as unresolved (annotation/layer.ts).
    */
   readonly schemeAnnotations?: readonly SchemeAnnotation[];
 }
@@ -522,7 +525,11 @@ function buildStructural(
   const schemeAnnotations =
     stored === undefined || stored.length === 0
       ? EMPTY_SCHEME_ANNOTATION_LAYOUT
-      : drawSchemeAnnotations(built.primitives, stored, schemeContext(), style);
+      : drawSchemeAnnotations(built.primitives, stored, schemeContext(), style, {
+          source,
+          site: built.site(),
+          labels: built.annotations,
+        });
   return {
     primitives: built.primitives,
     annotations: built.annotations,
@@ -776,7 +783,7 @@ function buildMolecularLayers(
 
   // Chemistry from the SOURCE molecule: a descriptor is the configuration's,
   // which a projection re-poses and never changes; positions from `centres`.
-  const { requests, prefixText } = annotationRequests(
+  const { requests: derived, prefixText } = annotationRequests(
     source,
     representation,
     centres,
@@ -784,6 +791,20 @@ function buildMolecularLayers(
     options,
     drawing?.layout,
   );
+  // A transition state's stored marks join the ONE label pass (decisions 205
+  // and 214): each delta as a request, each partial bond as a line it must
+  // not print on. Visibility is the scheme layer's own rule, asked of the
+  // primitives drawn so far, so a delta shows exactly where its annotation
+  // resolves.
+  const transitionState = transitionStateMarks(
+    options?.schemeAnnotations,
+    () => anchorPlacementOf(primitives, source, options?.layout === undefined),
+    mol,
+    centres,
+    placements,
+    style,
+  );
+  const requests = [...derived, ...transitionState.requests];
   // The prefix alone is enough to go on: a racemate drawn with no wedges has no
   // letter to place and still has to say `rac-`. (Decision 125's known limit is
   // about the FILE, not the figure: such a molecule draws `rac-` here and writes
@@ -863,7 +884,7 @@ function buildMolecularLayers(
   }
   const context: AnnotationContext = {
     obstacles,
-    segments: [...corridors.values(), ...drawn],
+    segments: [...corridors.values(), ...drawn, ...transitionState.segments],
     circles: circleOutlines,
     glyphInk,
     style,
@@ -894,9 +915,15 @@ function buildMolecularLayers(
   for (const placed of annotations.placements) {
     // Reported and printing on text (decision 58): listed, not drawn.
     if (!placed.drawn) continue;
+    // A delta is the author's, sourced to its annotation so a click selects
+    // the mark and not the atom (decision 205).
+    const owner =
+      placed.kind === "partialCharge" && placed.source.kind === "atom"
+        ? transitionState.owners.get(placed.source.atomId)
+        : undefined;
     const run: TextRunPrimitive = {
       id: placed.id,
-      source: sceneSourceOf(placed.source),
+      source: owner === undefined ? sceneSourceOf(placed.source) : { kind: "annotation", annotationId: owner },
       type: "textRun",
       origin: placed.origin,
       spans: [{ text: placed.text }],
@@ -911,6 +938,70 @@ function buildMolecularLayers(
   }
 
   return { primitives, annotations, context, site };
+}
+
+/**
+ * A transition state's stored marks, as the label pass sees them
+ * (decisions 205 and 214): one `partialCharge` request per atom that carries
+ * a delta and is placed in this panel (the first in document order; the codec
+ * refuses a second), and each placed partial bond's drawn segment, an
+ * obstacle so no annotation prints on the dashes.
+ *
+ * A delta's preferred direction counts the atom's partial-bond partners as
+ * neighbours: a transition state's fragments have no bonds between them, so
+ * without them the delta would prefer the slot on its own partial bond.
+ *
+ * `placement` is a thunk: nearly every build has no delta and no partial
+ * bond, and should not pay for the placement sets.
+ */
+function transitionStateMarks(
+  annotations: readonly SchemeAnnotation[] | undefined,
+  placement: () => ReturnType<typeof anchorPlacementOf>,
+  mol: Molecule,
+  centres: ReadonlyMap<AtomId, ScenePoint>,
+  placements: ReadonlyMap<AtomId, AtomLabelPlacement | undefined>,
+  style: RenderStyle,
+): {
+  readonly requests: readonly AnnotationRequest[];
+  readonly segments: readonly AnnotationSegment[];
+  /** The annotation each placed delta belongs to, by atom. */
+  readonly owners: ReadonlyMap<AtomId, SchemeAnnotationId>;
+} {
+  const owners = new Map<AtomId, SchemeAnnotationId>();
+  const marks = (annotations ?? []).filter((a) => a.kind === "partialCharge" || a.kind === "partialBond");
+  if (marks.length === 0) return { requests: [], segments: [], owners };
+  const placed = placement();
+  const partners = new Map<AtomId, AtomId[]>();
+  const segments: AnnotationSegment[] = [];
+  for (const mark of marks) {
+    if (mark.kind !== "partialBond") continue;
+    const [a, b] = mark.atoms;
+    if (!placed.hasAtom(a) || !placed.hasAtom(b)) continue;
+    partners.set(a, [...(partners.get(a) ?? []), b]);
+    partners.set(b, [...(partners.get(b) ?? []), a]);
+    const segment = partialBondSegment(mark.atoms, { centres, placements }, style);
+    if (segment !== undefined) segments.push(segment);
+  }
+  const requests: AnnotationRequest[] = [];
+  for (const mark of marks) {
+    if (mark.kind !== "partialCharge") continue;
+    const { atomId } = mark;
+    const centre = centres.get(atomId);
+    if (centre === undefined || owners.has(atomId) || !placed.hasAtom(atomId)) continue;
+    owners.set(atomId, mark.id);
+    const neighbours = [...neighborIds(mol, atomId), ...(partners.get(atomId) ?? [])].flatMap((id) => {
+      const point = centres.get(id);
+      return point === undefined ? [] : [point];
+    });
+    requests.push({
+      kind: "partialCharge",
+      source: { kind: "atom", atomId },
+      text: partialChargeText(mark.sign),
+      anchor: centre,
+      preferred: canonicalFreeDirection(centre, neighbours),
+    });
+  }
+  return { requests, segments, owners };
 }
 
 /**

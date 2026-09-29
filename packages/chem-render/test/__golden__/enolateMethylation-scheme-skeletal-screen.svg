@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-56.11 -112.98 634.32 174.98" width="634.32px" height="174.98px">
+  <rect data-decoration="background" x="-56.11" y="-112.98" width="634.32" height="174.98" fill="#ffffff"/>
+  <line id="bond:b7:line" data-bond="b7" x1="0" y1="-44" x2="38.11" y2="-22" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b8:line" data-bond="b8" x1="38.11" y1="-22" x2="38.11" y2="22" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b9:line" data-bond="b9" x1="38.11" y1="22" x2="0" y2="44" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b10:line" data-bond="b10" x1="0" y1="44" x2="-38.11" y2="22" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b11:line" data-bond="b11" x1="-38.11" y1="22" x2="-38.11" y2="-22" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b12:line" data-bond="b12" x1="-38.11" y1="-22" x2="0" y2="-44" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b14:line" data-bond="b14" x1="-3.5" y1="-44" x2="-3.5" y2="-79.5" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b14:line2" data-bond="b14" x1="3.5" y1="-44" x2="3.5" y2="-79.5" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b21:line" data-bond="b21" x1="484" y1="-44" x2="522.11" y2="-22" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b22:line" data-bond="b22" x1="522.11" y1="-22" x2="522.11" y2="22" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b23:line" data-bond="b23" x1="522.11" y1="22" x2="484" y2="44" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b24:line" data-bond="b24" x1="484" y1="44" x2="445.89" y2="22" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b25:line" data-bond="b25" x1="445.89" y1="22" x2="445.89" y2="-22" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b26:line" data-bond="b26" x1="445.89" y1="-22" x2="484" y2="-44" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b28:line" data-bond="b28" x1="480.5" y1="-44" x2="480.5" y2="-79.5" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b28:line2" data-bond="b28" x1="487.5" y1="-44" x2="487.5" y2="-79.5" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b30:line" data-bond="b30" x1="522.11" y1="-22" x2="560.21" y2="-44" stroke="#1f2937" stroke-width="2"/>
+  <circle id="atom:a1:dot" data-atom="a1" cx="0" cy="-44" r="2" fill="#111827"/>
+  <circle id="atom:a2:dot" data-atom="a2" cx="38.11" cy="-22" r="2" fill="#111827"/>
+  <circle id="atom:a3:dot" data-atom="a3" cx="38.11" cy="22" r="2" fill="#111827"/>
+  <circle id="atom:a4:dot" data-atom="a4" cx="0" cy="44" r="2" fill="#111827"/>
+  <circle id="atom:a5:dot" data-atom="a5" cx="-38.11" cy="22" r="2" fill="#111827"/>
+  <circle id="atom:a6:dot" data-atom="a6" cx="-38.11" cy="-22" r="2" fill="#111827"/>
+  <text id="atom:a13:label" data-atom="a13" x="-6.22" y="-82.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start"><tspan>O</tspan></text>
+  <circle id="atom:a15:dot" data-atom="a15" cx="484" cy="-44" r="2" fill="#111827"/>
+  <circle id="atom:a16:dot" data-atom="a16" cx="522.11" cy="-22" r="2" fill="#111827"/>
+  <circle id="atom:a17:dot" data-atom="a17" cx="522.11" cy="22" r="2" fill="#111827"/>
+  <circle id="atom:a18:dot" data-atom="a18" cx="484" cy="44" r="2" fill="#111827"/>
+  <circle id="atom:a19:dot" data-atom="a19" cx="445.89" cy="22" r="2" fill="#111827"/>
+  <circle id="atom:a20:dot" data-atom="a20" cx="445.89" cy="-22" r="2" fill="#111827"/>
+  <text id="atom:a27:label" data-atom="a27" x="477.78" y="-82.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start"><tspan>O</tspan></text>
+  <circle id="atom:a29:dot" data-atom="a29" cx="560.21" cy="-44" r="2" fill="#111827"/>
+  <line id="annotation:ann_1:shaft" data-annotation="ann_1" x1="159.9" y1="-23.83" x2="306.6" y2="-23.83" stroke="#1f2937" stroke-width="2"/>
+  <polygon id="annotation:ann_1:head" data-annotation="ann_1" points="324.1,-23.83 304.1,-28.83 306.6,-23.83 304.1,-18.83" fill="#1f2937"/>
+  <text id="annotation:ann_1:conditions-above-0" data-annotation="ann_1" x="242" y="-32.02" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="middle"><tspan>(i) LDA, THF, −78 °C</tspan></text>
+  <text id="annotation:ann_1:conditions-below-0" data-annotation="ann_1" x="242" y="-8.03" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="middle"><tspan>(ii) MeI</tspan></text>
+</svg>

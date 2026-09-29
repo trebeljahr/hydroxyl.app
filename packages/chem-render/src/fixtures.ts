@@ -31,14 +31,15 @@ import {
   fromPolar,
   fuseRingOnBond,
   isFusionBond,
+  joinSpecies,
   ORIGIN,
   singleAtom,
   verticalMirror,
 } from "@starter/chem-core";
-import type { AtomId, BondId, Molecule, Vec2 } from "@starter/chem-core";
+import type { AtomId, BondId, Molecule, MoleculeBuilder, Vec2 } from "@starter/chem-core";
 
 import { assembleSchemeAnnotation, schemeAnnotationId } from "./scheme/annotation.js";
-import type { CurlyArrowAnnotation } from "./scheme/annotation.js";
+import type { CurlyArrowAnnotation, SchemeAnnotation, SchemeAnnotationInput } from "./scheme/annotation.js";
 
 /** One unit-length step from `from`, at `degrees` counter-clockwise from +x. */
 function step(from: Vec2, degrees: number): Vec2 {
@@ -984,4 +985,383 @@ export const MECHANISM_FIXTURES: readonly MechanismFixture[] = Object.freeze([
   acetateResonance(),
   bromineHomolysis(),
   markovnikovProtonation(),
+]);
+
+// ---------------------------------------------------------------------------
+// Schemes: species with the straight arrows, plus signs, brackets and
+// conditions between them
+// ---------------------------------------------------------------------------
+
+/**
+ * A molecule of several species and the scheme marks drawn between them, as a
+ * document would hold them. Each is a real scheme from the literature or the
+ * textbook, laid out left to right with room for its arrows, so
+ * `test/scheme-marks.test.ts` can assert every mark draws with no finding.
+ */
+export interface SchemeFixture {
+  readonly name: string;
+  readonly molecule: Molecule;
+  readonly annotations: readonly SchemeAnnotation[];
+}
+
+/** A stored annotation with the id counter value `n`, through the one assembler. */
+function schemeMark(n: number, draft: DistributiveOmit<SchemeAnnotationInput, "id">): SchemeAnnotation {
+  return assembleSchemeAnnotation({ ...draft, id: schemeAnnotationId(n) } as SchemeAnnotationInput);
+}
+
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+/**
+ * The SN2 of hydroxide on bromomethane through its transition state:
+ * HO⁻ + CH3Br → [HO···CH3···Br]⁻‡ → CH3OH + Br⁻.
+ *
+ * The transition state is three fragments with no bonds between them — the
+ * forming and breaking bonds are dashed PARTIAL BONDS, annotations and not
+ * bond orders (decision 201) — their hydrogen counts pinned, joined into ONE
+ * species (decision 102), with δ− on the oxygen and the bromine. It carries
+ * no formal charge on any atom: the bracket states the charge, and the deltas
+ * say where it sits (decision 212).
+ */
+export function sn2TransitionState(): SchemeFixture & {
+  readonly hydroxide: AtomId;
+  readonly bromomethane: AtomId;
+  readonly tsOxygen: AtomId;
+  readonly tsCarbon: AtomId;
+  readonly tsBromine: AtomId;
+  readonly methanol: AtomId;
+  readonly bromide: AtomId;
+} {
+  let hydroxide = "";
+  let bromomethane = "";
+  let tsOxygen = "";
+  let tsCarbon = "";
+  let tsBromine = "";
+  let methanol = "";
+  let bromide = "";
+  const drawn = buildMolecule((b) => {
+    hydroxide = b.atom("O", ORIGIN, { charge: -1 });
+    bromomethane = b.atom("C", { x: 2.5, y: 0 });
+    b.bond(bromomethane, b.atom("Br", { x: 3.5, y: 0 }), 1);
+    // The forming and breaking bonds are drawn long, two bond lengths, so
+    // the dashes show between the labels at Publication's 10 pt.
+    tsOxygen = b.atom("O", { x: 8, y: 0 }, { explicitHydrogenCount: 1 });
+    tsCarbon = b.atom("C", { x: 10, y: 0 }, { explicitHydrogenCount: 3 });
+    tsBromine = b.atom("Br", { x: 12, y: 0 }, { explicitHydrogenCount: 0 });
+    methanol = b.atom("C", { x: 17.5, y: 0 });
+    b.bond(methanol, b.atom("O", { x: 18.5, y: 0 }), 1);
+    bromide = b.atom("Br", { x: 21, y: 0 }, { charge: -1 });
+  });
+  const molecule = joinSpecies(drawn, [tsOxygen, tsCarbon, tsBromine]);
+  return {
+    name: "sn2TransitionState",
+    molecule,
+    annotations: [
+      schemeMark(1, { kind: "plus", between: [hydroxide, bromomethane] }),
+      schemeMark(2, { kind: "reactionArrow", from: [hydroxide, bromomethane], to: [tsOxygen] }),
+      schemeMark(3, { kind: "partialBond", atoms: [tsOxygen, tsCarbon] }),
+      schemeMark(4, { kind: "partialBond", atoms: [tsCarbon, tsBromine] }),
+      schemeMark(5, { kind: "partialCharge", atomId: tsOxygen, sign: "-" }),
+      schemeMark(6, { kind: "partialCharge", atomId: tsBromine, sign: "-" }),
+      schemeMark(7, { kind: "bracket", species: [tsOxygen], charge: -1, transitionState: true }),
+      schemeMark(8, { kind: "reactionArrow", from: [tsOxygen], to: [methanol, bromide] }),
+      schemeMark(9, { kind: "plus", between: [methanol, bromide] }),
+    ],
+    hydroxide,
+    bromomethane,
+    tsOxygen,
+    tsCarbon,
+    tsBromine,
+    methanol,
+    bromide,
+  };
+}
+
+/**
+ * The proline-catalysed direct aldol of List, Lerner and Barbas (J. Am. Chem.
+ * Soc. 2000, 122, 2395): acetone + 2-methylpropanal →
+ * (R)-4-hydroxy-5-methylhexan-2-one, L-proline (30 mol%), DMSO, rt.
+ *
+ * One step, so the reagent sits above the shaft and the solvent and the
+ * temperature below it (decision 202). The product's C4 is wedged to its
+ * hydroxyl, which reads (R).
+ */
+export function prolineAldol(): SchemeFixture & {
+  readonly acetone: AtomId;
+  readonly aldehyde: AtomId;
+  readonly product: AtomId;
+  readonly carbinol: AtomId;
+} {
+  let acetone = "";
+  let aldehyde = "";
+  let product = "";
+  let carbinol = "";
+  const molecule = buildMolecule((b) => {
+    // Acetone.
+    acetone = b.atom("C", ORIGIN);
+    const carbonyl = b.atom("C", step(ORIGIN, 30));
+    b.bond(acetone, carbonyl, 1);
+    b.bond(carbonyl, b.atom("O", step(step(ORIGIN, 30), 90)), 2);
+    b.bond(carbonyl, b.atom("C", step(step(ORIGIN, 30), -30)), 1);
+    // 2-Methylpropanal, (CH3)2CH-CHO.
+    const m1 = { x: 3.5, y: 0 };
+    const methyl = b.atom("C", m1);
+    const methine = b.atom("C", step(m1, 30));
+    b.bond(methyl, methine, 1);
+    b.bond(methine, b.atom("C", step(step(m1, 30), 90)), 1);
+    aldehyde = b.atom("C", step(step(m1, 30), -30));
+    b.bond(methine, aldehyde, 1);
+    b.bond(aldehyde, b.atom("O", step(step(step(m1, 30), -30), 30)), 2);
+    // The aldol, C1 to C6 left to right with the 5-methyl hanging down.
+    const p1 = { x: 15, y: 0 };
+    product = b.atom("C", p1);
+    const p2 = step(p1, 30);
+    const c2 = b.atom("C", p2);
+    b.bond(product, c2, 1);
+    b.bond(c2, b.atom("O", step(p2, 90)), 2);
+    const p3 = step(p2, -30);
+    const c3 = b.atom("C", p3);
+    b.bond(c2, c3, 1);
+    const p4 = step(p3, 30);
+    carbinol = b.atom("C", p4);
+    b.bond(c3, carbinol, 1);
+    b.bond(carbinol, b.atom("O", step(p4, 90)), 1, "wedge");
+    const p5 = step(p4, -30);
+    const c5 = b.atom("C", p5);
+    b.bond(carbinol, c5, 1);
+    b.bond(c5, b.atom("C", step(p5, 30)), 1);
+    b.bond(c5, b.atom("C", step(p5, -90)), 1);
+  });
+  return {
+    name: "prolineAldol",
+    molecule,
+    annotations: [
+      schemeMark(1, { kind: "plus", between: [acetone, aldehyde] }),
+      schemeMark(2, {
+        kind: "reactionArrow",
+        from: [acetone, aldehyde],
+        to: [product],
+        conditions: {
+          steps: [
+            [
+              { kind: "reagent", text: "L-proline (30 mol%)" },
+              { kind: "solvent", text: "DMSO" },
+              { kind: "text", text: "rt" },
+            ],
+          ],
+          numbered: false,
+        },
+      }),
+    ],
+    acetone,
+    aldehyde,
+    product,
+    carbinol,
+  };
+}
+
+/**
+ * The allyl cation's two resonance forms, CH2=CH-CH2+ ↔ +CH2-CH=CH2, joined
+ * by the double-headed resonance arrow and enclosed in square brackets with
+ * the overall charge outside the closing one (decision 194).
+ */
+export function allylCationResonance(): SchemeFixture & {
+  readonly first: AtomId;
+  readonly second: AtomId;
+} {
+  let first = "";
+  let second = "";
+  const molecule = buildMolecule((b) => {
+    first = b.atom("C", ORIGIN);
+    const a2 = b.atom("C", step(ORIGIN, 30));
+    b.bond(first, a2, 2);
+    b.bond(a2, b.atom("C", step(step(ORIGIN, 30), -30), { charge: 1 }), 1);
+    const d1 = { x: 7, y: 0 };
+    second = b.atom("C", d1, { charge: 1 });
+    const d2 = b.atom("C", step(d1, 30));
+    b.bond(second, d2, 1);
+    b.bond(d2, b.atom("C", step(step(d1, 30), -30)), 2);
+  });
+  return {
+    name: "allylCationResonance",
+    molecule,
+    annotations: [
+      schemeMark(1, { kind: "resonanceArrow", between: [first, second] }),
+      schemeMark(2, { kind: "bracket", species: [first, second], charge: 1 }),
+    ],
+    first,
+    second,
+  };
+}
+
+/**
+ * Acid-catalysed hydrolysis of ethyl acetate at equilibrium: ethyl acetate +
+ * water ⇌ acetic acid + ethanol, H2SO4 (cat.), reflux. The equilibrium lies
+ * on the ESTER side (K for the esterification is about 4), so the reverse
+ * half is drawn longer: `bias: "reverse"` (decision 194).
+ */
+export function esterHydrolysisEquilibrium(): SchemeFixture & {
+  readonly ester: AtomId;
+  readonly water: AtomId;
+  readonly acid: AtomId;
+  readonly ethanol: AtomId;
+} {
+  let ester = "";
+  let water = "";
+  let acid = "";
+  let ethanolCarbon = "";
+  const molecule = buildMolecule((b) => {
+    ester = b.atom("C", ORIGIN);
+    const c = step(ORIGIN, 30);
+    const carboxyl = b.atom("C", c);
+    b.bond(ester, carboxyl, 1);
+    b.bond(carboxyl, b.atom("O", step(c, 90)), 2);
+    const o = step(c, -30);
+    const alkoxy = b.atom("O", o);
+    b.bond(carboxyl, alkoxy, 1);
+    const e1 = step(o, 30);
+    const ethyl = b.atom("C", e1);
+    b.bond(alkoxy, ethyl, 1);
+    b.bond(ethyl, b.atom("C", step(e1, -30)), 1);
+    water = b.atom("O", { x: 5.5, y: 0 });
+    const a0 = { x: 12, y: 0 };
+    acid = b.atom("C", a0);
+    const a1 = step(a0, 30);
+    const acidCarboxyl = b.atom("C", a1);
+    b.bond(acid, acidCarboxyl, 1);
+    b.bond(acidCarboxyl, b.atom("O", step(a1, 90)), 2);
+    b.bond(acidCarboxyl, b.atom("O", step(a1, -30)), 1);
+    const t0 = { x: 15.5, y: 0 };
+    ethanolCarbon = b.atom("C", t0);
+    const t1 = step(t0, 30);
+    const methylene = b.atom("C", t1);
+    b.bond(ethanolCarbon, methylene, 1);
+    b.bond(methylene, b.atom("O", step(t1, -30)), 1);
+  });
+  return {
+    name: "esterHydrolysisEquilibrium",
+    molecule,
+    annotations: [
+      schemeMark(1, { kind: "plus", between: [ester, water] }),
+      schemeMark(2, {
+        kind: "reactionArrow",
+        from: [ester, water],
+        to: [acid, ethanolCarbon],
+        equilibrium: { bias: "reverse" },
+        conditions: {
+          steps: [
+            [
+              { kind: "reagent", text: "H2SO4 (cat.)" },
+              { kind: "text", text: "reflux" },
+            ],
+          ],
+          numbered: false,
+        },
+      }),
+      schemeMark(3, { kind: "plus", between: [acid, ethanolCarbon] }),
+    ],
+    ester,
+    water,
+    acid,
+    ethanol: ethanolCarbon,
+  };
+}
+
+/**
+ * Enolate alkylation in two steps: cyclohexanone → 2-methylcyclohexanone,
+ * (i) LDA, THF, −78 °C; (ii) MeI. The numbered steps are the done-when's
+ * "1. LDA, THF, -78 degC; 2. MeI", stored as numbers and names and printed
+ * one step a line, the first above the shaft and the second below
+ * (decision 202).
+ */
+export function enolateMethylation(): SchemeFixture & {
+  readonly ketone: AtomId;
+  readonly product: AtomId;
+} {
+  let ketone = "";
+  let product = "";
+  const ring = (b: MoleculeBuilder, centre: Vec2, methyl: boolean): AtomId => {
+    const ids = [90, 30, -30, -90, -150, 150].map((degrees) => b.atom("C", add(centre, fromPolar(degrees * DEG, 1))));
+    ids.forEach((id, i) => b.bond(id, ids[(i + 1) % ids.length]!, 1));
+    b.bond(ids[0]!, b.atom("O", add(centre, fromPolar(90 * DEG, 2))), 2);
+    if (methyl) b.bond(ids[1]!, b.atom("C", add(centre, fromPolar(30 * DEG, 2))), 1);
+    return ids[0]!;
+  };
+  const molecule = buildMolecule((b) => {
+    ketone = ring(b, ORIGIN, false);
+    product = ring(b, { x: 11, y: 0 }, true);
+  });
+  return {
+    name: "enolateMethylation",
+    molecule,
+    annotations: [
+      schemeMark(1, {
+        kind: "reactionArrow",
+        from: [ketone],
+        to: [product],
+        conditions: {
+          steps: [
+            [
+              { kind: "reagent", text: "LDA" },
+              { kind: "solvent", text: "THF" },
+              { kind: "temperature", value: -78, unit: "C" },
+            ],
+            [{ kind: "reagent", text: "MeI" }],
+          ],
+          numbered: true,
+        },
+      }),
+    ],
+    ketone,
+    product,
+  };
+}
+
+/**
+ * Methane burning, CH4 + 2 O2 → CO2 + 2 H2O: the scheme plus between
+ * species and the stoichiometric coefficient before one (decision 204).
+ */
+export function methaneCombustion(): SchemeFixture & {
+  readonly methane: AtomId;
+  readonly oxygen: AtomId;
+  readonly carbonDioxide: AtomId;
+  readonly water: AtomId;
+} {
+  let methaneCarbon = "";
+  let oxygen = "";
+  let carbonDioxide = "";
+  let water = "";
+  const molecule = buildMolecule((b) => {
+    methaneCarbon = b.atom("C", ORIGIN);
+    oxygen = b.atom("O", { x: 3.2, y: 0 });
+    b.bond(oxygen, b.atom("O", { x: 4.2, y: 0 }), 2);
+    carbonDioxide = b.atom("C", { x: 9, y: 0 });
+    b.bond(b.atom("O", { x: 8, y: 0 }), carbonDioxide, 2);
+    b.bond(carbonDioxide, b.atom("O", { x: 10, y: 0 }), 2);
+    water = b.atom("O", { x: 13.5, y: 0 });
+  });
+  return {
+    name: "methaneCombustion",
+    molecule,
+    annotations: [
+      schemeMark(1, { kind: "coefficient", species: oxygen, value: 2 }),
+      schemeMark(2, { kind: "plus", between: [methaneCarbon, oxygen] }),
+      schemeMark(3, { kind: "reactionArrow", from: [methaneCarbon, oxygen], to: [carbonDioxide, water] }),
+      schemeMark(4, { kind: "coefficient", species: water, value: 2 }),
+      schemeMark(5, { kind: "plus", between: [carbonDioxide, water] }),
+    ],
+    methane: methaneCarbon,
+    oxygen,
+    carbonDioxide,
+    water,
+  };
+}
+
+/** The scheme fixtures, in the order the contact sheet shows them. */
+export const SCHEME_FIXTURES: readonly SchemeFixture[] = Object.freeze([
+  sn2TransitionState(),
+  prolineAldol(),
+  allylCationResonance(),
+  esterHydrolysisEquilibrium(),
+  enolateMethylation(),
+  methaneCombustion(),
 ]);
