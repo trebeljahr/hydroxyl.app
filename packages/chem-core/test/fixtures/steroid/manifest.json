@@ -1,0 +1,66 @@
+{
+  "generated": "2026-09-29",
+  "rdkit": "@rdkit/rdkit 2025.03.4 (MinimalLib): get_mol(smiles); set_new_coords(); get_molblock(). Header line 1 is the name, line 3 the SMILES. SMILES from PubChem (source per row); every RDKit CIP letter was checked against the PubChem IUPAC name.",
+  "fixtures": [
+    {
+      "file": "cholesterol.mol",
+      "name": "cholesterol",
+      "smiles": "C[C@H](CCCC(C)C)[C@H]1CC[C@@H]2[C@@]1(CC[C@H]3[C@H]2CC=C4[C@@]3(CC[C@@H](C4)O)C)C",
+      "source": "PubChem CID 5997, (3S,8S,9S,10R,13R,14S,17R), side chain (20R)"
+    },
+    {
+      "file": "testosterone.mol",
+      "name": "testosterone",
+      "smiles": "C[C@]12CC[C@H]3[C@H]([C@@H]1CC[C@@H]2O)CCC4=CC(=O)CC[C@]34C",
+      "source": "PubChem CID 6013, (8R,9S,10R,13S,14S,17S)"
+    },
+    {
+      "file": "estradiol.mol",
+      "name": "estradiol",
+      "smiles": "C[C@]12CC[C@H]3[C@H]([C@@H]1CC[C@@H]2O)CCC4=C3C=CC(=C4)O",
+      "source": "PubChem CID 5757, (8R,9S,13S,14S,17S)"
+    },
+    {
+      "file": "5alpha-cholestane.mol",
+      "name": "5alpha-cholestane",
+      "smiles": "C[C@H](CCCC(C)C)[C@H]1CC[C@@H]2[C@@]1(CC[C@H]3[C@H]2CC[C@@H]4[C@@]3(CCCC4)C)C",
+      "source": "PubChem CID 2723895, (5R,8R,9S,10S,13R,14S,17R), side chain (20R)"
+    },
+    {
+      "file": "5beta-cholestane.mol",
+      "name": "5beta-cholestane",
+      "smiles": "C[C@H](CCCC(C)C)[C@H]1CC[C@@H]2[C@@]1(CC[C@H]3[C@H]2CC[C@H]4[C@@]3(CCCC4)C)C",
+      "source": "PubChem CID 5283630, (5S,8R,9S,10S,13R,14S,17R), side chain (20R)"
+    },
+    {
+      "file": "ent-kaurene.mol",
+      "name": "ent-kaur-16-ene",
+      "smiles": "C[C@@]12CCCC([C@H]1CC[C@]34[C@H]2CC[C@H](C3)C(=C)C4)(C)C",
+      "source": "PubChem CID 11966109, a tetracyclic diterpene: rings 6-6-6-5, C/D bridged (bicyclo[3.2.1]octane)"
+    },
+    {
+      "file": "cholesteryl-alpha-d-glucopyranoside.mol",
+      "name": "cholesteryl alpha-D-glucopyranoside",
+      "smiles": "C[C@H](CCCC(C)C)[C@H]1CC[C@@H]2[C@@]1(CC[C@H]3[C@H]2CC=C4[C@@]3(CC[C@@H](C4)O[C@@H]5[C@@H]([C@H]([C@@H]([C@H](O5)CO)O)O)O)C)C",
+      "source": "PubChem CID 440145 (the beta anomer, (2R,3R,4S,5S,6R)) with the anomeric centre inverted: RDKit reads C1' (S), C2'-C5' (R,S,S,R)"
+    },
+    {
+      "file": "cholecalciferol.mol",
+      "name": "cholecalciferol (vitamin D3)",
+      "smiles": "C[C@H](CCCC(C)C)[C@H]1CC[C@@H]\\2[C@@]1(CCC/C2=C\\C=C/3\\C[C@H](CCC3=C)O)C",
+      "source": "PubChem CID 5280795, a 9,10-secosteroid: the steroid core with one bond missing"
+    },
+    {
+      "file": "abiraterone.mol",
+      "name": "abiraterone",
+      "smiles": "C[C@]12CC[C@@H](CC1=CC[C@@H]3[C@@H]2CC[C@]4([C@H]3CC=C4C5=CN=CC=C5)C)O",
+      "source": "PubChem CID 132971, (3S,8R,9S,10R,13S,14S): a synthetic 17-(pyridin-3-yl) group no side-chain parent numbers"
+    },
+    {
+      "file": "methyltestosterone.mol",
+      "name": "17alpha-methyltestosterone",
+      "smiles": "C[C@]12CCC(=O)C=C1CC[C@@H]3[C@@H]2CC[C@]4([C@H]3CC[C@]4(C)O)C",
+      "source": "PubChem CID 6010, (8R,9S,10R,13S,14S,17S): C17 is a gem-disubstituted ring stereocentre"
+    }
+  ]
+}

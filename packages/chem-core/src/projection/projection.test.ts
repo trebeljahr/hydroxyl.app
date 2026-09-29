@@ -284,13 +284,25 @@ describe("the planar frame round trip", () => {
     }
   });
 
-  it("lists a centre it has no mark to carry, and a double bond drawn the other way", () => {
+  it("writes a mark where the drawing has none, and lists a centre no mark can state", () => {
     const glyceraldehyde = load("r-glyceraldehyde.mol");
     const bare = setBondStereo(glyceraldehyde, mol0Wedge(glyceraldehyde), "none");
     const layout = layoutOf(project(bare, stereoConfig(glyceraldehyde), planar()));
-    expect(layout.unplaced).toEqual([{ unit: { kind: "centre", atomId: "a3" }, reason: "no-mark-to-carry" }]);
-    expect(layout.coverage.centres).toEqual([]);
-    expect(readBack(bare, layout).centres).toEqual([]);
+    expect(layout.unplaced).toEqual([]);
+    expect(layout.coverage.centres).toEqual(["a3"]);
+    // ONE mark, on the hydroxyl, the one terminal atom (decision 178); hashed,
+    // because that is what reads (R) back, not because a rule said so.
+    expect(layout.marks).toEqual({ [bondBetween(bare, "a3", "a4")!.id]: { stereo: "hash", narrowEnd: "a3" } });
+    expect(letters(bare, readBack(bare, layout))).toEqual({ a3: "R" });
+
+    // The hydroxyl drawn on top of its carbon: every candidate reads a
+    // zero-length ligand, so nothing can state C2 and it is listed.
+    const crushed = setAtomPosition(bare, "a4", bare.atoms["a3"]!.pos);
+    const nothing = layoutOf(project(crushed, stereoConfig(glyceraldehyde), planar()));
+    expect(nothing.unplaced).toEqual([{ unit: { kind: "centre", atomId: "a3" }, reason: "no-mark-to-carry" }]);
+    expect(nothing.coverage.centres).toEqual([]);
+    expect(Object.keys(nothing.marks)).toEqual([]);
+    expect(readBack(crushed, nothing).centres).toEqual([]);
 
     const cis = load("cis-2-butene.mol");
     const trans = load("trans-2-butene.mol");

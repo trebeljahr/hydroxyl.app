@@ -1551,7 +1551,12 @@ describe("chem-core exports", () => {
     // The projection templates are the other: a template's `place` returns an
     // unchecked draft, and only `project`, which reads every draft back before
     // handing it out (decision 146), is public. Later templates join this set.
-    const projectionInternal = new Set(["projection/template.ts", "projection/planar.ts", "projection/fischer.ts"]);
+    const projectionInternal = new Set([
+      "projection/template.ts",
+      "projection/planar.ts",
+      "projection/fischer.ts",
+      "projection/marks.ts",
+    ]);
     const index = readFileSync(join(srcDir, "index.ts"), "utf8");
     for (const file of modules) {
       const specifier = `"./${file.replace(/\.ts$/, ".js")}"`;

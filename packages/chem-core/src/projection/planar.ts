@@ -2,7 +2,8 @@
  * The planar frame's wedge-dash template: the author's own drawing, rotated
  * or mirrored on the page, with its marks carried and corrected to the
  * configuration. The reference frame every other projection is checked
- * against (decision 148).
+ * against (decision 148). Also the helpers the other planar templates (Mills,
+ * the steroid panel) share with it.
  *
  * WHAT MOVES. Positions only, by one proper motion of the page: a mirror
  * across the vertical axis through the drawing's centre (the middle of its
@@ -17,9 +18,9 @@
  * view never changes which compound is stated (decision 12). `wavy` and
  * `either` state no handedness and stay as drawn.
  *
- * CORRECTED, NEVER INVENTED. After the motion the draft is read back through
- * the wedge/hash convention and compared with the configuration it was asked
- * to state, one unit at a time:
+ * CORRECTED, AND WRITTEN ONLY WHERE THE DRAWING SAYS NOTHING. After the
+ * motion the draft is read back through the wedge/hash convention and
+ * compared with the configuration it was asked to state, one unit at a time:
  *
  *   the opposite parity   every wedge and hash whose NARROW END is this
  *                         centre is exchanged. Marks only count at their
@@ -30,11 +31,12 @@
  *   a mixture             a wedge or hash at the centre becomes wavy.
  *   not specified         the marks at the centre are removed: a layout never
  *                         states more than its configuration (decision 146).
- *   no mark to carry it   listed `no-mark-to-carry`. Choosing a bond for a
- *                         NEW mark needs the wedge-placement policy (never a
- *                         bond between two centres, prefer a terminal atom,
- *                         avoid ring bonds in a fused system), which is
- *                         `planar-frame-marks-mills-and-steroid`'s.
+ *   nothing, or nothing   the centre's own marks (if any) are removed and ONE
+ *   readable, drawn       new mark is written by the wedge-placement policy
+ *                         (marks.ts, decision 178). The author's marks
+ *                         everywhere else are kept as drawn (decision 148);
+ *                         a centre no candidate can state is listed
+ *                         `no-mark-to-carry`.
  *   a double bond         drawn with the other geometry is listed
  *                         `drawn-geometry-disagrees` (no mark can move it); one
  *                         the configuration leaves unspecified gets the
@@ -45,6 +47,7 @@ import { requireBond } from "../molecule.js";
 import { readConfig, type CentreReading, type StereoConfig } from "../stereo-config.js";
 import type { AtomId, BondStereo, Molecule } from "../types.js";
 import type { Vec2 } from "../vec.js";
+import { writeCentreMarks } from "./marks.js";
 import {
   draftLayoutAccess,
   emptyPlacedLayout,
@@ -57,7 +60,7 @@ import {
 } from "./template.js";
 import type { BondDepth, LayoutMark, PlanarView, ProjectionCoverage } from "./types.js";
 
-const WEDGE_HASH = Object.freeze({ kind: "wedgeHash" as const });
+export const WEDGE_HASH = Object.freeze({ kind: "wedgeHash" as const });
 
 type Skeleton = Readonly<Record<never, never>>;
 
@@ -67,18 +70,14 @@ export const planarWedgeDashTemplate: ProjectionTemplateImplementation<PlanarVie
   },
   place(mol, config, view, _skeleton, toPlace, reach) {
     const draft = emptyPlacedLayout(WEDGE_HASH, projectionBondLength(mol));
-    const move = pageMotion(mol, view.params.rotationDeg, view.params.mirror);
+    const move = pageMotion(drawnPositions(mol), view.params.rotationDeg, view.params.mirror);
     for (const atomId of mol.atomIds) {
       const atom = mol.atoms[atomId];
       if (atom !== undefined) placeLayoutAtom(draft, atomId, move(atom.pos));
     }
+    placeSourceBonds(mol, draft);
     for (const bondId of mol.bondIds) {
       const bond = requireBond(mol, bondId);
-      placeLayoutBond(
-        draft,
-        { id: bondId, from: bond.from, to: bond.to, order: bond.order, sourceBondId: bondId },
-        "inPlane",
-      );
       if (bond.stereo !== "none") {
         draft.marks.set(bondId, {
           stereo: view.params.mirror ? mirroredStereo(bond.stereo) : bond.stereo,
@@ -87,13 +86,31 @@ export const planarWedgeDashTemplate: ProjectionTemplateImplementation<PlanarVie
       }
     }
     correctMarks(mol, config, toPlace, reach, draft);
-    // Depth from the marks the layout FINALLY draws, after the correction
-    // above may have exchanged, blurred or removed some: a wedge comes toward
-    // the viewer, a hash goes away, and everything else lies on the page.
-    for (const bondId of draft.bonds.keys()) draft.depth.set(bondId, depthOfMark(draft.marks.get(bondId)));
+    setDepthFromMarks(draft);
     return draft;
   },
 };
+
+/** Every source bond as a plain line between its own two atoms. */
+export function placeSourceBonds(mol: Molecule, draft: PlacedLayout): void {
+  for (const bondId of mol.bondIds) {
+    const bond = requireBond(mol, bondId);
+    placeLayoutBond(
+      draft,
+      { id: bondId, from: bond.from, to: bond.to, order: bond.order, sourceBondId: bondId },
+      "inPlane",
+    );
+  }
+}
+
+/**
+ * Depth from the marks the layout FINALLY draws, after any correction has
+ * exchanged, blurred, removed or written some: a wedge comes toward the
+ * viewer, a hash goes away, and everything else lies on the page.
+ */
+export function setDepthFromMarks(draft: PlacedLayout): void {
+  for (const lineId of draft.bonds.keys()) draft.depth.set(lineId, depthOfMark(draft.marks.get(lineId)));
+}
 
 function depthOfMark(mark: LayoutMark | undefined): BondDepth {
   if (mark?.stereo === "wedge") return "front";
@@ -107,21 +124,29 @@ function mirroredStereo(stereo: Exclude<BondStereo, "none">): Exclude<BondStereo
   return stereo;
 }
 
+/** The atoms' own positions, in `mol.atomIds` order. */
+export function drawnPositions(mol: Molecule): Vec2[] {
+  const out: Vec2[] = [];
+  for (const atomId of mol.atomIds) {
+    const pos = mol.atoms[atomId]?.pos;
+    if (pos !== undefined) out.push(pos);
+  }
+  return out;
+}
+
 /**
  * The page motion: mirror across the vertical line through the bounding-box
- * centre (if asked), then rotate counter-clockwise about that centre. Quarter
- * turns use exact 0 and ±1, so a Fischer-like drawing turned 90 degrees stays
- * exactly on the page axes rather than 6e-17 off them.
+ * centre of `points` (if asked), then rotate counter-clockwise about that
+ * centre. Quarter turns use exact 0 and ±1, so a Fischer-like drawing turned
+ * 90 degrees stays exactly on the page axes rather than 6e-17 off them.
  */
-function pageMotion(mol: Molecule, rotationDeg: number, mirror: boolean): (p: Vec2) => Vec2 {
+export function pageMotion(points: readonly Vec2[], rotationDeg: number, mirror: boolean): (p: Vec2) => Vec2 {
   if (rotationDeg === 0 && !mirror) return (p) => p;
   let minX = Number.POSITIVE_INFINITY;
   let minY = Number.POSITIVE_INFINITY;
   let maxX = Number.NEGATIVE_INFINITY;
   let maxY = Number.NEGATIVE_INFINITY;
-  for (const atomId of mol.atomIds) {
-    const pos = mol.atoms[atomId]?.pos;
-    if (pos === undefined) continue;
+  for (const pos of points) {
     minX = Math.min(minX, pos.x);
     minY = Math.min(minY, pos.y);
     maxX = Math.max(maxX, pos.x);
@@ -171,15 +196,34 @@ function correctMarks(
   // marks go, exactly as for a unit the configuration leaves undetermined.
   const centresToPlace = new Set(toPlace.centres);
   const wantedCentres = new Map(config.centres.map((c) => [c.atomId, c.reading]));
+  const toWrite: AtomId[] = [];
   for (const { atomId, reading: got } of read.config.centres) {
     const want = wantedCentres.get(atomId);
     if (want === undefined) correctCentre(draft, atomId, NOT_STATED, got);
-    else if (centresToPlace.has(atomId)) correctCentre(draft, atomId, want, got);
+    else if (centresToPlace.has(atomId) && correctCentre(draft, atomId, want, got) === "write") toWrite.push(atomId);
   }
+  // Written after every author mark has been settled, so the policy sees
+  // which atoms those marks already touch.
+  writeCentreMarks(mol, config, draft, toWrite);
+  correctDoubleBonds(mol, config, toPlace, read.config, draft);
+}
 
+/**
+ * Double bonds against the configuration, from a read of the draft: one drawn
+ * with the other geometry is `drawn-geometry-disagrees` (no mark can move
+ * it), and one the configuration leaves unspecified that the geometry
+ * specifies gets the crossed `either` mark.
+ */
+export function correctDoubleBonds(
+  mol: Molecule,
+  config: StereoConfig,
+  toPlace: ProjectionCoverage,
+  read: StereoConfig,
+  draft: PlacedLayout,
+): void {
   const bondsToPlace = new Set(toPlace.doubleBonds);
   const wantedBonds = new Map(config.doubleBonds.map((b) => [b.bondId, b.reading]));
-  for (const { bondId, reading: got } of read.config.doubleBonds) {
+  for (const { bondId, reading: got } of read.doubleBonds) {
     const want = wantedBonds.get(bondId) ?? NOT_STATED;
     if (wantedBonds.has(bondId) && !bondsToPlace.has(bondId)) continue;
     if (want.kind === "specified") {
@@ -192,30 +236,43 @@ function correctMarks(
   }
 }
 
-function correctCentre(draft: PlacedLayout, atomId: AtomId, want: CentreReading, got: CentreReading): void {
+/**
+ * Settles one centre's author marks against the configuration, or says it
+ * needs a mark written: its drawing states nothing, or nothing readable
+ * (ambiguous geometry, opposed marks), where the configuration states
+ * something. Its own marks are then removed first, so the written one is the
+ * only one (decision 178).
+ */
+function correctCentre(
+  draft: PlacedLayout,
+  atomId: AtomId,
+  want: CentreReading,
+  got: CentreReading,
+): "done" | "write" {
   const own = marksAt(draft, atomId);
-  const unplaced = (): void => {
-    draft.unplaced.push({ unit: { kind: "centre", atomId }, reason: "no-mark-to-carry" });
+  const rewrite = (): "write" => {
+    for (const [lineId] of own) draft.marks.delete(lineId);
+    return "write";
   };
   switch (want.kind) {
     case "undetermined":
-      if (got.kind !== "undetermined") for (const [bondId] of own) draft.marks.delete(bondId);
-      return;
+      if (got.kind !== "undetermined") for (const [lineId] of own) draft.marks.delete(lineId);
+      return "done";
     case "mixture": {
-      if (got.kind === "mixture") return;
+      if (got.kind === "mixture") return "done";
       const handed = own.filter(([, mark]) => mark.stereo === "wedge" || mark.stereo === "hash");
-      if (handed.length === 0) return unplaced();
-      for (const [bondId, mark] of handed) draft.marks.set(bondId, { ...mark, stereo: "wavy" });
-      return;
+      if (handed.length === 0) return rewrite();
+      for (const [lineId, mark] of handed) draft.marks.set(lineId, { ...mark, stereo: "wavy" });
+      return "done";
     }
     case "specified":
-      if (got.kind !== "specified") return unplaced();
-      if (got.parity === want.parity) return;
-      for (const [bondId, mark] of own) {
+      if (got.kind !== "specified") return rewrite();
+      if (got.parity === want.parity) return "done";
+      for (const [lineId, mark] of own) {
         if (mark.stereo === "wedge" || mark.stereo === "hash") {
-          draft.marks.set(bondId, { ...mark, stereo: mark.stereo === "wedge" ? "hash" : "wedge" });
+          draft.marks.set(lineId, { ...mark, stereo: mark.stereo === "wedge" ? "hash" : "wedge" });
         }
       }
-      return;
+      return "done";
   }
 }

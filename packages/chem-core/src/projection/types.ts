@@ -310,11 +310,17 @@ export type Conformation =
  *                             out shorter, by the viewing geometry alone
  *   sightedBond.radius  0.5   the Newman back circle
  *   sightedBond.spoke   1     a Newman spoke, and a sawhorse's sighted bond
+ *   planar.revealedHydrogen
+ *                       1     the line to a hydrogen the mark writer reveals
+ *                             to carry a centre's wedge (decision 178): a
+ *                             wedge shorter than a bond is a blob once its
+ *                             "H" label trims it
  *
- * The planar and overlay frames have no entry: they draw the author's bonds,
- * which ARE `b` by definition.
+ * Otherwise the planar and overlay frames draw the author's bonds, which ARE
+ * `b` by definition, and Mills re-lays its rings with edges of `b`.
  */
 export const CHARACTERISTIC_LENGTHS = Object.freeze({
+  planar: Object.freeze({ revealedHydrogen: 1 }),
   chain: Object.freeze({ rung: 1, arm: 1 }),
   ring: Object.freeze({ edge: 1, substituent: 0.75, chairBond: 1 }),
   sightedBond: Object.freeze({ radius: 0.5, spoke: 1 }),
