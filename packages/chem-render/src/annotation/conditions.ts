@@ -11,9 +11,14 @@
  *     letter O for a degree sign, which is what typing them produces.
  *   - a reagent or a solvent is set as a FORMULA: a digit run straight after a
  *     letter or a closing bracket is subscripted (`NaBH4`, `Pd(PPh3)4`,
- *     `CH2Cl2`), and a sign at the very end of a token is a charge, raised with
- *     any digits in front of it (`H3O+`, `Fe3+`, `MeO-`). A number that starts
- *     a token is left alone (`2 M`, `18-crown-6`, `(10 mol%)`).
+ *     `CH2Cl2`), and a sign at the very end of a token is a charge, raised
+ *     (`H3O+`, `MeO-`). A number that starts a token is left alone (`2 M`,
+ *     `18-crown-6`, `(10 mol%)`). Digits right before that sign are the
+ *     charge only where nothing else can read them (decision 216): after a
+ *     closing square bracket (`[Cu(NH3)4]2+`), and one digit after a single
+ *     element symbol (`Fe3+`). Anywhere else the digit is its last element's
+ *     COUNT — `NH4+` is NH₄⁺, never NH⁴⁺ — and of two or more digits only a
+ *     last one from 2 to 9 is the charge (`SO42-` is SO₄²⁻, `C60-` is C₆₀⁻).
  *   - free text is printed EXACTLY as typed (decision 193): an author who
  *     wants none of the above writes a text item.
  *
@@ -86,6 +91,33 @@ function isSign(character: string | undefined): boolean {
   return character === "+" || character === "-" || character === MINUS_SIGN;
 }
 
+/** Where a token starts: after whitespace, a comma, a semicolon, a slash or an opening bracket. */
+function startsToken(character: string | undefined): boolean {
+  return character === undefined || /[\s,;/([]/.test(character);
+}
+
+/** A single element symbol, `Fe`, `O`, `Cu`: what a monatomic ion's charge follows. */
+const ELEMENT_SYMBOL = /^[A-Z][a-z]?$/;
+
+/**
+ * How many of `digits` — a digit run right before a sign that ends its token —
+ * are the CHARGE (decision 216); the rest are the count of the element before
+ * them. `stem` is the token up to the digits, `previous` the character just
+ * before them.
+ *
+ *   - after `]`, all of them: `[Cu(NH3)4]2+` is a complex written in brackets;
+ *   - one digit after a single element symbol, that digit: `Fe3+`, `Al3+`;
+ *   - one digit anywhere else, none: `NH4+`, `NO3-`, `BF4-` count it;
+ *   - two or more, the last when it is 2 to 9 (`SO42-`, `Cr2O72-`, `Hg22+`),
+ *     else none: nobody writes a charge of 1 or 0, so `C60-` is all count.
+ */
+function chargeDigits(digits: string, stem: string, previous: string | undefined): number {
+  if (previous === "]") return digits.length;
+  if (digits.length === 1) return ELEMENT_SYMBOL.test(stem) ? 1 : 0;
+  const last = digits[digits.length - 1]!;
+  return last >= "2" && last <= "9" ? 1 : 0;
+}
+
 /**
  * `text` set as a formula: subscripted counts and raised charges (see the
  * module header). Adjacent spans of one script are merged, so a plain word is
@@ -111,9 +143,15 @@ export function formulaSpans(text: string): TextSpan[] {
       let j = i;
       while (isDigit(characters[j])) j++;
       const digits = characters.slice(i, j).join("");
-      // Digits then a sign that ends the token: a charge, raised whole.
+      // Digits then a sign that ends the token: the sign is a charge, and
+      // some of the digits may be its size (decision 216).
       if (isSign(characters[j]) && endsToken(characters[j + 1])) {
-        push(`${digits}${characters[j] === "+" ? "+" : MINUS_SIGN}`, "super");
+        let start = i;
+        while (!startsToken(characters[start - 1])) start--;
+        const charged = chargeDigits(digits, characters.slice(start, i).join(""), previous);
+        const count = digits.slice(0, digits.length - charged);
+        if (count !== "") push(count, "sub");
+        push(`${digits.slice(digits.length - charged)}${characters[j] === "+" ? "+" : MINUS_SIGN}`, "super");
         i = j + 1;
         continue;
       }

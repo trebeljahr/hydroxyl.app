@@ -340,6 +340,39 @@ describe("a straight arrow is drawn geometry whose shaft stretches to its text (
     expect(formulaSpans("H3O+")).toEqual([{ text: "H" }, { text: "3", script: "sub" }, { text: "O" }, { text: "+", script: "super" }]);
     expect(formulaSpans("Fe3+")).toEqual([{ text: "Fe" }, { text: "3+", script: "super" }]);
     expect(formulaSpans("MeO-")).toEqual([{ text: "MeO" }, { text: "−", script: "super" }]);
+    expect(formulaSpans("[Cu(NH3)4]2+")).toEqual([
+      { text: "[Cu(NH" },
+      { text: "3", script: "sub" },
+      { text: ")" },
+      { text: "4", script: "sub" },
+      { text: "]" },
+      { text: "2+", script: "super" },
+    ]);
+    // Decision 216: on a polyatomic ion the digit before the sign is the
+    // COUNT of its last element, so ammonium is NH4+ with the 4 down, and a
+    // dianion's charge is only the last digit.
+    const ion = (formula: string, charge: string, ...counts: [string, string][]) =>
+      expect(formulaSpans(formula), formula).toEqual([
+        ...counts.flatMap(([element, count]) => [{ text: element }, { text: count, script: "sub" }]),
+        { text: charge, script: "super" },
+      ]);
+    ion("NH4+", "+", ["NH", "4"]);
+    ion("BH4-", "−", ["BH", "4"]);
+    ion("NO3-", "−", ["NO", "3"]);
+    ion("CH3-", "−", ["CH", "3"]);
+    ion("BF4-", "−", ["BF", "4"]);
+    ion("PF6-", "−", ["PF", "6"]);
+    ion("SO42-", "2−", ["SO", "4"]);
+    ion("PO43-", "3−", ["PO", "4"]);
+    ion("Cr2O72-", "2−", ["Cr", "2"], ["O", "7"]);
+    ion("Hg22+", "2+", ["Hg", "2"]);
+    ion("C60-", "−", ["C", "60"]);
+    expect(formulaSpans("Fe(CN)64-")).toEqual([
+      { text: "Fe(CN)" },
+      { text: "6", script: "sub" },
+      { text: "4−", script: "super" },
+    ]);
+    expect(formulaSpans("KOH, NH4Cl")).toEqual([{ text: "KOH, NH" }, { text: "4", script: "sub" }, { text: "Cl" }]);
     // A number that starts a token is a quantity, not a count.
     expect(formulaSpans("2 M HCl")).toEqual([{ text: "2 M HCl" }]);
     expect(formulaSpans("18-crown-6")).toEqual([{ text: "18-crown-6" }]);
