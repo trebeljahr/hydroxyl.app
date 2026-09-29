@@ -43,7 +43,9 @@ RUN pnpm install --frozen-lockfile
 # ── Stage 2: build ─────────────────────────────────────────────────
 FROM deps AS build
 # chem-core, chem-render and shared all extend ../../tsconfig.base.json.
-COPY tsconfig.base.json ./
+# next.config.ts reads the public domain out of .hatchkit.json for
+# sitemap.xml and robots.txt, and fails the build without it.
+COPY tsconfig.base.json .hatchkit.json ./
 COPY packages/chem-core packages/chem-core
 COPY packages/chem-render packages/chem-render
 COPY packages/shared packages/shared

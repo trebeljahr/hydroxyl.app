@@ -1,8 +1,28 @@
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { NextConfig } from "next";
 
 const isDev = process.env.NODE_ENV === "development";
 const isExport = process.env.NEXT_FILE_EXPORT === "1";
+
+/**
+ * The public URL this app is published at, from the domain Hatchkit deploys
+ * it to (decision 122). `sitemap.xml`, `robots.txt` and `metadataBase` all
+ * need an absolute URL and there is no request to take one from in a static
+ * export, so it is baked in at build time like `NEXT_PUBLIC_FILE_EXPORT`.
+ *
+ * Throws rather than falling back. A sitemap that names the wrong host is
+ * worse than a failed build, because nothing downstream would notice.
+ * process.cwd() is `<repo>/packages/client` here, as for `turbopack.root`.
+ */
+function siteUrlFromHatchkit(): string {
+  const manifest = path.join(process.cwd(), "..", "..", ".hatchkit.json");
+  const { domain } = JSON.parse(readFileSync(manifest, "utf8")) as { domain?: unknown };
+  if (typeof domain !== "string" || !/^[a-z0-9.-]+$/i.test(domain)) {
+    throw new Error(`${manifest} has no usable "domain"; sitemap.xml and robots.txt need one`);
+  }
+  return `https://${domain}/`;
+}
 
 const nextConfig: NextConfig = {
   // Pin the workspace root. Without this Next walks up looking for a
@@ -70,7 +90,7 @@ const nextConfig: NextConfig = {
   // prerender, so the emitted HTML would carry the wrong href until hydration
   // — and in the export "/editor" is a file that does not exist. `env` is
   // substituted at build time, so the very first byte of HTML is right.
-  env: { NEXT_PUBLIC_FILE_EXPORT: isExport ? "1" : "0" },
+  env: { NEXT_PUBLIC_FILE_EXPORT: isExport ? "1" : "0", NEXT_PUBLIC_SITE_URL: siteUrlFromHatchkit() },
   images: { unoptimized: true },
   transpilePackages: ["@starter/shared", "@starter/chem-core", "@starter/chem-render"],
 };

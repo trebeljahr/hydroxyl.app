@@ -17,13 +17,17 @@
  *   2. The RDKit assets and the third-party notice are in `out/rdkit/`, since
  *      the export copies `public/` verbatim and nothing else would notice if
  *      that stopped being true.
+ *   3. `sitemap.xml` and `robots.txt` are emitted, name the domain in
+ *      `.hatchkit.json`, and every sitemap entry is a file the export really
+ *      contains (decision 122). `e2e/seo.spec.ts` checks the standalone side.
  */
 
-import { readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const out = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "out");
+const client = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+const out = path.join(client, "out");
 
 function htmlFiles(dir) {
   const found = [];
@@ -64,8 +68,53 @@ for (const asset of [
   }
 }
 
+// Read independently of next.config.ts, so a wrong derivation there cannot
+// also be the expectation here.
+const { domain } = JSON.parse(readFileSync(path.join(client, "..", "..", ".hatchkit.json"), "utf8"));
+const site = `https://${domain}/`;
+
+function readOut(name) {
+  try {
+    return readFileSync(path.join(out, name), "utf8");
+  } catch {
+    problems.push(`out/${name} is missing from the static export`);
+    return null;
+  }
+}
+
+const sitemap = readOut("sitemap.xml");
+if (sitemap !== null) {
+  const listed = [...sitemap.matchAll(/<loc>([^<]*)<\/loc>/g)].map((m) => m[1]);
+  const expected = [site, `${site}about.html`];
+  if (JSON.stringify(listed) !== JSON.stringify(expected)) {
+    problems.push(
+      `out/sitemap.xml lists\n  ${listed.join("\n  ")}\nbut should list\n  ${expected.join("\n  ")}`,
+    );
+  }
+  // A directory is not enough: the export writes `out/about/` for the RSC
+  // payloads, so `about/` would pass an existence check with no page in it.
+  for (const url of listed.filter((u) => u.startsWith(site))) {
+    const rest = url.slice(site.length);
+    const file = rest === "" || rest.endsWith("/") ? `${rest}index.html` : rest;
+    const full = path.join(out, file);
+    if (!existsSync(full) || !statSync(full).isFile()) {
+      problems.push(`out/sitemap.xml lists ${url}, but the export has no ${file}`);
+    }
+  }
+}
+
+const robots = readOut("robots.txt");
+if (robots !== null) {
+  for (const line of ["Disallow: /editor", `Sitemap: ${site}sitemap.xml`]) {
+    if (!robots.split("\n").includes(line)) problems.push(`out/robots.txt has no "${line}" line`);
+  }
+}
+
 if (problems.length > 0) {
   console.error(`static export check failed:\n\n${problems.join("\n\n")}\n`);
   process.exit(1);
 }
-console.log("static export: every page at the root, RDKit assets and notice present");
+console.log(
+  "static export: every page at the root, RDKit assets and notice present, " +
+    `sitemap.xml and robots.txt name ${site}`,
+);

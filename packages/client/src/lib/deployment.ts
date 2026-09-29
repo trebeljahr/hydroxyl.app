@@ -123,6 +123,39 @@ export function aboutHref(): string {
 }
 
 /**
+ * The public URL this app is published at, absolute and ending in a slash.
+ *
+ * The ONE place anything that must name the site from outside it takes the
+ * host from: `sitemap.xml`, `robots.txt` and `metadataBase` (decision 122).
+ * `next.config.ts` bakes it in from the domain in `.hatchkit.json`, and fails
+ * the build when there is none, so an unset value here means this code is
+ * running outside a Next build.
+ */
+export function siteUrl(): string {
+  const url = process.env.NEXT_PUBLIC_SITE_URL;
+  if (url === undefined || url === "") {
+    throw new Error("NEXT_PUBLIC_SITE_URL is unset; next.config.ts derives it from .hatchkit.json");
+  }
+  return url;
+}
+
+/**
+ * The pages a search engine should index, as absolute URLs: the landing at
+ * `/` and the about page. Not the editor, whose `?doc=` ids name one
+ * browser's IndexedDB.
+ *
+ * Each is the address its build answers with a 200 rather than a redirect,
+ * which is why the about page is not simply `aboutHref()`: under
+ * `trailingSlash: true` a request for `/about` is sent a 308 to `/about/`.
+ * The export's `about.html` is the flat file its links already point at;
+ * `/about` there only works on a host with extension fallback.
+ */
+export function indexablePageUrls(): string[] {
+  const root = siteUrl();
+  return [root, new URL(isFileExportBuild() ? "about.html" : "about/", root).href];
+}
+
+/**
  * The licence notice for the redistributed RDKit build, which
  * `scripts/copy-rdkit.mjs` stages beside the wasm.
  *

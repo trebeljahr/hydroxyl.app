@@ -4,8 +4,10 @@ import {
   aboutHref,
   deploymentRoot,
   editorHref,
+  indexablePageUrls,
   isFileExportBuild,
   recentsHref,
+  siteUrl,
   thirdPartyNoticesHref,
 } from "./deployment";
 
@@ -71,6 +73,38 @@ describe("the static export", () => {
     // only becomes correct at hydration is wrong in the emitted HTML.
     vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "1");
     expect(editorHref()).toBe("editor.html");
+  });
+});
+
+describe("the public URL, for sitemap.xml and robots.txt (decision 122)", () => {
+  const SITE = "https://chemistry.example.test/";
+
+  it("lists the landing and the about page at the address standalone serves with a 200", () => {
+    vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "0");
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", SITE);
+    expect(siteUrl()).toBe(SITE);
+    // `about/`, not `aboutHref()`'s `/about`: trailingSlash answers that with
+    // a 308, and a sitemap entry that redirects is one a crawler reports.
+    expect(indexablePageUrls()).toEqual([SITE, `${SITE}about/`]);
+  });
+
+  it("lists the export's flat about.html, the file its own links point at", () => {
+    vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "1");
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", SITE);
+    expect(indexablePageUrls()).toEqual([SITE, `${SITE}about.html`]);
+  });
+
+  it("never lists the editor", () => {
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", SITE);
+    for (const flag of ["0", "1"]) {
+      vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", flag);
+      expect(indexablePageUrls().some((url) => url.includes("editor"))).toBe(false);
+    }
+  });
+
+  it("refuses to guess a host when the build did not supply one", () => {
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "");
+    expect(() => siteUrl()).toThrow(/hatchkit/);
   });
 });
 
