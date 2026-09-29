@@ -884,9 +884,11 @@ describe("frame resolution", () => {
       kind: "unavailable",
       reason: "template-not-built",
     });
-    const mills: ProjectionView = { kind: "planar", template: "mills", frame: {}, params: { rotationDeg: 0, mirror: false } };
-    expect(project(glucose, stereoConfig(glucose), mills)).toMatchObject({ reason: "template-not-built" });
-    const unlisted = { ...mills, template: "hexagram" } as unknown as ProjectionView;
+    const sighted = newman(ringAtoms[0]!, ringAtoms[1]!);
+    expect(resolveProjectionFrame(glucose, sighted).kind).toBe("available");
+    expect(project(glucose, stereoConfig(glucose), sighted)).toMatchObject({ reason: "template-not-built" });
+    const planarView: ProjectionView = { kind: "planar", template: "mills", frame: {}, params: { rotationDeg: 0, mirror: false } };
+    const unlisted = { ...planarView, template: "hexagram" } as unknown as ProjectionView;
     expect(project(glucose, stereoConfig(glucose), unlisted)).toMatchObject({ reason: "template-not-built" });
   });
 

@@ -79,6 +79,7 @@ import {
   stereoDisagreements,
   projectionUnavailable,
 } from "./frames.js";
+import { planarMillsTemplate } from "./mills.js";
 import { planarWedgeDashTemplate } from "./planar.js";
 import {
   draftLayoutAccess,
@@ -111,6 +112,7 @@ import {
  */
 const TEMPLATES: Readonly<Record<string, ProjectionTemplateImplementation<ProjectionView, unknown>>> = {
   "planar/wedgeDash": planarWedgeDashTemplate as ProjectionTemplateImplementation<ProjectionView, unknown>,
+  "planar/mills": planarMillsTemplate as ProjectionTemplateImplementation<ProjectionView, unknown>,
   "chain/fischer": chainFischerTemplate as ProjectionTemplateImplementation<ProjectionView, unknown>,
 };
 

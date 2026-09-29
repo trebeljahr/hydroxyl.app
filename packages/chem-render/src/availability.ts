@@ -267,6 +267,8 @@ const PROJECTION_MESSAGES: Readonly<
   "invalid-parameter": () => "A view angle is not a number.",
   "config-mismatch": () => "The configuration belongs to a different structure.",
   "id-conflict": () => "An atom id in this file clashes with a drawn label's id.",
+  "bridged-ring-system": () =>
+    "Two rings here share more than one bond, so they cannot be drawn as regular polygons; use the wedge-dash view.",
   "template-not-built": () => "This projection is not available yet.",
 };
 

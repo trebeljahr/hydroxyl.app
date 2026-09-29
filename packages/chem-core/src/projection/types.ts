@@ -71,8 +71,8 @@ export type FrameKind = (typeof FRAME_KINDS)[number];
  * can enumerate it once: a template landing later changes what `project`
  * returns for it, not the set of values a saved panel may hold. A template
  * with no implementation yet projects as `unavailable` with reason
- * `template-not-built`, never as an empty panel. Built today (decision 148):
- * planar `wedgeDash` and chain `fischer`.
+ * `template-not-built`, never as an empty panel. Built today: planar
+ * `wedgeDash` and chain `fischer` (decision 148), and planar `mills`.
  *
  * Boat, half-chair and twist-boat are FORMS of the chair template's
  * conformer, not templates; the extended zig-zag is the torsion overlay
@@ -576,6 +576,11 @@ export type ProjectionUnavailableReason =
   | "config-mismatch"
   /** A derived node's id would equal an atom id of the molecule. */
   | "id-conflict"
+  /**
+   * Mills: two rings of one system share two or more bonds (norbornane, a
+   * kaurane's C/D rings), so no layout of regular polygons exists.
+   */
+  | "bridged-ring-system"
   /** The template is listed but owed by a later task. */
   | "template-not-built";
 
