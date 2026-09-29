@@ -1,6 +1,8 @@
 /**
  * Scheme annotations: the things drawn BETWEEN and ON structures — curly
- * arrows, reaction arrows, plus signs, brackets and free text.
+ * arrows, reaction arrows (forward, equilibrium, retrosynthetic, resonance),
+ * plus signs, stoichiometric coefficients, brackets, a transition state's
+ * partial bonds and delta labels, and free text.
  *
  * NOT the label layer's annotations. `label/annotations.ts` places DERIVED
  * marks (a descriptor, a locant) that the renderer computes and nobody stores.
@@ -77,15 +79,23 @@ export function schemeAnnotationId(n: number): SchemeAnnotationId {
 
 /**
  * Every annotation kind, listed once. The document codec builds its enum from
- * this list, and `KindListIsTotal` below makes a sixth kind a compile error
+ * this list, and `KindListIsTotal` below makes one more kind a compile error
  * here rather than a saved sketch the codec cannot open — the `either` bug.
+ * `retrosynthesisArrow`, `resonanceArrow`, `partialBond`, `partialCharge` and
+ * `coefficient` arrived additively on v2 with the reaction-arrows task
+ * (decision 201).
  */
 export const SCHEME_ANNOTATION_KINDS = [
   "curlyArrow",
   "reactionArrow",
+  "retrosynthesisArrow",
+  "resonanceArrow",
   "plus",
   "bracket",
   "text",
+  "partialBond",
+  "partialCharge",
+  "coefficient",
 ] as const;
 export type SchemeAnnotationKind = (typeof SCHEME_ANNOTATION_KINDS)[number];
 
@@ -167,9 +177,88 @@ export interface CurlyArrowAnnotation {
   readonly skew: number;
 }
 
+// ---------------------------------------------------------------------------
+// Reaction conditions (decision 193, spelled out by decision 202)
+// ---------------------------------------------------------------------------
+
 /**
- * A reaction arrow between species (decision 103). `from` and `to` hold ONE
- * atom per species, resolved through `species(mol)`; never empty.
+ * The five kinds of condition item, listed once for the codec. A reagent sits
+ * ABOVE a single-step arrow; everything else sits below it.
+ */
+export const REACTION_CONDITION_KINDS = ["reagent", "solvent", "temperature", "time", "text"] as const;
+export type ReactionConditionKind = (typeof REACTION_CONDITION_KINDS)[number];
+
+/** Degrees Celsius or kelvin. Printed `−78 °C`, `298 K`. */
+export const TEMPERATURE_UNITS = ["C", "K"] as const;
+export type TemperatureUnit = (typeof TEMPERATURE_UNITS)[number];
+
+/**
+ * Absolute zero in each unit: the codec refuses a temperature below it,
+ * because no reaction runs there and a figure printing one is a typo.
+ */
+export const ABSOLUTE_ZERO: Readonly<Record<TemperatureUnit, number>> = Object.freeze({ C: -273.15, K: 0 });
+
+/** Printed `45 s`, `30 min`, `2 h`, `3 d`. A time is positive. */
+export const TIME_UNITS = ["s", "min", "h", "d"] as const;
+export type TimeUnit = (typeof TIME_UNITS)[number];
+
+/**
+ * One condition. Temperature and time are NUMBERS with a unit, so a figure
+ * never prints a hyphen for a minus sign or drops a degree sign; a reagent or
+ * a solvent is set as a formula (`NaBH4` with its 4 subscripted); free text is
+ * printed exactly as the author typed it (decision 193).
+ */
+export type ReactionCondition =
+  | { readonly kind: "reagent"; readonly text: string }
+  | { readonly kind: "solvent"; readonly text: string }
+  | { readonly kind: "temperature"; readonly value: number; readonly unit: TemperatureUnit }
+  | { readonly kind: "time"; readonly value: number; readonly unit: TimeUnit }
+  | { readonly kind: "text"; readonly text: string };
+
+type ConditionKindsAreTotal = ReactionCondition["kind"] extends ReactionConditionKind
+  ? ReactionConditionKind extends ReactionCondition["kind"]
+    ? true
+    : never
+  : never;
+const CONDITION_KINDS_ARE_TOTAL: ConditionKindsAreTotal = true;
+void CONDITION_KINDS_ARE_TOTAL;
+
+/** One step's items, in the order they are printed; never empty. */
+export type ReactionConditionStep = readonly ReactionCondition[];
+
+/**
+ * An arrow's conditions: one or more steps, each one or more items. `numbered`
+ * prefixes each step `(i)`, `(ii)` — asked for, never inferred, because a
+ * two-step sequence and a one-pot mixture differ in exactly that.
+ */
+export interface ReactionConditions {
+  readonly steps: readonly ReactionConditionStep[];
+  readonly numbered: boolean;
+}
+
+/** Which half of an unequal equilibrium arrow is favoured, and so drawn longer. */
+export const EQUILIBRIUM_BIASES = ["forward", "reverse"] as const;
+export type EquilibriumBias = (typeof EQUILIBRIUM_BIASES)[number];
+
+/**
+ * An equilibrium: two half-headed shafts, one each way. With a `bias` the
+ * favoured half is drawn longer (decision 194, after the IUPAC 2008
+ * graphical-representation recommendations); without one they are equal.
+ */
+export interface EquilibriumArrow {
+  readonly bias?: EquilibriumBias;
+}
+
+/**
+ * A reaction arrow between species (decision 103): material flows FROM the
+ * `from` species TO the `to` species. `from` and `to` hold ONE atom per
+ * species, resolved through `species(mol)`; never empty.
+ *
+ * `equilibrium` makes it a pair of half-headed shafts (decision 194), and
+ * `conditions` are printed above and below it (decision 193). A retrosynthetic
+ * arrow and a resonance arrow are NOT variants of this: they are kinds of
+ * their own (decision 201), so nothing that reads a reaction step can meet one
+ * by accident.
  */
 export interface ReactionArrowAnnotation {
   readonly id: SchemeAnnotationId;
@@ -179,6 +268,36 @@ export interface ReactionArrowAnnotation {
   /** The scheme line the arrow is drawn on, from 0, when its species sit on
    *  different lines. Omitted — never `undefined` — for a one-line scheme. */
   readonly row?: number;
+  readonly equilibrium?: EquilibriumArrow;
+  readonly conditions?: ReactionConditions;
+}
+
+/**
+ * The retrosynthetic arrow, the open double-shafted one (decision 201). It
+ * points AGAINST material flow: from the `target` to the `precursors` it is
+ * made from. Its own kind with its own field names, so a reader of reaction
+ * steps cannot run a synthesis backwards by mistaking it for a forward arrow;
+ * `materialFlow` is the one reading that turns it round.
+ */
+export interface RetrosynthesisArrowAnnotation {
+  readonly id: SchemeAnnotationId;
+  readonly kind: "retrosynthesisArrow";
+  readonly target: readonly AtomId[];
+  readonly precursors: readonly AtomId[];
+  readonly row?: number;
+  /** A disconnection note (`C–C`, `FGI`), laid out like a reaction's conditions. */
+  readonly conditions?: ReactionConditions;
+}
+
+/**
+ * The resonance arrow, a straight DOUBLE-HEADED arrow between two drawings of
+ * ONE compound (decision 201). Not a reaction: an export that treated it as
+ * one would claim two species where there is one. One atom names each form.
+ */
+export interface ResonanceArrowAnnotation {
+  readonly id: SchemeAnnotationId;
+  readonly kind: "resonanceArrow";
+  readonly between: readonly [AtomId, AtomId];
 }
 
 /** The scheme `+` between two species, one atom naming each. */
@@ -188,12 +307,20 @@ export interface PlusAnnotation {
   readonly between: readonly [AtomId, AtomId];
 }
 
-/** Square brackets around one or more species — a resonance set, a
- *  transition state — one atom naming each; never empty. */
+/**
+ * Square brackets around one or more species — a resonance set, a
+ * transition state — one atom naming each; never empty.
+ *
+ * `charge` is the net charge printed as a superscript outside the closing
+ * bracket, top right (decision 194); a non-zero integer. `transitionState`
+ * adds the double dagger there (decision 204).
+ */
 export interface BracketAnnotation {
   readonly id: SchemeAnnotationId;
   readonly kind: "bracket";
   readonly species: readonly AtomId[];
+  readonly charge?: number;
+  readonly transitionState?: true;
 }
 
 /** Free text at an absolute position, in chem-core model units, y-up. */
@@ -201,15 +328,58 @@ export interface TextAnnotation {
   readonly id: SchemeAnnotationId;
   readonly kind: "text";
   readonly text: string;
+  /** Where the text is CENTRED: horizontally, and on its cap band (decision 204). */
   readonly at: Vec2;
+}
+
+/**
+ * A transition state's partial bond, drawn DASHED between two atoms
+ * (decision 201). An annotation, not a bond order: chem-core's valence knows
+ * nothing of it, so the fragments a transition state is drawn from are
+ * ordinarily left unbonded where the partial bond runs.
+ */
+export interface PartialBondAnnotation {
+  readonly id: SchemeAnnotationId;
+  readonly kind: "partialBond";
+  readonly atoms: readonly [AtomId, AtomId];
+}
+
+export const PARTIAL_CHARGE_SIGNS = ["+", "-"] as const;
+export type PartialChargeSign = (typeof PARTIAL_CHARGE_SIGNS)[number];
+
+/**
+ * delta+ or delta− on an atom (decision 205): placed through the shared label
+ * pass, like a descriptor, and printed with a real minus. At most one per atom.
+ */
+export interface PartialChargeAnnotation {
+  readonly id: SchemeAnnotationId;
+  readonly kind: "partialCharge";
+  readonly atomId: AtomId;
+  readonly sign: PartialChargeSign;
+}
+
+/**
+ * The stoichiometric coefficient printed before a species: the 2 of
+ * `2 H2 + O2 -> 2 H2O`. A positive number; one atom names the species.
+ */
+export interface CoefficientAnnotation {
+  readonly id: SchemeAnnotationId;
+  readonly kind: "coefficient";
+  readonly species: AtomId;
+  readonly value: number;
 }
 
 export type SchemeAnnotation =
   | CurlyArrowAnnotation
   | ReactionArrowAnnotation
+  | RetrosynthesisArrowAnnotation
+  | ResonanceArrowAnnotation
   | PlusAnnotation
   | BracketAnnotation
-  | TextAnnotation;
+  | TextAnnotation
+  | PartialBondAnnotation
+  | PartialChargeAnnotation
+  | CoefficientAnnotation;
 
 type KindListIsTotal = SchemeAnnotation["kind"] extends SchemeAnnotationKind
   ? SchemeAnnotationKind extends SchemeAnnotation["kind"]
@@ -218,6 +388,17 @@ type KindListIsTotal = SchemeAnnotation["kind"] extends SchemeAnnotationKind
   : never;
 const KIND_LIST_IS_TOTAL: KindListIsTotal = true;
 void KIND_LIST_IS_TOTAL;
+
+/**
+ * A retrosynthetic or a resonance arrow is not a forward reaction arrow, and
+ * the compiler says so: neither is assignable to `ReactionArrowAnnotation`,
+ * so no function typed to take a reaction step can be handed one.
+ */
+type NotAReactionStep<T> = T extends ReactionArrowAnnotation ? never : true;
+const RETRO_IS_NOT_A_STEP: NotAReactionStep<RetrosynthesisArrowAnnotation> = true;
+const RESONANCE_IS_NOT_A_STEP: NotAReactionStep<ResonanceArrowAnnotation> = true;
+void RETRO_IS_NOT_A_STEP;
+void RESONANCE_IS_NOT_A_STEP;
 
 /**
  * A drawn curly arrow IS an electron move, plus its id and shape: a list of
@@ -229,31 +410,101 @@ type CurlyArrowIsAnElectronMove = CurlyArrowAnnotation extends ElectronMove ? tr
 const CURLY_ARROW_IS_AN_ELECTRON_MOVE: CurlyArrowIsAnElectronMove = true;
 void CURLY_ARROW_IS_AN_ELECTRON_MOVE;
 
+/** What an arrow says about material, read by `materialFlow`. */
+export interface MaterialFlow {
+  /** One atom per species consumed. */
+  readonly reactants: readonly AtomId[];
+  /** One atom per species made. */
+  readonly products: readonly AtomId[];
+  /** An equilibrium runs both ways. */
+  readonly reversible: boolean;
+}
+
 /**
- * An annotation as a caller or a parser hands it over: the one optional key
+ * The species an arrow consumes and makes, or `undefined` when it says nothing
+ * of the kind.
+ *
+ * THE ONE READING an exporter or a stoichiometry pass should use (decision
+ * 201). A forward arrow and an equilibrium read `from -> to` (an equilibrium
+ * is `reversible`); a retrosynthetic arrow is turned round, `precursors ->
+ * target`, because it points against the flow; a resonance arrow, a plus, a
+ * bracket and the rest read `undefined` — a resonance pair is one compound,
+ * not a reaction.
+ */
+export function materialFlow(annotation: SchemeAnnotation): MaterialFlow | undefined {
+  switch (annotation.kind) {
+    case "reactionArrow":
+      return {
+        reactants: annotation.from,
+        products: annotation.to,
+        reversible: annotation.equilibrium !== undefined,
+      };
+    case "retrosynthesisArrow":
+      return { reactants: annotation.precursors, products: annotation.target, reversible: false };
+    case "resonanceArrow":
+    case "curlyArrow":
+    case "plus":
+    case "bracket":
+    case "text":
+    case "partialBond":
+    case "partialCharge":
+    case "coefficient":
+      return undefined;
+    default: {
+      const unreachable: never = annotation;
+      return unreachable;
+    }
+  }
+}
+
+/** An equilibrium as a caller hands it over: `bias` may be an explicit undefined. */
+export interface EquilibriumArrowInput {
+  readonly bias?: EquilibriumBias | undefined;
+}
+
+/**
+ * An annotation as a caller or a parser hands it over: every optional key
  * widened to admit an explicit `undefined`, the way chem-core's `AtomInit`
  * does, since that is how a maybe-value is naturally threaded.
  */
 export type SchemeAnnotationInput =
   | CurlyArrowAnnotation
   | PlusAnnotation
-  | BracketAnnotation
   | TextAnnotation
-  | (Omit<ReactionArrowAnnotation, "row"> & { readonly row?: number | undefined });
+  | ResonanceArrowAnnotation
+  | PartialBondAnnotation
+  | PartialChargeAnnotation
+  | CoefficientAnnotation
+  | (Omit<ReactionArrowAnnotation, "row" | "equilibrium" | "conditions"> & {
+      readonly row?: number | undefined;
+      readonly equilibrium?: EquilibriumArrowInput | undefined;
+      readonly conditions?: ReactionConditions | undefined;
+    })
+  | (Omit<RetrosynthesisArrowAnnotation, "row" | "conditions"> & {
+      readonly row?: number | undefined;
+      readonly conditions?: ReactionConditions | undefined;
+    })
+  | (Omit<BracketAnnotation, "charge" | "transitionState"> & {
+      readonly charge?: number | undefined;
+      readonly transitionState?: true | undefined;
+    });
 
 type OptionalKeys<T> = {
   [K in keyof T]-?: undefined extends T[K] ? K : never;
 }[keyof T];
 
+/** Every optional key of every annotation: each one the assembler handles. */
+type AssembledOptionals = "row" | "equilibrium" | "conditions" | "charge" | "transitionState";
+
 /**
- * Compile-time guard: `row` is the only optional key of any annotation, and
- * the assembler below handles it. A second one added to a variant is then a
+ * Compile-time guard: the optional keys of the annotations are exactly the
+ * ones the assembler below handles. One more added to a variant is then a
  * type error here rather than a key that is written as `undefined` on the
  * first decode and breaks every round-trip `toEqual`.
  */
 type AssemblerCoversOptionals = {
   [K in SchemeAnnotationKind]: OptionalKeys<Extract<SchemeAnnotation, { kind: K }>>;
-}[SchemeAnnotationKind] extends "row"
+}[SchemeAnnotationKind] extends AssembledOptionals
   ? true
   : never;
 const ASSEMBLER_COVERS_OPTIONALS: AssemblerCoversOptionals = true;
@@ -274,6 +525,34 @@ function copySink(sink: CurlyArrowSink): CurlyArrowSink {
     default:
       return { kind: sink.kind, atomId: sink.atomId };
   }
+}
+
+function copyCondition(item: ReactionCondition): ReactionCondition {
+  switch (item.kind) {
+    case "temperature":
+      return { kind: "temperature", value: item.value, unit: item.unit };
+    case "time":
+      return { kind: "time", value: item.value, unit: item.unit };
+    case "reagent":
+    case "solvent":
+    case "text":
+      return { kind: item.kind, text: item.text };
+    default: {
+      const unreachable: never = item;
+      return unreachable;
+    }
+  }
+}
+
+function copyConditions(conditions: ReactionConditions): ReactionConditions {
+  return {
+    steps: conditions.steps.map((step) => step.map(copyCondition)),
+    numbered: conditions.numbered,
+  };
+}
+
+function copyEquilibrium(equilibrium: EquilibriumArrowInput): EquilibriumArrow {
+  return equilibrium.bias === undefined ? {} : { bias: equilibrium.bias };
 }
 
 /**
@@ -303,14 +582,45 @@ export function assembleSchemeAnnotation(input: SchemeAnnotationInput): SchemeAn
           to: [...input.to],
         };
       if (input.row !== undefined) arrow.row = input.row;
+      if (input.equilibrium !== undefined) arrow.equilibrium = copyEquilibrium(input.equilibrium);
+      if (input.conditions !== undefined) arrow.conditions = copyConditions(input.conditions);
       return arrow;
     }
+    case "retrosynthesisArrow": {
+      const arrow: {
+        -readonly [K in keyof RetrosynthesisArrowAnnotation]: RetrosynthesisArrowAnnotation[K];
+      } = {
+        id: input.id,
+        kind: "retrosynthesisArrow",
+        target: [...input.target],
+        precursors: [...input.precursors],
+      };
+      if (input.row !== undefined) arrow.row = input.row;
+      if (input.conditions !== undefined) arrow.conditions = copyConditions(input.conditions);
+      return arrow;
+    }
+    case "resonanceArrow":
+      return { id: input.id, kind: "resonanceArrow", between: [input.between[0], input.between[1]] };
     case "plus":
       return { id: input.id, kind: "plus", between: [input.between[0], input.between[1]] };
-    case "bracket":
-      return { id: input.id, kind: "bracket", species: [...input.species] };
+    case "bracket": {
+      const bracket: { -readonly [K in keyof BracketAnnotation]: BracketAnnotation[K] } = {
+        id: input.id,
+        kind: "bracket",
+        species: [...input.species],
+      };
+      if (input.charge !== undefined) bracket.charge = input.charge;
+      if (input.transitionState !== undefined) bracket.transitionState = input.transitionState;
+      return bracket;
+    }
     case "text":
       return { id: input.id, kind: "text", text: input.text, at: { x: input.at.x, y: input.at.y } };
+    case "partialBond":
+      return { id: input.id, kind: "partialBond", atoms: [input.atoms[0], input.atoms[1]] };
+    case "partialCharge":
+      return { id: input.id, kind: "partialCharge", atomId: input.atomId, sign: input.sign };
+    case "coefficient":
+      return { id: input.id, kind: "coefficient", species: input.species, value: input.value };
     default: {
       const unreachable: never = input;
       return unreachable;
@@ -337,11 +647,20 @@ export function schemeSpeciesRefs(annotation: SchemeAnnotation): readonly AtomId
   switch (annotation.kind) {
     case "reactionArrow":
       return [...annotation.from, ...annotation.to];
+    case "retrosynthesisArrow":
+      return [...annotation.target, ...annotation.precursors];
+    case "resonanceArrow":
     case "plus":
       return annotation.between;
     case "bracket":
       return annotation.species;
+    case "coefficient":
+      return [annotation.species];
+    // These name ATOMS, not species: an arrow's electrons, a partial bond's
+    // two ends and a delta's atom are dropped with their atom, not re-pointed.
     case "curlyArrow":
+    case "partialBond":
+    case "partialCharge":
     case "text":
       return [];
     default: {
@@ -369,9 +688,16 @@ export function schemeAnnotationAnchors(annotation: SchemeAnnotation): readonly 
       return [...endpointAnchors(annotation.source), ...endpointAnchors(annotation.sink)];
     case "text":
       return [{ kind: "frame" }];
+    case "partialBond":
+      return annotation.atoms.map((atomId) => ({ kind: "atom", atomId }));
+    case "partialCharge":
+      return [{ kind: "atom", atomId: annotation.atomId }];
     case "reactionArrow":
+    case "retrosynthesisArrow":
+    case "resonanceArrow":
     case "plus":
     case "bracket":
+    case "coefficient":
       return schemeSpeciesRefs(annotation).map((atomId) => ({ kind: "atom", atomId }));
     default: {
       const unreachable: never = annotation;
@@ -579,6 +905,33 @@ export function pruneSchemeAnnotations(
         if (from === annotation.from && to === annotation.to) return annotation;
         return assembleSchemeAnnotation({ ...annotation, from, to });
       }
+      case "retrosynthesisArrow": {
+        const target = repointAll(annotation.target);
+        const precursors = repointAll(annotation.precursors);
+        if (target === undefined || precursors === undefined) return undefined;
+        if (target === annotation.target && precursors === annotation.precursors) return annotation;
+        return assembleSchemeAnnotation({ ...annotation, target, precursors });
+      }
+      case "resonanceArrow": {
+        const between = repointAll(annotation.between);
+        if (between === undefined) return undefined;
+        if (between === annotation.between) return annotation;
+        return assembleSchemeAnnotation({
+          id: annotation.id,
+          kind: "resonanceArrow",
+          between: [between[0]!, between[1]!],
+        });
+      }
+      case "coefficient": {
+        const species = repoint(annotation.species);
+        if (species === undefined) return undefined;
+        if (species === annotation.species) return annotation;
+        return assembleSchemeAnnotation({ ...annotation, species });
+      }
+      case "partialBond":
+        return annotation.atoms.every(hasAtom) ? annotation : undefined;
+      case "partialCharge":
+        return hasAtom(annotation.atomId) ? annotation : undefined;
       case "plus": {
         const between = repointAll(annotation.between);
         if (between === undefined) return undefined;
@@ -593,7 +946,7 @@ export function pruneSchemeAnnotations(
         const refs = repointAll(annotation.species);
         if (refs === undefined) return undefined;
         if (refs === annotation.species) return annotation;
-        return assembleSchemeAnnotation({ id: annotation.id, kind: "bracket", species: refs });
+        return assembleSchemeAnnotation({ ...annotation, species: refs });
       }
       case "text":
         return annotation;

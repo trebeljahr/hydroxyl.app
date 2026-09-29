@@ -20,7 +20,9 @@ import {
   CURLY_ARROW_SINK_KINDS,
   SCHEME_ANNOTATION_KINDS,
   assembleSchemeAnnotation,
+  materialFlow,
   pruneSchemeAnnotations,
+  schemeSpeciesRefs,
   sceneAnchorPlacement,
   schemeAnnotationAnchors,
   schemeAnnotationId,
@@ -28,7 +30,30 @@ import {
   type CurlyArrowAnnotation,
   type ReactionArrowAnnotation,
   type SchemeAnnotation,
+  type SchemeAnnotationKind,
 } from "./annotation.js";
+
+/** One record of every kind, for the tests that must hold over all of them. */
+const SAMPLES: { readonly [K in SchemeAnnotationKind]: Extract<SchemeAnnotation, { kind: K }> } = {
+  curlyArrow: {
+    id: "ann_1",
+    kind: "curlyArrow",
+    electrons: "pair",
+    source: { kind: "lonePair", atomId: "a1" },
+    sink: { kind: "atom", atomId: "a2" },
+    bulge: 0.3,
+    skew: 0,
+  },
+  reactionArrow: { id: "ann_2", kind: "reactionArrow", from: ["a1"], to: ["a7"] },
+  retrosynthesisArrow: { id: "ann_3", kind: "retrosynthesisArrow", target: ["a7"], precursors: ["a1"] },
+  resonanceArrow: { id: "ann_4", kind: "resonanceArrow", between: ["a1", "a7"] },
+  plus: { id: "ann_5", kind: "plus", between: ["a1", "a7"] },
+  bracket: { id: "ann_6", kind: "bracket", species: ["a1"], charge: 1 },
+  text: { id: "ann_7", kind: "text", text: "rt", at: { x: 0, y: 0 } },
+  partialBond: { id: "ann_8", kind: "partialBond", atoms: ["a1", "a2"] },
+  partialCharge: { id: "ann_9", kind: "partialCharge", atomId: "a1", sign: "+" },
+  coefficient: { id: "ann_10", kind: "coefficient", species: "a1", value: 2 },
+};
 
 /** Ethanol oxidised to acetaldehyde, drawn side by side as two species. */
 function ethanolToAcetaldehyde(): {
@@ -79,9 +104,48 @@ describe("scheme annotation records", () => {
     expect(built).toEqual({ id: "ann_2", kind: "bracket", species: [ethanol[0]] });
   });
 
-  it("lists five kinds, and names ids from a counter", () => {
-    expect(SCHEME_ANNOTATION_KINDS).toEqual(["curlyArrow", "reactionArrow", "plus", "bracket", "text"]);
+  it("lists ten kinds, the reaction-arrows task's five among them, and names ids from a counter", () => {
+    expect(SCHEME_ANNOTATION_KINDS).toEqual([
+      "curlyArrow",
+      "reactionArrow",
+      "retrosynthesisArrow",
+      "resonanceArrow",
+      "plus",
+      "bracket",
+      "text",
+      "partialBond",
+      "partialCharge",
+      "coefficient",
+    ]);
     expect(schemeAnnotationId(7)).toBe("ann_7");
+  });
+
+  it("stores an equilibrium, its bias and its conditions key by key, never an undefined", () => {
+    const { ethanol, aldehyde } = ethanolToAcetaldehyde();
+    const steps = [[{ kind: "reagent" as const, text: "PCC" }, { kind: "solvent" as const, text: "CH2Cl2" }]];
+    const built = assembleSchemeAnnotation({
+      id: "ann_5",
+      kind: "reactionArrow",
+      from: [ethanol[0]!],
+      to: [aldehyde[0]!],
+      row: undefined,
+      equilibrium: { bias: undefined },
+      conditions: { steps, numbered: false },
+    });
+    expect(Object.keys(built)).toEqual(["id", "kind", "from", "to", "equilibrium", "conditions"]);
+    expect(built).toMatchObject({ equilibrium: {} });
+    // Copied, so a caller's later edit cannot reach the record.
+    steps[0]!.push({ kind: "reagent", text: "NaOAc" });
+    expect(built).toMatchObject({ conditions: { steps: [[{ text: "PCC" }, { text: "CH2Cl2" }]] } });
+
+    const bracket = assembleSchemeAnnotation({
+      id: "ann_6",
+      kind: "bracket",
+      species: [ethanol[0]!],
+      charge: undefined,
+      transitionState: undefined,
+    });
+    expect(Object.keys(bracket)).toEqual(["id", "kind", "species"]);
   });
 
   it("lists four sink kinds, the new bond last (decision 166), and copies its atom pair", () => {
@@ -168,6 +232,57 @@ describe("visibility falls out of anchoring", () => {
       schemeAnnotationAnchors({ id: "ann_4", kind: "text", text: "rt", at: { x: 0, y: 0 } }),
     ).toEqual([{ kind: "frame" }]);
   });
+
+  it("anchors a transition state's partial bond and delta to their atoms, a coefficient to its species", () => {
+    expect(schemeAnnotationAnchors({ id: "ann_5", kind: "partialBond", atoms: ["a1", "a4"] })).toEqual([
+      { kind: "atom", atomId: "a1" },
+      { kind: "atom", atomId: "a4" },
+    ]);
+    expect(schemeAnnotationAnchors({ id: "ann_6", kind: "partialCharge", atomId: "a4", sign: "-" })).toEqual([
+      { kind: "atom", atomId: "a4" },
+    ]);
+    expect(schemeAnnotationAnchors({ id: "ann_7", kind: "coefficient", species: "a9", value: 2 })).toEqual([
+      { kind: "atom", atomId: "a9" },
+    ]);
+    // Only the species kinds are re-pointed; the atom kinds go with their atom.
+    expect(schemeSpeciesRefs({ id: "ann_5", kind: "partialBond", atoms: ["a1", "a4"] })).toEqual([]);
+    expect(schemeSpeciesRefs({ id: "ann_7", kind: "coefficient", species: "a9", value: 2 })).toEqual(["a9"]);
+  });
+});
+
+describe("what an arrow says about material (decision 201)", () => {
+  const forward: SchemeAnnotation = { id: "ann_1", kind: "reactionArrow", from: ["a1"], to: ["a7"] };
+
+  it("reads a forward arrow and an equilibrium from -> to, the equilibrium both ways", () => {
+    expect(materialFlow(forward)).toEqual({ reactants: ["a1"], products: ["a7"], reversible: false });
+    expect(materialFlow({ ...forward, equilibrium: { bias: "forward" } })).toEqual({
+      reactants: ["a1"],
+      products: ["a7"],
+      reversible: true,
+    });
+  });
+
+  it("turns a retrosynthetic arrow round: the precursors are what is consumed", () => {
+    // Testosterone => cholesterol (Ruzicka, 1935): the arrow points from the
+    // target back to what it is made from, AGAINST material flow.
+    const retro: SchemeAnnotation = {
+      id: "ann_2",
+      kind: "retrosynthesisArrow",
+      target: ["a1"],
+      precursors: ["a40"],
+    };
+    expect(materialFlow(retro)).toEqual({ reactants: ["a40"], products: ["a1"], reversible: false });
+  });
+
+  it("gives a resonance arrow no reading at all: two drawings of one compound are not a reaction", () => {
+    expect(materialFlow({ id: "ann_3", kind: "resonanceArrow", between: ["a1", "a7"] })).toBeUndefined();
+    for (const kind of SCHEME_ANNOTATION_KINDS) {
+      const reads = kind === "reactionArrow" || kind === "retrosynthesisArrow";
+      const sample = SAMPLES[kind];
+      expect(sample.kind).toBe(kind);
+      expect(materialFlow(sample) !== undefined, kind).toBe(reads);
+    }
+  });
 });
 
 describe("pruning with the molecule edit", () => {
@@ -251,6 +366,42 @@ describe("pruning with the molecule edit", () => {
     const list = [arrow("constructor", ethanol[0]!), arrow(ethanol[0]!, "toString")];
     const edited = removeAtoms(mol, [ethanol[2]!]);
     expect(pruneSchemeAnnotations(list, mol, edited)).toEqual([]);
+  });
+
+  it("drops a partial bond or a delta with its atom, and re-points a coefficient within its species", () => {
+    const { mol, ethanol, aldehyde } = ethanolToAcetaldehyde();
+    const partial: SchemeAnnotation = { id: "ann_1", kind: "partialBond", atoms: [ethanol[2]!, aldehyde[1]!] };
+    const delta: SchemeAnnotation = { id: "ann_2", kind: "partialCharge", atomId: ethanol[2]!, sign: "-" };
+    const coefficient: SchemeAnnotation = { id: "ann_3", kind: "coefficient", species: ethanol[2]!, value: 2 };
+    const resonance: SchemeAnnotation = { id: "ann_4", kind: "resonanceArrow", between: [ethanol[1]!, aldehyde[1]!] };
+    const retro: SchemeAnnotation = {
+      id: "ann_5",
+      kind: "retrosynthesisArrow",
+      target: [aldehyde[2]!],
+      precursors: [ethanol[2]!],
+    };
+    const list = [partial, delta, coefficient, resonance, retro];
+    const withoutOxygen = removeAtoms(mol, [ethanol[2]!]);
+    expect(pruneSchemeAnnotations(list, mol, withoutOxygen)).toEqual([
+      { ...coefficient, species: ethanol[0] },
+      resonance,
+      { ...retro, precursors: [ethanol[0]] },
+    ]);
+    // The whole aldehyde gone: every mark that names it goes with it.
+    expect(pruneSchemeAnnotations(list, mol, removeAtoms(mol, aldehyde))).toEqual([delta, coefficient]);
+  });
+
+  it("keeps a bracket's charge and dagger when it re-points one of its species", () => {
+    const { mol, ethanol, aldehyde } = ethanolToAcetaldehyde();
+    const bracket: SchemeAnnotation = {
+      id: "ann_4",
+      kind: "bracket",
+      species: [ethanol[2]!, aldehyde[0]!],
+      charge: -1,
+      transitionState: true,
+    };
+    const pruned = pruneSchemeAnnotations([bracket], mol, removeAtoms(mol, [ethanol[2]!]));
+    expect(pruned).toEqual([{ ...bracket, species: [ethanol[0], aldehyde[0]] }]);
   });
 
   it("keeps a bracket over a resonance pair when an unrelated species is pasted in", () => {

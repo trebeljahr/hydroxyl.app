@@ -60,12 +60,18 @@ import {
   type StereoGroupKind,
 } from "@starter/chem-core";
 import {
+  ABSOLUTE_ZERO,
   CURLY_ARROW_ELECTRONS,
   CURLY_ARROW_MAX_SKEW,
   CURLY_ARROW_SINK_KINDS,
   CURLY_ARROW_SOURCE_KINDS,
   DISPLAY_FLAG_KEYS,
+  EQUILIBRIUM_BIASES,
+  PARTIAL_CHARGE_SIGNS,
+  REACTION_CONDITION_KINDS,
   SCHEME_ANNOTATION_KINDS,
+  TEMPERATURE_UNITS,
+  TIME_UNITS,
   VIEW_KINDS,
   assembleSchemeAnnotation,
   defaultFlagsFor,
@@ -837,11 +843,24 @@ function danglingReferences(molecule: Molecule, annotation: SchemeAnnotation): s
     case "reactionArrow":
       for (const id of [...annotation.from, ...annotation.to]) atom(id);
       break;
+    case "retrosynthesisArrow":
+      for (const id of [...annotation.target, ...annotation.precursors]) atom(id);
+      break;
+    case "resonanceArrow":
     case "plus":
       for (const id of annotation.between) atom(id);
       break;
     case "bracket":
       for (const id of annotation.species) atom(id);
+      break;
+    case "partialBond":
+      for (const id of annotation.atoms) atom(id);
+      break;
+    case "partialCharge":
+      atom(annotation.atomId);
+      break;
+    case "coefficient":
+      atom(annotation.species);
       break;
     case "text":
       break;
@@ -1808,6 +1827,49 @@ const curlySinkSchema = z.discriminatedUnion("kind", [
   }),
 ]);
 
+/**
+ * A reaction's conditions (decisions 193 and 202). A temperature is a number
+ * no colder than absolute zero in its unit; a time is positive; the three
+ * text kinds hold what the author typed, never empty. Steps are never empty,
+ * and neither is the list of them: "no conditions" is written by omission.
+ */
+const conditionSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal(REACTION_CONDITION_KINDS[0]), text: z.string().min(1) }),
+  z.strictObject({ kind: z.literal(REACTION_CONDITION_KINDS[1]), text: z.string().min(1) }),
+  z
+    .strictObject({
+      kind: z.literal(REACTION_CONDITION_KINDS[2]),
+      value: z.number().finite(),
+      unit: z.enum(TEMPERATURE_UNITS),
+    })
+    .refine((item) => item.value >= ABSOLUTE_ZERO[item.unit], "a temperature below absolute zero"),
+  z.strictObject({
+    kind: z.literal(REACTION_CONDITION_KINDS[3]),
+    value: z.number().positive().finite(),
+    unit: z.enum(TIME_UNITS),
+  }),
+  z.strictObject({ kind: z.literal(REACTION_CONDITION_KINDS[4]), text: z.string().min(1) }),
+]);
+
+const conditionsSchema = z.strictObject({
+  steps: z.array(z.array(conditionSchema).min(1)).min(1),
+  numbered: z.boolean(),
+});
+
+const equilibriumSchema = z.strictObject({ bias: z.enum(EQUILIBRIUM_BIASES).optional() });
+
+/** A condition kind in chem-render's list with no arm above, or the reverse,
+ *  is a compile error. */
+type ConditionArmsAreTotal = [z.infer<typeof conditionSchema>["kind"]] extends [
+  (typeof REACTION_CONDITION_KINDS)[number],
+]
+  ? [(typeof REACTION_CONDITION_KINDS)[number]] extends [z.infer<typeof conditionSchema>["kind"]]
+    ? true
+    : never
+  : never;
+const CONDITION_ARMS_ARE_TOTAL: ConditionArmsAreTotal = true;
+void CONDITION_ARMS_ARE_TOTAL;
+
 const annotationSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     id: nonEmptyString,
@@ -1824,6 +1886,24 @@ const annotationSchema = z.discriminatedUnion("kind", [
     from: z.array(nonEmptyString).min(1),
     to: z.array(nonEmptyString).min(1),
     row: z.number().int().min(0).optional(),
+    // Decisions 193 and 194, additive on v2.
+    equilibrium: equilibriumSchema.optional(),
+    conditions: conditionsSchema.optional(),
+  }),
+  // Decision 201: the retro and resonance arrows are KINDS of their own, so
+  // no reader of reaction steps can meet one as a forward arrow.
+  z.strictObject({
+    id: nonEmptyString,
+    kind: z.literal("retrosynthesisArrow"),
+    target: z.array(nonEmptyString).min(1),
+    precursors: z.array(nonEmptyString).min(1),
+    row: z.number().int().min(0).optional(),
+    conditions: conditionsSchema.optional(),
+  }),
+  z.strictObject({
+    id: nonEmptyString,
+    kind: z.literal("resonanceArrow"),
+    between: z.tuple([nonEmptyString, nonEmptyString]),
   }),
   z.strictObject({
     id: nonEmptyString,
@@ -1834,12 +1914,39 @@ const annotationSchema = z.discriminatedUnion("kind", [
     id: nonEmptyString,
     kind: z.literal("bracket"),
     species: z.array(nonEmptyString).min(1),
+    // Decision 194: a net charge, never zero — "no charge" is written by
+    // omitting the key, one spelling per statement.
+    charge: z
+      .number()
+      .int()
+      .refine((charge) => charge !== 0, "a bracket's charge of 0 is written by omitting it")
+      .optional(),
+    transitionState: z.literal(true).optional(),
   }),
   z.strictObject({
     id: nonEmptyString,
     kind: z.literal("text"),
     text: z.string().min(1),
     at: vec2Schema,
+  }),
+  z.strictObject({
+    id: nonEmptyString,
+    kind: z.literal("partialBond"),
+    atoms: z
+      .tuple([nonEmptyString, nonEmptyString])
+      .refine(([a, b]) => a !== b, "a partial bond runs between two different atoms"),
+  }),
+  z.strictObject({
+    id: nonEmptyString,
+    kind: z.literal("partialCharge"),
+    atomId: nonEmptyString,
+    sign: z.enum(PARTIAL_CHARGE_SIGNS),
+  }),
+  z.strictObject({
+    id: nonEmptyString,
+    kind: z.literal("coefficient"),
+    species: nonEmptyString,
+    value: z.number().positive().finite(),
   }),
 ]);
 
@@ -1934,7 +2041,23 @@ export const sketchDocumentSchema = z
     // by this editor, and accepting it would make every consumer handle a
     // reference that resolves to nothing.
     const annotationIds = new Set<string>();
+    // Decision 201: one partial charge per atom. A second is two statements
+    // about one atom's polarisation that the label pass could only draw one
+    // of, so the file is refused rather than half drawn.
+    const partialChargeAt = new Map<string, string>();
     doc.annotations.forEach((parsed, index) => {
+      if (parsed.kind === "partialCharge") {
+        const first = partialChargeAt.get(parsed.atomId);
+        if (first !== undefined) {
+          ctx.addIssue({
+            code: "custom",
+            message: `annotations ${first} and ${parsed.id} both put a partial charge on ${parsed.atomId}`,
+            path: ["annotations", index, "atomId"],
+          });
+        } else {
+          partialChargeAt.set(parsed.atomId, parsed.id);
+        }
+      }
       if (annotationIds.has(parsed.id)) {
         ctx.addIssue({
           code: "custom",
@@ -2211,6 +2334,11 @@ export const DOCUMENT_UPGRADES: Readonly<Record<number, (value: unknown) => unkn
  * sight. A build before 199 calls a `newBond` file damaged; that cannot be
  * mended from here.
  *
+ * Or an ANNOTATION KIND or a CONDITION KIND it does not know (decision 201),
+ * by the same argument: both unions grew on v2 with the reaction-arrows task
+ * and will grow again. A build before it calls a file holding a retro arrow
+ * or a partial bond damaged; that too cannot be mended from here.
+ *
  * `some`, not `every`: a newer build's file routinely carries several new
  * things at once, a new key beside a new annotation sink kind, and the
  * second must not turn the first's "newer version" into "corrupt". The cost
@@ -2225,7 +2353,32 @@ export function isFromNewerBuild(error: z.ZodError): boolean {
     (issue) =>
       issue.code === "unrecognized_keys" ||
       isUnknownRingConformerForm(issue) ||
-      isUnknownCurlyArrowEndKind(issue),
+      isUnknownCurlyArrowEndKind(issue) ||
+      isUnknownAnnotationKind(issue) ||
+      isUnknownConditionKind(issue),
+  );
+}
+
+/** The issue zod raises when no annotation arm has the file's `kind`:
+ *  `annotations.<n>.kind`. The annotation union grows on v2 (decision 201
+ *  added five kinds), so the NEXT kind is a newer build's, not damage. */
+function isUnknownAnnotationKind(issue: z.core.$ZodIssue): boolean {
+  if (issue.code !== "invalid_union" || issue.discriminator !== "kind") return false;
+  const path = issue.path;
+  return path.length === 3 && path[0] === "annotations" && path[2] === "kind";
+}
+
+/** The issue zod raises when no condition arm has the file's `kind`:
+ *  `annotations.<n>.conditions.steps.<s>.<i>.kind` (decision 201). */
+function isUnknownConditionKind(issue: z.core.$ZodIssue): boolean {
+  if (issue.code !== "invalid_union" || issue.discriminator !== "kind") return false;
+  const path = issue.path;
+  return (
+    path.length === 7 &&
+    path[0] === "annotations" &&
+    path[2] === "conditions" &&
+    path[3] === "steps" &&
+    path[6] === "kind"
   );
 }
 

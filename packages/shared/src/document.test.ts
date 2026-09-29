@@ -1230,3 +1230,240 @@ describe("the scheme model (schema v2)", () => {
     if (!result.ok) expect(isFromNewerBuild(result.error)).toBe(false);
   });
 });
+
+describe("reaction arrows, conditions, brackets and TS marks (decisions 193, 194, 201, 202)", () => {
+  /**
+   * Methane burning, CH4 + 2 O2 -> CO2 + 2 H2O, beside the SN2 of hydroxide
+   * on bromomethane drawn as its transition state, and the allyl cation's two
+   * resonance forms: one molecule, ten species. Every new kind has a real
+   * place to sit.
+   */
+  interface Scheme {
+    readonly molecule: Molecule;
+    readonly methane: string;
+    readonly oxygen: string;
+    readonly carbonDioxide: string;
+    readonly water: string;
+    readonly hydroxideO: string;
+    readonly tsCarbon: string;
+    readonly bromine: string;
+    readonly allylA: string;
+    readonly allylB: string;
+  }
+
+  function scheme(): Scheme {
+    const ids: Record<string, string> = {};
+    const molecule = buildMolecule((b) => {
+      ids.methane = b.atom("C", { x: 0, y: 0 });
+      const o1 = b.atom("O", { x: 2, y: 0 });
+      ids.oxygen = o1;
+      b.bond(o1, b.atom("O", { x: 3, y: 0 }), 2);
+      const c = b.atom("C", { x: 7, y: 0 });
+      ids.carbonDioxide = c;
+      b.bond(c, b.atom("O", { x: 6, y: 0 }), 2);
+      b.bond(c, b.atom("O", { x: 8, y: 0 }), 2);
+      ids.water = b.atom("O", { x: 10, y: 0 });
+      // The SN2 transition state, three fragments drawn unbonded with their
+      // hydrogen counts pinned: HO, CH3, Br.
+      ids.hydroxideO = b.atom("O", { x: 0, y: -4 }, { charge: -1, explicitHydrogenCount: 1 });
+      ids.tsCarbon = b.atom("C", { x: 1.5, y: -4 }, { explicitHydrogenCount: 3 });
+      ids.bromine = b.atom("Br", { x: 3, y: -4 }, { explicitHydrogenCount: 0 });
+      // The allyl cation, CH2=CH-CH2+ and +CH2-CH=CH2.
+      const a1 = b.atom("C", { x: 0, y: -8 });
+      const a2 = b.atom("C", { x: 0.87, y: -7.5 });
+      const a3 = b.atom("C", { x: 1.74, y: -8 }, { charge: 1 });
+      b.bond(a1, a2, 2);
+      b.bond(a2, a3, 1);
+      ids.allylA = a1;
+      const d1 = b.atom("C", { x: 4, y: -8 }, { charge: 1 });
+      const d2 = b.atom("C", { x: 4.87, y: -7.5 });
+      const d3 = b.atom("C", { x: 5.74, y: -8 });
+      b.bond(d1, d2, 1);
+      b.bond(d2, d3, 2);
+      ids.allylB = d1;
+    });
+    return { molecule, ...ids } as unknown as Scheme;
+  }
+
+  function schemeDocument(): { doc: SketchDocument; s: Scheme } {
+    const s = scheme();
+    let doc = createDocument({ id: "doc-marks", title: "marks", molecule: s.molecule, now: NOW });
+    const add = (draft: Parameters<typeof addSchemeAnnotation>[1]): void => {
+      doc = addSchemeAnnotation(doc, draft).document;
+    };
+    add({ kind: "coefficient", species: s.oxygen, value: 2 });
+    add({ kind: "plus", between: [s.methane, s.oxygen] });
+    add({
+      kind: "reactionArrow",
+      from: [s.methane, s.oxygen],
+      to: [s.carbonDioxide, s.water],
+      row: undefined,
+      equilibrium: undefined,
+      conditions: {
+        steps: [
+          [
+            { kind: "text", text: "spark" },
+            { kind: "temperature", value: -78, unit: "C" },
+            { kind: "time", value: 30, unit: "min" },
+          ],
+        ],
+        numbered: false,
+      },
+    });
+    add({ kind: "coefficient", species: s.water, value: 2 });
+    add({ kind: "plus", between: [s.carbonDioxide, s.water] });
+    add({ kind: "partialBond", atoms: [s.hydroxideO, s.tsCarbon] });
+    add({ kind: "partialBond", atoms: [s.tsCarbon, s.bromine] });
+    add({ kind: "partialCharge", atomId: s.hydroxideO, sign: "-" });
+    add({ kind: "partialCharge", atomId: s.bromine, sign: "-" });
+    add({
+      kind: "bracket",
+      species: [s.hydroxideO, s.tsCarbon, s.bromine],
+      charge: -1,
+      transitionState: true,
+    });
+    add({ kind: "resonanceArrow", between: [s.allylA, s.allylB] });
+    add({ kind: "bracket", species: [s.allylA, s.allylB], charge: 1, transitionState: undefined });
+    add({
+      kind: "reactionArrow",
+      from: [s.carbonDioxide],
+      to: [s.methane],
+      row: 1,
+      equilibrium: { bias: "reverse" },
+      conditions: {
+        steps: [[{ kind: "reagent", text: "H2" }], [{ kind: "solvent", text: "CH2Cl2" }]],
+        numbered: true,
+      },
+    });
+    add({
+      kind: "retrosynthesisArrow",
+      target: [s.carbonDioxide],
+      precursors: [s.methane, s.oxygen],
+      row: undefined,
+      conditions: { steps: [[{ kind: "text", text: "FGI" }]], numbered: false },
+    });
+    return { doc, s };
+  }
+
+  const encodedOf = (doc: SketchDocument): Record<string, any> =>
+    JSON.parse(JSON.stringify(encodeDocument(doc))) as Record<string, any>;
+
+  it("round-trips every new kind and key additively on v2, with no undefined-valued key", () => {
+    const { doc } = schemeDocument();
+    expect(doc.schemaVersion).toBe(2);
+    expect(new Set(doc.annotations.map((a) => a.kind))).toEqual(
+      new Set([
+        "coefficient",
+        "plus",
+        "reactionArrow",
+        "partialBond",
+        "partialCharge",
+        "bracket",
+        "resonanceArrow",
+        "retrosynthesisArrow",
+      ]),
+    );
+    const decoded = roundTrip(doc);
+    expect(decoded).toEqual(doc);
+    expect(roundTrip(decoded)).toEqual(decoded);
+    expect(undefinedValuedPaths(decoded)).toEqual([]);
+    expect(undefinedValuedPaths(encodeDocument(decoded))).toEqual([]);
+    // Omitted, never present holding undefined: the plain arrow has no
+    // equilibrium, the resonance bracket no dagger, the retro arrow no row.
+    expect(Object.keys(decoded.annotations[2]!)).toEqual(["id", "kind", "from", "to", "conditions"]);
+    expect(Object.keys(decoded.annotations[11]!)).toEqual(["id", "kind", "species", "charge"]);
+    expect(Object.keys(decoded.annotations[13]!)).toEqual(["id", "kind", "target", "precursors", "conditions"]);
+    expect(decoded.annotations[12]).toMatchObject({ equilibrium: { bias: "reverse" }, row: 1 });
+  });
+
+  it("keeps a temperature and a time as numbers with a unit, and text exactly as typed", () => {
+    const { doc } = schemeDocument();
+    const burn = roundTrip(doc).annotations[2];
+    if (burn?.kind !== "reactionArrow") throw new Error("expected the combustion arrow");
+    expect(burn.conditions?.steps[0]).toEqual([
+      { kind: "text", text: "spark" },
+      { kind: "temperature", value: -78, unit: "C" },
+      { kind: "time", value: 30, unit: "min" },
+    ]);
+  });
+
+  it("refuses what no figure could mean, and calls none of it a newer build's", () => {
+    const encoded = encodedOf(schemeDocument().doc);
+    const cases: ((copy: Record<string, any>) => void)[] = [
+      // A zero or fractional bracket charge; a dagger stored as false.
+      (copy) => (copy.annotations[9].charge = 0),
+      (copy) => (copy.annotations[9].charge = 0.5),
+      (copy) => (copy.annotations[9].transitionState = false),
+      // A partial bond from an atom to itself; a second delta on one atom.
+      (copy) => (copy.annotations[5].atoms = [copy.annotations[5].atoms[0], copy.annotations[5].atoms[0]]),
+      (copy) => (copy.annotations[8].atomId = copy.annotations[7].atomId),
+      (copy) => (copy.annotations[7].sign = "±"),
+      // A coefficient of zero or less.
+      (copy) => (copy.annotations[0].value = 0),
+      (copy) => (copy.annotations[0].value = -2),
+      // Below absolute zero in either unit; a time of nothing; an unknown unit.
+      (copy) => (copy.annotations[2].conditions.steps[0][1].value = -300),
+      (copy) => (copy.annotations[2].conditions.steps[0][1] = { kind: "temperature", value: -1, unit: "K" }),
+      (copy) => (copy.annotations[2].conditions.steps[0][2].value = 0),
+      (copy) => (copy.annotations[2].conditions.steps[0][1].unit = "F"),
+      // Empty lists and empty text: "no conditions" is written by omission.
+      (copy) => (copy.annotations[2].conditions.steps = []),
+      (copy) => (copy.annotations[2].conditions.steps[0] = []),
+      (copy) => (copy.annotations[2].conditions.steps[0][0].text = ""),
+      (copy) => delete copy.annotations[2].conditions.numbered,
+      (copy) => (copy.annotations[12].equilibrium.bias = "sideways"),
+      (copy) => (copy.annotations[13].target = []),
+      (copy) => (copy.annotations[10].between = [copy.annotations[10].between[0]]),
+    ];
+    for (const breakIt of cases) {
+      const copy = structuredClone(encoded);
+      breakIt(copy);
+      const result = safeDecodeDocument(copy);
+      expect(result.ok, String(breakIt)).toBe(false);
+      if (!result.ok) expect(isFromNewerBuild(result.error), String(breakIt)).toBe(false);
+    }
+  });
+
+  it("refuses a new kind that names an atom not in the molecule, including a prototype member", () => {
+    const encoded = encodedOf(schemeDocument().doc);
+    const ghosts: ((copy: Record<string, any>, ghost: string) => void)[] = [
+      (copy, ghost) => (copy.annotations[0].species = ghost),
+      (copy, ghost) => (copy.annotations[5].atoms[1] = ghost),
+      (copy, ghost) => (copy.annotations[7].atomId = ghost),
+      (copy, ghost) => (copy.annotations[10].between[1] = ghost),
+      (copy, ghost) => (copy.annotations[13].precursors = [ghost]),
+    ];
+    for (const ghost of ["a999", "constructor"]) {
+      for (const breakIt of ghosts) {
+        const copy = structuredClone(encoded);
+        breakIt(copy, ghost);
+        expect(safeDecodeDocument(copy).ok, `${String(breakIt)} ${ghost}`).toBe(false);
+      }
+    }
+    const { doc, s } = schemeDocument();
+    expect(() => addSchemeAnnotation(doc, { kind: "partialBond", atoms: [s.tsCarbon, "toString"] })).toThrow(
+      /toString/,
+    );
+  });
+
+  it("reads an unknown annotation kind, condition kind or key as a newer build's file", () => {
+    const encoded = encodedOf(schemeDocument().doc);
+    const newer: ((copy: Record<string, any>) => void)[] = [
+      (copy) => {
+        copy.annotations.push({ id: "ann_99", kind: "catalyticCycle", species: ["a1"] });
+        copy.nextAnnotationId = 100;
+      },
+      (copy) => copy.annotations[2].conditions.steps[0].push({ kind: "pressure", value: 5, unit: "bar" }),
+      (copy) => (copy.annotations[2].conditions.steps[0][0].note = "flame"),
+      (copy) => (copy.annotations[12].equilibrium.ratio = 3),
+      (copy) => (copy.annotations[9].style = "curly"),
+    ];
+    for (const add of newer) {
+      const copy = structuredClone(encoded);
+      add(copy);
+      const result = safeDecodeDocument(copy);
+      expect(result.ok, String(add)).toBe(false);
+      if (!result.ok) expect(isFromNewerBuild(result.error), String(add)).toBe(true);
+    }
+  });
+});
