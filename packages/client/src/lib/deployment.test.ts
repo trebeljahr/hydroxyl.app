@@ -7,10 +7,12 @@ import {
   editorHref,
   indexablePageUrls,
   isFileExportBuild,
+  journalFigureSizeGuideHref,
   recentsHref,
   siteUrl,
   thirdPartyNoticesHref,
 } from "./deployment";
+import { flatName } from "../../scripts/flatten-export.mjs";
 
 /**
  * The link that used to be `next/link href="/editor?doc=…"` and was runtime
@@ -43,6 +45,7 @@ describe("the standalone / dev build", () => {
     expect(editorHref("doc_1")).toBe("/editor?doc=doc_1");
     expect(recentsHref()).toBe("/");
     expect(aboutHref()).toBe("/about");
+    expect(journalFigureSizeGuideHref()).toBe("/guides/journal-figure-size");
     // Origin-absolute: `/about` is served as `/about/`, and a relative path
     // would resolve under it.
     expect(thirdPartyNoticesHref()).toBe("/rdkit/THIRD-PARTY-NOTICES.txt");
@@ -73,6 +76,14 @@ describe("the static export", () => {
     expect(recentsHref()).toBe("index.html");
     expect(aboutHref()).toBe("about.html");
     expect(thirdPartyNoticesHref()).toBe("rdkit/THIRD-PARTY-NOTICES.txt");
+  });
+
+  it("addresses a nested page by the flat name the export build moves it to", () => {
+    // Decision 137: `/guides/journal-figure-size` would be written one
+    // directory down, where `./_next/` finds no assets, so flatten-export.mjs
+    // moves it to the root. The href and the script must agree on the name.
+    vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "1");
+    expect(journalFigureSizeGuideHref()).toBe(flatName("guides/journal-figure-size.html"));
   });
 
   it("needs no DOM to answer, because the grid is PRERENDERED", () => {

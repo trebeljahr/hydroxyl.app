@@ -172,6 +172,17 @@ export function indexablePageUrls(): string[] {
 }
 
 /**
+ * The figure-size guide. Nested on the web; in the export it is moved to the
+ * root under its path joined with hyphens (decision 137), since a page one
+ * directory down resolves `./_next/` into a directory with no assets.
+ * `scripts/flatten-export.mjs` owns that name, and deployment.test.ts holds
+ * this href to it.
+ */
+export function journalFigureSizeGuideHref(): string {
+  return isFileExportBuild() ? "guides-journal-figure-size.html" : "/guides/journal-figure-size";
+}
+
+/**
  * The licence notice for the redistributed RDKit build, which
  * `scripts/copy-rdkit.mjs` stages beside the wasm.
  *

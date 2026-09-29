@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "node scripts/dev-preflight.mjs && node scripts/copy-rdkit.mjs && node scripts/build-social-card.mjs && NODE_OPTIONS=\"$NODE_OPTIONS --heapsnapshot-near-heap-limit=1 --diagnostic-dir=.next/heap-snapshots\" next dev --port ${PORT:-6337}",
-    "build": "node scripts/copy-rdkit.mjs && node scripts/build-social-card.mjs && next build",
+    "build": "node scripts/copy-rdkit.mjs && node scripts/build-social-card.mjs && next build && node scripts/flatten-export.mjs",
     "start": "next start --port ${PORT:-6337}",
     "lint": "eslint .",
     "test": "node scripts/copy-rdkit.mjs && vitest run",

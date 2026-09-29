@@ -24,6 +24,11 @@
  *      PNG, and the two landing pages point `og:image` and `twitter:image`
  *      at it on that domain (decision 138). `e2e/social-metadata.spec.ts`
  *      checks the standalone side.
+ *
+ * A route below the root, such as `/guides/journal-figure-size`, reaches the
+ * root through `flatten-export.mjs` (decision 137), which `build` runs after
+ * `next build`. Its flat page is checked for by name, so a build that skipped
+ * the move fails on the missing page as well as on the nested one.
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -57,6 +62,14 @@ if (nested.length > 0) {
       nested.map((f) => path.relative(out, f)).join("\n  ") +
       `\nSee the trailingSlash comment in next.config.ts.`,
   );
+}
+
+for (const page of ["index.html", "editor.html", "about.html", "guides-journal-figure-size.html"]) {
+  try {
+    statSync(path.join(out, page));
+  } catch {
+    problems.push(`out/${page} is missing from the static export`);
+  }
 }
 
 for (const asset of [
@@ -147,6 +160,6 @@ if (problems.length > 0) {
   process.exit(1);
 }
 console.log(
-  "static export: every page at the root, RDKit assets and notice present, " +
+  "static export: every page at the root, the guide flattened, RDKit assets and notice present, " +
     `sitemap.xml, robots.txt and the social card name ${site}`,
 );
