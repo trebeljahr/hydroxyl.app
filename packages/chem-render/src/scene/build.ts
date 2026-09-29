@@ -70,6 +70,7 @@ import {
   lonePairDotId,
   radicalDotId,
 } from "../label/compose.js";
+import type { ComposedLabel } from "../label/compose.js";
 import {
   derivedHydrogenDirections,
   phantomHydrogenId,
@@ -387,6 +388,10 @@ function buildStructural(
     for (const [atomId, node] of drawing.condensedAt) {
       placements.set(atomId, condensedPlacement(mol, atomId, node, centres, style));
     }
+    for (const host of drawing.hydrogenHosts) {
+      if (placements.get(host) === undefined) continue;
+      placements.set(host, projectedHostPlacement(mol, host, drawing, centres, style, representation));
+    }
   }
 
   const circles = representation.flags.aromaticCircles
@@ -562,6 +567,7 @@ function buildStructural(
     centres,
     corridors,
     options,
+    drawing?.layout,
   );
   // The prefix alone is enough to go on: a racemate drawn with no wedges has no
   // letter to place and still has to say `rac-`. (Decision 125's known limit is
@@ -928,6 +934,59 @@ function condensedPlacement(
 }
 
 /**
+ * The label of an atom whose hydrogens a projection draws as nodes of their
+ * own (a Fischer crossing's "H" arm): the atom's ordinary label less the
+ * hydrogens the layout already draws (decision 155). Composed from the molecule, a crossing
+ * carbon shown with its label reads "HC" or "CH", and with the synthetic "H"
+ * on the arm beside it the figure states a CH2 where there is one hydrogen.
+ * The synthetic hydrogens' directions are handed to the placement as the
+ * derived ones, so a lone pair or radical dot keeps out of their stems.
+ */
+function projectedHostPlacement(
+  mol: Molecule,
+  atomId: AtomId,
+  drawing: LayoutDrawing,
+  centres: ReadonlyMap<AtomId, ScenePoint>,
+  style: RenderStyle,
+  representation: StructuralRepresentation,
+): AtomLabelPlacement | undefined {
+  const centre = centres.get(atomId);
+  const composed = composeAtomLabel(mol, atomId, representation);
+  if (centre === undefined || composed === undefined) return undefined;
+  const directions: ScenePoint[] = [];
+  let drawn = 0;
+  for (const node of drawing.hydrogens) {
+    if (node.host !== atomId) continue;
+    drawn++;
+    const pos = Object.hasOwn(drawing.layout.positions, node.id) ? drawing.layout.positions[node.id] : undefined;
+    if (pos === undefined) continue;
+    const at = modelToPx(style, pos);
+    const length = Math.sqrt((at.x - centre.x) ** 2 + (at.y - centre.y) ** 2);
+    if (length > 0) directions.push({ x: (at.x - centre.x) / length, y: (at.y - centre.y) / length });
+  }
+  const remaining = Math.max(0, composed.hydrogenCount - drawn);
+  const label: ComposedLabel =
+    remaining === composed.hydrogenCount
+      ? composed
+      : {
+          ...composed,
+          hydrogenCount: remaining,
+          // The composer's own rule: never "H1", never "H0".
+          hydrogens:
+            remaining === 0
+              ? []
+              : remaining === 1
+                ? [{ text: "H" }]
+                : [{ text: "H" }, { text: String(remaining), script: "sub" }],
+        };
+  const neighbourCentres = neighborIds(mol, atomId).flatMap((id) => {
+    const point = centres.get(id);
+    return point === undefined ? [] : [point];
+  });
+  return placeAtomLabel({ atomId, centre, neighbourCentres, derivedHydrogenDirections: directions, label, style });
+}
+
+/**
  * A projection's synthetic hydrogens (a Fischer arm's H): a stem from the host
  * and an "H", exactly as the explicit-H view draws its derived ones, but at
  * the layout's position and sourced to the layout node. Returns their label
@@ -1041,6 +1100,7 @@ function annotationRequests(
   centres: ReadonlyMap<AtomId, ScenePoint>,
   corridors: ReadonlyMap<BondId, AnnotationSegment>,
   options: SceneBuildOptions | undefined,
+  layout?: ProjectedLayout,
 ): {
   readonly requests: AnnotationRequest[];
   /**
@@ -1072,6 +1132,19 @@ function annotationRequests(
   const spokenFor =
     coverage.kind === "whole" ? `${coverage.group.kind}:${String(coverage.group.index)}` : undefined;
 
+  // A PROJECTION STATES ONLY ITS OWN COVERAGE (decisions 146, 155). A descriptor
+  // beside an atom is a claim the panel makes, so it is printed only for a
+  // unit the layout states: not for a centre folded into a condensed word
+  // (its host stands in for the whole group, and would print one centre's
+  // letter beside "CH(OH)CH(OH)CH2OH"), and not for one listed unplaced. A
+  // stereo-group tag follows membership, so it is kept for every atom the
+  // layout draws as ITSELF and dropped with the atoms folded into a word.
+  // Without a layout every unit is in play, and nothing below changes.
+  const statedCentres = layout === undefined ? undefined : new Set(layout.coverage.centres);
+  const statedBonds = layout === undefined ? undefined : new Set(layout.coverage.doubleBonds);
+  const drawnAsItself = (atomId: AtomId): boolean =>
+    layout === undefined || (Object.hasOwn(layout.drawnAs, atomId) && layout.drawnAs[atomId] === atomId);
+
   for (const atomId of mol.atomIds) {
     const centre = centres.get(atomId);
     if (centre === undefined) continue;
@@ -1080,7 +1153,7 @@ function annotationRequests(
     const preferredDirection = (): ScenePoint =>
       (preferred ??= atomAnnotationDirection(mol, atomId, centre, centres));
 
-    if (descriptors) {
+    if (descriptors && (statedCentres === undefined || statedCentres.has(atomId))) {
       const text = descriptorText(cipDescriptor(mol, atomId));
       if (text !== undefined) {
         requests.push({
@@ -1095,7 +1168,7 @@ function annotationRequests(
 
     // Decision 40: the tag, unless the molecule-wide prefix already said it
     // about this atom's own group.
-    if (descriptors) {
+    if (descriptors && drawnAsItself(atomId)) {
       const group = stereoGroupAt(mol, atomId);
       if (group !== undefined && `${group.kind}:${String(group.index)}` !== spokenFor) {
         requests.push({
@@ -1127,6 +1200,7 @@ function annotationRequests(
 
   if (descriptors) {
     for (const bondId of mol.bondIds) {
+      if (statedBonds !== undefined && !statedBonds.has(bondId)) continue;
       const text = descriptorText(doubleBondDescriptor(mol, bondId));
       if (text === undefined) continue;
       const corridor = corridors.get(bondId);

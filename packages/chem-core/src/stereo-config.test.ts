@@ -1472,10 +1472,14 @@ describe("chem-core exports", () => {
     // own entry point and the root barrel must NOT pull it in. It is still
     // checked for duplicate names above like every other module.
     const ownEntryPoint = new Set(["dictionary.ts", "dictionary-entries.ts"]);
+    // The projection templates are the other: a template's `place` returns an
+    // unchecked draft, and only `project`, which reads every draft back before
+    // handing it out (decision 146), is public. Later templates join this set.
+    const projectionInternal = new Set(["projection/template.ts", "projection/planar.ts", "projection/fischer.ts"]);
     const index = readFileSync(join(srcDir, "index.ts"), "utf8");
     for (const file of modules) {
       const specifier = `"./${file.replace(/\.ts$/, ".js")}"`;
-      if (ownEntryPoint.has(file)) expect(index).not.toContain(specifier);
+      if (ownEntryPoint.has(file) || projectionInternal.has(file)) expect(index).not.toContain(specifier);
       else expect(index).toContain(specifier);
     }
     const manifest = JSON.parse(readFileSync(join(srcDir, "..", "package.json"), "utf8")) as {

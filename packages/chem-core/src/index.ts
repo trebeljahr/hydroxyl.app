@@ -63,12 +63,12 @@ export * from "./achirality.js";
 // One implicit hydrogen drawn as a real atom for an arrow to reach (decision
 // 131). Reads stereo-config to keep a centre's configuration, so it sits last.
 export * from "./promote-hydrogen.js";
-// The projection engine: frames, templates, project and read back. Built on
-// stereo-config's reading conventions and read by nothing above.
+// The projection engine: frames, project and read back. Built on
+// stereo-config's reading conventions and read by nothing above. The
+// templates (template.ts, planar.ts, fischer.ts) stay internal: a template's
+// `place` returns an unchecked draft, and only `project`, which reads every
+// draft back before returning it (decision 146), may hand a layout out.
 export * from "./projection/types.js";
 export * from "./projection/nodes.js";
 export * from "./projection/frames.js";
-export * from "./projection/template.js";
-export * from "./projection/planar.js";
-export * from "./projection/fischer.js";
 export * from "./projection/engine.js";

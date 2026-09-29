@@ -14,10 +14,11 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { bondBetween, project, readMolblock, rings, stereoConfig } from "@starter/chem-core";
+import { addAtom, addBond, bondBetween, project, readMolblock, rings, setIsotope, stereoConfig } from "@starter/chem-core";
 import type { ChainView, Molecule, PlanarView, ProjectedLayout, RingView } from "@starter/chem-core";
 
 import { projectedViewAvailability } from "../src/availability.js";
+import { derivedNodeLabel } from "../src/scene/projected.js";
 import { representation } from "../src/representation.js";
 import { buildAnnotatedScene, buildScene } from "../src/scene/build.js";
 import type { ScenePrimitive, TextRunPrimitive } from "../src/scene/types.js";
@@ -56,6 +57,13 @@ function text(run: TextRunPrimitive): string {
 }
 
 const skeletal = representation("skeletal");
+
+/** Hydrogens a run's text states: "H" is one, "H_2" two. */
+function hydrogensIn(run: TextRunPrimitive): number {
+  let n = 0;
+  for (const match of text(run).matchAll(/H(?:_(\d+))?/g)) n += match[1] === undefined ? 1 : Number(match[1]);
+  return n;
+}
 
 describe("a planar layout", () => {
   it("draws exactly the scene of the drawing itself when neither turned nor mirrored", () => {
@@ -167,6 +175,99 @@ describe("a Fischer layout", () => {
       annotations.placements.filter((p) => p.source.kind === "atom").map((p) => [p.source.kind === "atom" ? p.source.atomId : "", p.text]),
     );
     expect(letters).toEqual({ a3: "(R)", a5: "(S)", a7: "(R)", a9: "(R)" });
+  });
+
+  it("prints a descriptor only for a centre the layout states, never beside a word that folds centres", () => {
+    // A three-atom backbone: C2 is the one crossing, and C3 roots the word
+    // "CH(OH)CH(OH)CH(OH)CH2OH" that folds C3, C4 and C5. None of those three
+    // is stated by this panel, so none gets a letter — not C3 alone because
+    // its host happens to hold the word's position.
+    const short = layoutOf(mol, fischer(["a2", "a3", "a5"]));
+    expect(short.coverage.centres).toEqual(["a3"]);
+    const withDescriptors = representation("skeletal", { showStereoDescriptors: true });
+    for (const style of [SCREEN_STYLE, PUBLICATION_STYLE]) {
+      const { annotations } = buildAnnotatedScene(mol, style, withDescriptors, { layout: short });
+      const described = annotations.placements
+        .filter((p) => p.kind === "descriptor")
+        .map((p) => (p.source.kind === "atom" ? p.source.atomId : p.source.kind));
+      expect(described).toEqual(["a3"]);
+    }
+    // A planar panel states every centre, so it prints exactly the drawing's.
+    const flat = layoutOf(mol, planar());
+    expect(
+      JSON.stringify(buildAnnotatedScene(mol, SCREEN_STYLE, withDescriptors, { layout: flat })),
+    ).toBe(JSON.stringify(buildAnnotatedScene(mol, SCREEN_STYLE, withDescriptors)));
+  });
+
+  it("states one hydrogen per crossing in every view, however the view labels a carbon", () => {
+    const views = [
+      representation("skeletal", { showCarbonLabels: true }),
+      representation("skeletal", { showCarbonLabels: true, showImplicitHydrogens: true }),
+      representation("kekule", { showCarbonLabels: true }),
+      representation("explicitH"),
+      representation("lewis"),
+    ];
+    for (const view of views) {
+      const scene = buildScene(mol, PUBLICATION_STYLE, view, { layout });
+      for (const centre of ["a3", "a5", "a7", "a9"]) {
+        const mine = runs(scene.primitives).filter(
+          (r) =>
+            (r.source.kind === "atom" && r.source.atomId === centre) ||
+            (r.source.kind === "hydrogen" && r.source.hostAtomId === centre) ||
+            (r.source.kind === "projected" && r.source.nodeId.startsWith(`${centre}.H`)),
+        );
+        const count = mine.reduce((n, r) => n + hydrogensIn(r), 0);
+        expect(count, `${view.kind} ${JSON.stringify(view.flags)} ${centre}: ${mine.map(text).join(" ")}`).toBe(1);
+      }
+    }
+    // Not vacuous: with carbon labels on, the crossing IS labelled, "C" alone.
+    const labelled = buildScene(mol, PUBLICATION_STYLE, views[0]!, { layout });
+    expect(text(runs(labelled.primitives).find((r) => r.id === "atom:a3:label")!)).toBe("C");
+  });
+
+  it("names the nuclide in a folded word: a 13C terminus reads ¹³CH2OH, with the C on the node", () => {
+    const labelled = setIsotope(load("r-glyceraldehyde.mol"), "a5", 13);
+    const folded = layoutOf(labelled, fischer(["a2", "a3", "a5"]));
+    const scene = buildScene(labelled, PUBLICATION_STYLE, skeletal, { layout: folded });
+    const run = runs(scene.primitives).find((r) => r.id === "projected:a5.13CH2OH:label")!;
+    expect(run.spans).toEqual([
+      { text: "13", script: "super" },
+      { text: "C" },
+      { text: "H" },
+      { text: "2", script: "sub" },
+      { text: "O" },
+      { text: "H" },
+    ]);
+    // The mass is the attached atom's own isotope block, glued left of its
+    // symbol, and the word still hangs EAST as it was spelled: a mass read as
+    // leading text would flip the label west and set it by the wrong rule.
+    const node = folded.derivedNodes.find((n) => n.id === "a5.13CH2OH")!;
+    const { label, side } = derivedNodeLabel(node, "C");
+    expect(side).toBe("east");
+    expect(label.isotope).toEqual([{ text: "13", script: "super" }]);
+    expect(label.symbol).toEqual([{ text: "C" }]);
+    expect(label.hydrogens.map((span) => span.text).join("")).toBe("H2OH");
+    // Hanging west it reads HOH2¹³C, the mass still on the C.
+    const west = derivedNodeLabel({ ...node, label: [
+      { kind: "symbol", text: "H" }, { kind: "symbol", text: "O" }, { kind: "symbol", text: "H" },
+      { kind: "count", text: "2" }, { kind: "mass", text: "13" }, { kind: "symbol", text: "C" },
+    ], anchor: 5 }, "C");
+    expect(west.side).toBe("west");
+    expect(west.label.isotope).toEqual([{ text: "13", script: "super" }]);
+    expect(west.label.hydrogens.map((span) => span.text).join("")).toBe("HOH2");
+
+    // L-alanine-3,3,3-d3: the arm's methyl reads C²H3, and the three drawn
+    // deuterium atoms are folded into it, not drawn again.
+    let alanine = load("l-alanine.mol");
+    for (let k = 0; k < 3; k++) {
+      const added = addAtom(alanine, { element: "H", isotope: 2, pos: { x: 3, y: k } });
+      alanine = addBond(added.molecule, { from: "a3", to: added.id }).molecule;
+    }
+    const ala = layoutOf(alanine, fischer(["a4", "a2", "a3"]));
+    const alaScene = buildScene(alanine, PUBLICATION_STYLE, skeletal, { layout: ala });
+    const methyl = runs(alaScene.primitives).find((r) => r.id === "projected:a3.C2H3:label")!;
+    expect(methyl.spans).toEqual([{ text: "C" }, { text: "2", script: "super" }, { text: "H" }, { text: "3", script: "sub" }]);
+    expect(runs(alaScene.primitives).filter((r) => r.source.kind === "atom" && alanine.atoms[r.source.atomId]!.isotope === 2)).toEqual([]);
   });
 
   it("serialises byte for byte the same on two runs, and marks derived nodes in the SVG", () => {

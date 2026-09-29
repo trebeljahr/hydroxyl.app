@@ -31,8 +31,11 @@
  * back through the fischer convention — horizontals toward the viewer — and
  * every centre whose parity disagrees with the configuration has its two
  * arms exchanged. Exchanging two ligands is one transposition, so it inverts
- * that centre and no other. No left/right rule restating the convention is
- * written anywhere, so this template cannot disagree with the reader.
+ * that centre and no other. A centre with ONE explicit arm (its fourth
+ * ligand a lone pair) has that arm moved to the other side instead, which is
+ * the reflection through the backbone and inverts it just the same. No
+ * left/right rule restating the convention is written anywhere, so this
+ * template cannot disagree with the reader.
  *
  * WHAT IT CANNOT DRAW. A cross always states a configuration, so a centre
  * the configuration leaves unspecified gets the default arms and is listed
@@ -244,9 +247,14 @@ function drawFischer(
     const host = crossing.atomId;
     const y = yAt(k + 1);
     placeLayoutAtom(draft, host, { x: 0, y });
-    // One arm alone goes right; two go first-left, second-right, unless flipped.
-    const sides = crossing.arms.length === 1 ? [1] : [-1, 1];
-    if (flips.has(host)) sides.reverse();
+    // One arm alone goes right, two go first-left and second-right; a flip
+    // exchanges them. A lone arm is flipped too, to the left: a centre whose
+    // fourth ligand is a lone pair (a sulfoxide's S, a phosphine's P) has
+    // one explicit arm, and which side it sits on IS its configuration.
+    // Reversing a one-element list would change nothing and draw one
+    // enantiomer for both.
+    const flipped = flips.has(host);
+    const sides = crossing.arms.length === 1 ? [flipped ? -1 : 1] : flipped ? [1, -1] : [-1, 1];
     crossing.arms.forEach((arm, index) => {
       const side = sides[index]!;
       const pos = { x: side * armLength, y };
@@ -263,7 +271,7 @@ function drawFischer(
               kind: "condensed",
               host: arm.group.root,
               label: side < 0 ? arm.group.west : arm.group.east,
-              anchor: side < 0 ? arm.group.westAnchor : 0,
+              anchor: side < 0 ? arm.group.westAnchor : arm.group.eastAnchor,
             },
             pos,
             arm.group.atomIds,
@@ -296,7 +304,13 @@ function drawFischer(
   ] as const) {
     placeLayoutDerivedNode(
       draft,
-      { id: terminus.nodeId, kind: "condensed", host: terminus.group.root, label: terminus.group.east, anchor: 0 },
+      {
+        id: terminus.nodeId,
+        kind: "condensed",
+        host: terminus.group.root,
+        label: terminus.group.east,
+        anchor: terminus.group.eastAnchor,
+      },
       { x: 0, y: yAt(index) },
       terminus.group.atomIds,
     );

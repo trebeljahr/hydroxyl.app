@@ -33,8 +33,8 @@ import type {
   AtomId,
   Bond,
   BondId,
+  DerivedLabelPart,
   DerivedNode,
-  FormulaPart,
   Molecule,
   ProjectedLayout,
 } from "@starter/chem-core";
@@ -136,12 +136,19 @@ export function projectedPrimitiveId(nodeId: string, part: "label" | "line"): st
  * goes east, whatever reads before it goes west: "CH2OH" sets C on the node
  * with "H2OH" trailing, "HOH2C" sets it with "HOH2" leading. The side is
  * FORCED, because the text was already spelled for it.
+ *
+ * A mass number just before the anchor labels the attached atom itself
+ * ("¹³CH2OH"), so it becomes the label's isotope block, glued to the symbol
+ * on either side exactly as a drawn ¹³C's is, and is not mistaken for text
+ * leading a west-hanging word.
  */
 export function derivedNodeLabel(node: DerivedNode, element: string): { label: ComposedLabel; side: LabelSide } {
   const spans = node.label.map(spanOf);
   const anchor = Math.min(Math.max(0, Math.trunc(node.anchor)), Math.max(0, spans.length - 1));
   const symbol = spans[anchor] ?? { text: element };
-  const before = spans.slice(0, anchor);
+  const massAtAnchor = anchor > 0 && node.label[anchor - 1]?.kind === "mass";
+  const isotope = massAtAnchor ? spans.slice(anchor - 1, anchor) : [];
+  const before = spans.slice(0, massAtAnchor ? anchor - 1 : anchor);
   const after = spans.slice(anchor + 1);
   const west = before.length > 0;
   return {
@@ -149,7 +156,7 @@ export function derivedNodeLabel(node: DerivedNode, element: string): { label: C
       atomId: node.host,
       element,
       reason: "override",
-      isotope: [],
+      isotope,
       symbol: [symbol],
       // East, everything after the symbol trails it; west, everything before
       // it leads, and anything after (a charge on the attached atom) stays in
@@ -165,12 +172,14 @@ export function derivedNodeLabel(node: DerivedNode, element: string): { label: C
   };
 }
 
-function spanOf(part: FormulaPart): TextSpan {
+function spanOf(part: DerivedLabelPart): TextSpan {
   switch (part.kind) {
     case "symbol":
       return { text: part.text };
     case "count":
       return { text: part.text, script: "sub" };
+    case "mass":
+      return { text: part.text, script: "super" };
     case "charge":
       // U+2212, as every drawn charge in this package: a hyphen reads as a bond.
       return { text: part.text.replace("-", "−"), script: "super" };

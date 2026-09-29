@@ -55,7 +55,7 @@ import {
   type PlacedLayout,
   type ProjectionTemplateImplementation,
 } from "./template.js";
-import type { LayoutMark, PlanarView, ProjectionCoverage } from "./types.js";
+import type { BondDepth, LayoutMark, PlanarView, ProjectionCoverage } from "./types.js";
 
 const WEDGE_HASH = Object.freeze({ kind: "wedgeHash" as const });
 
@@ -87,9 +87,19 @@ export const planarWedgeDashTemplate: ProjectionTemplateImplementation<PlanarVie
       }
     }
     correctMarks(mol, config, toPlace, draft);
+    // Depth from the marks the layout FINALLY draws, after the correction
+    // above may have exchanged, blurred or removed some: a wedge comes toward
+    // the viewer, a hash goes away, and everything else lies on the page.
+    for (const bondId of draft.bonds.keys()) draft.depth.set(bondId, depthOfMark(draft.marks.get(bondId)));
     return draft;
   },
 };
+
+function depthOfMark(mark: LayoutMark | undefined): BondDepth {
+  if (mark?.stereo === "wedge") return "front";
+  if (mark?.stereo === "hash") return "back";
+  return "inPlane";
+}
 
 function mirroredStereo(stereo: Exclude<BondStereo, "none">): Exclude<BondStereo, "none"> {
   if (stereo === "wedge") return "hash";

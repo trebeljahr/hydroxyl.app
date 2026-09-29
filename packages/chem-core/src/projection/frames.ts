@@ -40,6 +40,7 @@ import {
   type ProjectionUnavailableReason,
   type ProjectionView,
   type ResolvedProjectionFrame,
+  type SightedBondReferenceFallback,
   type StereoUnitRef,
 } from "./types.js";
 
@@ -100,11 +101,16 @@ export function canonicalProjectionView(
               ringAtomIds: sortedUnique(view.frame.ringAtomIds),
               referenceAtomId: view.frame.referenceAtomId,
             };
+      const face = view.params.face === "back" ? "back" : "front";
+      const conformer = view.params.conformer;
       return {
         kind: "ring",
         template: view.template,
         frame,
-        params: { face: view.params.face === "back" ? "back" : "front" },
+        params:
+          conformer === undefined
+            ? { face }
+            : { face, conformer: { form: conformer.form, frontAtomId: conformer.frontAtomId } },
       };
     }
     case "sightedBond": {
@@ -192,7 +198,7 @@ export function resolveCanonicalProjectionFrame(mol: Molecule, view: ProjectionV
     case "ring":
       return resolveRing(mol, view.frame.ringAtomIds, view.frame.referenceAtomId);
     case "sightedBond":
-      return resolveSightedBond(mol, view.frame.front, view.frame.back);
+      return resolveSightedBond(mol, view.frame);
   }
 }
 
@@ -236,7 +242,9 @@ function resolveChain(mol: Molecule, backbone: readonly AtomId[]): ProjectionAva
 
 /**
  * The ring a set names: exactly, when the set is a perceived ring; otherwise
- * every perceived ring containing it, as candidates.
+ * every perceived ring containing it — and the reference atom, when one is
+ * named — as candidates. A reference atom is part of what the frame says:
+ * offering a ring without it would offer a choice that then fails.
  */
 function resolveRing(
   mol: Molecule,
@@ -253,11 +261,12 @@ function resolveRing(
   const exact = perceived.find(
     (ring) => ring.atomIds.length === wanted.size && ring.atomIds.every((id) => wanted.has(id)),
   );
+  const contained = new Set(named);
   const candidates =
     exact !== undefined
       ? [exact]
-      : perceived.filter((ring) => [...wanted].every((id) => ring.atomIds.includes(id)));
-  if (candidates.length === 0) return projectionUnavailable("not-a-ring", sortedUnique(ringAtomIds));
+      : perceived.filter((ring) => [...contained].every((id) => ring.atomIds.includes(id)));
+  if (candidates.length === 0) return projectionUnavailable("not-a-ring", sortedUnique(named));
   if (candidates.length > 1) {
     const position = new Map(mol.atomIds.map((id, i) => [id, i]));
     const ordered = [...candidates].sort((p, q) => {
@@ -287,14 +296,53 @@ function resolveRing(
   );
 }
 
-function resolveSightedBond(mol: Molecule, front: AtomId, back: AtomId): ProjectionAvailability {
+/**
+ * A sighted bond: both ends must exist and be bonded, or the frame is
+ * unavailable. Its stored reference substituents are softer: an omitted one,
+ * a deleted one, or one an edit has moved off its end falls back to that
+ * end's lowest-id substituent, and the resolution lists the fallback rather
+ * than refusing the panel (the picture turns; the chemistry is unchanged).
+ */
+function resolveSightedBond(
+  mol: Molecule,
+  frame: {
+    readonly front: AtomId;
+    readonly back: AtomId;
+    readonly frontReference?: AtomId;
+    readonly backReference?: AtomId;
+  },
+): ProjectionAvailability {
+  const { front, back } = frame;
   const missing = missingAtoms(mol, [front, back]);
   if (missing.length > 0) return projectionUnavailable("missing-atom", missing);
   const bond = front === back ? undefined : bondBetween(mol, front, back);
   if (bond === undefined) return projectionUnavailable("not-bonded", sortedUnique([front, back]));
+
+  const fallbacks: SightedBondReferenceFallback[] = [];
+  const reference = (end: "front" | "back", atomId: AtomId, other: AtomId, stored: AtomId | undefined) => {
+    const substituents = neighborIds(mol, atomId)
+      .filter((id) => id !== other)
+      .sort(compareIds);
+    if (stored !== undefined && Object.hasOwn(mol.atoms, stored) && substituents.includes(stored)) return stored;
+    const reason: SightedBondReferenceFallback["reason"] =
+      stored === undefined ? "omitted" : Object.hasOwn(mol.atoms, stored) ? "not-a-substituent" : "missing-atom";
+    fallbacks.push(Object.freeze({ end, reason }));
+    return substituents[0];
+  };
+  const frontReference = reference("front", front, back, frame.frontReference);
+  const backReference = reference("back", back, front, frame.backReference);
+
   const ends = new Set([front, back]);
   return resolved(
-    { kind: "sightedBond", front, back, bondId: bond.id },
+    {
+      kind: "sightedBond",
+      front,
+      back,
+      bondId: bond.id,
+      ...(frontReference === undefined ? {} : { frontReference }),
+      ...(backReference === undefined ? {} : { backReference }),
+      referenceFallbacks: Object.freeze(fallbacks),
+    },
     coverageOf(mol, (id) => ends.has(id), (id) => id === bond.id),
   );
 }

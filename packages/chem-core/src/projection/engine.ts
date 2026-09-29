@@ -15,9 +15,10 @@
  *                        which preserve every parity by construction. Every
  *                        template built today has its conformation fixed by
  *                        convention (a planar drawing; a Fischer, eclipsed by
- *                        definition), so its one arm today is the identity;
- *                        the torsion and pucker arms land with the Newman and
- *                        chair templates, inside that same contract.
+ *                        definition), so every arm is the identity today;
+ *                        the torsion and ring-conformer arms are typed now
+ *                        (a panel can store them) and act once the Newman
+ *                        and chair templates land, inside that same contract.
  *
  * THEN IT CHECKS ITSELF (decision 146). The finished draft is read back, and
  * every unit on which it does not state what `config` states leaves the
@@ -42,7 +43,11 @@
  *             reuses it; `projectionTopologyComputationCount` counts real work.
  *   RESULT    the finished `ProjectionResult`, per molecule instance, per
  *             configuration instance, per view, so asking again for the same
- *             panel returns the same object.
+ *             panel returns the same object. BOUNDED per configuration
+ *             (`RESULTS_PER_CONFIGURATION` views, least recently used out): a
+ *             page-turn or torsion gesture asks for a new view every pointer
+ *             frame of one unchanged molecule, and an unbounded map would
+ *             keep every frame's layout until the next edit.
  *
  * COLLISIONS ARE REPORTED, NEVER NUDGED. Two nodes nearer than
  * `LAYOUT_COLLISION_DISTANCE` bond lengths are listed in `collisions`, and
@@ -203,7 +208,15 @@ export function projectionCoverage(mol: Molecule, view: ProjectionView): Project
 // project
 // ---------------------------------------------------------------------------
 
-const RESULTS = new WeakMap<Molecule, WeakMap<StereoConfig, Map<string, ProjectionResult>>>();
+/**
+ * Views remembered per (molecule, configuration). Well above the panels one
+ * figure shows of one molecule (a planar, a Fischer, a Haworth, a Newman and
+ * a chair each at most twice), so a figure re-rendering every panel per frame
+ * never evicts its own, and well below a gesture's hundreds of frames.
+ */
+export const RESULTS_PER_CONFIGURATION = 16;
+
+const RESULTS = new WeakMap<Molecule, WeakMap<StereoConfig, LruCache<ProjectionResult>>>();
 
 const NO_CONFORMATION: Conformation = Object.freeze({ kind: "none" });
 
@@ -243,16 +256,22 @@ export function project(
   }
   let byView = byConfig.get(config);
   if (byView === undefined) {
-    byView = new Map();
+    byView = new LruCache<ProjectionResult>(RESULTS_PER_CONFIGURATION);
     byConfig.set(config, byView);
   }
   byView.set(resultKey, result);
   return result;
 }
 
-/** The conformation a view stores: a torsion for a sighted bond, else none. */
+/**
+ * The conformation a view stores: a torsion for a sighted bond, a ring's
+ * conformer when it names one, else none.
+ */
 function conformationOf(view: ProjectionView): Conformation {
   if (view.kind === "sightedBond") return { kind: "torsion", torsionDeg: view.params.torsionDeg };
+  if (view.kind === "ring" && view.params.conformer !== undefined) {
+    return { kind: "ringConformer", conformer: view.params.conformer };
+  }
   return NO_CONFORMATION;
 }
 
@@ -312,13 +331,15 @@ function placeConfiguration(
 
 /**
  * Step two: the conformation. Every built template's is fixed by convention,
- * so this is the identity for all of them; a torsion asked of a planar or
- * Fischer layout has nothing to rotate and changes nothing.
+ * so this is the identity for all of them; a torsion or a ring conformer
+ * asked of a planar or Fischer layout has nothing to move and changes
+ * nothing.
  */
 function applyConformationToDraft(draft: PlacedLayout, conformation: Conformation): PlacedLayout {
   switch (conformation.kind) {
     case "none":
     case "torsion":
+    case "ringConformer":
       return draft;
   }
 }
@@ -333,6 +354,7 @@ export function applyConformation(layout: ProjectedLayout, conformation: Conform
   switch (conformation.kind) {
     case "none":
     case "torsion":
+    case "ringConformer":
       return layout;
   }
 }

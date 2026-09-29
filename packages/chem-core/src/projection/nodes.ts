@@ -21,12 +21,11 @@
  * the prototype chain.
  */
 
-import type { FormulaPart } from "../formula.js";
 import { bondBetween, neighborIds, requireAtom } from "../molecule.js";
 import { compareIds } from "../selection.js";
 import type { AtomId, Molecule } from "../types.js";
 import { implicitHydrogenCount, isProtiumAtom } from "../valence.js";
-import type { LayoutBondId, LayoutNodeId, ProjectedLayout } from "./types.js";
+import type { DerivedLabelPart, LayoutBondId, LayoutNodeId, ProjectedLayout } from "./types.js";
 
 /** Joins a root atom id to the tag naming what hangs off it. */
 const DERIVED_SEPARATOR = ".";
@@ -84,12 +83,14 @@ export interface CondensedGroup {
   readonly root: AtomId;
   /** Every atom the label stands for, in `mol.atomIds` order, root included. */
   readonly atomIds: readonly AtomId[];
-  readonly east: readonly FormulaPart[];
-  readonly west: readonly FormulaPart[];
+  readonly east: readonly DerivedLabelPart[];
+  readonly west: readonly DerivedLabelPart[];
   /**
-   * The root's own symbol within `west` ("HOH2C": the C, index 4). Within
-   * `east` it is always the first part.
+   * The root's own symbol within `east`: 0, or 1 behind a mass number
+   * ("¹³CH2OH").
    */
+  readonly eastAnchor: number;
+  /** The root's own symbol within `west` ("HOH2C": the C, index 4). */
   readonly westAnchor: number;
   readonly tag: string;
 }
@@ -109,8 +110,12 @@ export type CondensedGroupResult =
  * atoms, so a substituent that loops back into the backbone is refused
  * rather than drawn twice.
  *
- * THE SPELLING. Each atom is one block: its symbol, then its hydrogens
- * (implicit ones, plus explicit protium atoms folded in), then its charge.
+ * THE SPELLING. Each atom is one block: its mass number if it carries one,
+ * its symbol, then its hydrogens (implicit ones, plus explicit protium atoms
+ * folded in), then its charge. A deuterium or tritium atom is NOT protium, so
+ * it stays a child block of its own and reads "²H": a CD3 is "C²H3", a
+ * 13C-labelled terminus "¹³CH2OH". The label is the only place a folded atom
+ * is drawn, so dropping the mass would state the wrong nuclide.
  * Children follow in a fixed order — hydrogen-free terminal atoms first (the
  * =O of COOH and CHO), then by bond order, higher first, then by id — and a
  * run of identical children collapses to a count: CCl3, CH(CH3)2, C(CH3)3.
@@ -153,6 +158,7 @@ export function condensedGroup(
       atomIds: Object.freeze(atomIds),
       east: Object.freeze(spelled.east),
       west: Object.freeze(spelled.west),
+      eastAnchor: spelled.eastAnchor,
       westAnchor: spelled.westAnchor,
       tag,
     }),
@@ -162,9 +168,11 @@ export function condensedGroup(
 const EMPTY_FENCE: ReadonlySet<AtomId> = new Set();
 
 interface Spelling {
-  readonly east: FormulaPart[];
-  readonly west: FormulaPart[];
-  /** Where this atom's own symbol is in `west`; in `east` it is always first. */
+  readonly east: DerivedLabelPart[];
+  readonly west: DerivedLabelPart[];
+  /** Where this atom's own symbol is in `east`: after its mass number, if any. */
+  readonly eastAnchor: number;
+  /** Where this atom's own symbol is in `west`. */
   readonly westAnchor: number;
   /** One block with no hydrogens and no children: "O", "Cl", "N". */
   readonly bare: boolean;
@@ -190,14 +198,15 @@ function spell(
   }
 
   const atom = requireAtom(mol, atomId);
-  const symbol: FormulaPart = { kind: "symbol", text: atom.element };
-  const hydrogenParts: FormulaPart[] =
+  const massParts = massPart(atom.isotope);
+  const symbol: DerivedLabelPart = { kind: "symbol", text: atom.element };
+  const hydrogenParts: DerivedLabelPart[] =
     hydrogens <= 0
       ? []
       : hydrogens === 1
         ? [{ kind: "symbol", text: "H" }]
         : [{ kind: "symbol", text: "H" }, { kind: "count", text: String(hydrogens) }];
-  const chargeParts: FormulaPart[] = chargePart(atom.charge);
+  const chargeParts: DerivedLabelPart[] = chargePart(atom.charge);
 
   const spelledChildren = children
     .map((child) => ({ child, spelling: spell(mol, child, atomId, cameFrom) }))
@@ -218,10 +227,11 @@ function spell(
     else groups.push({ spelling, count: 1 });
   }
 
-  const east: FormulaPart[] = [symbol, ...hydrogenParts, ...chargeParts];
+  const east: DerivedLabelPart[] = [...massParts, symbol, ...hydrogenParts, ...chargeParts];
   // West: the last group's west spelling leads, the rest follow in reverse,
   // and this atom closes with its hydrogens BEFORE its symbol ("HO", "H2C").
-  const west: FormulaPart[] = [];
+  // The mass number stays glued to the symbol it labels ("HOH2¹³C").
+  const west: DerivedLabelPart[] = [];
   groups.forEach((entry, index) => {
     const final = index === groups.length - 1;
     east.push(...grouped(entry.spelling.east, entry.spelling.bare, entry.count, final));
@@ -232,36 +242,46 @@ function spell(
     west.push(...grouped(final ? entry.spelling.west : entry.spelling.east, entry.spelling.bare, entry.count, final));
   }
   west.push(...hydrogenParts);
-  const westAnchor = west.length;
-  west.push(symbol, ...chargeParts);
+  const westAnchor = west.length + massParts.length;
+  west.push(...massParts, symbol, ...chargeParts);
 
   return {
     east,
     west,
+    eastAnchor: massParts.length,
     westAnchor,
     bare: hydrogenParts.length === 0 && chargeParts.length === 0 && groups.length === 0,
   };
 }
 
 function grouped(
-  parts: readonly FormulaPart[],
+  parts: readonly DerivedLabelPart[],
   bare: boolean,
   count: number,
   final: boolean,
-): FormulaPart[] {
-  const counted: FormulaPart[] = count > 1 ? [{ kind: "count", text: String(count) }] : [];
+): DerivedLabelPart[] {
+  const counted: DerivedLabelPart[] = count > 1 ? [{ kind: "count", text: String(count) }] : [];
   if (bare) return [...parts, ...counted];
   if (final && count === 1) return [...parts];
   return [{ kind: "symbol", text: "(" }, ...parts, { kind: "symbol", text: ")" }, ...counted];
 }
 
-function chargePart(charge: number): FormulaPart[] {
+/**
+ * The mass-number prefix, by the rule chem-render's atom labels use: a finite
+ * positive number is printed, anything else is no label.
+ */
+function massPart(isotope: number | undefined): DerivedLabelPart[] {
+  if (isotope === undefined || !Number.isFinite(isotope) || isotope <= 0) return [];
+  return [{ kind: "mass", text: String(isotope) }];
+}
+
+function chargePart(charge: number): DerivedLabelPart[] {
   if (!Number.isFinite(charge) || charge === 0) return [];
   const magnitude = Math.abs(Math.round(charge));
   if (magnitude === 0) return [];
   return [{ kind: "charge", text: `${magnitude > 1 ? magnitude : ""}${charge > 0 ? "+" : "-"}` }];
 }
 
-function textOf(parts: readonly FormulaPart[]): string {
+function textOf(parts: readonly DerivedLabelPart[]): string {
   return parts.map((part) => `${part.kind}:${part.text}`).join("|");
 }

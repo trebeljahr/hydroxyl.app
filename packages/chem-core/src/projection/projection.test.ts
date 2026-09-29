@@ -19,7 +19,7 @@ import { describe, expect, it } from "vitest";
 import { buildMolecule } from "../builders.js";
 import { readMolblock } from "../molblock-read.js";
 import { addAtom, addBond, bondBetween } from "../molecule.js";
-import { removeAtoms, setAtomPosition, setBondStereo } from "../ops.js";
+import { removeAtoms, setAtomPosition, setBondStereo, setIsotope } from "../ops.js";
 import { resetRingPerceptionComputationCount, ringPerceptionComputationCount, rings } from "../rings.js";
 import {
   descriptorFromConfig,
@@ -32,6 +32,7 @@ import {
 import { medianBondLength, normalizeBondLength } from "../transform.js";
 import type { AtomId, Molecule } from "../types.js";
 import { vec } from "../vec.js";
+import { implicitHydrogenCount } from "../valence.js";
 import {
   applyConformation,
   project,
@@ -40,8 +41,9 @@ import {
   readProjection,
   resetProjectionTopologyComputationCount,
   resolveProjectionFrame,
+  RESULTS_PER_CONFIGURATION,
 } from "./engine.js";
-import { restrictStereoConfig, stereoDisagreements } from "./frames.js";
+import { canonicalProjectionView, restrictStereoConfig, stereoDisagreements } from "./frames.js";
 import { condensedGroup, layoutNodeOf, sourceAtomsOf } from "./nodes.js";
 import { placementOfLayout } from "./template.js";
 import {
@@ -52,6 +54,7 @@ import {
   type ProjectionResult,
   type ProjectionView,
   type RingView,
+  type SightedBondView,
 } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -124,6 +127,27 @@ function sideOf(layout: ProjectedLayout, centre: AtomId, atomId: AtomId): "left"
 }
 
 const GLUCOSE_BACKBONE = ["a2", "a3", "a5", "a7", "a9", "a11"];
+
+function newman(front: AtomId, back: AtomId, references: { frontReference?: AtomId; backReference?: AtomId } = {}): SightedBondView {
+  return { kind: "sightedBond", template: "newman", frame: { front, back, ...references }, params: { torsionDeg: 60, rollDeg: 0 } };
+}
+
+/**
+ * Ethyl methyl sulfoxide, CH3–S(=O)–CH2CH3, with the S–CH3 bond marked: a
+ * stereocentre whose fourth ligand is sulfur's lone pair, so a Fischer cross
+ * at S has ONE explicit arm. a1 CH3, a2 S, a3 CH2; the O is found by element.
+ */
+function ethylMethylSulfoxide(mark: "wedge" | "hash"): Molecule {
+  return buildMolecule((b) => {
+    const methyl = b.atom("C", vec(-1, 0));
+    const sulfur = b.atom("S", vec(0, 0));
+    const methylene = b.atom("C", vec(1, 0));
+    b.bond(sulfur, methyl, 1, mark);
+    b.bond(sulfur, methylene);
+    b.bond(sulfur, b.atom("O", vec(0, 1)), 2);
+    b.bond(methylene, b.atom("C", vec(2, 0)));
+  });
+}
 
 // ---------------------------------------------------------------------------
 // The reference set is non-vacuous before anything is projected
@@ -233,6 +257,32 @@ describe("the planar frame round trip", () => {
     expect(layout.coverage.centres).toEqual(["a3"]);
   });
 
+  it("gives each bond the depth its final mark draws: a wedge toward the viewer, a hash away", () => {
+    const d = load("d-glucose-open.mol");
+    const l = load("l-glucose-open.mol");
+    const marked = d.bondIds.filter((id) => d.bonds[id]!.stereo === "wedge" || d.bonds[id]!.stereo === "hash");
+    expect(marked.length).toBeGreaterThan(0);
+    // As drawn, mirrored (marks exchanged), and corrected to L-glucose's
+    // configuration (every centre's marks exchanged): depth follows the
+    // marks the layout finally draws, never the author's.
+    for (const layout of [
+      layoutOf(project(d, stereoConfig(d), planar())),
+      layoutOf(project(d, stereoConfig(d), planar(30, true))),
+      layoutOf(project(d, stereoConfig(l), planar())),
+    ]) {
+      for (const bond of layout.bonds) {
+        const stereo = layout.marks[bond.id]?.stereo;
+        expect(layout.depth[bond.id], bond.id).toBe(stereo === "wedge" ? "front" : stereo === "hash" ? "back" : "inPlane");
+      }
+    }
+    const plain = layoutOf(project(d, stereoConfig(d), planar()));
+    const mirrored = layoutOf(project(d, stereoConfig(d), planar(0, true)));
+    for (const id of marked) {
+      expect(plain.depth[id], id).toBe(d.bonds[id]!.stereo === "wedge" ? "front" : "back");
+      expect(mirrored.depth[id], id).toBe(d.bonds[id]!.stereo === "wedge" ? "back" : "front");
+    }
+  });
+
   it("lists a centre it has no mark to carry, and a double bond drawn the other way", () => {
     const glyceraldehyde = load("r-glyceraldehyde.mol");
     const bare = setBondStereo(glyceraldehyde, mol0Wedge(glyceraldehyde), "none");
@@ -335,6 +385,30 @@ describe("the Fischer template", () => {
       "left",
     ]);
     expect(letters(mol, readBack(mol, layout))).toEqual({ a3: "R", a5: "S", a7: "R", a9: "R" });
+  });
+
+  it("moves a lone arm across for the other enantiomer of a sulfoxide, whose fourth ligand is a lone pair", () => {
+    const sides: string[] = [];
+    const stated: string[] = [];
+    for (const mark of ["wedge", "hash"] as const) {
+      const mol = ethylMethylSulfoxide(mark);
+      const config = stereoConfig(mol);
+      const want = letters(mol, config);
+      expect(want.a2, mark).toMatch(/^[RS]$/);
+      const oxygen = mol.atomIds.find((id) => mol.atoms[id]!.element === "O")!;
+      const layout = layoutOf(project(mol, config, fischer(["a1", "a2", "a3"])));
+      // One explicit arm (the O) and no hydrogen: the lone pair is the empty arm.
+      expect(layout.derivedNodes.filter((n) => n.host === "a2")).toEqual([]);
+      expect(layoutNodeOf(layout, oxygen)).toBe(oxygen);
+      expect(layout.unplaced).toEqual([]);
+      expect(layout.coverage.centres).toEqual(["a2"]);
+      expect(letters(mol, readBack(mol, layout))).toEqual(want);
+      sides.push(sideOf(layout, "a2", oxygen));
+      stated.push(want.a2!);
+    }
+    // Two enantiomers, so two letters and the oxygen on two sides.
+    expect(new Set(stated).size).toBe(2);
+    expect([...sides].sort()).toEqual(["left", "right"]);
   });
 
   it("gives every implicit hydrogen a synthetic node on the empty arm, named by its centre", () => {
@@ -506,6 +580,61 @@ describe("condensed group spelling", () => {
     expect(text(quaternary!)).toBe("C(CH3)3");
     expect(text(methine!)).toBe("CH(CH3)2");
   });
+
+  it("names the nuclide of every atom it folds: L-alanine-3,3,3-d3 and D-glyceraldehyde-3-13C", () => {
+    // The label is the only place a folded atom is drawn, so a CD3 spelled
+    // "CH3" would state the wrong compound. Alanine's methyl carries three
+    // drawn deuterium atoms, which valence counts in place of its implicit H.
+    let alanine = load("l-alanine.mol");
+    const deuterium: AtomId[] = [];
+    for (let k = 0; k < 3; k++) {
+      const added = addAtom(alanine, { element: "H", isotope: 2, pos: vec(3, k) });
+      alanine = addBond(added.molecule, { from: "a3", to: added.id }).molecule;
+      deuterium.push(added.id);
+    }
+    expect(implicitHydrogenCount(alanine, "a3")).toBe(0);
+    const ala = layoutOf(project(alanine, stereoConfig(alanine), fischer(["a4", "a2", "a3"])));
+    expect(ala.unplaced).toEqual([]);
+    expect(sideOf(ala, "a2", "a1")).toBe("left");
+    const methyl = ala.derivedNodes.find((n) => n.host === "a3")!;
+    expect(methyl.id).toBe("a3.C2H3");
+    expect(methyl.label).toEqual([
+      { kind: "symbol", text: "C" },
+      { kind: "mass", text: "2" },
+      { kind: "symbol", text: "H" },
+      { kind: "count", text: "3" },
+    ]);
+    expect(methyl.label[methyl.anchor]).toEqual({ kind: "symbol", text: "C" });
+    expect(sourceAtomsOf(ala, methyl.id)).toEqual(["a3", ...deuterium]);
+
+    // A 13C terminus keeps its mass number glued to the symbol on the node,
+    // reading "¹³CH2OH" east and "HOH2¹³C" west.
+    const glyceraldehyde = setIsotope(load("r-glyceraldehyde.mol"), "a5", 13);
+    const layout = layoutOf(project(glyceraldehyde, stereoConfig(glyceraldehyde), fischer(["a2", "a3", "a5"])));
+    expect(layout.unplaced).toEqual([]);
+    expect(sideOf(layout, "a3", "a4")).toBe("right");
+    const terminus = layout.derivedNodes.find((n) => n.host === "a5")!;
+    expect(terminus.id).toBe("a5.13CH2OH");
+    expect(terminus.label.map((p) => `${p.kind}:${p.text}`)).toEqual([
+      "mass:13",
+      "symbol:C",
+      "symbol:H",
+      "count:2",
+      "symbol:O",
+      "symbol:H",
+    ]);
+    expect(terminus.anchor).toBe(1);
+    const group = condensedGroup(glyceraldehyde, "a5", "a3");
+    if (group.kind !== "group") throw new Error(group.kind);
+    expect(group.group.west.map((p) => p.text).join("")).toBe("HOH213C");
+    expect(group.group.west[group.group.westAnchor]).toEqual({ kind: "symbol", text: "C" });
+    expect(group.group.west[group.group.westAnchor - 1]).toEqual({ kind: "mass", text: "13" });
+    // The unlabelled terminus is unchanged: no mass part, anchor 0.
+    const plain = condensedGroup(load("r-glyceraldehyde.mol"), "a5", "a3");
+    if (plain.kind !== "group") throw new Error(plain.kind);
+    expect(plain.group.east.map((p) => p.text).join("")).toBe("CH2OH");
+    expect(plain.group.eastAnchor).toBe(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -584,6 +713,111 @@ describe("frame resolution", () => {
     expect(resolveProjectionFrame(adenosine, ring([riboseOxygen]))).toMatchObject({ kind: "available" });
     // The same question twice gets the same list in the same order.
     expect(resolveProjectionFrame(adenosine, ring([]))).toEqual(choice);
+  });
+
+  it("offers only the rings that hold a named reference atom", () => {
+    const adenosine = load("adenosine.mol");
+    const all = resolveProjectionFrame(adenosine, ring([]));
+    if (all.kind !== "needsChoice") throw new Error(all.kind);
+    const holding = (id: AtomId) => all.candidates.filter((c) => c.includes(id));
+    const riboseOnly = adenosine.atomIds.find((id) => holding(id).length === 1 && holding(id)[0]!.length === 5 &&
+      holding(id)[0]!.some((a) => adenosine.atoms[a]!.element === "O"))!;
+    // A reference atom in one ring settles the choice outright...
+    expect(resolveProjectionFrame(adenosine, ring([], riboseOnly))).toMatchObject({
+      kind: "available",
+      frame: { kind: "ring", ringAtomIds: holding(riboseOnly)[0], referenceAtomId: riboseOnly },
+    });
+    // ...and one in two fused rings narrows it to those two, each of which,
+    // chosen, resolves with that reference.
+    const fusion = adenosine.atomIds.find((id) => holding(id).length === 2)!;
+    const two = resolveProjectionFrame(adenosine, ring([], fusion));
+    if (two.kind !== "needsChoice") throw new Error(two.kind);
+    expect(two.candidates).toEqual(holding(fusion));
+    for (const candidate of two.candidates) {
+      expect(resolveProjectionFrame(adenosine, ring(candidate, fusion))).toMatchObject({
+        kind: "available",
+        frame: { referenceAtomId: fusion },
+      });
+    }
+    // A reference in no ring the set allows is not a ring, with both named.
+    const sugarRing = holding(riboseOnly)[0]!;
+    expect(resolveProjectionFrame(adenosine, ring([sugarRing[0]!], fusion))).toMatchObject({
+      kind: "unavailable",
+      reason: "not-a-ring",
+    });
+  });
+
+  it("resolves a sighted bond's stored references, and says when one falls back rather than refusing", () => {
+    // (2R,3R)-2,3-dibromobutane seen down C2-C3: a2 front (CH3 a1, Br a3),
+    // a4 back (Br a5, CH3 a6) — the textbook Newman.
+    const mol = load("rr-2-3-dibromobutane.mol");
+    expect(resolveProjectionFrame(mol, newman("a2", "a4", { frontReference: "a3", backReference: "a5" }))).toMatchObject({
+      kind: "available",
+      frame: { frontReference: "a3", backReference: "a5", referenceFallbacks: [] },
+    });
+    // Omitted: the lowest-id substituent of each end, and both reported.
+    expect(resolveProjectionFrame(mol, newman("a2", "a4"))).toMatchObject({
+      frame: {
+        frontReference: "a1",
+        backReference: "a5",
+        referenceFallbacks: [
+          { end: "front", reason: "omitted" },
+          { end: "back", reason: "omitted" },
+        ],
+      },
+    });
+    // The back's bromine named as the FRONT reference is not a substituent of
+    // the front atom; a prototype-chain name is no atom at all.
+    for (const [name, reason] of [
+      ["a5", "not-a-substituent"],
+      ["constructor", "missing-atom"],
+      ["__proto__", "missing-atom"],
+    ] as const) {
+      expect(resolveProjectionFrame(mol, newman("a2", "a4", { frontReference: name, backReference: "a6" }))).toMatchObject({
+        kind: "available",
+        frame: { frontReference: "a1", backReference: "a6", referenceFallbacks: [{ end: "front", reason }] },
+      });
+    }
+    // A deleted reference turns the picture, never empties the panel.
+    const debrominated = removeAtoms(mol, ["a3"]);
+    expect(resolveProjectionFrame(debrominated, newman("a2", "a4", { frontReference: "a3", backReference: "a5" }))).toMatchObject({
+      kind: "available",
+      frame: { frontReference: "a1", backReference: "a5", referenceFallbacks: [{ end: "front", reason: "missing-atom" }] },
+    });
+    // An end with only implicit hydrogens beside the sighted bond has no
+    // substituent to name, so the template's own hydrogen takes the place.
+    // (R)-ethanol-1-d seen down C1-C2: a2 the CHD carbinol (D a3, O a4), a1
+    // the methyl, which has nothing drawn but the sighted bond.
+    const ethanol = load("chd-ethanol.mol");
+    const sighted = resolveProjectionFrame(ethanol, newman("a2", "a1"));
+    if (sighted.kind !== "available" || sighted.frame.kind !== "sightedBond") throw new Error(sighted.kind);
+    expect(sighted.frame.frontReference).toBe("a3");
+    expect(Object.hasOwn(sighted.frame, "backReference")).toBe(false);
+    expect(sighted.frame.referenceFallbacks).toEqual([
+      { end: "front", reason: "omitted" },
+      { end: "back", reason: "omitted" },
+    ]);
+  });
+
+  it("keeps a ring's chair conformer as view state that frame resolution never reads", () => {
+    const glucose = load("beta-d-glucopyranose.mol");
+    const walk = rings(glucose)[0]!.atomIds;
+    const chair = (frontAtomId: AtomId): RingView => ({
+      kind: "ring",
+      template: "chair",
+      frame: { ringAtomIds: walk },
+      params: { face: "front", conformer: { form: "chair", frontAtomId } },
+    });
+    // A ring flip is the same panel naming a ring neighbour instead.
+    const one = chair(walk[0]!);
+    const flipped = chair(walk[1]!);
+    expect(canonicalProjectionView(one)).toMatchObject({ params: { conformer: { form: "chair", frontAtomId: walk[0] } } });
+    expect(canonicalProjectionView(flipped)).toMatchObject({ params: { conformer: { frontAtomId: walk[1] } } });
+    const { conformer: _dropped, ...flat } = one.params;
+    expect(canonicalProjectionView({ ...one, params: flat })).not.toHaveProperty("params.conformer");
+    // Conformation, not topology: both conformers resolve to one frame.
+    expect(resolveProjectionFrame(glucose, flipped)).toBe(resolveProjectionFrame(glucose, one));
+    expect(project(glucose, stereoConfig(glucose), one)).toMatchObject({ reason: "template-not-built" });
   });
 
   it("covers a ring's centres and a sighted bond's two ends, and nothing else", () => {
@@ -827,6 +1061,41 @@ describe("memoisation", () => {
     const grown = addAtom(mol, { element: "C", pos: vec(9, 9) }).molecule;
     project(grown, stereoConfig(grown), planar());
     expect(projectionTopologyComputationCount()).toBe(1);
+  });
+
+  it("reuses a Fischer's topology across a 40-frame drag, while every frame gets its own layout", () => {
+    // The planar drag above never exercises a template's resolve (it is a
+    // constant there); a Fischer's condenses groups and names nodes, and a
+    // drag produces a fresh molecule per pointer frame with only a position
+    // changed, so it must reuse that work, not the previous frame's result.
+    let mol = load("d-galactose-open.mol");
+    const view = fischer(GLUCOSE_BACKBONE);
+    let previous = project(mol, stereoConfig(mol), view);
+    expect(previous.kind).toBe("available");
+    resetProjectionTopologyComputationCount();
+    for (let k = 0; k < 40; k++) {
+      mol = setAtomPosition(mol, "a12", vec(mol.atoms["a12"]!.pos.x + 0.001, mol.atoms["a12"]!.pos.y));
+      const next = project(mol, stereoConfig(mol), view);
+      expect(next.kind).toBe("available");
+      expect(next).not.toBe(previous);
+      previous = next;
+    }
+    expect(projectionTopologyComputationCount()).toBe(0);
+  });
+
+  it("keeps a bounded number of views per configuration, so a page-turn gesture does not keep every frame", () => {
+    const mol = load("pentane-2r3s-diol.mol");
+    const config = stereoConfig(mol);
+    const results = new Map<number, ProjectionResult>();
+    for (let k = 1; k <= 40; k++) results.set(k, project(mol, config, planar(k)));
+    // The most recent views are still the same objects...
+    for (let k = 40; k > 40 - RESULTS_PER_CONFIGURATION; k--) {
+      expect(project(mol, config, planar(k)), `${k} degrees`).toBe(results.get(k));
+    }
+    // ...and the first is recomputed: equal, but no longer kept.
+    const again = project(mol, config, planar(1));
+    expect(again).not.toBe(results.get(1));
+    expect(again).toEqual(results.get(1));
   });
 });
 

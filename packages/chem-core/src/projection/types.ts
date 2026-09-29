@@ -127,8 +127,9 @@ export interface RingFrame {
  * A bond seen end on: `front` nearer the viewer, `back` behind it. The
  * reference substituents are STORED by id, not derived from CIP priority: a
  * bromine added elsewhere reorders priorities, and a picture keyed on them
- * would spin. An omitted or deleted reference falls back to the lowest
- * `compareIds` ligand and the resolution says so.
+ * would spin. An omitted or deleted reference, or one no longer bonded to its
+ * end, falls back to the lowest `compareIds` substituent, and the resolved
+ * frame's `referenceFallbacks` says so; it never makes the frame unavailable.
  */
 export interface SightedBondFrame {
   readonly front: AtomId;
@@ -163,14 +164,42 @@ export interface ChainParams {
 }
 
 /**
- * Which named face of the ring the template shows toward the TOP of its
- * picture. Front and back are the ring's two faces against the reference
+ * Which puckered form a ring template draws: decision 12's "which chair
+ * conformer", a VIEW parameter and never model state (decision 154).
+ *
+ * PINNED BY ATOM ID, never by an index or by "up" and "down". `frontAtomId`
+ * is a ring atom displaced toward the ring's FRONT face (`ringFace`'s
+ * meaning, as `RingParams.face` uses it). A chair's atoms alternate, so one
+ * named atom fixes the chair, and a ring flip is the same panel naming one
+ * of that atom's ring neighbours instead. Two ids naming the same chair are
+ * the same picture; the chair template resolves them, since that needs the
+ * ring and a view alone does not have it.
+ *
+ * `form` is the discriminant later forms extend. A boat, a half-chair and a
+ * twist-boat each need more than one pinned atom, so they arrive with the
+ * chair template as new arms; a value a panel already saved stays valid.
+ */
+export interface ChairConformer {
+  readonly form: "chair";
+  readonly frontAtomId: AtomId;
+}
+
+export type RingConformer = ChairConformer;
+
+/**
+ * `face` is which named face of the ring the template shows toward the TOP of
+ * its picture. Front and back are the ring's two faces against the reference
  * normal of its canonical walk, exactly `ringFace`'s meaning — never "up" and
  * "down", which denote different geometries in a Haworth and a steroid.
  * Choosing the other face mirrors the page and changes no descriptor.
+ *
+ * `conformer` is the puckered form for a template that draws one (the
+ * chair). Omitted, the template picks one by a rule fixed by the atom ids
+ * alone; a Haworth, which is flat by convention, ignores it.
  */
 export interface RingParams {
   readonly face: "front" | "back";
+  readonly conformer?: RingConformer;
 }
 
 /**
@@ -237,11 +266,13 @@ export type ProjectionView =
 /**
  * The part of a view `applyConformation` acts on. `none` for every frame
  * whose conformation is fixed by convention: a planar drawing, and a Fischer,
- * which is eclipsed by definition.
+ * which is eclipsed by definition. `torsion` is a sighted bond's dihedral,
+ * and `ringConformer` a ring's pucker (`RingParams.conformer`).
  */
 export type Conformation =
   | { readonly kind: "none" }
-  | { readonly kind: "torsion"; readonly torsionDeg: number };
+  | { readonly kind: "torsion"; readonly torsionDeg: number }
+  | { readonly kind: "ringConformer"; readonly conformer: RingConformer };
 
 // ---------------------------------------------------------------------------
 // Characteristic lengths — decision 5, ruled here before any template
@@ -314,7 +345,9 @@ export type LayoutBondId = string;
 /**
  * Where a bond lies relative to the page, for drawing order: `front` toward
  * the viewer, `back` away, `inPlane` on it. A Fischer's horizontal bonds are
- * `front` and its vertical ones `back`; a Haworth's near edge is `front`.
+ * `front` and its vertical ones `back`; a Haworth's near edge is `front`; in
+ * a planar layout a wedge is `front`, a hash `back` and every other bond
+ * `inPlane`, as the marks the layout finally draws say.
  *
  * DEPTH IS CARRIED, NEVER RE-DERIVED from the 2D y: a projected chair's near
  * and far bonds overlap in y, so front/back cannot be recovered from the
@@ -360,15 +393,30 @@ export interface LayoutMark {
  */
 export type DerivedNodeKind = "hydrogen" | "condensed";
 
+/**
+ * One piece of a derived node's text: `FormulaPart`'s symbol, count and
+ * charge, plus `mass`, a mass number set superscript immediately BEFORE the
+ * symbol it labels ("¹³CH2OH", "C²H3"). Decision 155.
+ *
+ * A condensed label is the only place a folded atom is drawn, so it must
+ * name the nuclide. Spelled without it, a CD3 reads "CH3" and a 13C-labelled
+ * terminus reads as natural carbon: a plausible wrong answer, which this
+ * package refuses everywhere else (`exactMass` throws rather than guess).
+ * `mass` is a kind of its own, not a FormulaPart, because a sum formula
+ * counts elements and has no place to put one.
+ */
+export type DerivedLabelPart = FormulaPart | { readonly kind: "mass"; readonly text: string };
+
 export interface DerivedNode {
   readonly id: LayoutNodeId;
   readonly kind: DerivedNodeKind;
   readonly host: AtomId;
-  readonly label: readonly FormulaPart[];
+  readonly label: readonly DerivedLabelPart[];
   /**
    * Which part of `label` sits ON the node's position: the attachment atom's
    * own symbol, the C of "CH2OH" and of "HOH2C" alike, so the bond meets the
-   * atom it is bonded to and not the middle of the word.
+   * atom it is bonded to and not the middle of the word. A `mass` part just
+   * before it belongs to the same atom and is set with it.
    */
   readonly anchor: number;
 }
@@ -565,8 +613,29 @@ export type ResolvedProjectionFrame =
       readonly front: AtomId;
       readonly back: AtomId;
       readonly bondId: BondId;
+      /**
+       * The substituent of `front` (other than `back`) at the template's
+       * reference position: the stored one when it still is a substituent of
+       * `front`, else the lowest by `compareIds`. Absent when `front` carries
+       * only implicit hydrogens, which the template then draws.
+       */
+      readonly frontReference?: AtomId;
+      /** The same for `back`. */
+      readonly backReference?: AtomId;
+      /** Each end whose stored reference was not used, and why: the resolution saying so. */
+      readonly referenceFallbacks: readonly SightedBondReferenceFallback[];
     }
   | { readonly kind: "annotationOverlay"; readonly bondIds: readonly BondId[] };
+
+/**
+ * Why a sighted bond's stored reference was not used and the lowest-id
+ * substituent stands in: none was stored, the stored atom is gone, or it is
+ * no longer bonded to its end (an edit moved it).
+ */
+export interface SightedBondReferenceFallback {
+  readonly end: "front" | "back";
+  readonly reason: "omitted" | "missing-atom" | "not-a-substituent";
+}
 
 /** The frame resolves: what it names, and what a layout could state. */
 export interface ProjectionResolved {
