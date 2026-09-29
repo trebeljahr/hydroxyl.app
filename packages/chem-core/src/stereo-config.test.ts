@@ -714,6 +714,28 @@ describe("a drawn hydrogen (decision 179, the atom-plus-direction seam)", () => 
     expect(centre(read(bare, "hash", ORIGIN), carbon).reading.kind).toBe("undetermined");
   });
 
+  it("ignores a stray WAVY hydrogen too: at a centre with no implicit hydrogen, and at a double bond's end", () => {
+    // The same carbon with an iodine where the H was: four drawn ligands.
+    const full = buildMolecule((b) => {
+      const c = b.atom("C", ORIGIN);
+      b.bond(c, b.atom("Br", step(ORIGIN, 90)), 1, "wedge");
+      b.bond(c, b.atom("Cl", step(ORIGIN, -30)), 1);
+      b.bond(c, b.atom("F", step(ORIGIN, 210)), 1);
+      b.bond(c, b.atom("I", step(ORIGIN, 250)), 1);
+    });
+    const config = stereoConfig(full);
+    expect(letter(full, config, carbon)).toMatch(/^[RS]$/);
+    const wavy = { position: step(ORIGIN, 150), stereo: "wavy" } as const;
+    const stray = readOk(readConfig({ mol: full, hydrogens: { [carbon]: wavy } }, { kind: "wedgeHash" }));
+    expect(parities(stray)).toEqual(parities(config));
+
+    // A double bond's carbon is no centre, so an entry there is not read.
+    const butene = but2ene("trans");
+    expect(relations(stereoConfig(butene))).toEqual({ b3: "trans" });
+    const end = readOk(readConfig({ mol: butene, hydrogens: { a1: wavy } }, { kind: "wedgeHash" }));
+    expect(relations(end)).toEqual({ b3: "trans" });
+  });
+
   it("is read on the Fischer arm it is drawn on, and refused off the axes", () => {
     // The same compound as a bare cross: Br north, F south, Cl east, H west.
     const cross = buildMolecule((b) => {

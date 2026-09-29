@@ -590,12 +590,6 @@ function markAt(bond: Bond, centre: AtomId): number {
 }
 
 function hasWavyAt(ctx: ReadContext, atomId: AtomId): boolean {
-  // A wavy line to a drawn hydrogen blurs its atom like any other wavy line
-  // at it (decision 179).
-  const hydrogens = ctx.hydrogens;
-  if (hydrogens !== undefined && Object.hasOwn(hydrogens, atomId) && hydrogens[atomId]!.stereo === "wavy") {
-    return true;
-  }
   return bondsAt(ctx.mol, atomId).some((bond) => {
     const mark = drawnMark(ctx, bond);
     return bond.order === 1 && mark.narrowEnd === atomId && mark.stereo === "wavy";
@@ -810,7 +804,12 @@ function readCentre(
   // A wavy bond is the author declining to state a configuration, under every
   // convention. It is checked after the placement test so a refusal still
   // names every off-axis centre.
-  if (hasWavyAt(ctx, centre.atomId)) return { kind: "mixture", of: "epimers" };
+  // A wavy line to a drawn hydrogen blurs its centre like any other wavy line
+  // at it (decision 179), but only a hydrogen the centre really has: an entry
+  // for a centre with no implicit hydrogen is ignored, as `drawnHydrogen` says.
+  if (hasWavyAt(ctx, centre.atomId) || drawnHydrogen(ctx, centre)?.stereo === "wavy") {
+    return { kind: "mixture", of: "epimers" };
+  }
   if (lift.kind !== "points") return lift;
   // Fischer and Haworth points are unit directions built from the convention,
   // so the floor applies at the depth constant's own scale.
