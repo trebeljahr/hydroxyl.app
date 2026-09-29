@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
@@ -280,6 +283,89 @@ test("the status bar reports the formula, the masses and the chemistry errors", 
   await expect(page.locator('[data-status="issues"]')).toContainText(
     "1 chemistry error",
   );
+});
+
+/**
+ * EVERY READOUT ON ONE LINE, AND THE ZOOM CONTROLS ON SCREEN, down to a
+ * portrait tablet.
+ *
+ * The bar is `h-8` and does not wrap as a row. Before the bar went
+ * `whitespace-nowrap`, a readout squeezed below its text width wrapped
+ * INTERNALLY — "MW" over "78.1140", two 16px lines in 32px — at 768 for
+ * benzene and at 900 with two errors in the counter. Nowrap alone turned that
+ * into horizontal overflow that pushed + and Donate off a 768px tablet, so
+ * decision 139 hides Donate below 1024 and the exact mass below 900, with the
+ * exact mass kept in the MW readout's title.
+ *
+ * Numbers rather than a screenshot: the claim is about the flex algorithm,
+ * and heights and overflow are what it is made of. Benzene has the plain
+ * "0 chemistry errors" span; the nitro-ammonium fixture has the wider
+ * two-button issue counter.
+ */
+test("the status bar keeps every readout on one line from 768 to 1280", async ({
+  page,
+}) => {
+  await openEditor(page);
+
+  const measure = async (sketch: string): Promise<void> => {
+    for (const width of [768, 900, 1024, 1280]) {
+      await page.setViewportSize({ width, height: 800 });
+      const bar = await page.evaluate(() => {
+        const footer = document.querySelector('[data-shell="status-bar"]');
+        if (!(footer instanceof HTMLElement)) throw new Error("no status bar");
+        const shown = (selector: string): boolean => {
+          const node = footer.querySelector(selector);
+          if (node === null) return false;
+          const box = node.getBoundingClientRect();
+          return box.width > 0 && box.left >= 0 && box.right <= window.innerWidth;
+        };
+        return {
+          overflow: footer.scrollWidth - footer.clientWidth,
+          tall: [...footer.children]
+            .filter((child) => child.getBoundingClientRect().height > 20)
+            .map((child) => child.getAttribute("data-status") ?? child.tagName),
+          controls: ["view.fit", "view.reset", "view.zoom-out", "view.zoom-in"]
+            .map((id) => `[data-command="${id}"]`)
+            .concat('[data-status="zoom"]')
+            .every(shown),
+          exactMass: shown('[data-status="exact-mass"]'),
+          donate: shown('[data-status="donate"]'),
+        };
+      });
+
+      expect({ sketch, width, ...bar }).toEqual({
+        sketch,
+        width,
+        overflow: 0,
+        tall: [],
+        controls: true,
+        // Decision 139's order: Donate gives way first, then the exact mass.
+        exactMass: width >= 900,
+        donate: width >= 1024,
+      });
+    }
+  };
+
+  await expect(page.locator('[data-status="issues"]')).toHaveText("0 chemistry errors");
+  await measure("benzene");
+  // Where the exact mass goes when its readout is hidden.
+  await expect(page.locator('[data-status="weight"]')).toHaveAttribute(
+    "title",
+    /Exact mass 78\.0470/,
+  );
+
+  const molfile = readFileSync(
+    join(process.cwd(), "e2e", "fixtures", "nitro-ammonium-uncharged.mol"),
+    "utf8",
+  );
+  const transfer = await page.evaluateHandle((text) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File([text], "nitro-ammonium-uncharged.mol", { type: "text/plain" }));
+    return dt;
+  }, molfile);
+  await page.dispatchEvent("body", "drop", { dataTransfer: transfer });
+  await expect(page.locator('[data-status="issues"]')).toHaveText("2 chemistry errors");
+  await measure("nitro-ammonium, two errors");
 });
 
 test("the canvas is focusable and the arrow keys walk it atom to atom", async ({

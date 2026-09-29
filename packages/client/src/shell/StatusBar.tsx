@@ -48,7 +48,9 @@
  * A new tab, so the drawing stays open where it was and nothing depends on
  * the leave-page save path. It is left out of the static export: that build
  * is what an app-store shell would package, and the store rules forbid a
- * link to an outside payment page.
+ * link to an outside payment page. Below `lg` it is the first item the bar
+ * gives up (decision 139): it says nothing about the drawing, and the landing
+ * page's footer carries the same link.
  */
 
 import type { ReactElement } from "react";
@@ -231,11 +233,25 @@ export function StatusBar(): ReactElement {
   const buffer = useEditorStore((state) => state.ui.elementInputBuffer);
 
   const mass = moleculeMass(doc.molecule);
+  const exactMass = mass.exactMass === undefined ? "—" : formatMass(mass.exactMass);
 
   return (
+    // `whitespace-nowrap` ON THE BAR, AND IT IS LOAD-BEARING. The bar is `h-8`
+    // and does not wrap as a row, so a readout squeezed below its text width
+    // wrapped INTERNALLY: "MW" over "78.1140", two 16px lines in 32px. Nowrap
+    // makes every item's minimum width its whole text, so the flex algorithm
+    // hands the deficit to the two items that can absorb it, the message and
+    // the save state, which truncate. It is inherited, so a readout added
+    // later cannot forget it.
+    //
+    // Once those two are at zero, what gives way is decided by priority
+    // (decision 139), because the readouts alone are wider than a portrait
+    // tablet: Donate hides below `lg`, then the exact mass below 900px, whose
+    // value stays in the MW readout's title. Fit, Reset, − and + are never
+    // hidden: on a tablet they are the navigation decision 106 promises.
     <footer
       data-shell="status-bar"
-      className="bg-background text-muted-foreground flex h-8 shrink-0 items-center gap-4 border-t px-3 text-xs"
+      className="bg-background text-muted-foreground flex h-8 shrink-0 items-center gap-4 border-t px-3 text-xs whitespace-nowrap"
     >
       <span data-status="formula" className="text-foreground font-medium">
         {mass.formulaUnicode === "" ? "Empty sketch" : mass.formulaUnicode}
@@ -243,17 +259,21 @@ export function StatusBar(): ReactElement {
 
       <span
         data-status="weight"
-        title={
+        title={[
           mass.molecularWeight === undefined
             ? "No verified mass for one of these isotope labels"
-            : "Average molecular weight"
-        }
+            : "Average molecular weight",
+          // The exact mass again, for the widths where its own readout is
+          // hidden (decision 139).
+          `Exact mass ${exactMass}`,
+        ].join("\n")}
       >
         MW {mass.molecularWeight === undefined ? "—" : formatMass(mass.molecularWeight)}
       </span>
 
       <span
         data-status="exact-mass"
+        className="max-[900px]:hidden"
         title={
           mass.exactMass === undefined
             ? "No verified exact mass for one of these elements or isotope labels"
@@ -261,7 +281,7 @@ export function StatusBar(): ReactElement {
         }
       >
         {/* The em dash. See the header — never an average weight in disguise. */}
-        Exact {mass.exactMass === undefined ? "—" : formatMass(mass.exactMass)}
+        Exact {exactMass}
       </span>
 
       <span data-status="charge">Charge {formatCharge(mass.netCharge)}</span>
@@ -301,7 +321,7 @@ export function StatusBar(): ReactElement {
       <span
         data-status="zoom"
         title={ZOOM_HELP}
-        className="w-12 text-right font-mono tabular-nums"
+        className="w-12 shrink-0 text-right font-mono tabular-nums"
       >
         {Math.round(displayZoom(zoom, renderStyleFor(doc)) * 100)}%
       </span>
@@ -313,7 +333,7 @@ export function StatusBar(): ReactElement {
           target="_blank"
           rel="noopener noreferrer"
           data-status="donate"
-          className="hover:bg-muted hover:text-foreground rounded px-2 py-0.5"
+          className="hover:bg-muted hover:text-foreground rounded px-2 py-0.5 max-lg:hidden"
         >
           Donate
         </a>
