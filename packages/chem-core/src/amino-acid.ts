@@ -31,16 +31,12 @@
  */
 
 import { chainCarbonNeighbours, extendChain } from "./carbon-chain.js";
-import {
-  fischerSide,
-  type DLConfiguration,
-} from "./fischer-side.js";
-import { bondsAt, getAtom, otherEnd } from "./molecule.js";
 import { cipTopologyFingerprint } from "./cip.js";
+import { fischerSide, type DLConfiguration } from "./fischer-side.js";
+import { bondsAt, getAtom, otherEnd } from "./molecule.js";
 import { LruCache } from "./rings.js";
 import { compareIds } from "./selection.js";
-import type { StereoConfig } from "./stereo-config.js";
-import { stereoConfig, stereoTopology } from "./stereo-config.js";
+import { stereoConfig, stereoTopology, type StereoConfig } from "./stereo-config.js";
 import type { AtomId, Molecule } from "./types.js";
 
 export interface AlphaAminoAcid {
