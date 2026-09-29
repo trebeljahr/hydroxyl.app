@@ -227,6 +227,21 @@ export interface SketchDocument {
   readonly panels: readonly Panel[];
   /** Omitted, never `undefined`, when no layout has been chosen. */
   readonly figure?: FigureLayout;
+  /**
+   * Locants the user typed, keyed on atom id: the EXPLICIT half of the
+   * document's numbering (decisions 18 and 142). chem-core's `atomNumbering`
+   * reads it first and derives the rest from the sugar and amino-acid rules,
+   * so one atom carries the same number in every panel of a figure. An empty
+   * string hides a derived locant.
+   *
+   * On the document, not the molecule and not a panel: a locant is a label a
+   * figure puts on an atom, and one map per document is what keeps the panels
+   * of one figure in agreement. Pruned in the same undo entry as the edit that
+   * deletes its atom, so no saved document names an atom it does not hold.
+   * The key is OMITTED when there are none, never present holding `{}`;
+   * `withLocants` is the one writer.
+   */
+  readonly locants?: Readonly<Record<AtomId, string>>;
   readonly metadata: DocumentMetadata;
 }
 
@@ -431,6 +446,8 @@ export interface CreateDocumentInit {
   readonly stylePreset?: StylePresetId | undefined;
   readonly panels?: readonly Panel[] | undefined;
   readonly figure?: FigureLayout | undefined;
+  /** Explicit locants, keyed on atoms of `molecule`. */
+  readonly locants?: Readonly<Record<AtomId, string>> | undefined;
   /** Injectable ISO-8601 "now", so tests are deterministic and an importer
    *  can stamp a document with the file's own timestamp. */
   readonly now?: string | undefined;
@@ -465,7 +482,8 @@ export function createDocument(init: CreateDocumentInit = {}): SketchDocument {
     }),
   };
   // Assigned only when present, so a document with no layout has no key.
-  return init.figure === undefined ? doc : withFigureLayout(doc, init.figure);
+  const laid = init.figure === undefined ? doc : withFigureLayout(doc, init.figure);
+  return init.locants === undefined ? laid : withLocants(laid, init.locants);
 }
 
 /**
@@ -483,6 +501,83 @@ export function withFigureLayout(
   const columns = Math.max(1, Math.min(MAX_FIGURE_COLUMNS, Math.floor(layout.columns)));
   if (!Number.isFinite(columns)) return rest;
   return { ...rest, figure: { columns } };
+}
+
+/** The longest locant a document stores: "C-18", "4a", "1′" are a few characters. */
+export const MAX_LOCANT_LENGTH = 32;
+
+/**
+ * `doc` with its explicit locants replaced, or removed with `null`. The one
+ * place a `locants` key is written: entries follow the molecule's `atomIds`
+ * order, so two equal maps encode byte-identically, and an empty map leaves
+ * no key.
+ *
+ * @throws if a key is not an atom of `doc.molecule` or a value is not a
+ * string of at most `MAX_LOCANT_LENGTH` characters: a caller holding a stale
+ * id has a bug, and the codec reports the same thing in a file as an issue.
+ */
+export function withLocants(
+  doc: SketchDocument,
+  locants: Readonly<Record<AtomId, string>> | null,
+): SketchDocument {
+  const { locants: _previous, ...rest } = doc;
+  void _previous;
+  if (locants === null) return rest;
+  for (const key of Object.keys(locants)) {
+    if (!Object.hasOwn(doc.molecule.atoms, key)) {
+      throw new Error(`A locant names ${key}, which the molecule does not hold.`);
+    }
+    const value = locants[key];
+    if (typeof value !== "string" || value.length > MAX_LOCANT_LENGTH) {
+      throw new Error(
+        `The locant for ${key} is not a string of at most ${MAX_LOCANT_LENGTH} characters.`,
+      );
+    }
+  }
+  // Object.fromEntries defines own properties, so no key can reach a setter
+  // on Object.prototype the way `record["__proto__"] = x` would.
+  const entries = doc.molecule.atomIds
+    .filter((id) => Object.hasOwn(locants, id))
+    .map((id) => [id, locants[id]!] as const);
+  if (entries.length === 0) return rest;
+  return { ...rest, locants: Object.freeze(Object.fromEntries(entries)) };
+}
+
+/**
+ * `doc` with one atom's explicit locant set, or cleared with `undefined`.
+ * `""` is a value, not a clear: it hides the locant the rules would derive.
+ * Returns `doc` itself when nothing changes, so a no-op is not an undo step.
+ */
+export function setAtomLocant(
+  doc: SketchDocument,
+  atomId: AtomId,
+  locant: string | undefined,
+): SketchDocument {
+  const current = doc.locants ?? {};
+  if (locant === undefined) {
+    if (!Object.hasOwn(current, atomId)) return doc;
+    return withLocants(
+      doc,
+      Object.fromEntries(Object.entries(current).filter(([id]) => id !== atomId)),
+    );
+  }
+  if (Object.hasOwn(current, atomId) && current[atomId] === locant) return doc;
+  return withLocants(doc, Object.fromEntries([...Object.entries(current), [atomId, locant]]));
+}
+
+/**
+ * `locants` without the atoms `molecule` no longer holds: the SAME object
+ * when nothing went, `undefined` when nothing is left. Run in the undo entry
+ * of the edit that deleted the atoms, like the annotation pruning beside it.
+ */
+export function pruneLocants(
+  locants: Readonly<Record<AtomId, string>> | undefined,
+  molecule: Molecule,
+): Readonly<Record<AtomId, string>> | undefined {
+  if (locants === undefined) return undefined;
+  const kept = Object.entries(locants).filter(([id]) => Object.hasOwn(molecule.atoms, id));
+  if (kept.length === Object.keys(locants).length) return locants;
+  return kept.length === 0 ? undefined : Object.freeze(Object.fromEntries(kept));
 }
 
 /** An annotation as a caller adds one: everything but the id, which the
@@ -1370,6 +1465,9 @@ export const sketchDocumentSchema = z
     figure: z
       .strictObject({ columns: z.number().int().min(1).max(MAX_FIGURE_COLUMNS) })
       .optional(),
+    // Optional and additive on v2, like `figure`: a document with no explicit
+    // locant has no key. Keys are checked against the molecule below.
+    locants: z.record(nonEmptyString, z.string().max(MAX_LOCANT_LENGTH)).optional(),
     metadata: documentMetadataSchema,
   })
   .superRefine((doc, ctx) => {
@@ -1420,6 +1518,29 @@ export const sketchDocumentSchema = z
         });
       }
     });
+
+    // A locant for an atom that is not there is a dangling reference, refused
+    // like an annotation's; an edit prunes it in the same undo entry. An empty
+    // map is a second spelling of "no locants", which is written by omission.
+    if (doc.locants !== undefined) {
+      const keys = Object.keys(doc.locants);
+      if (keys.length === 0) {
+        ctx.addIssue({
+          code: "custom",
+          message: "an empty locant map is written by omitting the key",
+          path: ["locants"],
+        });
+      }
+      for (const key of keys) {
+        if (!Object.hasOwn(doc.molecule.atoms, key)) {
+          ctx.addIssue({
+            code: "custom",
+            message: `a locant names ${key}, which is not in the molecule`,
+            path: ["locants", key],
+          });
+        }
+      }
+    }
   })
   .transform((doc): SketchDocument => {
     // Rebuilt key by key rather than spread: a spread would carry a `figure`
@@ -1437,7 +1558,8 @@ export const sketchDocumentSchema = z
       panels: doc.panels,
       metadata: doc.metadata,
     };
-    return doc.figure === undefined ? base : withFigureLayout(base, doc.figure);
+    const laid = doc.figure === undefined ? base : withFigureLayout(base, doc.figure);
+    return doc.locants === undefined ? laid : withLocants(laid, doc.locants);
   });
 
 /** Compile-time guard that the schema really produces a `SketchDocument`;
@@ -1450,6 +1572,17 @@ type SchemaProducesDocument = z.infer<
   : never;
 const SCHEMA_PRODUCES_DOCUMENT: SchemaProducesDocument = true;
 void SCHEMA_PRODUCES_DOCUMENT;
+
+/** And that it reads every key a `SketchDocument` has: a field added to the
+ *  interface and not to the strict schema would make every document that
+ *  carries it unopenable (decision 110). */
+type DocumentSchemaCoversModel = keyof SketchDocument extends keyof z.input<
+  typeof sketchDocumentSchema
+>
+  ? true
+  : never;
+const DOCUMENT_SCHEMA_COVERS_MODEL: DocumentSchemaCoversModel = true;
+void DOCUMENT_SCHEMA_COVERS_MODEL;
 
 // ---------------------------------------------------------------------------
 // Codec
@@ -1589,6 +1722,7 @@ export function encodeDocument(doc: SketchDocument): unknown {
     panels: doc.panels.map(encodePanel),
   };
   if (doc.figure !== undefined) encoded.figure = { columns: doc.figure.columns };
+  if (doc.locants !== undefined) encoded.locants = Object.fromEntries(Object.entries(doc.locants));
   encoded.metadata = encodeMetadata(doc.metadata);
   return encoded;
 }

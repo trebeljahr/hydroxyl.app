@@ -1,12 +1,18 @@
 import {
+  atomNumbering,
   benzene,
   buildMolecule,
+  carbohydrates,
   elementCounts,
   emptyMolecule,
   joinSpecies,
+  locantOf,
+  readMolblock,
+  removeAtoms,
   withStereoGroups,
 } from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
+import { dictionaryEntryById } from "@starter/chem-core/dictionary";
 import { DEFAULT_DISPLAY_FLAGS } from "@starter/chem-render";
 import { describe, expect, it } from "vitest";
 import {
@@ -27,7 +33,11 @@ import {
   safeDecodeDocument,
   touchDocument,
   withFigureLayout,
+  withLocants,
+  pruneLocants,
+  setAtomLocant,
   MAX_FIGURE_COLUMNS,
+  MAX_LOCANT_LENGTH,
   STEREO_GROUP_KIND_VALUES,
   type SketchDocument,
 } from "./document.js";
@@ -704,6 +714,81 @@ describe("figure layout (additive, no schema bump)", () => {
   });
 });
 
+
+describe("explicit locants (additive on v2, decision 142)", () => {
+  /** Open-chain D-glucose from the structure dictionary, as the insert box reads it. */
+  function glucose(): Molecule {
+    return readMolblock(dictionaryEntryById("aldehydo-d-glucose")!.molblock).molecule;
+  }
+
+  it("round-trips, in atom order, and feeds atomNumbering ahead of the derived numbers", () => {
+    const molecule = glucose();
+    const [unit] = carbohydrates(molecule);
+    const [c1, c2] = unit!.backbone;
+    const original = createDocument({
+      id: "doc-locants",
+      molecule,
+      // Given out of atom order: the writer puts them back in it.
+      locants: { [c2!]: "", [c1!]: "1a" },
+      now: NOW,
+    });
+    expect(Object.keys(original.locants!)).toEqual(
+      molecule.atomIds.filter((id) => id === c1 || id === c2),
+    );
+    const encoded = JSON.parse(JSON.stringify(encodeDocument(original))) as Record<string, unknown>;
+    const decoded = decodeDocument(encoded);
+    expect(decoded).toEqual(original);
+    const numbering = atomNumbering(decoded.molecule, decoded.locants);
+    expect(locantOf(numbering, c1!)).toBe("1a");
+    // The empty string hides the C2 the rules would derive.
+    expect(locantOf(numbering, c2!)).toBeUndefined();
+    expect(locantOf(numbering, unit!.backbone[2]!)).toBe("3");
+  });
+
+  it("has no key when there are none, and refuses a present-but-empty map", () => {
+    const doc = createDocument({ molecule: glucose(), now: NOW });
+    expect(Object.hasOwn(doc, "locants")).toBe(false);
+    expect(Object.hasOwn(encodeDocument(doc) as object, "locants")).toBe(false);
+    expect(Object.hasOwn(withLocants(doc, {}), "locants")).toBe(false);
+    const encoded = JSON.parse(JSON.stringify(encodeDocument(doc))) as Record<string, unknown>;
+    expect(safeDecodeDocument({ ...encoded, locants: {} }).ok).toBe(false);
+  });
+
+  it("refuses a locant naming an atom the molecule does not hold, prototype names included", () => {
+    const doc = createDocument({ molecule: glucose(), now: NOW });
+    const encoded = JSON.parse(JSON.stringify(encodeDocument(doc))) as Record<string, unknown>;
+    for (const key of ["a999", "constructor", "toString"]) {
+      const result = safeDecodeDocument({ ...encoded, locants: { [key]: "1" } });
+      expect(result.ok, key).toBe(false);
+    }
+    expect(safeDecodeDocument({ ...encoded, locants: { a1: "x".repeat(MAX_LOCANT_LENGTH + 1) } }).ok).toBe(
+      false,
+    );
+    expect(() => withLocants(doc, { constructor: "1" })).toThrow(/does not hold/);
+  });
+
+  it("prunes the locant of a deleted atom and keeps the rest, by reference when nothing went", () => {
+    const molecule = glucose();
+    const [unit] = carbohydrates(molecule);
+    const [c1, c2] = unit!.backbone;
+    const locants = withLocants(createDocument({ molecule, now: NOW }), { [c1!]: "1", [c2!]: "2*" }).locants;
+    expect(pruneLocants(locants, molecule)).toBe(locants);
+    expect(pruneLocants(locants, removeAtoms(molecule, [c1!]))).toEqual({ [c2!]: "2*" });
+    expect(pruneLocants(locants, removeAtoms(molecule, [c1!, c2!]))).toBeUndefined();
+  });
+
+  it("sets and clears one atom's locant, returning the document itself on a no-op", () => {
+    const molecule = glucose();
+    const [unit] = carbohydrates(molecule);
+    const c1 = unit!.backbone[0]!;
+    const doc = createDocument({ molecule, now: NOW });
+    const set = setAtomLocant(doc, c1, "C-1");
+    expect(set.locants).toEqual({ [c1]: "C-1" });
+    expect(setAtomLocant(set, c1, "C-1")).toBe(set);
+    expect(Object.hasOwn(setAtomLocant(set, c1, undefined), "locants")).toBe(false);
+    expect(setAtomLocant(doc, c1, undefined)).toBe(doc);
+  });
+});
 
 describe("stereo groups (additive, no schema bump)", () => {
   /** An encoded document whose molecule carries one AND group, as a mutable
