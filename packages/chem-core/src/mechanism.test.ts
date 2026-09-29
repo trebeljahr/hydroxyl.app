@@ -52,6 +52,8 @@ const bd = (bondId: BondId): ElectronSource => ({ kind: "bond", bondId });
 const toAtom = (atomId: AtomId): ElectronSink => ({ kind: "atom", atomId });
 const toBond = (bondId: BondId): ElectronSink => ({ kind: "bond", bondId });
 const toLp = (atomId: AtomId): ElectronSink => ({ kind: "lonePair", atomId });
+/** The new bond `end`-`atom`, `end` being where the electrons start. */
+const toNew = (end: AtomId, atom: AtomId): ElectronSink => ({ kind: "newBond", atomIds: [end, atom] });
 const pair = (source: ElectronSource, sink: ElectronSink): ElectronMove => ({
   electrons: "pair",
   source,
@@ -100,6 +102,7 @@ const REFUSALS: ReadonlySet<MechanismIssueKind> = new Set([
   "self-target",
   "disconnected",
   "ambiguous-bond-end",
+  "new-bond-end",
   "aromatic-bond",
   "pair-from-radical",
   "no-lone-pair",
@@ -339,6 +342,62 @@ function cationBesideMigratingGroup(group: "hydride" | "methyl") {
     migrant = promoted.hydrogenId;
   }
   return { mol, cation, origin, migrant, migrating: bondBetween(mol, origin, migrant)!.id };
+}
+
+/** Propene, C1H2=C2H-C3H3, beside hydrogen bromide with its H drawn. */
+function propeneAndHydrogenBromide() {
+  let c1 = "";
+  let c2 = "";
+  let c3 = "";
+  let c12 = "";
+  let h = "";
+  let hbr = "";
+  let br = "";
+  const mol = buildMolecule((b) => {
+    c1 = b.atom("C", { x: 0, y: 0 });
+    c2 = b.atom("C", { x: 1, y: 0.5 });
+    c12 = b.bond(c1, c2, 2);
+    c3 = b.atom("C", { x: 2, y: 0 });
+    b.bond(c2, c3);
+    h = b.atom("H", { x: 0.5, y: 2 });
+    br = b.atom("Br", { x: 0.5, y: 3 });
+    hbr = b.bond(h, br);
+  });
+  return { mol, c1, c2, c3, c12, h, hbr, br };
+}
+
+/** Methane with one hydrogen promoted, beside a bromine radical. */
+function methaneAndBromineRadical() {
+  let c = "";
+  let br = "";
+  const drawn = buildMolecule((b) => {
+    c = b.atom("C", { x: 0, y: 0 });
+    br = b.atom("Br", { x: 3, y: 0 }, { radicalElectrons: 1 });
+  });
+  const promoted = promoteImplicitHydrogen(drawn, c);
+  if (!promoted.ok) throw new Error(promoted.reason);
+  return { mol: promoted.molecule, c, br, h: promoted.hydrogenId, ch: promoted.bondId };
+}
+
+/** The cyclobutylmethyl cation: a four-membered ring r1..r4, r1 carrying CH2+. */
+function cyclobutylmethylCation() {
+  const ring: AtomId[] = [];
+  let cation = "";
+  const mol = buildMolecule((b) => {
+    for (const [x, y] of [
+      [0, 0],
+      [0, -1],
+      [-1, -1],
+      [-1, 0],
+    ] as const) {
+      ring.push(b.atom("C", { x, y }));
+    }
+    for (let i = 0; i < 4; i++) b.bond(ring[i]!, ring[(i + 1) % 4]!);
+    cation = b.atom("C", { x: 1, y: 0.5 }, { charge: 1 });
+    b.bond(ring[0]!, cation);
+  });
+  const [r1, r2, r3, r4] = ring as [AtomId, AtomId, AtomId, AtomId];
+  return { mol, r1, r2, r3, r4, cation, migrating: bondBetween(mol, r1, r2)!.id };
 }
 
 // ---------------------------------------------------------------------------
@@ -586,6 +645,37 @@ describe("source-to-sink table: one fixture per cell", () => {
     expectReverses(mol, [pair(bd(cBr), toLp(br))]);
   });
 
+  it("lone pair -> new bond: the atom sink's move, drawn to the new bond (SN2's C-O)", () => {
+    const { mol, c, br, cBr, o } = bromomethaneAndHydroxide();
+    const arrows = [pair(lp(o), toNew(o, c)), pair(bd(cBr), toAtom(br))];
+    const product = expectReverses(mol, arrows);
+    expect(structure(product)).toEqual(structure(applyArrows(mol, [pair(lp(o), toAtom(c)), arrows[1]!])));
+    expect(order(product, o, c)).toBe(1);
+    expect(mechanismIssues(mol, arrows)).toEqual([]);
+  });
+
+  it("lone pair -> new bond already there: PROMOTES it, as aiming at the bonded atom does", () => {
+    const { mol, carbonyl, oxygen, co, cn } = acetoneAndCyanide();
+    const adduct = applyArrows(mol, [pair(lp(cn), toAtom(carbonyl)), pair(bd(co), toAtom(oxygen))]);
+    const cc = bondBetween(adduct, carbonyl, cn)!.id;
+    const arrows = [pair(lp(oxygen), toNew(oxygen, carbonyl)), pair(bd(cc), toAtom(cn))];
+    const product = expectReverses(adduct, arrows);
+    expect(order(product, carbonyl, oxygen)).toBe(2);
+    expect(structure(product)).toEqual(
+      structure(applyArrows(adduct, [pair(lp(oxygen), toAtom(carbonyl)), arrows[1]!])),
+    );
+  });
+
+  it("bond -> new bond already there: PROMOTES it, as the shift into that bond does (E2's C=C)", () => {
+    const { mol, c1, c2, c1c2 } = bromopropaneAndHydroxide();
+    const promoted = promoteImplicitHydrogen(mol, c1);
+    if (!promoted.ok) throw new Error(promoted.reason);
+    const toTheNew = applyArrows(promoted.molecule, [pair(bd(promoted.bondId), toNew(c1, c2))]);
+    const toTheBond = applyArrows(promoted.molecule, [pair(bd(promoted.bondId), toBond(c1c2))]);
+    expect(order(toTheNew, c1, c2)).toBe(2);
+    expect(structure(toTheNew)).toEqual(structure(toTheBond));
+  });
+
   it("radical -> atom: two fishhooks recombine two methyl radicals into ethane", () => {
     let a = "";
     let b2 = "";
@@ -622,6 +712,21 @@ describe("source-to-sink table: one fixture per cell", () => {
     expect(bondBetween(product, c, me)).toBeUndefined();
     expect([product.atoms[o]!.radicalElectrons, product.atoms[me]!.radicalElectrons]).toEqual([0, 1]);
     expect(product.atomIds.every((id) => charge(product, id) === 0)).toBe(true);
+    expect(mechanismIssues(mol, arrows)).toEqual([]);
+  });
+
+  it("radical -> new bond: two fishhooks to the new C-C bond recombine two methyl radicals", () => {
+    let a = "";
+    let b2 = "";
+    const mol = buildMolecule((b) => {
+      a = b.atom("C", { x: 0, y: 0 }, { radicalElectrons: 1 });
+      b2 = b.atom("C", { x: 1, y: 0 }, { radicalElectrons: 1 });
+    });
+    const arrows = [hook(rad(a), toNew(a, b2)), hook(rad(b2), toNew(b2, a))];
+    const product = expectReverses(mol, arrows);
+    expect(order(product, a, b2)).toBe(1);
+    expect([product.atoms[a]!.radicalElectrons, product.atoms[b2]!.radicalElectrons]).toEqual([0, 0]);
+    expect([implicitHydrogenCount(product, a), implicitHydrogenCount(product, b2)]).toEqual([3, 3]);
     expect(mechanismIssues(mol, arrows)).toEqual([]);
   });
 
@@ -717,21 +822,7 @@ describe("single electrons and a bond's pair aimed at a third atom", () => {
   });
 
   it("propene's pi pair aimed at HBr's proton does not say which carbon: reported, not applied", () => {
-    let c1 = "";
-    let c2 = "";
-    let c12 = "";
-    let h = "";
-    let hbr = "";
-    let br = "";
-    const mol = buildMolecule((b) => {
-      c1 = b.atom("C", { x: 0, y: 0 });
-      c2 = b.atom("C", { x: 1, y: 0.5 });
-      c12 = b.bond(c1, c2, 2);
-      b.bond(c2, b.atom("C", { x: 2, y: 0 }));
-      h = b.atom("H", { x: 0.5, y: 2 });
-      br = b.atom("Br", { x: 0.5, y: 3 });
-      hbr = b.bond(h, br);
-    });
+    const { mol, c1, c2, c12, h, hbr, br } = propeneAndHydrogenBromide();
     const arrows = [pair(bd(c12), toAtom(h)), pair(bd(hbr), toAtom(br))];
     const issues = mechanismIssues(mol, arrows);
     expect(issues[0]).toMatchObject({ kind: "ambiguous-bond-end", arrowIndices: [0], severity: "error" });
@@ -807,20 +898,8 @@ describe("single electrons and a bond's pair aimed at a third atom", () => {
   });
 
   describe("hydrogen-atom abstraction from methane by a bromine radical", () => {
-    function methaneAndBromine() {
-      let c = "";
-      let br = "";
-      const drawn = buildMolecule((b) => {
-        c = b.atom("C", { x: 0, y: 0 });
-        br = b.atom("Br", { x: 3, y: 0 }, { radicalElectrons: 1 });
-      });
-      const promoted = promoteImplicitHydrogen(drawn, c);
-      if (!promoted.ok) throw new Error(promoted.reason);
-      return { mol: promoted.molecule, c, br, h: promoted.hydrogenId, ch: promoted.bondId };
-    }
-
     it("the C-H electron aimed at the bromine is resolved by flow: HBr and a methyl radical", () => {
-      const { mol, c, br, h, ch } = methaneAndBromine();
+      const { mol, c, br, h, ch } = methaneAndBromineRadical();
       const arrows = [hook(rad(br), toAtom(h)), hook(bd(ch), toAtom(br)), hook(bd(ch), toAtom(c))];
       const product = expectReverses(mol, arrows);
       expect(order(product, h, br)).toBe(1);
@@ -831,10 +910,11 @@ describe("single electrons and a bond's pair aimed at a third atom", () => {
     });
 
     it("the textbook spelling, the C-H electron aimed at its own H, is half a homolysis: the Br arrow is refused", () => {
-      // The sinks cannot name the incipient H-Br bond, so an electron aimed at
-      // the H stays on the H, and the bromine's lone electron would be half a
-      // bond. That arrow is skipped and named; the C-H homolysis applies.
-      const { mol, c, br, h, ch } = methaneAndBromine();
+      // Aimed at the H ATOM, the C-H electron stays on the H, and the
+      // bromine's lone electron would be half a bond. That arrow is skipped
+      // and named; the C-H homolysis applies. Aimed at the new H-Br bond
+      // instead, it is the abstraction (below).
+      const { mol, c, br, h, ch } = methaneAndBromineRadical();
       const arrows = [hook(rad(br), toAtom(h)), hook(bd(ch), toAtom(h)), hook(bd(ch), toAtom(c))];
       expect(mechanismIssues(mol, arrows)).toMatchObject([
         { kind: "unpaired-bond-electron", arrowIndices: [0], label: "half a bond" },
@@ -848,10 +928,10 @@ describe("single electrons and a bond's pair aimed at a third atom", () => {
     });
   });
 
-  it("a shift whose re-formed bond the flow rule would misread is reversed as two arrows", () => {
-    // Cyclopropane's S-Z pair shifted into S-W, breaking S-Z. Aimed back at Z,
-    // Z's ring bond to W would promote W-Z; the reverse spells it as a
-    // heterolysis to S and S's lone pair into S-Z instead.
+  it("a shift whose re-formed bond adjacency would misread is reversed as ONE arrow into the new bond", () => {
+    // Cyclopropane's S-Z pair shifted into S-W, breaking S-Z. Aimed back at
+    // the ATOM Z, Z's ring bond to W would promote W-Z; aimed at the new bond
+    // S-Z (decision 199), it resolves on its own, with no adjacency asked.
     let s = "";
     let z = "";
     let w = "";
@@ -869,7 +949,151 @@ describe("single electrons and a bond's pair aimed at a third atom", () => {
     const product = expectReverses(mol, arrows);
     expect(order(product, s, w)).toBe(2);
     expect([charge(product, z), charge(product, w)]).toEqual([1, -1]);
-    expect(reverseArrows(mol, arrows)).toHaveLength(2);
+    expect(reverseArrows(mol, arrows)).toEqual([pair(bd(sw), toNew(s, z))]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The new-bond sink: what an atom sink cannot say (decisions 166, 199)
+// ---------------------------------------------------------------------------
+
+describe("the new-bond sink says which end bonds, and each named mechanism applies and reverses", () => {
+  it("Markovnikov protonation of propene by HBr: the pi pair to the new C1-H bond, the 2-propyl cation", () => {
+    const { mol, c1, c2, c3, h, hbr, br } = propeneAndHydrogenBromide();
+    const arrows = [pair(bd(bondBetween(mol, c1, c2)!.id), toNew(c1, h)), pair(bd(hbr), toAtom(br))];
+    const product = expectReverses(mol, arrows);
+    expect([order(product, c1, h), order(product, c1, c2)]).toEqual([1, 1]);
+    expect(bondBetween(product, h, br)).toBeUndefined();
+    // The secondary cation and bromide; C1 and the proton end neutral.
+    expect([c1, c2, c3, h, br].map((id) => charge(product, id))).toEqual([0, 1, 0, 0, -1]);
+    expect([c1, c2, c3].map((id) => implicitHydrogenCount(product, id))).toEqual([2, 1, 3]);
+    // Formula conserved pile by pile: nothing gained or lost, net charge 0.
+    expect(composition(product)).toEqual(composition(mol));
+    expect(mechanismIssues(mol, arrows)).toEqual([]);
+    // The reverse is the E1 deprotonation: C1-H's pair back into C1-C2, and
+    // bromide's lone pair back onto the proton.
+    expect(reverseArrows(mol, arrows)).toEqual([
+      pair(bd(bondBetween(product, c1, h)!.id), toBond(bondBetween(mol, c1, c2)!.id)),
+      pair(lp(br), toAtom(h)),
+    ]);
+  });
+
+  it("the sink decides, not the model: the same pi pair to C2-H gives the primary cation", () => {
+    // Anti-Markovnikov is a worse mechanism, not a malformed arrow: it
+    // applies, reverses, and puts the charge where the drawing says.
+    const { mol, c1, c2, h, hbr, br } = propeneAndHydrogenBromide();
+    const arrows = [pair(bd(bondBetween(mol, c1, c2)!.id), toNew(c2, h)), pair(bd(hbr), toAtom(br))];
+    const product = expectReverses(mol, arrows);
+    expect([order(product, c2, h), charge(product, c1), charge(product, c2)]).toEqual([1, 1, 0]);
+    expect(bondBetween(product, c1, h)).toBeUndefined();
+    expect(composition(product)).toEqual(composition(mol));
+  });
+
+  it("a 1,2-hydride shift: the C3-H pair to the new H-C2 bond moves the cation to the tertiary carbon", () => {
+    // 3-methylbutan-2-yl cation to 2-methylbutan-2-yl cation.
+    const { mol, cation, origin, migrant, migrating } = cationBesideMigratingGroup("hydride");
+    const arrows = [pair(bd(migrating), toNew(migrant, cation))];
+    const product = expectReverses(mol, arrows);
+    expect(order(product, migrant, cation)).toBe(1);
+    expect(bondBetween(product, migrant, origin)).toBeUndefined();
+    expect([charge(product, cation), charge(product, origin), charge(product, migrant)]).toEqual([0, 1, 0]);
+    expect([implicitHydrogenCount(product, cation), implicitHydrogenCount(product, origin)]).toEqual([1, 0]);
+    expect(composition(product)).toEqual(composition(mol));
+    expect(mechanismIssues(mol, arrows)).toEqual([]);
+    // The shift back is ONE arrow, into the new H-C3 bond: no hydride drawn.
+    expect(reverseArrows(mol, arrows)).toEqual([
+      pair(bd(bondBetween(product, migrant, cation)!.id), toNew(migrant, origin)),
+    ]);
+  });
+
+  it("a Wagner-Meerwein methyl shift: pinacolyl cation to the 2,3-dimethylbutan-2-yl cation", () => {
+    const { mol, cation, origin, migrant, migrating } = cationBesideMigratingGroup("methyl");
+    const arrows = [pair(bd(migrating), toNew(migrant, cation))];
+    const product = expectReverses(mol, arrows);
+    expect(order(product, migrant, cation)).toBe(1);
+    expect(bondBetween(product, migrant, origin)).toBeUndefined();
+    expect([charge(product, cation), charge(product, origin), charge(product, migrant)]).toEqual([0, 1, 0]);
+    expect([cation, origin, migrant].map((id) => implicitHydrogenCount(product, id))).toEqual([1, 0, 3]);
+    expect(composition(product)).toEqual(composition(mol));
+    expect(mechanismIssues(mol, arrows)).toEqual([]);
+    expect(reverseArrows(mol, arrows)).toHaveLength(1);
+  });
+
+  it("a ring expansion: the cyclobutylmethyl cation's ring bond to the new bond gives the cyclopentyl cation", () => {
+    const { mol, r1, r2, r3, r4, cation, migrating } = cyclobutylmethylCation();
+    const arrows = [pair(bd(migrating), toNew(r2, cation))];
+    const product = expectReverses(mol, arrows);
+    expect(ringCount(product)).toBe(1);
+    expect(bondBetween(product, r1, r2)).toBeUndefined();
+    // Five ring bonds: r1-cation-r2-r3-r4-r1.
+    for (const [a, b] of [
+      [r1, cation],
+      [cation, r2],
+      [r2, r3],
+      [r3, r4],
+      [r4, r1],
+    ] as const) {
+      expect(order(product, a, b), `${a}-${b}`).toBe(1);
+    }
+    expect([charge(product, r1), charge(product, cation)]).toEqual([1, 0]);
+    expect(composition(product)).toEqual(composition(mol));
+    expect(mechanismIssues(mol, arrows)).toEqual([]);
+  });
+
+  it("HAT by Br drawn at the H: the C-H electron to the new H-Br bond gives HBr and a methyl radical", () => {
+    const { mol, c, br, h, ch } = methaneAndBromineRadical();
+    // The bromine's fishhook, drawn to the H or to the same new bond.
+    for (const fromBromine of [toAtom(h), toNew(br, h)]) {
+      const arrows = [hook(rad(br), fromBromine), hook(bd(ch), toNew(h, br)), hook(bd(ch), toAtom(c))];
+      const product = expectReverses(mol, arrows);
+      expect(order(product, h, br)).toBe(1);
+      expect(bondBetween(product, c, h)).toBeUndefined();
+      expect([c, h, br].map((id) => product.atoms[id]!.radicalElectrons)).toEqual([1, 0, 0]);
+      expect(product.atomIds.every((id) => charge(product, id) === 0)).toBe(true);
+      expect(implicitHydrogenCount(product, c)).toBe(3);
+      expect(composition(product)).toEqual(composition(mol));
+      expect(mechanismIssues(mol, arrows)).toEqual([]);
+    }
+  });
+
+  it("keeps decision 153: a bare 1,2-shift aimed at the cation ATOM is still reported, beside a new-bond arrow", () => {
+    // A new-bond arrow elsewhere in the step (bromide onto the same cation)
+    // names neither end of the migrating bond, so flow cannot decide it, and
+    // adjacency still may not read the shift as an elimination.
+    const { mol, cation, migrating } = cationBesideMigratingGroup("hydride");
+    const bromide = addAtom(mol, { element: "Br", pos: { x: 5, y: 0 }, charge: -1 });
+    const arrows = [pair(bd(migrating), toAtom(cation)), pair(lp(bromide.id), toNew(bromide.id, cation))];
+    expect(kinds(bromide.molecule, arrows)[0]).toBe("ambiguous-bond-end");
+  });
+
+  it("names a new bond written backwards, a jump, and a new bond that is its own source", () => {
+    const { mol, c, br, cBr, o } = bromomethaneAndHydroxide();
+    expect(kinds(mol, [pair(lp(o), toNew(c, o))])).toEqual(["new-bond-end"]);
+    expect(kinds(mol, [pair(bd(cBr), toNew(o, c))])).toEqual(["new-bond-end"]);
+    expect(kinds(mol, [pair(lp(o), toNew(c, br))])).toEqual(["disconnected"]);
+    expect(kinds(mol, [pair(bd(cBr), toNew(o, o))])).toEqual(["disconnected"]);
+    expect(kinds(mol, [pair(bd(cBr), toNew(br, c))])).toEqual(["self-target"]);
+    expect(kinds(mol, [pair(lp(o), toNew(o, o))])).toEqual(["self-target"]);
+    expect(kinds(mol, [pair(lp(o), toNew(o, "constructor"))])).toEqual(["unknown-reference"]);
+    expect(kinds(mol, [pair(rad(o), toNew(o, c))])).toEqual(["pair-from-radical"]);
+    const [backwards] = mechanismIssues(mol, [pair(bd(cBr), toNew(o, c))]);
+    expect(backwards).toMatchObject({
+      atomId: c,
+      atomIds: [c, o],
+      bondIds: [cBr],
+      arrowIndices: [0],
+      severity: "error",
+      label: "new bond backwards",
+      message: "Arrow 1 names its new bond from O, but its electrons start at C: name C first; not applied",
+    });
+    expect(applyArrows(mol, [pair(lp(o), toNew(c, o))])).toBe(mol);
+  });
+
+  it("refuses a new bond that lands on an aromatic-flagged bond, as a named one is (pyridine's N)", () => {
+    const { mol, ring } = flaggedPyridine();
+    const arrows = [pair(lp(ring[0]!), toNew(ring[0]!, ring[1]!))];
+    expect(kinds(mol, arrows)).toEqual(["aromatic-bond"]);
+    expect(applyArrows(mol, arrows)).toBe(mol);
   });
 });
 
@@ -1348,6 +1572,54 @@ describe("reversal is total", () => {
     // (Measured at 667 and 255 of 2000.)
     expect(admittedSomething).toBeGreaterThan(500);
     expect(exact).toBeGreaterThan(200);
+  });
+
+  it("with new-bond sinks in the pool too, every step that keeps its derived hydrogens comes back", () => {
+    // Every forward new-bond move, and every reverse shift into a bond the
+    // step broke, resolves on its own; this holds that over random steps.
+    const rand = lcg(20260930);
+    const pick = <T,>(items: readonly T[]): T => items[Math.floor(rand() * items.length)]!;
+    let admittedSomething = 0;
+    let exact = 0;
+    let usedNewBond = 0;
+    const trials = 2000;
+    for (let trial = 0; trial < trials; trial++) {
+      const mol = pick(molecules)();
+      const sources: ElectronSource[] = [
+        ...mol.atomIds.flatMap((id) => [lp(id), rad(id)]),
+        ...mol.bondIds.map((id) => bd(id)),
+      ];
+      const arrows: ElectronMove[] = [];
+      const count = 1 + Math.floor(rand() * 4);
+      for (let i = 0; i < count; i++) {
+        const source = pick(sources);
+        // An end on the source most of the time, so the sink is usually well
+        // formed; any atom otherwise, so the refusals are exercised too.
+        const onSource =
+          source.kind === "bond" ? [mol.bonds[source.bondId]!.from, mol.bonds[source.bondId]!.to] : [source.atomId];
+        const end = rand() < 0.85 ? pick(onSource) : pick(mol.atomIds);
+        const sink: ElectronSink =
+          rand() < 0.6
+            ? toNew(end, pick(mol.atomIds))
+            : pick([...mol.atomIds.flatMap((id) => [toAtom(id), toLp(id)]), ...mol.bondIds.map((id) => toBond(id))]);
+        arrows.push({ electrons: rand() < 0.7 ? "pair" : "single", source, sink });
+      }
+      const product = applyArrows(mol, arrows);
+      if (product === mol) continue;
+      admittedSomething++;
+      const reverse = reverseArrows(mol, arrows);
+      if (kinds(mol, arrows).includes("hydrogens-changed")) continue;
+      exact++;
+      if ([...arrows, ...reverse].some((a) => a.sink.kind === "newBond")) usedNewBond++;
+      const refused = mechanismIssues(product, reverse).filter((i) => REFUSALS.has(i.kind));
+      expect(refused, `trial ${trial}`).toEqual([]);
+      expect(structure(applyArrows(product, reverse)), `trial ${trial}`).toEqual(structure(mol));
+    }
+    // Not vacuous, and most exact steps name a new bond forward or back.
+    // (Measured at 662, 214 and 185 of 2000.)
+    expect(admittedSomething).toBeGreaterThan(500);
+    expect(exact).toBeGreaterThan(150);
+    expect(usedNewBond).toBeGreaterThan(100);
   });
 
   it("names the residual: a pair valence reads back as hydrogens is not there to reverse", () => {

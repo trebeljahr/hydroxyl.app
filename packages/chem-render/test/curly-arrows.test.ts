@@ -23,6 +23,7 @@ import {
 } from "@starter/chem-core";
 import type { AtomId, Molecule, PlanarView, ProjectedLayout, Vec2 } from "@starter/chem-core";
 
+import { insideClearance } from "../src/annotation/anchor.js";
 import { arrowhead, CURLY_ARROWHEAD } from "../src/annotation/arrowhead.js";
 import {
   CURLY_ARROW_CURVE,
@@ -38,6 +39,7 @@ import {
   acetateResonance,
   bromineHomolysis,
   cyanideAdditionToAcetone,
+  markovnikovProtonation,
   MECHANISM_FIXTURES,
 } from "../src/fixtures.js";
 import { representation, VIEW_KINDS, isStructuralViewKind } from "../src/representation.js";
@@ -475,6 +477,52 @@ describe("shaft and head", () => {
       // On the side the curve comes from: the shaft's far end is on the same side.
       expect(Math.sign(across(layout.shaft!.p0))).toBe(Math.sign(across(layout.head.tip)));
     }
+  });
+
+  it("aims a new-bond sink at the midpoint of its two atoms and puts the tip ON it (decisions 166, 199)", () => {
+    const { molecule, annotations, c1, proton } = markovnikovProtonation();
+    const intoNewBond = annotations[0] as CurlyArrowAnnotation;
+    for (const style of STYLES) {
+      const layout = layoutOf(molecule, intoNewBond, style);
+      const a = modelToPx(style, getAtom(molecule, c1)!.pos);
+      const b = modelToPx(style, getAtom(molecule, proton)!.pos);
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      expect(layout.curve.p3.x).toBeCloseTo(mid.x, 9);
+      expect(layout.curve.p3.y).toBeCloseTo(mid.y, 9);
+      // No stand-off: there is no line yet for the barbs to print on.
+      expect(distance(layout.head.tip, mid)).toBeLessThan(1e-6);
+      expect(layout.findings).toEqual([]);
+    }
+  });
+
+  it("stops a new-bond head short only where an atom's label covers the midpoint", () => {
+    // The proton dragged to a quarter bond above C1: the midpoint is now
+    // inside the "H" label's clear space, and the tip stops where the curve
+    // enters it rather than printing on the letter.
+    const { molecule, annotations, c1, proton } = markovnikovProtonation();
+    const c1Pos = getAtom(molecule, c1)!.pos;
+    const crowded = setAtomPosition(molecule, proton, { x: c1Pos.x, y: c1Pos.y + 0.25 });
+    for (const style of STYLES) {
+      const context = schemeAnchorContext(crowded, style, skeletal)!;
+      const hLabel = { kind: "obstacles", obstacles: context.geometry.labelOf(proton)!.obstacles } as const;
+      const a = modelToPx(style, getAtom(crowded, c1)!.pos);
+      const b = modelToPx(style, getAtom(crowded, proton)!.pos);
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      expect(insideClearance(hLabel, mid), style.name).toBe(true);
+      const layout = layoutOf(crowded, annotations[0] as CurlyArrowAnnotation, style);
+      expect(insideClearance(hLabel, layout.head.tip), style.name).toBe(false);
+      expect(distance(layout.head.tip, mid)).toBeGreaterThan(1);
+    }
+  });
+
+  it("draws a new-bond arrow only in a panel that places both its atoms", () => {
+    const { molecule, annotations, proton } = markovnikovProtonation();
+    const intoNewBond = annotations[0] as CurlyArrowAnnotation;
+    const built = arrowsOf(molecule, [intoNewBond]);
+    const placement = sceneAnchorPlacement(built.scene, molecule);
+    expect(schemeAnnotationResolves(intoNewBond, placement)).toBe(true);
+    const withoutProton = { ...placement, hasAtom: (atomId: AtomId) => atomId !== proton && placement.hasAtom(atomId) };
+    expect(schemeAnnotationResolves(intoNewBond, withoutProton)).toBe(false);
   });
 
   it("starts a bond source's tail on the bond's midpoint", () => {

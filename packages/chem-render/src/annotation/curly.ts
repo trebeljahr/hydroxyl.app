@@ -445,8 +445,10 @@ function crowding(
   });
 
   const ownAtoms = new Set<AtomId>();
-  if (tail.atomId !== undefined) ownAtoms.add(tail.atomId);
-  if (headEnd.atomId !== undefined) ownAtoms.add(headEnd.atomId);
+  for (const end of [tail, headEnd]) {
+    if (end.atomId !== undefined) ownAtoms.add(end.atomId);
+    for (const atomId of end.between ?? []) ownAtoms.add(atomId);
+  }
   const ownBonds = new Set<BondId>();
   if (tail.bondId !== undefined) ownBonds.add(tail.bondId);
   if (headEnd.bondId !== undefined) ownBonds.add(headEnd.bondId);

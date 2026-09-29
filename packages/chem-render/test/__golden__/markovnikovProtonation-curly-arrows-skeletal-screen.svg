@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-18 -134.98 128.4 155.01" width="128.4px" height="155.01px">
+  <rect data-decoration="background" x="-18" y="-134.98" width="128.4" height="155.01" fill="#ffffff"/>
+  <line id="bond:b3:line" data-bond="b3" x1="0" y1="0" x2="38.11" y2="-22" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b5:line" data-bond="b5" x1="39.86" y1="-25.03" x2="77.96" y2="-3.03" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b5:line2" data-bond="b5" x1="36.36" y1="-18.97" x2="74.46" y2="3.03" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b8:line" data-bond="b8" x1="76.21" y1="-74.5" x2="76.21" y2="-101.5" stroke="#1f2937" stroke-width="2"/>
+  <circle id="atom:a1:dot" data-atom="a1" cx="0" cy="0" r="2" fill="#111827"/>
+  <circle id="atom:a2:dot" data-atom="a2" cx="38.11" cy="-22" r="2" fill="#111827"/>
+  <circle id="atom:a4:dot" data-atom="a4" cx="76.21" cy="0" r="2" fill="#111827"/>
+  <text id="atom:a6:label" data-atom="a6" x="70.43" y="-60.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start"><tspan>H</tspan></text>
+  <text id="atom:a7:label" data-atom="a7" x="68.21" y="-104.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start"><tspan>Br</tspan></text>
+  <path id="annotation:ann_1:shaft" data-annotation="ann_1" d="M57.16 -11 C55.68 -17.83 58.21 -24.38 62.94 -28.53" fill="none" stroke="#1f2937" stroke-width="2"/>
+  <polygon id="annotation:ann_1:head" data-annotation="ann_1" points="76.21,-33 59.88,-30.7 63.24,-27.74 62.89,-23.28" fill="#1f2937"/>
+  <path id="annotation:ann_2:shaft" data-annotation="ann_2" d="M76.21 -88 C84.85 -85.04 89.85 -89.71 91.22 -95.58" fill="none" stroke="#1f2937" stroke-width="2"/>
+  <polygon id="annotation:ann_2:head" data-annotation="ann_2" points="87.21,-109 86.57,-92.52 90.08,-95.29 94.4,-94.15" fill="#1f2937"/>
+</svg>

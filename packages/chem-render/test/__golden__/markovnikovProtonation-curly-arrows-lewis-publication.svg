@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-33.411 -79.71 108.391 116.442" width="108.391px" height="116.442px">
+  <line id="bond:b3:line" data-bond="b3" x1="7.618" y1="-4.398" x2="13.167" y2="-7.602" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b5:line" data-bond="b5" x1="28.403" y1="-10.027" x2="33.951" y2="-6.823" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b5:line2" data-bond="b5" x1="28.403" y1="-5.177" x2="33.951" y2="-1.973" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b8:line" data-bond="b8" x1="41.569" y1="-43.333" x2="41.569" y2="-52.667" stroke="#000000" stroke-width="1"/>
+  <text id="atom:a1:label" data-atom="a1" x="-6.018" y="5.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>C</tspan></text>
+  <text id="atom:a2:label" data-atom="a2" x="14.767" y="-6.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>C</tspan></text>
+  <text id="atom:a4:label" data-atom="a4" x="35.551" y="5.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>C</tspan></text>
+  <text id="atom:a6:label" data-atom="a6" x="35.551" y="-30.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <text id="atom:a7:label" data-atom="a7" x="33.236" y="-54.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>Br</tspan></text>
+  <circle id="atom:a7:lonepair:0:0" data-atom="a7" cx="39.403" cy="-69" r="1.667" fill="#000000"/>
+  <circle id="atom:a7:lonepair:0:1" data-atom="a7" cx="43.736" cy="-69" r="1.667" fill="#000000"/>
+  <circle id="atom:a7:lonepair:1:0" data-atom="a7" cx="48.549" cy="-70.044" r="1.667" fill="#000000"/>
+  <circle id="atom:a7:lonepair:1:1" data-atom="a7" cx="51.613" cy="-66.98" r="1.667" fill="#000000"/>
+  <circle id="atom:a7:lonepair:2:0" data-atom="a7" cx="31.525" cy="-66.98" r="1.667" fill="#000000"/>
+  <circle id="atom:a7:lonepair:2:1" data-atom="a7" cx="34.59" cy="-70.044" r="1.667" fill="#000000"/>
+  <line id="atom:a1:h:0:line" data-hydrogen-host="a1" data-hydrogen-index="0" x1="-4.234" y1="-7.333" x2="-6.634" y2="-11.49" stroke="#000000" stroke-width="1"/>
+  <text id="atom:a1:h:0:label" data-hydrogen-host="a1" data-hydrogen-index="0" x="-16.886" y="-13.09" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="atom:a1:h:1:line" data-hydrogen-host="a1" data-hydrogen-index="1" x1="-7.618" y1="4.398" x2="-11.775" y2="6.798" stroke="#000000" stroke-width="1"/>
+  <text id="atom:a1:h:1:label" data-hydrogen-host="a1" data-hydrogen-index="1" x="-25.411" y="16.93" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="atom:a1:h:2:line" data-hydrogen-host="a1" data-hydrogen-index="2" x1="4.234" y1="7.333" x2="6.634" y2="11.49" stroke="#000000" stroke-width="1"/>
+  <text id="atom:a1:h:2:label" data-hydrogen-host="a1" data-hydrogen-index="2" x="4.85" y="24.557" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="atom:a2:h:0:line" data-hydrogen-host="a2" data-hydrogen-index="0" x1="20.785" y1="-19.333" x2="20.785" y2="-24.133" stroke="#000000" stroke-width="1"/>
+  <text id="atom:a2:h:0:label" data-hydrogen-host="a2" data-hydrogen-index="0" x="14.767" y="-25.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="atom:a4:h:0:line" data-hydrogen-host="a4" data-hydrogen-index="0" x1="41.569" y1="7.333" x2="41.569" y2="12.133" stroke="#000000" stroke-width="1"/>
+  <text id="atom:a4:h:0:label" data-hydrogen-host="a4" data-hydrogen-index="0" x="35.551" y="25.2" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="atom:a4:h:1:line" data-hydrogen-host="a4" data-hydrogen-index="1" x1="49.187" y1="-4.398" x2="53.344" y2="-6.798" stroke="#000000" stroke-width="1"/>
+  <text id="atom:a4:h:1:label" data-hydrogen-host="a4" data-hydrogen-index="1" x="54.944" y="-5.463" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <path id="annotation:ann_1:shaft" data-annotation="ann_1" d="M31.177 -6 C30.315 -9.972 31.946 -13.769 34.861 -15.999" fill="none" stroke="#000000" stroke-width="1"/>
+  <polygon id="annotation:ann_1:head" data-annotation="ann_1" points="41.569,-18 33.364,-17.179 34.981,-15.635 34.715,-13.415" fill="#000000"/>
+  <path id="annotation:ann_2:shaft" data-annotation="ann_2" d="M41.569 -48 C42.9 -47.544 44.072 -47.42 45.087 -47.548" fill="none" stroke="#000000" stroke-width="1"/>
+  <polygon id="annotation:ann_2:head" data-annotation="ann_2" points="49.862,-52.667 42.448,-49.057 44.499,-48.168 45.019,-45.993" fill="#000000"/>
+</svg>

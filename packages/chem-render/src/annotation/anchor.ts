@@ -36,6 +36,12 @@
  *   - A BOND SINK: aimed at its midpoint; the tip stops where the curve enters
  *     a band `doubleBondGapPx` either side of the bond, which is on the side
  *     it arrives from and where a new line would be drawn (decision 172).
+ *   - A NEW-BOND SINK: aimed at the midpoint of its two atoms as the panel
+ *     places them (decision 166), and the tip stops ON it (decision 199):
+ *     there is no line yet for the barbs to print on, so no band. Only where
+ *     either atom's clear space covers the midpoint — two labels drawn close
+ *     — does it stop short, where the curve enters that space. The end sits
+ *     on neither atom, so it names both as `between`.
  *
  * Everything is scene px, y-down, as `positionOf` returns it.
  */
@@ -90,9 +96,13 @@ export interface ResolvedEnd {
   readonly clearance: EndClearance;
   /** The atom the end sits on, if it sits on one. Its own label is not crowding. */
   readonly atomId?: AtomId;
+  /** A new bond's two atoms: the end sits between them, on neither, and
+   *  neither's label is crowding. */
+  readonly between?: readonly [AtomId, AtomId];
   /** The bond the end sits on, if it sits on one. */
   readonly bondId?: BondId;
-  /** A bond end's unit axis, `from` to `to`: a fallback chord direction. */
+  /** A bond end's unit axis, `from` to `to` (a new bond's, `end` to `atom`):
+   *  a fallback chord direction. */
   readonly axis?: ScenePoint;
 }
 
@@ -106,6 +116,8 @@ type End = CurlyArrowSource | CurlyArrowSink;
 interface Base {
   readonly point: ScenePoint;
   readonly bond?: { readonly bondId: BondId; readonly ends: AnchorBondEnds };
+  /** A new bond's two atom centres, `end` then `atom`. */
+  readonly pair?: AnchorBondEnds;
 }
 
 function midpoint(a: ScenePoint, b: ScenePoint): ScenePoint {
@@ -123,6 +135,12 @@ function baseOf(end: End, geometry: SchemeAnchorGeometry): Base | undefined {
     const ends = geometry.bondEnds(end.bondId);
     if (ends === undefined) return undefined;
     return { point: midpoint(ends.from, ends.to), bond: { bondId: end.bondId, ends } };
+  }
+  if (end.kind === "newBond") {
+    const from = geometry.positionOf(end.atomIds[0]);
+    const to = geometry.positionOf(end.atomIds[1]);
+    if (from === undefined || to === undefined) return undefined;
+    return { point: midpoint(from, to), pair: { from, to } };
   }
   const point = geometry.positionOf(end.atomId);
   return point === undefined ? undefined : { point };
@@ -170,8 +188,19 @@ function drawnElectrons(
   return undefined;
 }
 
+/** An atom's clear space: its label's obstacles, or a bare vertex's dot disc. */
+function clearSpaceOf(
+  label: AnchorLabel | undefined,
+  centre: ScenePoint,
+  style: RenderStyle,
+): readonly LabelObstacle[] {
+  return label !== undefined
+    ? label.obstacles
+    : [{ kind: "disc", centre, radius: style.atomDotRadiusPx + style.labelPaddingPx }];
+}
+
 function atomEnd(
-  end: Exclude<End, { kind: "bond" }>,
+  end: Exclude<End, { kind: "bond" | "newBond" }>,
   base: Base,
   other: ScenePoint,
   isSource: boolean,
@@ -182,20 +211,38 @@ function atomEnd(
   // A lone pair or a radical dot the panel draws is where a SOURCE's electrons
   // are. A sink lone pair does not exist yet, so the head aims at the atom.
   const electrons = isSource ? drawnElectrons(end.kind, label, other) : undefined;
-  const obstacles: readonly LabelObstacle[] =
-    label !== undefined
-      ? label.obstacles
-      : [
-          {
-            kind: "disc",
-            centre: base.point,
-            radius: style.atomDotRadiusPx + style.labelPaddingPx,
-          },
-        ];
   return {
     point: electrons ?? base.point,
-    clearance: { kind: "obstacles", obstacles },
+    clearance: { kind: "obstacles", obstacles: clearSpaceOf(label, base.point, style) },
     atomId: end.atomId,
+  };
+}
+
+/**
+ * The head of an arrow into a bond not yet drawn: the midpoint of the two
+ * atoms, clear of both atoms' clear space (decision 199). A midpoint outside
+ * both, which is every sensibly spaced drawing, is where the tip lands.
+ */
+function newBondEnd(
+  end: Extract<End, { kind: "newBond" }>,
+  base: Base,
+  geometry: SchemeAnchorGeometry,
+  style: RenderStyle,
+): ResolvedEnd {
+  const { from, to } = base.pair!;
+  const [endAtom, atom] = end.atomIds;
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const length = Math.sqrt(dx * dx + dy * dy);
+  const obstacles = [
+    ...clearSpaceOf(geometry.labelOf(endAtom), from, style),
+    ...clearSpaceOf(geometry.labelOf(atom), to, style),
+  ];
+  return {
+    point: base.point,
+    clearance: { kind: "obstacles", obstacles },
+    between: [endAtom, atom],
+    ...(length > 0 ? { axis: { x: dx / length, y: dy / length } } : {}),
   };
 }
 
@@ -239,7 +286,9 @@ export function resolveCurlyArrowEnds(
   const resolve = (end: End, base: Base, other: Base, isSource: boolean): ResolvedEnd =>
     end.kind === "bond"
       ? bondEnd(base, isSource, style)
-      : atomEnd(end, base, other.point, isSource, geometry, style);
+      : end.kind === "newBond"
+        ? newBondEnd(end, base, geometry, style)
+        : atomEnd(end, base, other.point, isSource, geometry, style);
   return {
     tail: resolve(arrow.source, tailBase, headBase, true),
     head: resolve(arrow.sink, headBase, tailBase, false),

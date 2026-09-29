@@ -29,9 +29,10 @@
  * A SOURCE IS ELECTRONS, NEVER A NUCLEUS: a lone pair on an atom, a bond, or an
  * unpaired electron on an atom. There is no "from atom" member, because an
  * arrow from a bare carbon would silently read as a carbanion. A SINK is an
- * atom, a bond, or a lone pair on a named atom, and never "nothing": a pair
- * that leaves always lands on some atom, and a sink with no source to mirror
- * it would make the reverse of every ionisation undefined.
+ * atom, a bond, a lone pair on a named atom, or a NEW BOND between two named
+ * atoms (decision 166), and never "nothing": a pair that leaves always lands
+ * on some atom, and a sink with no source to mirror it would make the reverse
+ * of every ionisation undefined.
  *
  * THE SOURCE-TO-SINK RESOLUTION TABLE (decision 150). Every cell has a fixture
  * in mechanism.test.ts. "Forms" makes a new single bond (or adds to one);
@@ -45,6 +46,8 @@
  *   lone pair on A  -> lone pair C  electron TRANSFER to C, no bond involved
  *                                   (a fishhook here is a SET; a pair is
  *                                   applied and warned). C = A: itself.
+ *   lone pair on A  -> new bond A-C as the atom sink C: forms A-C, or
+ *                                   promotes it when already bonded.
  *   bond A-B        -> atom C       C = A or B: HETEROLYSIS, the pair becomes
  *                                   a lone pair on C (a fishhook: C's half of
  *                                   a homolysis). C a third atom: the pair
@@ -58,11 +61,23 @@
  *                                   jump, not applied. The same bond: itself.
  *   bond A-B        -> lone pair C  C = A or B: heterolysis, as the atom
  *                                   sink. A third atom: a jump, not applied.
+ *   bond A-B        -> new bond X-C X = A or B, C a third atom: the pair
+ *                                   forms (or promotes) X-C, the end STATED
+ *                                   rather than found by flow or adjacency.
+ *                                   The Markovnikov proton, a 1,2-shift.
  *   radical on A    -> atom C       as the lone-pair row, one electron: half
  *                                   of a new bond (radical recombination).
  *   radical on A    -> bond C-D     A an end: one electron into C-D (half of
  *                                   a pi bond, as in a beta-scission).
  *   radical on A    -> lone pair C  one electron handed to C (a SET).
+ *   radical on A    -> new bond A-C as the atom sink C, one electron.
+ *
+ * A NEW-BOND SINK `[end, atom]` (decision 199) names a bond PLACE: `end` must
+ * be where the electrons start — the atom of a lone pair or radical, one end
+ * of a bond — and a bond already there is promoted, exactly as a lone pair
+ * aimed at a bonded atom promotes it. Written backwards (`atom` on the source,
+ * `end` not) it is `new-bond-end`; neither on the source is a jump, and a new
+ * bond that is the source bond itself is an arrow at itself.
  *
  * THE WHOLE STEP AT ONCE (decision 130). `applyArrows` does not fold one
  * arrow at a time: an SN2 applied that way has a five-valent carbon as its
@@ -100,7 +115,8 @@
  *     misread as an elimination (decision 153).
  *   - a bond past triple, a single electron left alone in a bond, a double-
  *     barbed arrow from an unpaired electron, a jump between places that share
- *     no atom, and an arrow aimed at where it starts.
+ *     no atom, an arrow aimed at where it starts, and a new bond named from
+ *     the atom the electrons are going to rather than the one they leave.
  *
  * SATURATION IS NEVER ASKED OF `bondOrderSum`. Lone pairs come from
  * `lonePairCount` and over-valence from `isOverValent`, both on
@@ -122,8 +138,10 @@
  * REVERSAL (decision 151). `reverseArrows(reactant, arrows)` spells, in the
  * PRODUCT's vocabulary, the arrows that take the product back. It needs the
  * reactant because a bond the step forms is named by an id minted from the
- * reactant's counter. It is total: every applied move has a reverse, and none
- * of them rests on the ambiguous cell. The reactant comes back STRUCTURALLY:
+ * reactant's counter. It is total: every applied move has a reverse, and each
+ * resolves on its own, with no flow or adjacency: a shift whose bond the step
+ * broke goes back as a shift into a new bond (decision 199). The reactant
+ * comes back STRUCTURALLY:
  * every atom field for field and every bond by its unordered atom pair, bond
  * ids excluded, since a bond the step broke is re-formed with a fresh id and
  * no mark (which face re-forms is geometry, and for an SN1 ion pair it is
@@ -144,24 +162,23 @@
  *     pairs with an unpaired electron when there is one. The vocabulary has
  *     no "arrive unpaired" sink for a through-space electron.
  *
- * WHAT THE SINKS CANNOT SAY YET. A sink names an atom, an existing bond or a
- * lone pair, so an arrow whose electrons form a bond between two atoms that
- * are not bonded yet says which atom it reaches but not which end of its own
- * bond goes with them. Flow and adjacency recover most drawings; three common
- * ones stay out of reach, and each is reported rather than guessed:
+ * WHAT ONLY THE NEW-BOND SINK CAN SAY. An ATOM sink says which atom a bond's
+ * electrons reach but not which end of their own bond goes with them. Flow
+ * and adjacency recover most drawings; three common ones they cannot, and
+ * aimed at the atom each is reported rather than guessed. Aimed at the new
+ * bond (decision 166), each applies and reverses:
  *
  *   - Markovnikov protonation, propene's pi pair to HBr's proton: which
- *     carbon takes the proton. `ambiguous-bond-end`.
+ *     carbon takes the proton. `newBond [C1, H]` says it.
  *   - a 1,2-shift (hydride, Wagner-Meerwein, ring expansion), the migrating
- *     bond's pair to the cation. `ambiguous-bond-end` (decision 153).
+ *     bond's pair to the cation: at the atom, `ambiguous-bond-end` (decision
+ *     153); at `newBond [migrant, cation]`, the shift.
  *   - hydrogen-atom abstraction drawn as the textbook's three fishhooks, with
- *     the C-H electron aimed at the H it leaves with: that reads as the H's
- *     half of a C-H homolysis, and the Br radical's electron is then half a
- *     bond, `unpaired-bond-electron`. Aiming the C-H electron at the Br atom
- *     instead is resolved by flow and applies as the abstraction.
- *
- * A sink naming the incipient bond (both atoms) would spell all three; it
- * widens the scheme annotation codec, so it is left to a ruling.
+ *     the C-H electron aimed at the H it leaves with: at the H ATOM that reads
+ *     as the H's half of a C-H homolysis, and the Br radical's electron is
+ *     then half a bond, `unpaired-bond-electron`. At `newBond [H, Br]` it is
+ *     the abstraction, and so is the C-H electron aimed at the Br atom, which
+ *     flow resolves.
  *
  * HYDROGENS ARE DERIVED, NOT FORBIDDEN (decision 131). Protonation and
  * deprotonation are the two commonest arrows in organic chemistry, and an
@@ -196,13 +213,15 @@ export type ElectronSource =
   | { readonly kind: "radical"; readonly atomId: AtomId };
 
 /**
- * Where they go: an atom, a bond, or a lone pair on a named atom. Never
+ * Where they go: an atom, a bond, a lone pair on a named atom, or the new
+ * bond between `end` — where the electrons start — and `atom`. Never
  * "nothing". See the table in the header for what each combination does.
  */
 export type ElectronSink =
   | { readonly kind: "atom"; readonly atomId: AtomId }
   | { readonly kind: "bond"; readonly bondId: BondId }
-  | { readonly kind: "lonePair"; readonly atomId: AtomId };
+  | { readonly kind: "lonePair"; readonly atomId: AtomId }
+  | { readonly kind: "newBond"; readonly atomIds: readonly [end: AtomId, atom: AtomId] };
 
 /** One curly arrow's chemistry: how many electrons move, from where, to where. */
 export interface ElectronMove {
@@ -224,6 +243,8 @@ export type MechanismIssueKind =
   | "disconnected"
   /** A bond's pair is aimed at a third atom and nothing says which end bonds. */
   | "ambiguous-bond-end"
+  /** A new-bond sink names first the atom the electrons go to, not the one they leave. */
+  | "new-bond-end"
   /** An arrow starts or ends on an aromatic-flagged bond. */
   | "aromatic-bond"
   /** A double-barbed arrow starts at an unpaired electron. */
@@ -372,7 +393,9 @@ function resolveLocal(mol: Molecule, arrow: ElectronMove, index: number): Local 
     if (end.kind === "bond") {
       (ownBond(mol, end.bondId) ? presentBonds : missingBonds).push(end.bondId);
     } else {
-      (ownAtom(mol, end.atomId) ? presentAtoms : missingAtoms).push(end.atomId);
+      for (const atomId of end.kind === "newBond" ? end.atomIds : [end.atomId]) {
+        (ownAtom(mol, atomId) ? presentAtoms : missingAtoms).push(atomId);
+      }
     }
   }
   if (missingAtoms.length > 0 || missingBonds.length > 0) {
@@ -415,6 +438,17 @@ function resolveLocal(mol: Molecule, arrow: ElectronMove, index: number): Local 
       case "lonePair":
         if (sink.atomId === a) return refused(index, "self-target", [a]);
         return move(atomPlace(sink.atomId), true);
+      case "newBond": {
+        const [end, c] = sink.atomIds;
+        if (end !== a) {
+          return c === a
+            ? refused(index, "new-bond-end", [a, end])
+            : refused(index, "disconnected", unique([a, end, c]));
+        }
+        if (c === a) return refused(index, "self-target", [a]);
+        // As the atom sink: forms A-C, or promotes it when already bonded.
+        return move(bondPlace(a, c), false);
+      }
     }
   }
 
@@ -450,6 +484,20 @@ function resolveLocal(mol: Molecule, arrow: ElectronMove, index: number): Local 
       if (c === bond.from || c === bond.to) return move(atomPlace(c), true, c);
       return refused(index, "disconnected", [bond.from, bond.to, c], [bond.id]);
     }
+    case "newBond": {
+      // The third-atom cell with the forming end STATED: no flow, no
+      // adjacency, so decision 153's guard is never asked (decision 199).
+      const [end, c] = sink.atomIds;
+      const onSource = (x: AtomId): boolean => x === bond.from || x === bond.to;
+      if (!onSource(end)) {
+        return onSource(c)
+          ? refused(index, "new-bond-end", [c, end], [bond.id])
+          : refused(index, "disconnected", unique([bond.from, bond.to, end, c]), [bond.id]);
+      }
+      // `end` itself, or the other end: the new bond is the source bond.
+      if (onSource(c)) return refused(index, "self-target", [bond.from, bond.to], [bond.id]);
+      return move(bondPlace(end, c), false, end);
+    }
   }
 }
 
@@ -477,15 +525,16 @@ function resolveLocal(mol: Molecule, arrow: ElectronMove, index: number): Local 
  * shift, a ring expansion. Adjacency would instead promote X-C and strand Y
  * as a cation no arrow receives — a bare H+ or a free methyl cation — and
  * report nothing, which is a different reaction presented as the drawn one.
- * The shift itself cannot be spelled until a sink can name a bond that does
- * not exist yet, so the arrow is reported `ambiguous-bond-end`. A pi pair
+ * So the arrow is reported `ambiguous-bond-end`; the shift itself is spelled
+ * by aiming it at the NEW bond, which never comes through here. A pi pair
  * (A-B double or triple) leaves A-B standing, and its only other reading is a
  * three-membered ring, so the allyl shift keeps the adjacency rule; so does
  * any arrow whose Y another arrow speaks for. The elimination is spelled
  * unambiguously as the C-H pair into the C-C bond, the shift cell.
  *
  * Neither: the arrow is not applied. Propene plus HBr drawn pi-to-H is the
- * honest example: which carbon takes the proton is not in the drawing.
+ * honest example: which carbon takes the proton is not in the drawing until
+ * the arrow is aimed at the new C-H bond.
  */
 function resolveThirdAtom(
   mol: Molecule,
@@ -1033,12 +1082,13 @@ export function applyArrows(mol: Molecule, arrows: readonly ElectronMove[]): Mol
  *   transfer from A's shell to C's     -> C's shell back to A's
  *   shift of the pair S-Z to S-W       -> the pair S-W back to S-Z
  *
- * and each is spelled so that it resolves back to exactly that move. The one
- * spelling that could be misread is a shift whose bond S-Z the step broke:
- * aimed at the atom Z, it goes through the flow and adjacency rules. It is
- * kept only when those resolve it back to S-Z in the product; otherwise it is
- * written as a heterolysis to S followed by S's donation to Z, which the
- * whole-step bookkeeping applies as the identical move. An arrow the forward
+ * and each is spelled so that it resolves back to exactly that move ON ITS
+ * OWN: no reverse arrow is a bond's pair aimed at a third atom, so none goes
+ * through the flow or adjacency rules, and none waits on the rest of the set.
+ * A shift whose bond S-Z the step broke goes back as the S-W pair into the
+ * NEW bond S-Z (decision 199) — a 1,2-shift reverses as the shift back, not as
+ * a heterolysis to S and S's donation to Z, which bookkeeps the same and
+ * draws a hydride or a methyl anion that never existed. An arrow the forward
  * step skipped did nothing and has no reverse.
  */
 export function reverseArrows(
@@ -1047,39 +1097,9 @@ export function reverseArrows(
 ): readonly ElectronMove[] {
   const forward = step(reactant, arrows);
   const product = forward.product;
+  return forward.admitted.map((move) => reverseOf(move));
 
-  interface Reverse {
-    readonly arrows: readonly ElectronMove[];
-    /** The move a DIRECT third-atom spelling must resolve to, else split. */
-    readonly check?: { readonly from: Place; readonly to: Place; readonly split: readonly ElectronMove[] };
-  }
-
-  const reverses: Reverse[] = forward.admitted.map((move) => reverseOf(move));
-
-  // Keep a direct third-atom spelling only if the whole reverse set resolves
-  // it back to its move; otherwise split it. Splitting only ever removes a
-  // direct spelling, so this settles in at most one round per shift.
-  for (;;) {
-    const flat = reverses.flatMap((r) => r.arrows);
-    const { moves } = resolveAll(product, flat);
-    let offset = 0;
-    let split = false;
-    for (let i = 0; i < reverses.length; i++) {
-      const r = reverses[i]!;
-      if (r.check !== undefined) {
-        const got = moves.find((m) => m.index === offset);
-        const ok = got !== undefined && samePlace(got.from, r.check.from) && samePlace(got.to, r.check.to);
-        if (!ok) {
-          reverses[i] = { arrows: r.check.split };
-          split = true;
-        }
-      }
-      offset += r.arrows.length;
-    }
-    if (!split) return reverses.flatMap((r) => r.arrows);
-  }
-
-  function reverseOf(move: Move): Reverse {
+  function reverseOf(move: Move): ElectronMove {
     const electrons: ElectronCount = move.electrons === 2 ? "pair" : "single";
     const source = sourceAt(move);
     const from = move.from;
@@ -1093,9 +1113,9 @@ export function reverseArrows(
           move.electrons === 1 && move.takes === "lonePair"
             ? { kind: "lonePair", atomId: a }
             : { kind: "atom", atomId: a };
-        return { arrows: [{ electrons, source, sink }] };
+        return { electrons, source, sink };
       }
-      return { arrows: [{ electrons, source, sink: { kind: "lonePair", atomId: a } }] };
+      return { electrons, source, sink: { kind: "lonePair", atomId: a } };
     }
 
     // Electrons back into the bond S-Z.
@@ -1104,7 +1124,7 @@ export function reverseArrows(
       // From an atom's shell: that atom is one end; the other is the target.
       const donor = source.atomId;
       const other = donor === x ? y : x;
-      return { arrows: [{ electrons, source, sink: { kind: "atom", atomId: other } }] };
+      return { electrons, source, sink: { kind: "atom", atomId: other } };
     }
     // A shift: the pair left S-Z for S-W, and `to` is S-W. S is the pivot.
     const to = move.to;
@@ -1112,25 +1132,13 @@ export function reverseArrows(
     if (pivot === undefined) throw new Error("reverseArrows: a shift shares no atom");
     const far = pivot === x ? y : x;
     const existing = bondBetween(product, x, y);
-    if (existing !== undefined) {
-      return { arrows: [{ electrons, source, sink: { kind: "bond", bondId: existing.id } }] };
-    }
-    const direct: ElectronMove = { electrons, source, sink: { kind: "atom", atomId: far } };
-    const toPivot: ElectronSink = { kind: "atom", atomId: pivot };
-    const fromPivot: ElectronSource =
-      move.electrons === 2
-        ? { kind: "lonePair", atomId: pivot }
-        : { kind: "radical", atomId: pivot };
     return {
-      arrows: [direct],
-      check: {
-        from: to,
-        to: from,
-        split: [
-          { electrons, source, sink: toPivot },
-          { electrons, source: fromPivot, sink: { kind: "atom", atomId: far } },
-        ],
-      },
+      electrons,
+      source,
+      sink:
+        existing !== undefined
+          ? { kind: "bond", bondId: existing.id }
+          : { kind: "newBond", atomIds: [pivot, far] },
     };
   }
 
@@ -1162,6 +1170,7 @@ const SEVERITY: Readonly<Record<MechanismIssueKind, "error" | "warning">> = {
   "self-target": "error",
   disconnected: "error",
   "ambiguous-bond-end": "error",
+  "new-bond-end": "error",
   "aromatic-bond": "error",
   "pair-from-radical": "error",
   "no-lone-pair": "error",
@@ -1204,9 +1213,19 @@ function refusalText(mol: Molecule, refusal: Refusal): readonly [string, string]
       ];
     case "ambiguous-bond-end":
       return [
-        `${n} sends ${bond}'s electrons to a third atom, and nothing says which end bonds to it${skipped}`,
+        `${n} sends ${bond}'s electrons to a third atom, and nothing says which end bonds to it; aim it at the new bond between the two atoms that bond${skipped}`,
         "which end bonds?",
       ];
+    case "new-bond-end": {
+      // Written [the atom the electrons start at, the atom named first].
+      const [start, named] = refusal.atomIds;
+      const at = start === undefined ? "one atom" : elementOf(mol, start);
+      const other = named === undefined ? "another" : elementOf(mol, named);
+      return [
+        `${n} names its new bond from ${other}, but its electrons start at ${at}: name ${at} first${skipped}`,
+        "new bond backwards",
+      ];
+    }
     case "aromatic-bond":
       return [
         `${n} uses an aromatic bond, which has no single order to take electrons from or add them to${skipped}`,

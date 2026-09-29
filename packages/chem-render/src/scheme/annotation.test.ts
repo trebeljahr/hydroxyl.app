@@ -17,6 +17,7 @@ import { STRUCTURAL_VIEW_KINDS, TEXT_VIEW_KINDS, representation } from "../repre
 import { buildScene } from "../scene/build.js";
 import { SCREEN_STYLE } from "../style.js";
 import {
+  CURLY_ARROW_SINK_KINDS,
   SCHEME_ANNOTATION_KINDS,
   assembleSchemeAnnotation,
   pruneSchemeAnnotations,
@@ -81,6 +82,27 @@ describe("scheme annotation records", () => {
   it("lists five kinds, and names ids from a counter", () => {
     expect(SCHEME_ANNOTATION_KINDS).toEqual(["curlyArrow", "reactionArrow", "plus", "bracket", "text"]);
     expect(schemeAnnotationId(7)).toBe("ann_7");
+  });
+
+  it("lists four sink kinds, the new bond last (decision 166), and copies its atom pair", () => {
+    expect(CURLY_ARROW_SINK_KINDS).toEqual(["atom", "bond", "lonePair", "newBond"]);
+    const atomIds: [AtomId, AtomId] = ["a3", "a5"];
+    const built = assembleSchemeAnnotation({
+      id: "ann_1",
+      kind: "curlyArrow",
+      electrons: "pair",
+      source: { kind: "bond", bondId: "b4" },
+      sink: { kind: "newBond", atomIds },
+      bulge: 0.25,
+      skew: 0,
+    }) as CurlyArrowAnnotation;
+    atomIds[1] = "a99";
+    expect(built.sink).toEqual({ kind: "newBond", atomIds: ["a3", "a5"] });
+    expect(schemeAnnotationAnchors(built)).toEqual([
+      { kind: "bond", bondId: "b4" },
+      { kind: "atom", atomId: "a3" },
+      { kind: "atom", atomId: "a5" },
+    ]);
   });
 });
 
@@ -190,6 +212,40 @@ describe("pruning with the molecule edit", () => {
     expect(pruneSchemeAnnotations(list, mol, withoutCarbonyl)).toEqual([list[0], label]);
   });
 
+  it("drops a new-bond arrow when EITHER of its two atoms is deleted, and keeps it otherwise", () => {
+    // Propene's pi pair to the new C1-H bond with HBr beside it (decision 166).
+    let c1 = "";
+    let h = "";
+    let br = "";
+    let pi = "";
+    const mol = buildMolecule((b) => {
+      const c3 = b.atom("C", { x: 0, y: 0 });
+      const c2 = b.atom("C", { x: 0.87, y: 0.5 });
+      b.bond(c3, c2);
+      c1 = b.atom("C", { x: 1.73, y: 0 });
+      pi = b.bond(c2, c1, 2);
+      h = b.atom("H", { x: 1.73, y: 1.5 });
+      br = b.atom("Br", { x: 1.73, y: 2.5 });
+      b.bond(h, br);
+    });
+    const curly: CurlyArrowAnnotation = {
+      id: "ann_1",
+      kind: "curlyArrow",
+      electrons: "pair",
+      source: { kind: "bond", bondId: pi },
+      sink: { kind: "newBond", atomIds: [c1, h] },
+      bulge: 0.25,
+      skew: 0,
+    };
+    const list = [curly];
+    expect(pruneSchemeAnnotations(list, mol, removeAtoms(mol, [br]))).toBe(list);
+    expect(pruneSchemeAnnotations(list, mol, removeAtoms(mol, [h]))).toEqual([]);
+    // Deleting C1 takes the pi bond too, so the source goes as well; the
+    // sink alone is enough: a far atom the arrow does not start at.
+    const farSink: CurlyArrowAnnotation = { ...curly, source: { kind: "bond", bondId: mol.bondIds[0]! } };
+    expect(pruneSchemeAnnotations([farSink], mol, removeAtoms(mol, [c1]))).toEqual([]);
+  });
+
   it("never resolves a reference up Object.prototype", () => {
     const { mol, ethanol } = ethanolToAcetaldehyde();
     const list = [arrow("constructor", ethanol[0]!), arrow(ethanol[0]!, "toString")];
@@ -252,5 +308,48 @@ describe("a drawn curly arrow is chem-core's electron move (decision 149)", () =
     expect(mechanismIssues(mol, arrows)).toEqual([]);
     const back = applyArrows(product, reverseArrows(mol, arrows));
     expect(back.atoms).toEqual(mol.atoms);
+  });
+
+  it("passes a new-bond sink straight through too: HBr protonates propene at C1", () => {
+    let c1 = "";
+    let c2 = "";
+    let h = "";
+    let br = "";
+    let pi = "";
+    let hbr = "";
+    const mol = buildMolecule((b) => {
+      const c3 = b.atom("C", { x: 0, y: 0 });
+      c2 = b.atom("C", { x: 0.87, y: 0.5 });
+      b.bond(c3, c2);
+      c1 = b.atom("C", { x: 1.73, y: 0 });
+      pi = b.bond(c2, c1, 2);
+      h = b.atom("H", { x: 1.73, y: 1.5 });
+      br = b.atom("Br", { x: 1.73, y: 2.5 });
+      hbr = b.bond(h, br);
+    });
+    const arrows = [
+      assembleSchemeAnnotation({
+        id: schemeAnnotationId(1),
+        kind: "curlyArrow",
+        electrons: "pair",
+        source: { kind: "bond", bondId: pi },
+        sink: { kind: "newBond", atomIds: [c1, h] },
+        bulge: 0.25,
+        skew: 0,
+      }),
+      assembleSchemeAnnotation({
+        id: schemeAnnotationId(2),
+        kind: "curlyArrow",
+        electrons: "pair",
+        source: { kind: "bond", bondId: hbr },
+        sink: { kind: "atom", atomId: br },
+        bulge: -0.7,
+        skew: 0,
+      }),
+    ].filter((a): a is CurlyArrowAnnotation => a.kind === "curlyArrow");
+    const product = applyArrows(mol, arrows);
+    expect([product.atoms[c2]!.charge, product.atoms[br]!.charge]).toEqual([1, -1]);
+    expect(mechanismIssues(mol, arrows)).toEqual([]);
+    expect(applyArrows(product, reverseArrows(mol, arrows)).atoms).toEqual(mol.atoms);
   });
 });

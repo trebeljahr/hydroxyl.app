@@ -928,9 +928,60 @@ export function bromineHomolysis(): MechanismFixture & { readonly bond: BondId }
   };
 }
 
+/**
+ * Markovnikov protonation of propene by HBr: the C1=C2 pi pair to the NEW
+ * C1-H bond — decision 166's `newBond` sink, aimed at the midpoint of C1 and
+ * the proton, the tip on it (decision 199) — and the H-Br pair onto the
+ * bromine. An arrow aimed at the H ATOM cannot say which carbon takes the
+ * proton; this one says C1, so the cation is the secondary one on C2.
+ *
+ * Propene is a zigzag with its double bond on the right; HBr stands upright
+ * above C1, a bond and a half away, so the new bond's midpoint is open space.
+ * The pi arrow bows up and left, away from the C1=C2 line it leaves.
+ */
+export function markovnikovProtonation(): MechanismFixture & {
+  readonly c1: AtomId;
+  readonly c2: AtomId;
+  readonly proton: AtomId;
+  readonly pi: BondId;
+} {
+  let c1 = "";
+  let c2 = "";
+  let proton = "";
+  let pi = "";
+  let hbr = "";
+  let bromine = "";
+  const molecule = buildMolecule((b) => {
+    const c3 = b.atom("C", ORIGIN);
+    const c2Pos = step(ORIGIN, 30);
+    c2 = b.atom("C", c2Pos);
+    b.bond(c3, c2, 1);
+    const c1Pos = step(c2Pos, -30);
+    c1 = b.atom("C", c1Pos);
+    pi = b.bond(c2, c1, 2);
+    const hPos = { x: c1Pos.x, y: c1Pos.y + 1.5 };
+    proton = b.atom("H", hPos);
+    bromine = b.atom("Br", step(hPos, 90));
+    hbr = b.bond(proton, bromine, 1);
+  });
+  return {
+    name: "markovnikovProtonation",
+    molecule,
+    annotations: [
+      curlyArrow(1, "pair", { kind: "bond", bondId: pi }, { kind: "newBond", atomIds: [c1, proton] }, 0.25),
+      curlyArrow(2, "pair", { kind: "bond", bondId: hbr }, { kind: "atom", atomId: bromine }, -0.7),
+    ],
+    c1,
+    c2,
+    proton,
+    pi,
+  };
+}
+
 /** The mechanism fixtures, in the order the contact sheet shows them. */
 export const MECHANISM_FIXTURES: readonly MechanismFixture[] = Object.freeze([
   cyanideAdditionToAcetone(),
   acetateResonance(),
   bromineHomolysis(),
+  markovnikovProtonation(),
 ]);

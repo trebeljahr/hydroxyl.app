@@ -111,9 +111,11 @@ export type CurlyArrowElectrons = ElectronCount;
 export type CurlyArrowSource = ElectronSource;
 
 /**
- * Where they go: an atom, a bond, or a lone pair on a named atom. Never
- * "nothing": a departing pair always lands on some atom, and a sink with no
- * source mirror would leave the reversed arrow undefined for heterolysis.
+ * Where they go: an atom, a bond, a lone pair on a named atom, or the new bond
+ * `[end, atom]` between two atoms not yet bonded, drawn to their midpoint
+ * (decision 166). Never "nothing": a departing pair always lands on some atom,
+ * and a sink with no source mirror would leave the reversed arrow undefined
+ * for heterolysis.
  */
 export type CurlyArrowSink = ElectronSink;
 
@@ -121,7 +123,7 @@ export type CurlyArrowSink = ElectronSink;
 // directions against chem-core's unions: a fourth source kind added there is
 // a compile error here rather than an arrow the codec cannot open.
 export const CURLY_ARROW_SOURCE_KINDS = ["lonePair", "bond", "radical"] as const;
-export const CURLY_ARROW_SINK_KINDS = ["atom", "bond", "lonePair"] as const;
+export const CURLY_ARROW_SINK_KINDS = ["atom", "bond", "lonePair", "newBond"] as const;
 
 type ElectronsListIsTotal = CurlyArrowElectrons extends (typeof CURLY_ARROW_ELECTRONS)[number]
   ? (typeof CURLY_ARROW_ELECTRONS)[number] extends CurlyArrowElectrons
@@ -264,9 +266,14 @@ function copySource(source: CurlyArrowSource): CurlyArrowSource {
 }
 
 function copySink(sink: CurlyArrowSink): CurlyArrowSink {
-  return sink.kind === "bond"
-    ? { kind: "bond", bondId: sink.bondId }
-    : { kind: sink.kind, atomId: sink.atomId };
+  switch (sink.kind) {
+    case "bond":
+      return { kind: "bond", bondId: sink.bondId };
+    case "newBond":
+      return { kind: "newBond", atomIds: [sink.atomIds[0], sink.atomIds[1]] };
+    default:
+      return { kind: sink.kind, atomId: sink.atomId };
+  }
 }
 
 /**
@@ -344,16 +351,22 @@ export function schemeSpeciesRefs(annotation: SchemeAnnotation): readonly AtomId
   }
 }
 
-function endpointAnchor(end: CurlyArrowSource | CurlyArrowSink): SchemeAnchor {
-  return end.kind === "bond"
-    ? { kind: "bond", bondId: end.bondId }
-    : { kind: "atom", atomId: end.atomId };
+/** What one end of a curly arrow names: a new bond names BOTH its atoms. */
+function endpointAnchors(end: CurlyArrowSource | CurlyArrowSink): readonly SchemeAnchor[] {
+  switch (end.kind) {
+    case "bond":
+      return [{ kind: "bond", bondId: end.bondId }];
+    case "newBond":
+      return end.atomIds.map((atomId) => ({ kind: "atom", atomId }));
+    default:
+      return [{ kind: "atom", atomId: end.atomId }];
+  }
 }
 
 export function schemeAnnotationAnchors(annotation: SchemeAnnotation): readonly SchemeAnchor[] {
   switch (annotation.kind) {
     case "curlyArrow":
-      return [endpointAnchor(annotation.source), endpointAnchor(annotation.sink)];
+      return [...endpointAnchors(annotation.source), ...endpointAnchors(annotation.sink)];
     case "text":
       return [{ kind: "frame" }];
     case "reactionArrow":
@@ -487,8 +500,9 @@ export function anchorPlacementOf(
  * Called in the SAME undo entry as the edit, so undoing a delete brings the
  * atoms and the arrows back together. The rules:
  *
- *   - a curly arrow whose source or sink atom or bond is gone is dropped —
- *     an arrow from electrons that no longer exist states nothing;
+ *   - a curly arrow whose source or sink atom or bond is gone (either atom
+ *     of a new-bond sink) is dropped — an arrow from electrons that no
+ *     longer exist states nothing;
  *   - a species reference whose atom is gone but whose species (in `before`)
  *     still has atoms is RE-POINTED to the lowest surviving one by
  *     `compareIds` (decision 103), so deleting the atom an arrow happened to
@@ -548,8 +562,13 @@ export function pruneSchemeAnnotations(
   function pruneOne(annotation: SchemeAnnotation): SchemeAnnotation | undefined {
     switch (annotation.kind) {
       case "curlyArrow": {
-        const ok = [annotation.source, annotation.sink].every((end) =>
-          end.kind === "bond" ? hasBond(end.bondId) : hasAtom(end.atomId),
+        // Every atom and bond it names, both atoms of a new-bond sink included.
+        const ok = schemeAnnotationAnchors(annotation).every((anchor) =>
+          anchor.kind === "atom"
+            ? hasAtom(anchor.atomId)
+            : anchor.kind === "bond"
+              ? hasBond(anchor.bondId)
+              : true,
         );
         return ok ? annotation : undefined;
       }

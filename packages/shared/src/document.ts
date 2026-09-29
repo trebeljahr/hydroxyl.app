@@ -830,6 +830,7 @@ function danglingReferences(molecule: Molecule, annotation: SchemeAnnotation): s
     case "curlyArrow":
       for (const end of [annotation.source, annotation.sink]) {
         if (end.kind === "bond") bond(end.bondId);
+        else if (end.kind === "newBond") end.atomIds.forEach(atom);
         else atom(end.atomId);
       }
       break;
@@ -1798,6 +1799,13 @@ const curlySinkSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal(CURLY_ARROW_SINK_KINDS[0]), atomId: nonEmptyString }),
   z.strictObject({ kind: z.literal(CURLY_ARROW_SINK_KINDS[1]), bondId: nonEmptyString }),
   z.strictObject({ kind: z.literal(CURLY_ARROW_SINK_KINDS[2]), atomId: nonEmptyString }),
+  // Decision 166, additive on v2: `[end, atom]`, the end where the electrons
+  // start first. Both are checked against the molecule like any anchor; an
+  // end the source does not hold is chem-core's to report, not a bad file.
+  z.strictObject({
+    kind: z.literal(CURLY_ARROW_SINK_KINDS[3]),
+    atomIds: z.tuple([nonEmptyString, nonEmptyString]),
+  }),
 ]);
 
 const annotationSchema = z.discriminatedUnion("kind", [
@@ -1834,6 +1842,20 @@ const annotationSchema = z.discriminatedUnion("kind", [
     at: vec2Schema,
   }),
 ]);
+
+/** A curly-arrow endpoint kind in chem-render's lists with no arm here, or an
+ *  arm naming a kind the lists do not hold, is a compile error. */
+type ArmsMatch<Arms, Kinds> = [Arms] extends [Kinds] ? ([Kinds] extends [Arms] ? true : never) : never;
+const SOURCE_ARMS_ARE_TOTAL: ArmsMatch<
+  z.infer<typeof curlySourceSchema>["kind"],
+  (typeof CURLY_ARROW_SOURCE_KINDS)[number]
+> = true;
+const SINK_ARMS_ARE_TOTAL: ArmsMatch<
+  z.infer<typeof curlySinkSchema>["kind"],
+  (typeof CURLY_ARROW_SINK_KINDS)[number]
+> = true;
+void SOURCE_ARMS_ARE_TOTAL;
+void SINK_ARMS_ARE_TOTAL;
 
 /** A new kind in chem-render's list with no arm above is a compile error. */
 type AnnotationSchemaIsTotal = (typeof SCHEME_ANNOTATION_KINDS)[number] extends z.infer<
@@ -2182,16 +2204,28 @@ export const DOCUMENT_UPGRADES: Readonly<Record<number, (value: unknown) => unkn
  * that MEETS such a file, which is every build before the chair task, so it
  * lives here now rather than arriving with the forms.
  *
+ * Or a CURLY-ARROW SOURCE OR SINK KIND it does not know, for the same
+ * reason: the endpoint unions grow on v2 (decision 166 added `newBond`,
+ * decision 199 made this build the one that says so about the NEXT kind),
+ * and a new arm is refused on its discriminator with no unknown key in
+ * sight. A build before 199 calls a `newBond` file damaged; that cannot be
+ * mended from here.
+ *
  * `some`, not `every`: a newer build's file routinely carries several new
  * things at once, a new key beside a new annotation sink kind, and the
  * second must not turn the first's "newer version" into "corrupt". The cost
  * is that a hand-damaged file that ALSO holds an unknown key (a ring frame
  * `{ringIndex: 0}`, missing `ringAtomIds`) is called newer; telling that
- * apart would need the parsed input, not the issue list.
+ * apart would need the parsed input, not the issue list. The same goes for a
+ * discriminator: zod reports a missing or non-string `form` or `kind`
+ * exactly as it reports an unknown one.
  */
 export function isFromNewerBuild(error: z.ZodError): boolean {
   return error.issues.some(
-    (issue) => issue.code === "unrecognized_keys" || isUnknownRingConformerForm(issue),
+    (issue) =>
+      issue.code === "unrecognized_keys" ||
+      isUnknownRingConformerForm(issue) ||
+      isUnknownCurlyArrowEndKind(issue),
   );
 }
 
@@ -2205,6 +2239,19 @@ function isUnknownRingConformerForm(issue: z.core.$ZodIssue): boolean {
     path.length === tail.length + 2 &&
     path[0] === "panels" &&
     tail.every((key, index) => path[index + 2] === key)
+  );
+}
+
+/** The issue zod raises when no arm of a curly arrow's source or sink union
+ *  has the file's `kind`: `annotations.<n>.source.kind` or `.sink.kind`. */
+function isUnknownCurlyArrowEndKind(issue: z.core.$ZodIssue): boolean {
+  if (issue.code !== "invalid_union" || issue.discriminator !== "kind") return false;
+  const path = issue.path;
+  return (
+    path.length === 4 &&
+    path[0] === "annotations" &&
+    (path[2] === "source" || path[2] === "sink") &&
+    path[3] === "kind"
   );
 }
 

@@ -1136,6 +1136,75 @@ describe("the scheme model (schema v2)", () => {
     expect(decodeDocument(reordered)).toEqual(joined);
   });
 
+  /** `scheme()` plus acetate's O- lone pair to a new O-Na bond: ann_4, index 3. */
+  function schemeWithNewBond(): SketchDocument {
+    return addSchemeAnnotation(scheme(), {
+      kind: "curlyArrow",
+      electrons: "pair",
+      source: { kind: "lonePair", atomId: "a9" },
+      sink: { kind: "newBond", atomIds: ["a9", "a13"] },
+      bulge: -0.3,
+      skew: 0,
+    }).document;
+  }
+
+  it("round-trips a new-bond sink additively on v2, and refuses one naming an atom not there (decision 166)", () => {
+    const doc = schemeWithNewBond();
+    expect(doc.schemaVersion).toBe(2);
+    expect(doc.annotations[3]).toMatchObject({ id: "ann_4", sink: { kind: "newBond", atomIds: ["a9", "a13"] } });
+    const decoded = roundTrip(doc);
+    expect(decoded).toEqual(doc);
+    expect(undefinedValuedPaths(encodeDocument(decoded))).toEqual([]);
+
+    const encoded = JSON.parse(JSON.stringify(encodeDocument(doc))) as Record<string, any>;
+    for (const ghost of ["a99", "constructor"]) {
+      for (const at of [0, 1]) {
+        const copy = structuredClone(encoded);
+        copy.annotations[3].sink.atomIds[at] = ghost;
+        expect(safeDecodeDocument(copy).ok, `${ghost} at ${at}`).toBe(false);
+      }
+    }
+    expect(() =>
+      addSchemeAnnotation(scheme(), {
+        kind: "curlyArrow",
+        electrons: "pair",
+        source: { kind: "lonePair", atomId: "a9" },
+        sink: { kind: "newBond", atomIds: ["a9", "toString"] },
+        bulge: 0.3,
+        skew: 0,
+      }),
+    ).toThrow(/toString/);
+  });
+
+  it("calls an unknown curly-arrow endpoint kind a newer build's, and a malformed new bond damage", () => {
+    const encoded = JSON.parse(JSON.stringify(encodeDocument(schemeWithNewBond()))) as Record<string, any>;
+    const newer: ((copy: Record<string, any>) => void)[] = [
+      (copy) => (copy.annotations[3].sink = { kind: "orbital", atomId: "a9" }),
+      (copy) => (copy.annotations[0].source = { kind: "sigmaHole", atomId: "a3" }),
+      (copy) => (copy.annotations[3].sink.order = 2),
+    ];
+    for (const add of newer) {
+      const copy = structuredClone(encoded);
+      add(copy);
+      const result = safeDecodeDocument(copy);
+      expect(result.ok, String(add)).toBe(false);
+      if (!result.ok) expect(isFromNewerBuild(result.error), String(add)).toBe(true);
+    }
+    const damaged: ((copy: Record<string, any>) => void)[] = [
+      (copy) => (copy.annotations[3].sink.atomIds = ["a9"]),
+      (copy) => (copy.annotations[3].sink.atomIds = ["a9", "a13", "a1"]),
+      (copy) => (copy.annotations[3].sink.atomIds = ["a9", ""]),
+      (copy) => (copy.annotations[3].sink.atomIds = "a9 a13"),
+    ];
+    for (const breakIt of damaged) {
+      const copy = structuredClone(encoded);
+      breakIt(copy);
+      const result = safeDecodeDocument(copy);
+      expect(result.ok, String(breakIt)).toBe(false);
+      if (!result.ok) expect(isFromNewerBuild(result.error), String(breakIt)).toBe(false);
+    }
+  });
+
   it("refuses any key this build does not know, at any depth, as a newer build's document", () => {
     const encoded = JSON.parse(JSON.stringify(encodeDocument(scheme()))) as Record<string, any>;
     const newer: ((copy: Record<string, any>) => void)[] = [
