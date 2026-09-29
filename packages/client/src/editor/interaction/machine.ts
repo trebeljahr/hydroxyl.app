@@ -588,6 +588,13 @@ export function reduce(
         { kind: "setHover", atomId: null, bondId: null },
       ]);
     case "panEnd":
+      // GUARDED, not unconditional. A stray `panEnd` delivered while a
+      // `drawingBond`, `movingSelection` or `rotating` holds an OPEN store
+      // transaction would drop it with no `abortTransaction`, and the `cancel`
+      // that followed would land on idle and emit nothing either — undo dead
+      // for the rest of the session. The gesture reducer brackets every pan
+      // (decision 106); this is the net under it, and it is cheap.
+      if (state.kind !== "panning") return result(state);
       return result(IDLE);
   }
 }
@@ -956,6 +963,12 @@ function onDragEnd(
   sample: PointerSample,
   ctx: InteractionContext,
 ): InteractionResult {
+  // A pan is ended by `panEnd` and by nothing else. The default arm below
+  // would drop the machine to idle while the gesture reducer still believes it
+  // is panning, and the next frame of a Space-drag over an atom would reach
+  // the editing branches.
+  if (state.kind === "panning") return result(state);
+
   // The final sample can differ from the last move — a pointerup carries its
   // own coordinates — so every state resolves it before closing.
   const settled = onDragMove(state, sample, ctx);
@@ -1325,6 +1338,17 @@ function onClick(
   ctx: InteractionContext,
 ): InteractionResult {
   if (state.kind === "panning") return result(state);
+
+  // THE ROTATE HANDLE SWALLOWS THE CLICK. Only `onDragStart` knows what a
+  // "handle" hit is; a press and release under the slop — a hand that grabs
+  // the handle and does not quite move — would fall through to the switch,
+  // where "handle" is neither an atom nor a bond and reads as empty canvas:
+  // select clears the selection the handle is drawn for, the element tool adds
+  // an atom at the handle and the ring tool drops a ring there. The handle
+  // stays up whichever tool is active (decision 105 gates it on the selection
+  // alone), and `resolveHit` answers "handle" before it consults the scene, so
+  // this is the only place that can refuse it.
+  if (sample.hit.kind === "handle") return result(IDLE);
 
   switch (ctx.tool) {
     case "ring":

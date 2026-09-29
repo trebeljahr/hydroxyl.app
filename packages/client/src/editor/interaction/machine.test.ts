@@ -1069,6 +1069,98 @@ describe("panning", () => {
     driver.send({ kind: "panEnd" });
     expect(driver.state).toEqual(IDLE);
   });
+
+  /**
+   * Space-drag or middle-drag started ON TOP OF AN ATOM (decision 106) is,
+   * fact for fact, the same press, moves and release as dragging that atom.
+   * Only the `panStart` in front tells them apart, so the molecule has to come
+   * out by reference: no edit, no transaction, no rolled-back transaction.
+   */
+  it("moves nothing when the pan runs across an atom, and outlives a dragEnd", () => {
+    const mol = benzene();
+    const driver = new Driver(mol);
+    const on = sample(pos(mol, "a1"), atomHit("a1"));
+
+    driver.send({ kind: "panStart" });
+    driver.send({ kind: "press", sample: on });
+    driver.send({ kind: "dragStart", origin: on, sample: sample({ x: 3, y: 3 }, atomHit("a1")) });
+    for (let i = 1; i <= 20; i += 1) {
+      driver.send({ kind: "dragMove", sample: sample({ x: 3 + i, y: 3 }, atomHit("a2")) });
+    }
+    driver.send({ kind: "dragEnd", sample: sample({ x: 23, y: 3 }, atomHit("a2")) });
+
+    // Still panning: a dragEnd that dropped to idle would hand the next frame
+    // to the editing branches while the gesture reducer is still panning.
+    expect(driver.state.kind).toBe("panning");
+    expect(driver.molecule).toBe(mol);
+    expect(driver.selection).toBe(EMPTY);
+    expect(driver.commands).toEqual([{ kind: "setHover", atomId: null, bondId: null }]);
+
+    driver.send({ kind: "panEnd" });
+    expect(driver.state).toEqual(IDLE);
+  });
+
+  /**
+   * A stray `panEnd` used to answer `IDLE` from any state. From `drawingBond`
+   * that drops an open transaction with no abort, and the `cancel` after it
+   * lands on idle and emits nothing — undo dead for the session, silently.
+   */
+  it("ignores a panEnd that arrives while an edit gesture holds a transaction", () => {
+    const mol = benzene();
+    const driver = new Driver(mol);
+    dragTo(driver, sample(pos(mol, "a1"), atomHit("a1")), { x: 0.4, y: -3 }, 4);
+    expect(driver.state.kind).toBe("drawingBond");
+    expect(driver.transaction).not.toBeNull();
+
+    driver.send({ kind: "panEnd" });
+    expect(driver.state.kind).toBe("drawingBond");
+
+    // The gesture can still be cancelled, which proves the transaction was
+    // never orphaned.
+    driver.send({ kind: "cancel" });
+    expect(driver.count("abortTransaction")).toBe(1);
+    expect(driver.transaction).toBeNull();
+    expect(driver.molecule).toBe(mol);
+  });
+});
+
+/**
+ * A CLICK ON THE ROTATE HANDLE CHANGES NOTHING, under every tool.
+ *
+ * The handle stays on screen whatever tool is active, so a press on it that
+ * never passes the slop reached the tool switch as empty canvas: select
+ * cleared the selection the handle belongs to, the element tool added an atom
+ * at the handle and the ring tool dropped a ring there.
+ */
+describe("clicking the rotate handle", () => {
+  const TOOLS: readonly ToolId[] = [
+    "select",
+    "pan",
+    "bond",
+    "element",
+    "ring",
+    "chain",
+    "group",
+    "eraser",
+    "charge",
+  ];
+
+  for (const tool of TOOLS) {
+    it(`changes nothing under the ${tool} tool`, () => {
+      const mol = benzene();
+      const driver = new Driver(mol);
+      driver.tool = tool;
+      driver.selection = { atomIds: [...mol.atomIds], bondIds: [...mol.bondIds], annotationIds: [] };
+      const before = driver.selection;
+
+      driver.send({ kind: "click", sample: sample({ x: 0, y: 2 }, { kind: "handle" }) });
+
+      expect(driver.molecule).toBe(mol);
+      expect(driver.selection).toBe(before);
+      expect(driver.commands).toEqual([]);
+      expect(driver.state).toEqual(IDLE);
+    });
+  }
 });
 
 describe("movingAtomIds", () => {
