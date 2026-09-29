@@ -1832,6 +1832,9 @@ const curlySinkSchema = z.discriminatedUnion("kind", [
  * no colder than absolute zero in its unit; a time is positive; the three
  * text kinds hold what the author typed, never empty. Steps are never empty,
  * and neither is the list of them: "no conditions" is written by omission.
+ * Each is refused as damage, not as a newer build's file (decision 215): only
+ * an unknown KIND or key is that, since the enums of units and biases are not
+ * ruled to grow and calling a hand edit "newer" would hide it.
  */
 const conditionSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal(REACTION_CONDITION_KINDS[0]), text: z.string().min(1) }),
