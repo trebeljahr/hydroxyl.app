@@ -23,6 +23,7 @@ import {
   rings,
   stereoConfig,
   stereoDisagreements,
+  suggestSteroidSkeleton,
   sugarRings,
   type AtomId,
   type ChainView,
@@ -246,6 +247,55 @@ describe("a panel's projection view round-trips (decision 162)", () => {
     if (read.kind !== "read") throw new Error(`read refused: ${read.reason}`);
     expect(stereoDisagreements(stereoConfig(mol), read.config, after.coverage)).toEqual([]);
     expect(JSON.stringify(after)).toBe(JSON.stringify(before));
+  });
+});
+
+describe("an accepted steroid skeleton round-trips (decision 163)", () => {
+  function acceptedSteroidView(mol: Molecule): ProjectionView {
+    const suggestion = suggestSteroidSkeleton(mol);
+    if (suggestion.kind !== "match") throw new Error(`cholesterol was not suggested: ${suggestion.kind}`);
+    return {
+      kind: "planar",
+      template: "steroid",
+      frame: {},
+      params: { rotationDeg: 0, mirror: false, skeleton: suggestion.skeleton },
+    };
+  }
+
+  it("keeps the core in locant order and draws the same alpha/beta labels after the round trip", () => {
+    const mol = cholesterol();
+    const view = acceptedSteroidView(mol);
+    const core = view.kind === "planar" ? view.params.skeleton!.core : [];
+    // Non-vacuous: the core is 17 atoms in LOCANT order, which is not the
+    // sorted order a set would be stored in, so a codec that sorted it fails.
+    expect(core).toHaveLength(17);
+    expect([...core].sort()).not.toEqual([...core]);
+    const original = documentWith(mol, [panel("panel-steroid", "skeletal", view)]);
+    const decoded = roundTrip(original);
+    expect(decoded).toEqual(original);
+    expect(undefinedValuedPaths(encodeDocument(decoded))).toEqual([]);
+    const stored = viewOf(decoded, "panel-steroid");
+    expect(stored.kind === "planar" && stored.params.skeleton).toEqual({ name: "steroid", core });
+    const before = layoutOf(original.molecule, viewOf(original, "panel-steroid"));
+    const after = layoutOf(decoded.molecule, stored);
+    // Cholesterol states 3beta-OH, 10beta- and 13beta-methyl at least.
+    expect(after.faceLabels.length).toBeGreaterThanOrEqual(3);
+    expect(JSON.stringify(after)).toBe(JSON.stringify(before));
+  });
+
+  it("refuses a skeleton this build does not name and a number where a core atom goes", () => {
+    const mol = cholesterol();
+    const doc = documentWith(mol, [panel("panel-steroid", "skeletal", acceptedSteroidView(mol))]);
+    const cases: ((skeleton: Record<string, any>) => void)[] = [
+      (skeleton) => (skeleton.name = "hopane"),
+      (skeleton) => (skeleton.core = [0, ...skeleton.core.slice(1)]),
+      (skeleton) => (skeleton.extra = true),
+    ];
+    for (const breakIt of cases) {
+      const raw = encoded(doc);
+      breakIt(raw.panels[0].view.params.skeleton);
+      expect(safeDecodeDocument(raw).ok, String(breakIt)).toBe(false);
+    }
   });
 });
 

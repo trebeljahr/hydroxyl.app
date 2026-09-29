@@ -39,6 +39,7 @@
 
 import {
   PROJECTION_TEMPLATES,
+  SKELETON_NAMES,
   canonicalProjectionView,
   makeAtom,
   emptyMolecule,
@@ -1649,7 +1650,17 @@ const projectionViewShapeSchema = z.discriminatedUnion("kind", [
     kind: z.literal("planar"),
     template: z.enum(PROJECTION_TEMPLATES.planar),
     frame: z.strictObject({}),
-    params: z.strictObject({ rotationDeg: z.number(), mirror: z.boolean() }),
+    params: z.strictObject({
+      rotationDeg: z.number(),
+      mirror: z.boolean(),
+      // The skeleton the user accepted for the panel (decision 163). `core` is
+      // ORDERED, one atom per locant, so it is never a set and never sorted; a
+      // core that no longer fits is the engine's `skeleton-mismatch`, not a
+      // corrupt file (decision 175).
+      skeleton: z
+        .strictObject({ name: z.enum(SKELETON_NAMES), core: z.array(nonEmptyString) })
+        .optional(),
+    }),
   }),
   z.strictObject({
     kind: z.literal("chain"),
@@ -1705,7 +1716,7 @@ const projectionViewShapeSchema = z.discriminatedUnion("kind", [
  * other lacks is a type error at the line below, never a panel that saves and
  * then refuses to open. Mutual assignability would not do: it lets an extra
  * OPTIONAL key through in either direction, and optional keys are exactly how
- * this type grows (the steroid acceptance of decision 163 is the next one).
+ * this type grows (the steroid acceptance of decision 163 was the first).
  *
  * An object with no keys at all is written `{}` whichever side it came from:
  * zod types an empty strict object as `Record<string, never>` and chem-core
