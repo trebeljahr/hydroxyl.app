@@ -13,11 +13,14 @@
 import {
   benzene,
   buildMolecule,
+  carbohydrates,
+  readMolblock,
   requireAtom,
   type AtomId,
   type Molecule,
   type Vec2,
 } from "@starter/chem-core";
+import { dictionaryEntryById } from "@starter/chem-core/dictionary";
 import { SCHEMA_VERSION, createDocument, type SketchDocument } from "@starter/shared";
 import { createDraft, isDraft, produce } from "immer";
 import { describe, expect, it } from "vitest";
@@ -938,6 +941,36 @@ describe("scheme annotations ride in the document", () => {
       .getState()
       .applyMoleculeEdit("Delete", (mol) => guardedOps.removeAtoms(mol, ["a6", "a7", "a8"]));
     expect(store.getState().document.annotations.map((a) => a.id)).toEqual(["ann_2"]);
+  });
+});
+
+describe("explicit locants ride in the document", () => {
+  /** Open-chain D-glucose with explicit locants on its C1 and C2. */
+  function glucoseStore(): { store: EditorStore; c1: AtomId; c2: AtomId } {
+    const now = fakeClock();
+    const molecule = readMolblock(dictionaryEntryById("aldehydo-d-glucose")!.molblock).molecule;
+    const [unit] = carbohydrates(molecule);
+    const [c1, c2] = unit!.backbone as [AtomId, AtomId];
+    const document = createDocument({ molecule, now: now(), locants: { [c1]: "1*", [c2]: "2*" } });
+    return { store: createEditorStore({ document, now }), c1, c2 };
+  }
+
+  it("prunes a deleted atom's locant in the same undo entry", () => {
+    const { store, c1, c2 } = glucoseStore();
+    const before = store.getState().document;
+    store.getState().applyMoleculeEdit("Delete", (mol) => guardedOps.removeAtoms(mol, [c1]));
+    expect(store.getState().document.locants).toEqual({ [c2]: "2*" });
+    store.getState().undo();
+    expect(store.getState().document).toBe(before);
+  });
+
+  it("drops the key when the last numbered atom goes, and keeps the map by reference otherwise", () => {
+    const { store, c1, c2 } = glucoseStore();
+    const locants = store.getState().document.locants;
+    moveTo(store, c1, 3, 3);
+    expect(store.getState().document.locants).toBe(locants);
+    store.getState().applyMoleculeEdit("Delete", (mol) => guardedOps.removeAtoms(mol, [c1, c2]));
+    expect(Object.hasOwn(store.getState().document, "locants")).toBe(false);
   });
 });
 

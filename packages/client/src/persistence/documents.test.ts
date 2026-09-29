@@ -63,6 +63,8 @@ function oxidation(): SketchDocument {
     stylePreset: "publication",
     panels: [createPanel("skeletal", "Scheme 1", "publication")],
     figure: { columns: 2 },
+    // Explicit locants the user typed: the reacting carbon on each side.
+    locants: { a2: "1", a7: "1" },
     now: CREATED,
   });
 }
@@ -94,6 +96,7 @@ describe("copyOf", () => {
     stylePreset: "kept",
     panels: "kept",
     figure: "kept",
+    locants: "kept",
     metadata: "fresh",
   };
   const METADATA_KEYS: Record<keyof DocumentMetadata, "kept" | "fresh"> = {
@@ -144,6 +147,7 @@ describe("copyOf", () => {
     expect(reloaded.value.annotations).toEqual(doc.annotations);
     expect(reloaded.value.annotations.map((a) => a.kind)).toEqual(["reactionArrow", "text"]);
     expect(reloaded.value.nextAnnotationId).toBe(4);
+    expect(reloaded.value.locants).toEqual({ a2: "1", a7: "1" });
   });
 
   it("survives the import fork away from a newer stored copy", async () => {

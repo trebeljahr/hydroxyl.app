@@ -36,8 +36,10 @@ import { pruneSchemeAnnotations } from "@starter/chem-render";
 import {
   DISPLAY_FLAG_KEYS,
   createPanel,
+  pruneLocants,
   touchDocument,
   withFigureLayout,
+  withLocants,
   type DisplayFlagKey,
   type Panel,
   type Representation,
@@ -379,9 +381,14 @@ export function createDocumentSlice(
           before.document.molecule,
           molecule,
         );
+        // Explicit locants of deleted atoms go in the same entry for the same
+        // reason (decision 142): a saved document never names an atom it does
+        // not hold. The same map comes back when no numbered atom went.
+        const locants = pruneLocants(before.document.locants, molecule);
+        const edited: SketchDocument = { ...before.document, molecule, annotations };
         commit(label, {
           document: touchDocument(
-            { ...before.document, molecule, annotations },
+            locants === before.document.locants ? edited : withLocants(edited, locants ?? null),
             options.now(),
           ),
           // In the SAME entry as the edit, so undoing a deletion brings the

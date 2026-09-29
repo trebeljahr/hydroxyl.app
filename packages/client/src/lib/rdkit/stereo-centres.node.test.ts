@@ -120,11 +120,15 @@ function cipCases(): Record<string, { molblock: string; smiles: string }> {
 
 function allFixtures(): Fixture[] {
   const out: Fixture[] = [];
-  const manifest = JSON.parse(readFileSync(join(FIXTURES, "projection", "manifest.json"), "utf8")) as {
-    fixtures: { file: string; smiles: string }[];
-  };
-  for (const { file, smiles } of manifest.fixtures) {
-    out.push({ name: file, molblock: readFileSync(join(FIXTURES, "projection", file), "utf8"), smiles });
+  // The sugar set (PubChem SMILES through RDKit) pins its letters as literals
+  // in chem-core's sugar-fixtures.test.ts; this is where they are re-derived.
+  for (const set of ["projection", "sugar"]) {
+    const manifest = JSON.parse(readFileSync(join(FIXTURES, set, "manifest.json"), "utf8")) as {
+      fixtures: { file: string; smiles: string }[];
+    };
+    for (const { file, smiles } of manifest.fixtures) {
+      out.push({ name: file, molblock: readFileSync(join(FIXTURES, set, file), "utf8"), smiles });
+    }
   }
   for (const [name, { molblock, smiles }] of Object.entries(cipCases())) out.push({ name, molblock, smiles });
   return out;

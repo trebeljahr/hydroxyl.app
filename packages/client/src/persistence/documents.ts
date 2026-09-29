@@ -106,6 +106,8 @@ export function copyOf(
     stylePreset: doc.stylePreset,
     panels: doc.panels,
     figure: doc.figure,
+    // Keyed on atom ids, which a copy keeps: the same molecule, numbered the same.
+    locants: doc.locants,
     now: options.now,
   });
 }
