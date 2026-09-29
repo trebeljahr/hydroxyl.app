@@ -132,6 +132,36 @@ describe("StatusBar — what the drawing is", () => {
     expect(statusText("weight")).not.toContain("—");
   });
 
+  it("weighs an isotope-labelled atom as its nuclide", () => {
+    // The reported bug: a 13C label left Exact at methanol's 32.0262.
+    const labelled = buildMolecule((b) => {
+      const c = b.atom("C", { x: 0, y: 0 }, { isotope: 13 });
+      b.bond(c, b.atom("O", { x: 1, y: 0 }), 1);
+    });
+    editorStore
+      .getState()
+      .openDocument(createDocument({ molecule: labelled, now: DOC.metadata.createdAt }));
+    render(<StatusBar />);
+
+    expect(statusText("exact-mass")).toBe("Exact 33.0296");
+    expect(statusText("weight")).toBe("MW 33.0344");
+  });
+
+  it("dashes both masses for a label whose nuclide mass is not on record", () => {
+    // 64Cu is not in chem-core's nuclide table. Copper's own 62.9296 would be
+    // the plausible wrong number, so neither mass is shown.
+    const copper64 = buildMolecule((b) => {
+      b.atom("Cu", { x: 0, y: 0 }, { isotope: 64 });
+    });
+    editorStore
+      .getState()
+      .openDocument(createDocument({ molecule: copper64, now: DOC.metadata.createdAt }));
+    render(<StatusBar />);
+
+    expect(statusText("exact-mass")).toBe("Exact —");
+    expect(statusText("weight")).toBe("MW —");
+  });
+
   it("shows the net charge", () => {
     render(<StatusBar />);
     expect(statusText("charge")).toBe("Charge neutral");

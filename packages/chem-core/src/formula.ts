@@ -11,6 +11,7 @@
 import { requireElement } from "./elements.js";
 import type { ElementSymbol } from "./elements.js";
 import { requireAtom } from "./molecule.js";
+import { nuclideMass } from "./nuclides.js";
 import type { Molecule } from "./types.js";
 import { implicitHydrogenCount } from "./valence.js";
 
@@ -121,29 +122,103 @@ export function molecularFormulaUnicode(mol: Molecule): string {
 }
 
 /**
- * Average molecular weight, from IUPAC standard atomic weights, in g/mol.
- * This is the number that belongs on a synthesis scheme.
+ * Which mass an unlabelled atom is counted at: the IUPAC standard atomic
+ * weight for an average molecular weight, the most abundant isotope's mass
+ * for an exact one. A labelled atom is its nuclide's mass under either.
  */
-export function molecularWeight(mol: Molecule): number {
-  const counts = elementCounts(mol);
+type MassBasis = "average" | "monoisotopic";
+
+/** The first mass `sumMasses` could not find. */
+interface MissingMass {
+  readonly symbol: ElementSymbol;
+  /** The labelled mass number, or undefined for an unlabelled atom. */
+  readonly massNumber: number | undefined;
+}
+
+/**
+ * Every atom's mass plus its hydrogens', or the first mass not on record. The
+ * throwing functions, the `canCompute…` predicates and `massSummary` all read
+ * this one walk, so they cannot disagree about what is computable.
+ *
+ * PER ATOM, NOT PER ELEMENT. `elementCounts` buckets by element and has to,
+ * for the formula; a mass computed from it cannot tell ¹³C from ¹²C, which
+ * left [1-¹³C]benzene at benzene's 78.0470 (decision 118). An atom carrying
+ * `isotope` is counted at `nuclideMass` under both bases — the average weight
+ * of a specifically labelled compound holds that position at its nuclide too,
+ * which is what RDKit's `MolWt` does and what a CDCl3 bottle's 120.38 means.
+ * A nuclide with no mass on record is missing, never replaced by the element's
+ * mass or by the mass number.
+ *
+ * Implicit and pinned hydrogens are natural hydrogen: a label needs an atom to
+ * sit on, so deuterium is always a drawn H with `isotope: 2`.
+ */
+function sumMasses(mol: Molecule, basis: MassBasis): number | MissingMass {
+  const hydrogen = requireElement("H");
+  const hydrogenMass = basis === "average" ? hydrogen.weight : hydrogen.monoisotopic;
   let total = 0;
-  for (const [symbol, n] of Object.entries(counts)) {
-    total += requireElement(symbol).weight * n;
+  for (const atomId of mol.atomIds) {
+    const atom = requireAtom(mol, atomId);
+    let mass: number | undefined;
+    if (atom.isotope === undefined) {
+      const element = requireElement(atom.element);
+      mass = basis === "average" ? element.weight : element.monoisotopic;
+    } else {
+      mass = nuclideMass(atom.element, atom.isotope);
+    }
+    if (mass === undefined) return { symbol: atom.element, massNumber: atom.isotope };
+    total += mass;
+    const hydrogens = implicitHydrogenCount(mol, atomId);
+    if (hydrogens === 0) continue;
+    if (hydrogenMass === undefined) return { symbol: "H", massNumber: undefined };
+    total += hydrogens * hydrogenMass;
   }
   return total;
 }
 
 export class MissingIsotopeDataError extends Error {
   readonly symbol: ElementSymbol;
-  constructor(symbol: ElementSymbol) {
+  /**
+   * The mass number of the labelled atom whose nuclide mass is missing, or
+   * undefined when it is the element's own monoisotopic mass.
+   */
+  readonly massNumber: number | undefined;
+  constructor(symbol: ElementSymbol, massNumber: number | undefined = undefined) {
     super(
-      `No monoisotopic mass on record for ${symbol}, so the exact mass cannot ` +
-        `be computed. Add a verified value to the element table rather than ` +
-        `approximating it with the standard atomic weight.`,
+      massNumber === undefined
+        ? `No monoisotopic mass on record for ${symbol}, so the exact mass cannot ` +
+            `be computed. Add a verified value to the element table rather than ` +
+            `approximating it with the standard atomic weight.`
+        : `No atomic mass on record for the nuclide ${String(massNumber)}${symbol}, so ` +
+            `no mass that counts this isotope label can be computed. Add a verified ` +
+            `AME2020 value to nuclides.ts rather than approximating it with the mass ` +
+            `number or the element's weight.`,
     );
     this.name = "MissingIsotopeDataError";
     this.symbol = symbol;
+    this.massNumber = massNumber;
   }
+}
+
+function massOrThrow(result: number | MissingMass): number {
+  if (typeof result === "number") return result;
+  throw new MissingIsotopeDataError(result.symbol, result.massNumber);
+}
+
+/**
+ * Average molecular weight, from IUPAC standard atomic weights, in g/mol.
+ * This is the number that belongs on a synthesis scheme.
+ *
+ * An isotope-labelled atom counts at its nuclide's mass, so [¹³C]methanol is
+ * 33.034 rather than methanol's 32.042. Throws `MissingIsotopeDataError` for a
+ * label whose nuclide mass is not on record, for the reason `exactMass` does.
+ */
+export function molecularWeight(mol: Molecule): number {
+  return massOrThrow(sumMasses(mol, "average"));
+}
+
+/** Whether `molecularWeight` can be computed for this structure. */
+export function canComputeMolecularWeight(mol: Molecule): boolean {
+  return typeof sumMasses(mol, "average") === "number";
 }
 
 /**
@@ -151,32 +226,27 @@ export class MissingIsotopeDataError extends Error {
  * against. Throws rather than substituting the average weight when an
  * element's isotope mass is not on record: silently mixing average and exact
  * masses produces a plausible-looking number that is simply wrong.
+ *
+ * An isotope-labelled atom counts at its nuclide's mass, not the element's
+ * most abundant one: [1-¹³C]benzene is 79.0503, not 78.0470. A label whose
+ * nuclide mass is not on record throws too.
  */
 export function exactMass(mol: Molecule): number {
-  const counts = elementCounts(mol);
-  let total = 0;
-  for (const [symbol, n] of Object.entries(counts)) {
-    const element = requireElement(symbol);
-    if (element.monoisotopic === undefined) {
-      throw new MissingIsotopeDataError(symbol);
-    }
-    total += element.monoisotopic * n;
-  }
-  return total;
+  return massOrThrow(sumMasses(mol, "monoisotopic"));
 }
 
 /** Whether `exactMass` can be computed for this structure. */
 export function canComputeExactMass(mol: Molecule): boolean {
-  return Object.keys(elementCounts(mol)).every(
-    (symbol) => requireElement(symbol).monoisotopic !== undefined,
-  );
+  return typeof sumMasses(mol, "monoisotopic") === "number";
 }
 
 export interface MassSummary {
   readonly formula: string;
   readonly formulaUnicode: string;
   readonly parts: readonly FormulaPart[];
-  readonly molecularWeight: number;
+  /** Undefined when an isotope label's nuclide mass is not on record. */
+  readonly molecularWeight: number | undefined;
+  /** Undefined when an element's or a label's exact mass is not on record. */
   readonly exactMass: number | undefined;
   readonly netCharge: number;
   readonly heavyAtomCount: number;
@@ -184,19 +254,17 @@ export interface MassSummary {
 
 /** Everything the identifiers panel shows, in one pass. */
 export function massSummary(mol: Molecule): MassSummary {
-  const counts = elementCounts(mol);
   const heavy = mol.atomIds.filter(
     (id) => requireAtom(mol, id).element !== "H",
   ).length;
-  const canExact = Object.keys(counts).every(
-    (s) => requireElement(s).monoisotopic !== undefined,
-  );
+  const weight = sumMasses(mol, "average");
+  const exact = sumMasses(mol, "monoisotopic");
   return {
     formula: molecularFormula(mol),
     formulaUnicode: molecularFormulaUnicode(mol),
     parts: formulaParts(mol),
-    molecularWeight: molecularWeight(mol),
-    exactMass: canExact ? exactMass(mol) : undefined,
+    molecularWeight: typeof weight === "number" ? weight : undefined,
+    exactMass: typeof exact === "number" ? exact : undefined,
     netCharge: netCharge(mol),
     heavyAtomCount: heavy,
   };

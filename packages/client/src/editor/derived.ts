@@ -62,7 +62,8 @@ export function derivedCacheStats(): DerivedCacheStats {
 
 /** Formula, weight, exact mass and charge. `exactMass` is `undefined` — not a
  *  substituted average weight — when an element has no verified monoisotopic
- *  value; that is chem-core's contract and the status bar renders it as an
+ *  value, and both masses are when an isotope label's nuclide mass is not on
+ *  record; that is chem-core's contract and the status bar renders it as an
  *  em dash rather than inventing a plausible wrong number. */
 export function moleculeMass(mol: Molecule): MassSummary {
   const cached = massCache.get(mol);

@@ -350,9 +350,10 @@ describe("diffMolecules", () => {
     expect(diffMolecules(wedged, flat).map((d) => d.kind)).toContain("stereo");
   });
 
-  it("catches a lost isotope label, which no formula function can see", () => {
-    // elementCounts buckets by element and exactMass is computed FROM it, so
-    // 13-C and 12-C methane agree on formula, weight and exact mass alike.
+  it("catches a lost isotope label, which the formula cannot see", () => {
+    // elementCounts buckets by element, so 13-C and 12-C methane share a
+    // formula. The masses see the label (decision 118); the element counts
+    // this harness compares do not, so the diff has to name it.
     const labelled = buildMolecule((b) => void b.atom("C", vec(0, 0), { isotope: 13 }));
     const plain = buildMolecule((b) => void b.atom("C", vec(0, 0)));
     expect(elementCounts(labelled)).toEqual(elementCounts(plain));

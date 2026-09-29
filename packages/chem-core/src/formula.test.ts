@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { benzene, buildMolecule, linearChain, singleAtom } from "./builders.js";
+import { COMMON_ORGANIC_ELEMENTS, labellingIsotopes } from "./elements.js";
 import * as F from "./formula.js";
 import { emptyMolecule } from "./molecule.js";
+import { nuclideMass } from "./nuclides.js";
+import { setIsotope } from "./ops.js";
 
 /** Ethanol, CH3CH2OH. */
 function ethanol() {
@@ -11,6 +14,33 @@ function ethanol() {
     const o = b.atom("O");
     b.bond(c1, c2, 1);
     b.bond(c2, o, 1);
+  });
+}
+
+/** Methanol, CH3OH, with the carbon optionally labelled. */
+function methanol(carbonIsotope?: number) {
+  return buildMolecule((b) => {
+    const c = b.atom("C", undefined, carbonIsotope === undefined ? {} : { isotope: carbonIsotope });
+    b.bond(c, b.atom("O"), 1);
+  });
+}
+
+/** Chloroform, with its hydrogen drawn so it can carry a label: CDCl3 at 2. */
+function chloroform(hydrogenIsotope?: number, chlorineIsotope?: number) {
+  return buildMolecule((b) => {
+    const c = b.atom("C");
+    b.bond(
+      c,
+      b.atom("H", undefined, hydrogenIsotope === undefined ? {} : { isotope: hydrogenIsotope }),
+      1,
+    );
+    for (let i = 0; i < 3; i++) {
+      b.bond(
+        c,
+        b.atom("Cl", undefined, chlorineIsotope === undefined ? {} : { isotope: chlorineIsotope }),
+        1,
+      );
+    }
   });
 }
 
@@ -190,5 +220,106 @@ describe("massSummary", () => {
 
   it("leaves exactMass undefined rather than throwing", () => {
     expect(F.massSummary(singleAtom("Sc")).exactMass).toBeUndefined();
+  });
+});
+
+describe("isotope labels", () => {
+  // Expected exact masses are sums of AME2020 nuclide masses and agree with
+  // RDKit's ExactMolWt to the digits shown; the client's
+  // nuclide-masses.node.test.ts makes that comparison against the real wasm.
+
+  it("weighs a labelled carbon as carbon-13: [13C]methanol", () => {
+    expect(F.exactMass(methanol(13))).toBeCloseTo(33.0296, 4);
+    expect(F.molecularWeight(methanol(13))).toBeCloseTo(33.034, 3);
+    // One neutron's worth heavier than the unlabelled compound, not equal to it.
+    expect(F.exactMass(methanol(13)) - F.exactMass(methanol())).toBeCloseTo(1.00335, 5);
+  });
+
+  it("weighs [1-13C]benzene at 79.0503, not benzene's 78.0470", () => {
+    const plain = benzene();
+    const labelled = setIsotope(plain, plain.atomIds[0]!, 13);
+    expect(F.exactMass(labelled)).toBeCloseTo(79.0503, 4);
+    expect(F.molecularWeight(labelled)).toBeCloseTo(79.106, 3);
+    expect(F.massSummary(labelled).exactMass).toBeCloseTo(79.0503, 4);
+  });
+
+  it("weighs a drawn deuterium as deuterium: CDCl3", () => {
+    expect(F.exactMass(chloroform(2))).toBeCloseTo(118.9207, 4);
+    // The 120.38 on the bottle: the labelled position holds its nuclide mass
+    // in the average weight too. RDKit's MolWt does the same and reads 120.384,
+    // the difference being its 35.453 for chlorine against IUPAC's 35.45.
+    expect(F.molecularWeight(chloroform(2))).toBeCloseTo(120.375, 3);
+    // The formula is per element, so the label does not show there.
+    expect(F.molecularFormula(chloroform(2))).toBe("CHCl3");
+  });
+
+  it("leaves unlabelled structures where they were", () => {
+    expect(F.exactMass(benzene())).toBeCloseTo(78.047, 3);
+    expect(F.molecularWeight(benzene())).toBeCloseTo(78.114, 3);
+    expect(F.exactMass(methanol())).toBeCloseTo(32.0262, 4);
+    expect(F.molecularWeight(methanol())).toBeCloseTo(32.042, 3);
+    expect(F.exactMass(chloroform())).toBeCloseTo(117.9144, 4);
+    expect(F.molecularWeight(chloroform())).toBeCloseTo(119.369, 3);
+  });
+
+  it("never moves the exact mass for a label naming the most abundant isotope", () => {
+    // Exactly equal, not close: 12C, 1H and 35Cl are read from the element
+    // table's own monoisotopic column.
+    expect(F.exactMass(methanol(12))).toBe(F.exactMass(methanol()));
+    expect(F.exactMass(chloroform(1, 35))).toBe(F.exactMass(chloroform()));
+  });
+
+  it("holds a labelled position at its nuclide mass in the average weight", () => {
+    // A 12C label is a statement that this carbon is 12C, not natural carbon.
+    expect(F.molecularWeight(singleAtom("C"))).toBeCloseTo(16.043, 3);
+    const labelled = buildMolecule((b) => void b.atom("C", undefined, { isotope: 12 }));
+    expect(F.molecularWeight(labelled)).toBeCloseTo(16.032, 3);
+  });
+
+  it("refuses a label whose nuclide mass is not on record, in both masses", () => {
+    // 64Cu is a real PET nuclide, but it is not in the nuclide table. Falling
+    // back to copper's 62.9296 would be the plausible wrong number.
+    const copper64 = buildMolecule((b) => void b.atom("Cu", undefined, { isotope: 64 }));
+    expect(F.canComputeExactMass(copper64)).toBe(false);
+    expect(F.canComputeMolecularWeight(copper64)).toBe(false);
+    expect(() => F.exactMass(copper64)).toThrow(F.MissingIsotopeDataError);
+    expect(() => F.molecularWeight(copper64)).toThrow(/64Cu/);
+    let caught: unknown;
+    try {
+      F.exactMass(copper64);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({ symbol: "Cu", massNumber: 64 });
+    const summary = F.massSummary(copper64);
+    expect(summary.exactMass).toBeUndefined();
+    expect(summary.molecularWeight).toBeUndefined();
+    expect(summary.formula).toBe("Cu");
+
+    // Unlabelled copper is still fine.
+    const copper = singleAtom("Cu");
+    expect(F.canComputeExactMass(copper)).toBe(true);
+    expect(F.exactMass(copper)).toBeCloseTo(62.9296, 4);
+  });
+
+  it("refuses an unoffered label on an organic element too", () => {
+    const carbon15 = buildMolecule((b) => void b.atom("C", undefined, { isotope: 15 }));
+    expect(() => F.exactMass(carbon15)).toThrow(F.MissingIsotopeDataError);
+    expect(F.massSummary(carbon15).molecularWeight).toBeUndefined();
+  });
+
+  it("has a mass for every label the editor offers, each beside its mass number", () => {
+    const missing: string[] = [];
+    for (const symbol of COMMON_ORGANIC_ELEMENTS) {
+      for (const a of labellingIsotopes(symbol)) {
+        const mass = nuclideMass(symbol, a);
+        // Every nuclide mass lies within about 0.1 u of its mass number, so a
+        // row filed under the wrong mass number cannot pass this.
+        if (mass === undefined || Math.abs(mass - a) > 0.11) {
+          missing.push(`${String(a)}${symbol}: ${String(mass)}`);
+        }
+      }
+    }
+    expect(missing).toEqual([]);
   });
 });

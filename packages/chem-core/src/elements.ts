@@ -28,7 +28,8 @@
  * one. `monoisotopic` is the mass of the most abundant isotope and is only
  * populated where the value is reliable — mass-spec output must not be built
  * on a half-remembered constant. `exactMass()` in formula.ts refuses to guess
- * when it is missing.
+ * when it is missing. An isotope-labelled atom is not weighed from this table
+ * at all: its nuclide's mass comes from nuclides.ts.
  */
 
 export type ElementSymbol = string;

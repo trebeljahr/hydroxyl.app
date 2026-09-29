@@ -9,7 +9,9 @@
  * `massSummary().exactMass` is `undefined` when any element in the structure
  * has no verified monoisotopic mass, and chem-core's `exactMass()` THROWS in
  * that case rather than substituting an average atomic weight — a plausible
- * wrong mass in a paper is worse than a gap. The bar has to say the same
+ * wrong mass in a paper is worse than a gap. An isotope label whose nuclide
+ * mass is not on record (⁶⁴Cu typed into the panel) leaves BOTH masses
+ * `undefined`, for the same reason (decision 118). The bar has to say the same
  * thing, so the undefined case renders as an em dash and never as an average
  * weight, a zero, or a hidden row.
  *
@@ -239,15 +241,22 @@ export function StatusBar(): ReactElement {
         {mass.formulaUnicode === "" ? "Empty sketch" : mass.formulaUnicode}
       </span>
 
-      <span data-status="weight" title="Average molecular weight">
-        MW {formatMass(mass.molecularWeight)}
+      <span
+        data-status="weight"
+        title={
+          mass.molecularWeight === undefined
+            ? "No verified mass for one of these isotope labels"
+            : "Average molecular weight"
+        }
+      >
+        MW {mass.molecularWeight === undefined ? "—" : formatMass(mass.molecularWeight)}
       </span>
 
       <span
         data-status="exact-mass"
         title={
           mass.exactMass === undefined
-            ? "No verified monoisotopic mass for one of these elements"
+            ? "No verified exact mass for one of these elements or isotope labels"
             : "Monoisotopic exact mass"
         }
       >

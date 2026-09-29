@@ -9,6 +9,7 @@
  */
 
 export * from "./elements.js";
+export * from "./nuclides.js";
 export * from "./types.js";
 export * from "./vec.js";
 export * from "./molecule.js";
