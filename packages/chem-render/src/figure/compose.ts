@@ -86,6 +86,14 @@ export interface FigureOptions {
    * has the flag off.
    */
   readonly locants?: SceneBuildOptions["locants"];
+  /**
+   * The document's stored scheme annotations, handed to every panel as the
+   * canvas hands them to its own (decision 197). Each panel draws the curly
+   * arrows whose anchors it places, against its own geometry; a text panel
+   * draws none. Ids stay unique across panels through the serialiser's
+   * per-panel prefix.
+   */
+  readonly schemeAnnotations?: SceneBuildOptions["schemeAnnotations"];
 }
 
 /**
@@ -219,7 +227,7 @@ export function composeFigure(
   // Pass 1: each panel's content and natural size.
   const natural = panels.map((panel, index) => {
     const letter = panelLetter(index);
-    const content = cellContent(mol, style, panel.representation, text, options.locants);
+    const content = cellContent(mol, style, panel.representation, text, options);
     const primitives =
       content.kind === "scene" ? content.scene.primitives : content.primitives;
     const ink = sceneBounds(primitives, inkStyle);
@@ -440,11 +448,18 @@ function cellContent(
   style: RenderStyle,
   representation: Representation,
   text: TextMetrics,
-  locants: FigureOptions["locants"],
+  figure: FigureOptions,
 ): FigureCellContent {
   const availability = representationAvailability(mol, representation.kind);
   if (availability.available) {
-    const options = locants === undefined ? undefined : { locants };
+    const { locants, schemeAnnotations } = figure;
+    const options =
+      locants === undefined && schemeAnnotations === undefined
+        ? undefined
+        : {
+            ...(locants === undefined ? {} : { locants }),
+            ...(schemeAnnotations === undefined ? {} : { schemeAnnotations }),
+          };
     return { kind: "scene", scene: buildScene(mol, style, representation, options) };
   }
   return {

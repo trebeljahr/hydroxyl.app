@@ -7,7 +7,9 @@ import {
   SCREEN_STYLE,
   benzylAlcoholAbbreviated,
   butan2olWedged,
+  cyanideAdditionToAcetone,
   ethanol,
+  serializeFigure,
 } from "@starter/chem-render";
 import {
   benzene,
@@ -91,6 +93,19 @@ function prepared(doc: SketchDocument, settings = SINGLE_300) {
 }
 
 describe("the figure a document exports", () => {
+  it("draws the document's curly arrows in each panel that places them (decision 197)", () => {
+    const mechanism = cyanideAdditionToAcetone();
+    const doc = createDocument({
+      molecule: mechanism.molecule,
+      annotations: mechanism.annotations,
+      panels: [createPanel("skeletal"), createPanel("sumFormula")],
+      now: "2024-01-01T00:00:00.000Z",
+    });
+    const svg = serializeFigure(documentFigure(doc, "publication"));
+    // Two arrows, shaft and head each, in the skeletal panel only.
+    expect(svg.match(/data-annotation="ann_\d"/g)).toHaveLength(4);
+  });
+
   it("composes the document's panels in order, with its column count", () => {
     const figure = documentFigure({ ...threePanelDoc(), figure: { columns: 2 } }, "publication");
     expect(figure.cells.map((c) => c.representation.kind)).toEqual(["skeletal", "lewis", "sumFormula"]);

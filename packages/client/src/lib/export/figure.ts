@@ -147,8 +147,13 @@ export function documentFigure(doc: SketchDocument, choice: FigureStyleChoice): 
     })),
     // The canvas's own numbering, from the canvas's own function (decision
     // 168): every panel gets it, and each draws it only while its
-    // `showLocants` is on, exactly as that panel does on the canvas.
-    { columns: doc.figure?.columns, locants: documentNumbering(doc).locants },
+    // `showLocants` is on, exactly as that panel does on the canvas. The
+    // curly arrows likewise (decision 197): each panel draws those it places.
+    {
+      columns: doc.figure?.columns,
+      locants: documentNumbering(doc).locants,
+      schemeAnnotations: doc.annotations,
+    },
   );
 }
 

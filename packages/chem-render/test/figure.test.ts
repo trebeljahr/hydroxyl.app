@@ -20,6 +20,7 @@ import { dictionaryEntryById } from "@starter/chem-core/dictionary";
 import {
   acetate,
   benzylAlcoholAbbreviated,
+  cyanideAdditionToAcetone,
   butan2olWedged,
   dimethylSulfone,
   ethanol,
@@ -98,6 +99,38 @@ describe("panelLetter", () => {
       "az",
       "ba",
     ]);
+  });
+});
+
+describe("composeFigure — curly arrows in every panel that places them (decision 197)", () => {
+  const mechanism = cyanideAdditionToAcetone();
+  const panels = [
+    panel("p1", representation("skeletal")),
+    panel("p2", representation("lewis")),
+    panel("p3", representation("sumFormula")),
+  ];
+  const figure = composeFigure(mechanism.molecule, PUBLICATION_STYLE, panels, {
+    schemeAnnotations: mechanism.annotations,
+  });
+  const svg = serializeFigure(figure);
+
+  it("draws each structural panel's arrows exactly as that panel's lone scene does", () => {
+    for (const cell of figure.cells) {
+      if (cell.content.kind !== "scene") throw new Error("expected a scene");
+      const alone = buildScene(mechanism.molecule, PUBLICATION_STYLE, cell.representation, {
+        schemeAnnotations: mechanism.annotations,
+      });
+      expect(cell.content.scene.primitives).toEqual(alone.primitives);
+    }
+  });
+
+  it("namespaces the arrow ids per panel and draws none on a text panel", () => {
+    const ids = [...svg.matchAll(/id="([^"]*annotation:ann_1:head)"/g)].map((m) => m[1]);
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+    const text = figure.cells[2]!;
+    if (text.content.kind !== "scene") throw new Error("expected a scene");
+    expect(text.content.scene.primitives.some((p) => p.source.kind === "annotation")).toBe(false);
   });
 });
 
