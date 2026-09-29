@@ -52,6 +52,9 @@ export * from "./stereo-axes.js";
 export * from "./stereo.js";
 // After stereo.js and valence.js, which it composes. Nothing imports it.
 export * from "./issues.js";
+// Curly arrows as electron bookkeeping: reads valence and lone pairs, draws
+// nothing, and knows no drawn arrow (decision 149).
+export * from "./mechanism.js";
 // Coordinate-free configuration and reading conventions, built on stereo.ts's
 // CIP ranking.
 export * from "./stereo-config.js";
