@@ -63,6 +63,8 @@ RUN pnpm run build
 
 # ── Stage 3: production runtime ────────────────────────────────────
 FROM node:${NODE_VERSION}-bookworm-slim AS runtime
+# Coolify probes Docker image deployments with curl or wget.
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
 ENV NODE_ENV=production
