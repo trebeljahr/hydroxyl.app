@@ -4,3 +4,7 @@ allowBuilds:
   esbuild: true
   sharp: true
   unrs-resolver: true
+
+overrides:
+  "browserslist@4": "4.28.7"
+  "baseline-browser-mapping@2": "2.11.0"
