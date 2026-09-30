@@ -68,7 +68,7 @@ export const STRESS_HEAVY_ATOMS = 300;
  * It lives here, beside the benzene fixture, rather than inside the performance
  * test, because the 60fps criterion is about the REAL browser and the only way
  * to measure that is to get this structure onto the actual canvas — see
- * `documentFromSearch` in app/editor/page.tsx.
+ * `documentFromSearch` in app/editor/editor-page.tsx.
  */
 export function stressMolecule(heavyAtoms: number = STRESS_HEAVY_ATOMS): Molecule {
   const rungs = Math.max(2, Math.floor(heavyAtoms / 2));

@@ -25,7 +25,7 @@ vi.mock("@/persistence", async (importOriginal) => ({
 
 import { EXAMPLE_VIEWS, exampleDocument } from "@/components/landing/example-document";
 
-import EditorPage, { documentIdFromSearch, exampleFromSearch } from "./page";
+import EditorPage, { documentIdFromSearch, exampleFromSearch } from "./editor-page";
 
 function ethanol() {
   return buildMolecule((b) => {

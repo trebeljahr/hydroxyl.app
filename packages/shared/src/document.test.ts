@@ -18,7 +18,6 @@ import {
   stereoConfig,
 } from "@starter/chem-core";
 import type { Molecule, ProjectionView } from "@starter/chem-core";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 // The projection harness's layout-to-Molecule builder lives in chem-core's
 // TEST tree, never in its published package (decision 210); only a test
