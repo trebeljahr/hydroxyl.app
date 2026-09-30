@@ -18,3 +18,14 @@ Dockerfile
 .dockerignore
 docker-compose*.yml
 *.md
+
+# Never send local credentials to the builder.
+**/.env
+**/.env.*
+!**/.env.example
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/.ssh
+**/.aws
