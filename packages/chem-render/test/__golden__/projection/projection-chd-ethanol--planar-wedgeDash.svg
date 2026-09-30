@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-8.9 -53.355 64.488 70.62" width="64.488px" height="70.62px">
+  <line id="bond:b5:line" data-bond="b5" x1="0" y1="0" x2="8.083" y2="-4.667" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b7:line" data-bond="b7" x1="20.784" y1="-19.333" x2="20.784" y2="-28.667" stroke="#000000" stroke-width="1"/>
+  <circle id="atom:a1:dot" data-atom="a1" cx="0" cy="0" r="0.9" fill="#000000"/>
+  <text id="atom:a2:label" data-atom="a2" x="2.73" y="-6.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan><tspan>C</tspan></text>
+  <text id="atom:a3:label" data-atom="a3" x="28.878" y="5.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan font-size="12" dy="-5.833">2</tspan><tspan dy="5.833">H</tspan></text>
+  <text id="atom:a4:label" data-atom="a4" x="14.302" y="-30.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>O</tspan><tspan>H</tspan></text>
+</svg>

@@ -8,7 +8,10 @@ export default defineConfig({
   // processes and exhausts a 24 GB machine into swap. Four is still parallel
   // and leaves room for whatever else is running.
   maxWorkers: 4,
-    include: ["src/**/*.test.ts"],
+    // Unit tests sit beside the source; the projection harness (decision 208)
+    // lives in test/harness, beside the fixtures it reads and the goldens it
+    // writes, so its layout-to-Molecule builder is never part of src/.
+    include: ["src/**/*.test.ts", "test/**/*.test.ts"],
     environment: "node",
   },
 });

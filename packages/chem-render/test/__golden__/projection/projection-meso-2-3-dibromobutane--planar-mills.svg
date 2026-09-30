@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-9.05 -53.355 80.304 94.62" width="80.304px" height="94.62px">
+  <polygon id="bond:b7:wedge" data-bond="b7" points="8.083,-4.667 1.05,1.819 -1.05,-1.819" fill="#000000"/>
+  <line id="bond:b8:line" data-bond="b8" x1="20.784" y1="-19.333" x2="20.784" y2="-28.667" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b9:line" data-bond="b9" x1="28.402" y1="-7.602" x2="33.952" y2="-4.398" stroke="#000000" stroke-width="1"/>
+  <path id="bond:b10:hash" data-bond="b10" d="M41.99 7.333 L41.15 7.333 M42.55 10.444 L40.59 10.444 M43.11 13.556 L40.03 13.556 M43.67 16.667 L39.47 16.667" fill="none" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b11:line" data-bond="b11" x1="54.271" y1="-7.333" x2="62.354" y2="-12" stroke="#000000" stroke-width="1"/>
+  <circle id="atom:a1:dot" data-atom="a1" cx="0" cy="0" r="0.9" fill="#000000"/>
+  <text id="atom:a2:label" data-atom="a2" x="2.73" y="-6.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan><tspan>C</tspan></text>
+  <text id="atom:a3:label" data-atom="a3" x="12.451" y="-30.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>Br</tspan></text>
+  <text id="atom:a4:label" data-atom="a4" x="35.552" y="5.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>C</tspan><tspan>H</tspan></text>
+  <text id="atom:a5:label" data-atom="a5" x="33.236" y="29.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>Br</tspan></text>
+  <circle id="atom:a6:dot" data-atom="a6" cx="62.354" cy="-12" r="0.9" fill="#000000"/>
+  <text id="atom:a2:descriptor" data-atom="a2" x="20.784" y="8.009" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>(R)</tspan></text>
+  <text id="atom:a4:descriptor" data-atom="a4" x="41.57" y="-10.764" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>(S)</tspan></text>
+</svg>

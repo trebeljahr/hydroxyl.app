@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-56.728 -185.355 113.456 373.798" width="113.456px" height="373.798px">
+  <line id="bond:b21:line" data-bond="b21" x1="0" y1="-160.667" x2="0" y2="-144" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b22:line" data-bond="b22" x1="0" y1="-144" x2="0" y2="-120" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b23:line" data-bond="b23" x1="0" y1="-120" x2="-16.382" y2="-120" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b24:line" data-bond="b24" x1="0" y1="-120" x2="0" y2="-96" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b25:line" data-bond="b25" x1="0" y1="-96" x2="0" y2="-72" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b26:line" data-bond="b26" x1="0" y1="-72" x2="-16.382" y2="-72" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b27:line" data-bond="b27" x1="0" y1="-72" x2="0" y2="-48" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b28:line" data-bond="b28" x1="0" y1="-48" x2="0" y2="-24" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b29:line" data-bond="b29" x1="0" y1="-24" x2="16.382" y2="-24" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b30:line" data-bond="b30" x1="0" y1="-24" x2="0" y2="0" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b31:line" data-bond="b31" x1="0" y1="0" x2="0" y2="24" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b32:line" data-bond="b32" x1="0" y1="24" x2="-16.382" y2="24" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b33:line" data-bond="b33" x1="0" y1="24" x2="0" y2="48" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b34:line" data-bond="b34" x1="0" y1="48" x2="0" y2="72" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b35:line" data-bond="b35" x1="0" y1="72" x2="16.382" y2="72" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b36:line" data-bond="b36" x1="0" y1="72" x2="0" y2="96" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b37:line" data-bond="b37" x1="0" y1="96" x2="0" y2="120" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b38:line" data-bond="b38" x1="0" y1="120" x2="0" y2="144" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b39:line" data-bond="b39" x1="0" y1="144" x2="0" y2="160.667" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a1.CH3:label" data-projected-node="a1.CH3" data-projected-atoms="a1" x="-6.018" y="-162.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>C</tspan><tspan>H</tspan><tspan font-size="12" dy="4.167">3</tspan></text>
+  <circle id="atom:a2:dot" data-atom="a2" cx="0" cy="-144" r="0.9" fill="#000000"/>
+  <circle id="atom:a3:dot" data-atom="a3" cx="0" cy="-120" r="0.9" fill="#000000"/>
+  <text id="projected:a4.CH3:label" data-projected-node="a4.CH3" data-projected-atoms="a4" x="-48.728" y="-114.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan><tspan font-size="12" dy="4.167">3</tspan><tspan dy="-4.167">C</tspan></text>
+  <circle id="atom:a5:dot" data-atom="a5" cx="0" cy="-96" r="0.9" fill="#000000"/>
+  <circle id="atom:a6:dot" data-atom="a6" cx="0" cy="-72" r="0.9" fill="#000000"/>
+  <text id="projected:a7.CH3:label" data-projected-node="a7.CH3" data-projected-atoms="a7" x="-48.728" y="-66.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan><tspan font-size="12" dy="4.167">3</tspan><tspan dy="-4.167">C</tspan></text>
+  <circle id="atom:a8:dot" data-atom="a8" cx="0" cy="-48" r="0.9" fill="#000000"/>
+  <circle id="atom:a9:dot" data-atom="a9" cx="0" cy="-24" r="0.9" fill="#000000"/>
+  <text id="projected:a10.CH3:label" data-projected-node="a10.CH3" data-projected-atoms="a10" x="17.982" y="-18.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>C</tspan><tspan>H</tspan><tspan font-size="12" dy="4.167">3</tspan></text>
+  <circle id="atom:a11:dot" data-atom="a11" cx="0" cy="0" r="0.9" fill="#000000"/>
+  <circle id="atom:a12:dot" data-atom="a12" cx="0" cy="24" r="0.9" fill="#000000"/>
+  <text id="projected:a13.CH3:label" data-projected-node="a13.CH3" data-projected-atoms="a13" x="-48.728" y="29.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan><tspan font-size="12" dy="4.167">3</tspan><tspan dy="-4.167">C</tspan></text>
+  <circle id="atom:a14:dot" data-atom="a14" cx="0" cy="48" r="0.9" fill="#000000"/>
+  <circle id="atom:a15:dot" data-atom="a15" cx="0" cy="72" r="0.9" fill="#000000"/>
+  <text id="projected:a16.CH3:label" data-projected-node="a16.CH3" data-projected-atoms="a16" x="17.982" y="77.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>C</tspan><tspan>H</tspan><tspan font-size="12" dy="4.167">3</tspan></text>
+  <circle id="atom:a17:dot" data-atom="a17" cx="0" cy="96" r="0.9" fill="#000000"/>
+  <circle id="atom:a18:dot" data-atom="a18" cx="0" cy="120" r="0.9" fill="#000000"/>
+  <circle id="atom:a19:dot" data-atom="a19" cx="0" cy="144" r="0.9" fill="#000000"/>
+  <text id="projected:a20.CH3:label" data-projected-node="a20.CH3" data-projected-atoms="a20" x="-6.018" y="173.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>C</tspan><tspan>H</tspan><tspan font-size="12" dy="4.167">3</tspan></text>
+  <line id="projected:a2.H:line" data-projected-node="a2.H" data-projected-atoms="a2" x1="0" y1="-144" x2="-16.382" y2="-144" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a2.H:label" data-projected-node="a2.H" data-projected-atoms="a2" x="-30.018" y="-138.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="projected:a2.H.2:line" data-projected-node="a2.H.2" data-projected-atoms="a2" x1="0" y1="-144" x2="16.382" y2="-144" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a2.H.2:label" data-projected-node="a2.H.2" data-projected-atoms="a2" x="17.982" y="-138.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="projected:a3.H:line" data-projected-node="a3.H" data-projected-atoms="a3" x1="0" y1="-120" x2="16.382" y2="-120" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a3.H:label" data-projected-node="a3.H" data-projected-atoms="a3" x="17.982" y="-114.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="projected:a5.H:line" data-projected-node="a5.H" data-projected-atoms="a5" x1="0" y1="-96" x2="-16.382" y2="-96" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a5.H:label" data-projected-node="a5.H" data-projected-atoms="a5" x="-30.018" y="-90.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="projected:a5.H.2:line" data-projected-node="a5.H.2" data-projected-atoms="a5" x1="0" y1="-96" x2="16.382" y2="-96" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a5.H.2:label" data-projected-node="a5.H.2" data-projected-atoms="a5" x="17.982" y="-90.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="projected:a6.H:line" data-projected-node="a6.H" data-projected-atoms="a6" x1="0" y1="-72" x2="16.382" y2="-72" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a6.H:label" data-projected-node="a6.H" data-projected-atoms="a6" x="17.982" y="-66.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="projected:a8.H:line" data-projected-node="a8.H" data-projected-atoms="a8" x1="0" y1="-48" x2="-16.382" y2="-48" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a8.H:label" data-projected-node="a8.H" data-projected-atoms="a8" x="-30.018" y="-42.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="projected:a8.H.2:line" data-projected-node="a8.H.2" data-projected-atoms="a8" x1="0" y1="-48" x2="16.382" y2="-48" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a8.H.2:label" data-projected-node="a8.H.2" data-projected-atoms="a8" x="17.982" y="-42.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="projected:a9.H:line" data-projected-node="a9.H" data-projected-atoms="a9" x1="0" y1="-24" x2="-16.382" y2="-24" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a9.H:label" data-projected-node="a9.H" data-projected-atoms="a9" x="-30.018" y="-18.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="projected:a11.H:line" data-projected-node="a11.H" data-projected-atoms="a11" x1="0" y1="0" x2="-16.382" y2="0" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a11.H:label" data-projected-node="a11.H" data-projected-atoms="a11" x="-30.018" y="5.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="projected:a11.H.2:line" data-projected-node="a11.H.2" data-projected-atoms="a11" x1="0" y1="0" x2="16.382" y2="0" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a11.H.2:label" data-projected-node="a11.H.2" data-projected-atoms="a11" x="17.982" y="5.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="projected:a12.H:line" data-projected-node="a12.H" data-projected-atoms="a12" x1="0" y1="24" x2="16.382" y2="24" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a12.H:label" data-projected-node="a12.H" data-projected-atoms="a12" x="17.982" y="29.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="projected:a14.H:line" data-projected-node="a14.H" data-projected-atoms="a14" x1="0" y1="48" x2="-16.382" y2="48" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a14.H:label" data-projected-node="a14.H" data-projected-atoms="a14" x="-30.018" y="53.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="projected:a14.H.2:line" data-projected-node="a14.H.2" data-projected-atoms="a14" x1="0" y1="48" x2="16.382" y2="48" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a14.H.2:label" data-projected-node="a14.H.2" data-projected-atoms="a14" x="17.982" y="53.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="projected:a15.H:line" data-projected-node="a15.H" data-projected-atoms="a15" x1="0" y1="72" x2="-16.382" y2="72" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a15.H:label" data-projected-node="a15.H" data-projected-atoms="a15" x="-30.018" y="77.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="projected:a17.H:line" data-projected-node="a17.H" data-projected-atoms="a17" x1="0" y1="96" x2="-16.382" y2="96" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a17.H:label" data-projected-node="a17.H" data-projected-atoms="a17" x="-30.018" y="101.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="projected:a17.H.2:line" data-projected-node="a17.H.2" data-projected-atoms="a17" x1="0" y1="96" x2="16.382" y2="96" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a17.H.2:label" data-projected-node="a17.H.2" data-projected-atoms="a17" x="17.982" y="101.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="projected:a18.H:line" data-projected-node="a18.H" data-projected-atoms="a18" x1="0" y1="120" x2="-16.382" y2="120" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a18.H:label" data-projected-node="a18.H" data-projected-atoms="a18" x="-30.018" y="125.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="projected:a18.H.2:line" data-projected-node="a18.H.2" data-projected-atoms="a18" x1="0" y1="120" x2="16.382" y2="120" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a18.H.2:label" data-projected-node="a18.H.2" data-projected-atoms="a18" x="17.982" y="125.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="projected:a19.H:line" data-projected-node="a19.H" data-projected-atoms="a19" x1="0" y1="144" x2="-16.382" y2="144" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a19.H:label" data-projected-node="a19.H" data-projected-atoms="a19" x="-30.018" y="149.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="projected:a19.H.2:line" data-projected-node="a19.H.2" data-projected-atoms="a19" x1="0" y1="144" x2="16.382" y2="144" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a19.H.2:label" data-projected-node="a19.H.2" data-projected-atoms="a19" x="17.982" y="149.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <text id="atom:a3:descriptor" data-atom="a3" x="4.133" y="-125.356" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>(R)</tspan></text>
+  <text id="atom:a6:descriptor" data-atom="a6" x="4.133" y="-77.356" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>(R)</tspan></text>
+  <text id="atom:a9:descriptor" data-atom="a9" x="-4.133" y="-29.356" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>(S)</tspan></text>
+  <text id="atom:a12:descriptor" data-atom="a12" x="4.133" y="18.644" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>(S)</tspan></text>
+  <text id="atom:a15:descriptor" data-atom="a15" x="-4.133" y="66.644" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>(R)</tspan></text>
+</svg>

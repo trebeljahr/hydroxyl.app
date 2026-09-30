@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-56.728 -41.355 108.71 85.798" width="108.71px" height="85.798px">
+  <line id="bond:b7:line" data-bond="b7" x1="-16.382" y1="0" x2="0" y2="0" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b8:line" data-bond="b8" x1="0" y1="0" x2="0" y2="16.667" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b9:line" data-bond="b9" x1="0" y1="0" x2="0" y2="-16.667" stroke="#000000" stroke-width="1"/>
+  <text id="atom:a1:label" data-atom="a1" x="-48.728" y="5.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan><tspan font-size="12" dy="4.167">2</tspan><tspan dy="-4.167">N</tspan></text>
+  <circle id="atom:a2:dot" data-atom="a2" cx="0" cy="0" r="0.9" fill="#000000"/>
+  <text id="projected:a3.CH3:label" data-projected-node="a3.CH3" data-projected-atoms="a3" x="-6.018" y="29.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>C</tspan><tspan>H</tspan><tspan font-size="12" dy="4.167">3</tspan></text>
+  <text id="projected:a4.COOH:label" data-projected-node="a4.COOH" data-projected-atoms="a4 a5 a6" x="-6.018" y="-18.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>C</tspan><tspan>O</tspan><tspan>O</tspan><tspan>H</tspan></text>
+  <line id="projected:a2.H:line" data-projected-node="a2.H" data-projected-atoms="a2" x1="0" y1="0" x2="16.382" y2="0" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a2.H:label" data-projected-node="a2.H" data-projected-atoms="a2" x="17.982" y="5.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <text id="atom:a2:descriptor" data-atom="a2" x="4.133" y="-5.356" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>(S)</tspan></text>
+</svg>

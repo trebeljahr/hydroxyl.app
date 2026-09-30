@@ -1,0 +1,313 @@
+{
+  "generated": "2026-09-30",
+  "rdkit": "@rdkit/rdkit 2025.03.4 (MinimalLib): get_mol(smiles); set_new_coords(); get_molblock(), one species at a time, joined left to right by packages/client/scripts/build-harness-fixtures.mjs. Header line 1 is the name, line 3 the SMILES. Species atoms follow one another in the order listed; arrows name species by index.",
+  "fixtures": [
+    {
+      "file": "butane.mol",
+      "name": "butane",
+      "smiles": "CCCC",
+      "inchiKey": "IJDNQMDRQITEOD-UHFFFAOYSA-N",
+      "note": "No stereo unit at all: every row asserts that emptiness against RDKit (decision 211).",
+      "species": [
+        {
+          "name": "butane",
+          "smiles": "CCCC",
+          "cip": [],
+          "inchiKey": "IJDNQMDRQITEOD-UHFFFAOYSA-N",
+          "atoms": 4
+        }
+      ]
+    },
+    {
+      "file": "isotactic-pentamer.mol",
+      "name": "isotactic 3,5,7,9,11-pentamethylpentadecane (propylene pentamer)",
+      "smiles": "CC[C@@H](C)C[C@@H](C)C[C@@H](C)C[C@@H](C)C[C@@H](C)CCCC",
+      "inchiKey": "RRKQYDDGLZHKPY-UJMXGEILSA-N",
+      "species": [
+        {
+          "name": "isotactic 3,5,7,9,11-pentamethylpentadecane",
+          "smiles": "CC[C@@H](C)C[C@@H](C)C[C@@H](C)C[C@@H](C)C[C@@H](C)CCCC",
+          "cip": [
+            "R",
+            "R",
+            "R",
+            "S",
+            "S"
+          ],
+          "inchiKey": "RRKQYDDGLZHKPY-UJMXGEILSA-N",
+          "atoms": 20
+        }
+      ]
+    },
+    {
+      "file": "syndiotactic-pentamer.mol",
+      "name": "syndiotactic 3,5,7,9,11-pentamethylpentadecane (propylene pentamer)",
+      "smiles": "CC[C@@H](C)C[C@H](C)C[C@@H](C)C[C@H](C)C[C@@H](C)CCCC",
+      "inchiKey": "RRKQYDDGLZHKPY-LCWAXJCOSA-N",
+      "species": [
+        {
+          "name": "syndiotactic 3,5,7,9,11-pentamethylpentadecane",
+          "smiles": "CC[C@@H](C)C[C@H](C)C[C@@H](C)C[C@H](C)C[C@@H](C)CCCC",
+          "cip": [
+            "R",
+            "S",
+            "R",
+            "R",
+            "S"
+          ],
+          "inchiKey": "RRKQYDDGLZHKPY-LCWAXJCOSA-N",
+          "atoms": 20
+        }
+      ]
+    },
+    {
+      "file": "atactic-pentamer.mol",
+      "name": "atactic 3,5,7,9,11-pentamethylpentadecane (propylene pentamer)",
+      "smiles": "CC[C@@H](C)C[C@@H](C)C[C@H](C)C[C@@H](C)C[C@H](C)CCCC",
+      "inchiKey": "RRKQYDDGLZHKPY-UEDWAMCQSA-N",
+      "species": [
+        {
+          "name": "atactic 3,5,7,9,11-pentamethylpentadecane",
+          "smiles": "CC[C@@H](C)C[C@@H](C)C[C@H](C)C[C@@H](C)C[C@H](C)CCCC",
+          "cip": [
+            "R",
+            "R",
+            "S",
+            "S",
+            "R"
+          ],
+          "inchiKey": "RRKQYDDGLZHKPY-UEDWAMCQSA-N",
+          "atoms": 20
+        }
+      ]
+    },
+    {
+      "file": "penta-2-3-diene.mol",
+      "name": "penta-2,3-diene (an allene)",
+      "smiles": "CC=C=CC",
+      "inchiKey": "PODAMDNJNMAKAZ-UHFFFAOYSA-N",
+      "note": "Axial chirality no SMILES here can state and no CIP centre RDKit labels; chem-core reports it as `allene-axis` in `unrepresentable` (decision 211).",
+      "species": [
+        {
+          "name": "penta-2,3-diene",
+          "smiles": "CC=C=CC",
+          "cip": [],
+          "inchiKey": "PODAMDNJNMAKAZ-UHFFFAOYSA-N",
+          "atoms": 5
+        }
+      ]
+    },
+    {
+      "file": "propan-2-ol-wedged.mol",
+      "name": "propan-2-ol with a wedge drawn on C2-O (a wedge on a non-stereocentre)",
+      "smiles": "CC(C)O",
+      "inchiKey": "KFZMGEQAYNKOFK-UHFFFAOYSA-N",
+      "note": "The script draws the wedge (narrow end C2, SMILES atoms 2 and 4); the molecule has no stereocentre, and nothing may read one.",
+      "species": [
+        {
+          "name": "propan-2-ol",
+          "smiles": "CC(C)O",
+          "cip": [],
+          "inchiKey": "KFZMGEQAYNKOFK-UHFFFAOYSA-N",
+          "atoms": 4
+        }
+      ]
+    },
+    {
+      "file": "sn2-scheme.mol",
+      "name": "SN2: hydroxide and (R)-2-bromobutane give (S)-butan-2-ol and bromide",
+      "smiles": "[OH-].C[C@@H](Br)CC.C[C@H](O)CC.[Br-]",
+      "inchiKey": "IQRXTYRDQGNTHT-OINNLSRXSA-L",
+      "note": "Walden inversion: the letter changes because the configuration does, OH taking Br's place in the ranking.",
+      "species": [
+        {
+          "name": "hydroxide",
+          "smiles": "[OH-]",
+          "cip": [],
+          "inchiKey": "XLYOFNOQVPJJNP-UHFFFAOYSA-M",
+          "atoms": 1
+        },
+        {
+          "name": "(R)-2-bromobutane",
+          "smiles": "C[C@@H](Br)CC",
+          "cip": [
+            "R"
+          ],
+          "inchiKey": "UPSXAPQYNGXVBF-SCSAIBSYSA-N",
+          "atoms": 5
+        },
+        {
+          "name": "(S)-butan-2-ol",
+          "smiles": "C[C@H](O)CC",
+          "cip": [
+            "S"
+          ],
+          "inchiKey": "BTANRVKWQNVYAZ-BYPYZUCNSA-N",
+          "atoms": 5
+        },
+        {
+          "name": "bromide",
+          "smiles": "[Br-]",
+          "cip": [],
+          "inchiKey": "CPELXLSAUQHCOX-UHFFFAOYSA-M",
+          "atoms": 1
+        }
+      ],
+      "arrows": [
+        {
+          "kind": "forward",
+          "from": [
+            0,
+            1
+          ],
+          "to": [
+            2,
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "file": "aldol-scheme.mol",
+      "name": "Proline-catalysed aldol: acetone and 2-methylpropanal give (R)-4-hydroxy-5-methylhexan-2-one",
+      "smiles": "CC(C)=O.CC(C)C=O.CC(=O)C[C@@H](O)C(C)C",
+      "inchiKey": "UOPWEXFAQJXLST-XCUBXKJBSA-N",
+      "source": "List, Lerner and Barbas, J. Am. Chem. Soc. 2000, 122, 2395: L-proline (30 mol%), DMSO, rt.",
+      "species": [
+        {
+          "name": "acetone",
+          "smiles": "CC(C)=O",
+          "cip": [],
+          "inchiKey": "CSCPPACGZOOCGX-UHFFFAOYSA-N",
+          "atoms": 4
+        },
+        {
+          "name": "2-methylpropanal",
+          "smiles": "CC(C)C=O",
+          "cip": [],
+          "inchiKey": "AMIMRNSIRUDHCM-UHFFFAOYSA-N",
+          "atoms": 5
+        },
+        {
+          "name": "(R)-4-hydroxy-5-methylhexan-2-one",
+          "smiles": "CC(=O)C[C@@H](O)C(C)C",
+          "cip": [
+            "R"
+          ],
+          "inchiKey": "BXQODTBLKZARFD-SSDOTTSWSA-N",
+          "atoms": 9
+        }
+      ],
+      "arrows": [
+        {
+          "kind": "forward",
+          "from": [
+            0,
+            1
+          ],
+          "to": [
+            2
+          ],
+          "above": [
+            "L-proline (30 mol%)"
+          ],
+          "below": [
+            "DMSO, rt"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "allyl-cation-resonance.mol",
+      "name": "the allyl cation's two resonance forms",
+      "smiles": "[CH2+]C=C.C=C[CH2+]",
+      "inchiKey": "WGOXFZRZSHJXGD-UHFFFAOYSA-N",
+      "note": "One compound drawn twice: formula and net charge must agree (speciesRelationIssues), and neither form has a stereo unit.",
+      "species": [
+        {
+          "name": "allyl cation, charge on C1",
+          "smiles": "[CH2+]C=C",
+          "cip": [],
+          "inchiKey": "WPKVKNZNPQRHOD-UHFFFAOYSA-N",
+          "atoms": 3
+        },
+        {
+          "name": "allyl cation, charge on C3",
+          "smiles": "C=C[CH2+]",
+          "cip": [],
+          "inchiKey": "WPKVKNZNPQRHOD-UHFFFAOYSA-N",
+          "atoms": 3
+        }
+      ],
+      "arrows": [
+        {
+          "kind": "resonance",
+          "from": [
+            0
+          ],
+          "to": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "file": "ester-hydrolysis-equilibrium.mol",
+      "name": "Acid-catalysed ester hydrolysis at equilibrium: ethyl (S)-lactate and water give (S)-lactic acid and ethanol",
+      "smiles": "C[C@H](O)C(=O)OCC.O.C[C@H](O)C(=O)O.CCO",
+      "inchiKey": "ZZVITGQUHWPYEN-UDSFRJCUSA-N",
+      "note": "The centre is not touched, so both sides read (S).",
+      "species": [
+        {
+          "name": "ethyl (S)-lactate",
+          "smiles": "C[C@H](O)C(=O)OCC",
+          "cip": [
+            "S"
+          ],
+          "inchiKey": "LZCLXQDLBQLTDK-BYPYZUCNSA-N",
+          "atoms": 8
+        },
+        {
+          "name": "water",
+          "smiles": "O",
+          "cip": [],
+          "inchiKey": "XLYOFNOQVPJJNP-UHFFFAOYSA-N",
+          "atoms": 1
+        },
+        {
+          "name": "(S)-lactic acid",
+          "smiles": "C[C@H](O)C(=O)O",
+          "cip": [
+            "S"
+          ],
+          "inchiKey": "JVTAAEKCZFNVCJ-REOHCLBHSA-N",
+          "atoms": 6
+        },
+        {
+          "name": "ethanol",
+          "smiles": "CCO",
+          "cip": [],
+          "inchiKey": "LFQSCWFLJHTTHZ-UHFFFAOYSA-N",
+          "atoms": 3
+        }
+      ],
+      "arrows": [
+        {
+          "kind": "equilibrium",
+          "from": [
+            0,
+            1
+          ],
+          "to": [
+            2,
+            3
+          ],
+          "above": [
+            "H+ (cat.)"
+          ],
+          "below": []
+        }
+      ]
+    }
+  ]
+}

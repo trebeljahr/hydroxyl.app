@@ -14,8 +14,16 @@ import {
   removeAtoms,
   TEST_ONLY_MOLECULE,
   withStereoGroups,
+  project,
+  stereoConfig,
 } from "@starter/chem-core";
-import type { Molecule } from "@starter/chem-core";
+import type { Molecule, ProjectionView } from "@starter/chem-core";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+// The projection harness's layout-to-Molecule builder lives in chem-core's
+// TEST tree, never in its published package (decision 210); only a test
+// reaches it, and this one hands its product to the document assembler.
+import { moleculeFromLayout } from "../../chem-core/test/harness/rebuild.js";
 import { dictionaryEntryById } from "@starter/chem-core/dictionary";
 import { DEFAULT_DISPLAY_FLAGS, prolineAldol, sn2TransitionState } from "@starter/chem-render";
 import { describe, expect, it } from "vitest";
@@ -1573,5 +1581,26 @@ describe("a molecule rebuilt from a projection layout (decision 210)", () => {
 
   it("never leaks the brand into JSON", () => {
     expect(JSON.stringify(testOnly(ethanol()))).toBe(JSON.stringify(ethanol()));
+  });
+
+  it("refuses what the harness's own builder makes of D-glucose's Fischer projection", () => {
+    // The builder itself, from chem-core's test tree, not a copy of its brand.
+    const molblock = readFileSync(
+      join(import.meta.dirname, "..", "..", "chem-core", "test", "fixtures", "projection", "d-glucose-open.mol"),
+      "utf8",
+    );
+    const glucose = readMolblock(molblock).molecule;
+    const view: ProjectionView = {
+      kind: "chain",
+      template: "fischer",
+      frame: { backbone: ["a2", "a3", "a5", "a7", "a9", "a11"] },
+      params: { top: "first" },
+    };
+    const result = project(glucose, stereoConfig(glucose), view);
+    if (result.kind !== "available") throw new Error(result.kind);
+    const rebuilt = moleculeFromLayout(glucose, result.layout).molecule;
+    expect(() => createDocument({ molecule: rebuilt, now: NOW })).toThrow(TestOnlyMoleculeError);
+    const doc = createDocument({ molecule: glucose, now: NOW });
+    expect(() => encodeDocument({ ...doc, molecule: rebuilt })).toThrow(TestOnlyMoleculeError);
   });
 });

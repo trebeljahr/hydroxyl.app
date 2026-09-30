@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-50.518 -53.355 102.5 106.62" width="102.5px" height="106.62px">
+  <line id="bond:b13:line" data-bond="b13" x1="0" y1="-28.667" x2="0" y2="-12" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b14:line" data-bond="b14" x1="0" y1="-12" x2="15.918" y2="-12" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b15:line" data-bond="b15" x1="0" y1="-12" x2="0" y2="12" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b16:line" data-bond="b16" x1="0" y1="12" x2="-15.918" y2="12" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b17:line" data-bond="b17" x1="0" y1="12" x2="0" y2="28.667" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a2.COOH:label" data-projected-node="a2.COOH" data-projected-atoms="a1 a2 a3" x="-6.018" y="-30.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>C</tspan><tspan>O</tspan><tspan>O</tspan><tspan>H</tspan></text>
+  <circle id="atom:a4:dot" data-atom="a4" cx="0" cy="-12" r="0.9" fill="#000000"/>
+  <text id="atom:a5:label" data-atom="a5" x="17.518" y="-6.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>O</tspan><tspan>H</tspan></text>
+  <circle id="atom:a6:dot" data-atom="a6" cx="0" cy="12" r="0.9" fill="#000000"/>
+  <text id="atom:a7:label" data-atom="a7" x="-42.518" y="17.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan><tspan>O</tspan></text>
+  <text id="projected:a8.COOH:label" data-projected-node="a8.COOH" data-projected-atoms="a8 a9 a10" x="-6.018" y="41.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>C</tspan><tspan>O</tspan><tspan>O</tspan><tspan>H</tspan></text>
+  <line id="projected:a4.H:line" data-projected-node="a4.H" data-projected-atoms="a4" x1="0" y1="-12" x2="-16.382" y2="-12" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a4.H:label" data-projected-node="a4.H" data-projected-atoms="a4" x="-30.018" y="-6.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <line id="projected:a6.H:line" data-projected-node="a6.H" data-projected-atoms="a6" x1="0" y1="12" x2="16.382" y2="12" stroke="#000000" stroke-width="1"/>
+  <text id="projected:a6.H:label" data-projected-node="a6.H" data-projected-atoms="a6" x="17.982" y="17.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
+  <text id="atom:a4:descriptor" data-atom="a4" x="-4.133" y="-17.356" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>(R)</tspan></text>
+  <text id="atom:a6:descriptor" data-atom="a6" x="4.133" y="6.644" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>(R)</tspan></text>
+</svg>

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-56.9 -38.139 131.382 68.473" width="131.382px" height="68.473px">
+  <path id="bond:b11:hash" data-bond="b11" d="M52.598 7.123 L51.87 7.543 M54.442 9.645 L53.132 10.401 M56.286 12.168 L54.395 13.26 M58.13 14.69 L55.657 16.118 M59.974 17.212 L56.919 18.976 M61.819 19.734 L58.181 21.834" fill="none" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b12:line" data-bond="b12" x1="49.809" y1="-7.333" x2="53.341" y2="-13.451" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b12:line2" data-bond="b12" x1="54.659" y1="-7.333" x2="58.191" y2="-13.451" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b13:line" data-bond="b13" x1="40.842" y1="0" x2="24" y2="0" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b14:line" data-bond="b14" x1="24" y1="0" x2="12" y2="20.784" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b15:line" data-bond="b15" x1="12" y1="20.784" x2="-12" y2="20.784" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b16:line" data-bond="b16" x1="-12" y1="20.784" x2="-24" y2="0" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b17:line" data-bond="b17" x1="-24" y1="0" x2="-48" y2="0" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b18:line" data-bond="b18" x1="-24" y1="0" x2="-12" y2="-20.784" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b19:line" data-bond="b19" x1="-12" y1="-20.784" x2="12" y2="-20.784" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b20:line" data-bond="b20" x1="12" y1="-20.784" x2="24" y2="0" stroke="#000000" stroke-width="1"/>
+  <circle id="ring:a4+a5+a6+a7+a9+a10:aromaticCircle" data-ring="a4 a5 a6 a7 a9 a10" cx="0" cy="0" r="15.588" fill="none" stroke="#000000" stroke-width="1"/>
+  <circle id="atom:a1:dot" data-atom="a1" cx="60" cy="20.784" r="0.9" fill="#000000"/>
+  <text id="atom:a2:label" data-atom="a2" x="42.442" y="5.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>S</tspan></text>
+  <text id="atom:a3:label" data-atom="a3" x="53.518" y="-15.051" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>O</tspan></text>
+  <circle id="atom:a4:dot" data-atom="a4" cx="24" cy="0" r="0.9" fill="#000000"/>
+  <circle id="atom:a5:dot" data-atom="a5" cx="12" cy="20.784" r="0.9" fill="#000000"/>
+  <circle id="atom:a6:dot" data-atom="a6" cx="-12" cy="20.784" r="0.9" fill="#000000"/>
+  <circle id="atom:a7:dot" data-atom="a7" cx="-24" cy="0" r="0.9" fill="#000000"/>
+  <circle id="atom:a8:dot" data-atom="a8" cx="-48" cy="0" r="0.9" fill="#000000"/>
+  <circle id="atom:a9:dot" data-atom="a9" cx="-12" cy="-20.784" r="0.9" fill="#000000"/>
+  <circle id="atom:a10:dot" data-atom="a10" cx="12" cy="-20.784" r="0.9" fill="#000000"/>
+  <text id="atom:a2:descriptor" data-atom="a2" x="41.234" y="-11.712" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>(R)</tspan></text>
+</svg>
