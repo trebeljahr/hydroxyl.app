@@ -18,6 +18,8 @@
   },
   "surfaces": "fullstack",
   "publicService": "client",
+  "coolifyRuntime": "image",
+  "containerPorts": { "app": 6337 },
   "email": {
     "transactional": "listmonk-ses",
     "mailingList": "listmonk-ses"

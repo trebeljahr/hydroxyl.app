@@ -132,23 +132,43 @@ jobs:
             ghcr.io/${{ github.repository }}-client:${{ github.sha }}
 
   deploy:
+    if: vars.CHEMISTRY_IMAGE_ROLLOUT_READY == 'true'
     runs-on: ubuntu-latest
     needs: [build-client]
     steps:
-      - name: Deploy via Coolify API
+      # Enable only after the image app, probe, and deploy credentials are
+      # verified. A first push must never redeploy a legacy Compose resource.
+      - name: Queue exact Coolify application
         env:
           COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
           COOLIFY_RESOURCE_UUID: ${{ secrets.COOLIFY_RESOURCE_UUID }}
           COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
-        if: env.COOLIFY_BASE_URL != '' && env.COOLIFY_RESOURCE_UUID != ''
         run: |
-          curl -fsSL -X POST \
-            "$COOLIFY_BASE_URL/api/v1/deploy?uuid=$COOLIFY_RESOURCE_UUID&force=true" \
-            -H "Authorization: Bearer $COOLIFY_API_TOKEN"
-
-      - name: Deploy via webhook (fallback)
-        env:
-          COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
-          COOLIFY_WEBHOOK_URL: ${{ secrets.COOLIFY_WEBHOOK_URL }}
-        if: env.COOLIFY_BASE_URL == '' && env.COOLIFY_WEBHOOK_URL != ''
-        run: curl -fsSL "$COOLIFY_WEBHOOK_URL"
+          set -euo pipefail
+          : "${COOLIFY_BASE_URL:?COOLIFY_BASE_URL is required}"
+          : "${COOLIFY_RESOURCE_UUID:?COOLIFY_RESOURCE_UUID is required}"
+          : "${COOLIFY_API_TOKEN:?COOLIFY_API_TOKEN is required}"
+          application=$(curl -fsS "$COOLIFY_BASE_URL/api/v1/applications/$COOLIFY_RESOURCE_UUID" \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN")
+          if ! jq -e --arg uuid "$COOLIFY_RESOURCE_UUID" \
+            --arg image "ghcr.io/${GITHUB_REPOSITORY,,}-client" \
+            '.uuid == $uuid and .docker_registry_image_name == $image and .ports_exposes == "6337"' \
+            >/dev/null <<<"$application"; then
+            echo "::error::Configured Coolify resource is not the expected image app on port 6337."
+            exit 1
+          fi
+          curl -fsS -X PATCH "$COOLIFY_BASE_URL/api/v1/applications/$COOLIFY_RESOURCE_UUID" \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data "$(jq -cn --arg tag "$GITHUB_SHA" '{docker_registry_image_tag: $tag}')" \
+            >/dev/null
+          response=$(curl -fsS -G "$COOLIFY_BASE_URL/api/v1/deploy" \
+            --data-urlencode "uuid=$COOLIFY_RESOURCE_UUID" \
+            --data-urlencode 'force=true' \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN")
+          if ! jq -e '.deployments | type == "array" and any(.[]; .deployment_uuid | type == "string" and length > 0)' \
+            >/dev/null <<<"$response"; then
+            echo "::error::Coolify did not return a queued deployment UUID for the configured app."
+            exit 1
+          fi
+          echo "Coolify queued deployment for $COOLIFY_RESOURCE_UUID"

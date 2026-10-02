@@ -73,6 +73,8 @@ ENV PORT=6337
 # Pin it so an orchestrator that injects a container name cannot make the
 # server bind to that name instead of every interface.
 ENV HOSTNAME=0.0.0.0
+ENV SHUTDOWN_DRAIN_SECONDS=20
+ENV HEALTH_CHECK_PATH=/
 
 # next.config.ts sets outputFileTracingRoot to the monorepo root, so the
 # standalone tree is re-rooted there: server.js lands at
@@ -84,10 +86,12 @@ COPY --from=build /app/packages/client/.next/standalone ./
 COPY --from=build /app/packages/client/.next/static ./packages/client/.next/static
 COPY --from=build /app/packages/client/public ./packages/client/public
 
+COPY drain.cjs /usr/local/lib/drain.cjs
+
 USER node
 EXPOSE 6337
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=5 \
+HEALTHCHECK --interval=2s --timeout=5s --start-period=15s --retries=5 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||'6337')).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 
-CMD ["node", "packages/client/server.js"]
+CMD ["node", "--require", "/usr/local/lib/drain.cjs", "packages/client/server.js"]
