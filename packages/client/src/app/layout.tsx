@@ -15,6 +15,7 @@ export const metadata: Metadata = {
     template: `%s | ${SITE_NAME}`,
   },
   description: SITE_DESCRIPTION,
+  other: { "build-sha": process.env.NEXT_PUBLIC_BUILD_COMMIT ?? "development" },
 };
 
 export default function RootLayout({

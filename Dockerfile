@@ -59,7 +59,12 @@ COPY packages/client packages/client
 # in Next's env loading, so no variables means no analytics.
 ARG NEXT_PUBLIC_PLAUSIBLE_DOMAIN
 ARG NEXT_PUBLIC_PLAUSIBLE_SCRIPT_URL
+ARG RELEASE_SHA
+ENV NEXT_DEPLOYMENT_ID=${RELEASE_SHA}
+ENV NEXT_PUBLIC_BUILD_COMMIT=${RELEASE_SHA}
 RUN pnpm run build
+COPY scripts/write-version.mjs /tmp/write-version.mjs
+RUN node /tmp/write-version.mjs packages/client/public "$RELEASE_SHA"
 
 # ── Stage 3: production runtime ────────────────────────────────────
 FROM node:${NODE_VERSION}-bookworm-slim AS runtime

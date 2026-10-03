@@ -91,6 +91,12 @@ const nextConfig: NextConfig = {
   // — and in the export "/editor" is a file that does not exist. `env` is
   // substituted at build time, so the very first byte of HTML is right.
   env: { NEXT_PUBLIC_FILE_EXPORT: isExport ? "1" : "0", NEXT_PUBLIC_SITE_URL: siteUrlFromHatchkit() },
+  // Release identity must never be cached across a rolling replacement.
+  ...(!isExport ? {
+    async headers() {
+      return [{ source: "/version.json", headers: [{ key: "Cache-Control", value: "no-store" }] }];
+    },
+  } : {}),
   images: { unoptimized: true },
   transpilePackages: ["@starter/shared", "@starter/chem-core", "@starter/chem-render"],
 };

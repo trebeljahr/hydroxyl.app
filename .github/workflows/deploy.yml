@@ -1,56 +1,35 @@
-# Build → push → deploy pipeline scaffolded by hatchkit, pruned to the
-# client-only surface this repo actually has.
-#
-#   1. verify        — install, typecheck, unit tests, production build,
-#                      and a static-export build plus a shape check on its
-#                      output. NEXT_FILE_EXPORT=1 is a recorded binding
-#                      decision (no route may use a dynamic segment, no
-#                      server may be added), so CI guards it rather than
-#                      discovering a break at packaging time.
-#   2. e2e           — Playwright smoke run. playwright.config.ts's
-#                      webServer builds and serves the app on 6337; there
-#                      is no database, cache or object store to start.
-#   3. build-client  — build ./Dockerfile, push to GHCR as
-#                      `ghcr.io/<owner>/<repo>-client:main` + `:<sha>`.
-#   4. deploy        — once the image is pushed, tell Coolify to redeploy
-#                      via its API (webhook fallback).
-#
-# Required repo secrets (hatchkit sets these via `gh secret set` during
-# adopt / create; rotate via the GitHub UI / `gh`):
-#   COOLIFY_BASE_URL      — base URL of the Coolify install
-#                           (e.g. https://coolify.example.com)
-#   COOLIFY_RESOURCE_UUID — uuid of the Coolify application resource to
-#                           redeploy
-#   COOLIFY_API_TOKEN     — bearer token for the Coolify API
-#   COOLIFY_WEBHOOK_URL   — (optional fallback) per-app deploy webhook,
-#                           used only when COOLIFY_BASE_URL is unset
-#
-# No dotenvx BuildKit secret any more: .env.production carries no value
-# the app reads, and requiring the key made `docker build .` impossible
-# from a clean checkout. DOTENV_PRIVATE_KEY_PRODUCTION is now unused.
-#
-# GHCR auth uses the workflow's built-in GITHUB_TOKEN. For Coolify to
-# pull a private package, SSH into the Coolify host once and run
-# `docker login ghcr.io` — Coolify reads ~/.docker/config.json
-# automatically. See:
-# https://coolify.io/docs/knowledge-base/custom-docker-registry
-name: build-and-deploy
+# Candidate builds never move a live image tag or queue a deployment.
+# First adoption requires the reviewed provider rollout and exact image digest.
+name: Build & Verify Release
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      operation:
+        description: Build a candidate or verify a release already deployed
+        type: choice
+        options: [build, verify]
+        default: build
+      target_sha:
+        description: Full commit SHA required for read-only release verification
+        type: string
+        required: false
 
 permissions:
   contents: read
-  packages: write
 
 concurrency:
-  group: deploy-${{ github.ref }}
+  group: image-release-main
   cancel-in-progress: false
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
-  verify:
+  test:
+    if: github.repository == 'trebeljahr/chemistry-sketcher' && github.ref == 'refs/heads/main' && inputs.operation != 'verify'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -59,6 +38,7 @@ jobs:
           node-version-file: .nvmrc
       - uses: pnpm/action-setup@v4
       - run: pnpm install --frozen-lockfile
+      - run: node --test scripts/release.test.mjs
       - run: pnpm run typecheck
       - run: pnpm run test
       - run: pnpm run build
@@ -78,8 +58,9 @@ jobs:
           NEXT_PUBLIC_PLAUSIBLE_SCRIPT_URL: https://plausible.export-check.invalid/js/script.js
 
   e2e:
+    if: github.repository == 'trebeljahr/chemistry-sketcher' && github.ref == 'refs/heads/main' && inputs.operation != 'verify'
     runs-on: ubuntu-latest
-    needs: [verify]
+    needs: [test]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -104,71 +85,77 @@ jobs:
           path: playwright-report/
           retention-days: 7
 
-  build-client:
+  build:
+    if: github.repository == 'trebeljahr/chemistry-sketcher' && github.ref == 'refs/heads/main' && inputs.operation != 'verify'
+    needs: [test, e2e]
     runs-on: ubuntu-latest
-    needs: [verify, e2e]
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - run: node --test scripts/release.test.mjs
+      - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/trebeljahr/chemistry-sketcher-client
+          flavor: latest=false
+          tags: |
+            type=raw,value=${{ github.sha }}
+      - id: image
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile
           push: true
-          # Plausible, cookie-less pageviews (decisions 136 and 170). Repo
-          # VARIABLES, not secrets: both values are in every page anyway.
-          # Unset, they arrive empty and the site loads no analytics.
-          #   gh variable set NEXT_PUBLIC_PLAUSIBLE_DOMAIN --body chemistry.trebeljahr.com
-          #   gh variable set NEXT_PUBLIC_PLAUSIBLE_SCRIPT_URL --body https://<plausible host>/js/script.js
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=site-release
+          cache-to: type=gha,mode=max,scope=site-release
+          platforms: linux/amd64
           build-args: |
+            RELEASE_SHA=${{ github.sha }}
             NEXT_PUBLIC_PLAUSIBLE_DOMAIN=${{ vars.NEXT_PUBLIC_PLAUSIBLE_DOMAIN }}
             NEXT_PUBLIC_PLAUSIBLE_SCRIPT_URL=${{ vars.NEXT_PUBLIC_PLAUSIBLE_SCRIPT_URL }}
-          tags: |
-            ghcr.io/${{ github.repository }}-client:main
-            ghcr.io/${{ github.repository }}-client:${{ github.sha }}
 
-  deploy:
-    if: vars.CHEMISTRY_IMAGE_ROLLOUT_READY == 'true'
-    runs-on: ubuntu-latest
-    needs: [build-client]
-    steps:
-      # Enable only after the image app, probe, and deploy credentials are
-      # verified. A first push must never redeploy a legacy Compose resource.
-      - name: Queue exact Coolify application
+      - name: Record immutable release identity
         env:
-          COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
-          COOLIFY_RESOURCE_UUID: ${{ secrets.COOLIFY_RESOURCE_UUID }}
-          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          IMAGE: ghcr.io/trebeljahr/chemistry-sketcher-client
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
         run: |
-          set -euo pipefail
-          : "${COOLIFY_BASE_URL:?COOLIFY_BASE_URL is required}"
-          : "${COOLIFY_RESOURCE_UUID:?COOLIFY_RESOURCE_UUID is required}"
-          : "${COOLIFY_API_TOKEN:?COOLIFY_API_TOKEN is required}"
-          application=$(curl -fsS "$COOLIFY_BASE_URL/api/v1/applications/$COOLIFY_RESOURCE_UUID" \
-            -H "Authorization: Bearer $COOLIFY_API_TOKEN")
-          if ! jq -e --arg uuid "$COOLIFY_RESOURCE_UUID" \
-            --arg image "ghcr.io/${GITHUB_REPOSITORY,,}-client" \
-            '.uuid == $uuid and .docker_registry_image_name == $image and .ports_exposes == "6337"' \
-            >/dev/null <<<"$application"; then
-            echo "::error::Configured Coolify resource is not the expected image app on port 6337."
-            exit 1
-          fi
-          curl -fsS -X PATCH "$COOLIFY_BASE_URL/api/v1/applications/$COOLIFY_RESOURCE_UUID" \
-            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-            -H 'Content-Type: application/json' \
-            --data "$(jq -cn --arg tag "$GITHUB_SHA" '{docker_registry_image_tag: $tag}')" \
-            >/dev/null
-          response=$(curl -fsS -G "$COOLIFY_BASE_URL/api/v1/deploy" \
-            --data-urlencode "uuid=$COOLIFY_RESOURCE_UUID" \
-            --data-urlencode 'force=true' \
-            -H "Authorization: Bearer $COOLIFY_API_TOKEN")
-          if ! jq -e '.deployments | type == "array" and any(.[]; .deployment_uuid | type == "string" and length > 0)' \
-            >/dev/null <<<"$response"; then
-            echo "::error::Coolify did not return a queued deployment UUID for the configured app."
-            exit 1
-          fi
-          echo "Coolify queued deployment for $COOLIFY_RESOURCE_UUID"
+          node --input-type=module <<'NODE'
+          import { writeFileSync } from 'node:fs';
+          const { GITHUB_SHA: commit, IMAGE: image, IMAGE_DIGEST: digest } = process.env;
+          if (!/^[a-f0-9]{40}$/.test(commit) || !/^sha256:[a-f0-9]{64}$/.test(digest)) throw new Error('Missing full release identity.');
+          writeFileSync('release.json', JSON.stringify({ commit, image, digest, reference: `${image}@${digest}` }, null, 2) + '\n');
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ github.sha }}
+          path: release.json
+          if-no-files-found: error
+
+  verify:
+    if: github.repository == 'trebeljahr/chemistry-sketcher' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.operation == 'verify'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Verify the serving commit without deploying
+        env:
+          EXPECTED_SHA: ${{ inputs.target_sha }}
+        run: node scripts/verify-release.mjs "$EXPECTED_SHA"
