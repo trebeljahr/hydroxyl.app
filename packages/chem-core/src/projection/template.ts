@@ -66,7 +66,7 @@ export interface PlacedLayout {
   readonly provenance: Map<LayoutNodeId, readonly AtomId[]>;
   readonly drawnAs: Map<AtomId, LayoutNodeId>;
   readonly unplaced: UnplacedUnit[];
-  /** An accepted skeleton's numbering (decision 181); empty otherwise. */
+  /** The accepted skeletons' numbering (decisions 181, 195); empty otherwise. */
   readonly locants: Map<AtomId, string>;
   /** Alpha/beta statements; the engine keeps only those its coverage states. */
   readonly faceLabels: FaceLabel[];

@@ -23,7 +23,8 @@ import { describe, expect, it } from "vitest";
 
 import { bondBetween } from "../molecule.js";
 import { readMolblock } from "../molblock-read.js";
-import { setAtomPosition } from "../ops.js";
+import { removeBonds, setAtomPosition } from "../ops.js";
+import { joinSpecies, species } from "../species.js";
 import { carbohydrates, anomericConfiguration } from "../sugar.js";
 import { descriptorFromConfig, stereoConfig, type StereoConfig } from "../stereo-config.js";
 import { flipAtoms, rotateAtoms, verticalMirror } from "../transform.js";
@@ -116,7 +117,8 @@ const ids = (numbers: readonly number[]): AtomId[] => numbers.map((n) => `a${n}`
 function coreOf(mol: Molecule): readonly AtomId[] {
   const suggestion = suggestSteroidSkeleton(mol);
   if (suggestion.kind !== "match") throw new Error(`no match: ${JSON.stringify(suggestion)}`);
-  return suggestion.skeleton.core;
+  if (suggestion.skeletons.length !== 1) throw new Error(`${suggestion.skeletons.length} cores`);
+  return suggestion.skeletons[0]!.core;
 }
 
 /** "3β-OH"-style keys, for readable pins: locant, face, and the ligand's atom or H. */
@@ -183,21 +185,25 @@ describe("recognition (decision 181)", () => {
       const suggestion = suggestSteroidSkeleton(mol);
       expect(suggestion.kind).toBe("match");
       if (suggestion.kind !== "match") return;
-      expect(suggestion.skeleton).toEqual({ name: "steroid", core: ids(numbers) });
-      expect(acceptedSkeletonMisfit(mol, STEROID_SKELETON, suggestion.skeleton)).toBeUndefined();
+      expect(suggestion.skeletons).toEqual([{ name: "steroid", core: ids(numbers) }]);
+      expect(suggestion.refusals).toEqual([]);
+      expect(acceptedSkeletonMisfit(mol, STEROID_SKELETON, suggestion.skeletons[0]!)).toBeUndefined();
     });
   }
 
   it("refuses ent-kaurene's 6-6-6-5 rings, whose C/D fusion is bridged, rather than numbering them", () => {
     const suggestion = suggestSteroidSkeleton(load("ent-kaurene.mol"));
-    expect(suggestion).toMatchObject({ kind: "refused", reason: "wrong-fusion-topology" });
-    if (suggestion.kind === "refused") expect(suggestion.atomIds).toHaveLength(16);
+    expect(suggestion).toMatchObject({ kind: "refused", refusals: [{ reason: "wrong-fusion-topology" }] });
+    if (suggestion.kind === "refused") expect(suggestion.refusals[0]!.atomIds).toHaveLength(16);
   });
 
   it("names cholecalciferol a partial core, 9,10-seco", () => {
     const suggestion = suggestSteroidSkeleton(load("cholecalciferol.mol"));
-    expect(suggestion).toMatchObject({ kind: "refused", reason: "partial-core", missingBond: ["9", "10"] });
-    if (suggestion.kind === "refused") expect(suggestion.atomIds).toHaveLength(17);
+    expect(suggestion).toMatchObject({
+      kind: "refused",
+      refusals: [{ reason: "partial-core", missingBond: ["9", "10"] }],
+    });
+    if (suggestion.kind === "refused") expect(suggestion.refusals[0]!.atomIds).toHaveLength(17);
   });
 
   it("refuses a pentacyclic triterpene that holds the whole core, naming the ring fused onto it (decision 185)", () => {
@@ -207,17 +213,16 @@ describe("recognition (decision 181)", () => {
     expect(skeletonEmbeddings(betulin, STEROID_SKELETON, undefined, { nodes: SKELETON_SEARCH_BUDGET })).toHaveLength(1);
     expect(suggestSteroidSkeleton(betulin)).toEqual({
       kind: "refused",
-      name: "steroid",
-      reason: "larger-ring-system",
-      atomIds: ids([13, 14, 15, 16, 17, 18]),
+      refusals: [{ name: "steroid", reason: "larger-ring-system", atomIds: ids([13, 14, 15, 16, 17, 18]) }],
     });
     // Hopane, 6-6-6-6-5, the same way: its ring A is the carbocycle named.
     const hopane = loadSkeleton("hopane.mol");
-    const refusal = suggestSteroidSkeleton(hopane);
-    expect(refusal).toMatchObject({ kind: "refused", reason: "larger-ring-system" });
-    if (refusal.kind !== "refused") return;
-    expect(refusal.atomIds).toHaveLength(6);
-    for (const id of refusal.atomIds) expect(hopane.atoms[id]!.element).toBe("C");
+    const suggestion = suggestSteroidSkeleton(hopane);
+    expect(suggestion).toMatchObject({ kind: "refused", refusals: [{ reason: "larger-ring-system" }] });
+    if (suggestion.kind !== "refused") return;
+    const [refusal] = suggestion.refusals;
+    expect(refusal!.atomIds).toHaveLength(6);
+    for (const id of refusal!.atomIds) expect(hopane.atoms[id]!.element).toBe("C");
   });
 
   it("offers partial-core only for a ring really left open: an oleanane and a D-homo steroid are none", () => {
@@ -226,7 +231,7 @@ describe("recognition (decision 181)", () => {
     expect(suggestSteroidSkeleton(loadSkeleton("beta-amyrin.mol"))).toEqual({ kind: "none" });
     expect(suggestSteroidSkeleton(loadSkeleton("d-homoestrone.mol"))).toEqual({ kind: "none" });
     // Cholecalciferol's C9 and C10 share no ring: still 9,10-seco.
-    expect(suggestSteroidSkeleton(load("cholecalciferol.mol"))).toMatchObject({ reason: "partial-core" });
+    expect(suggestSteroidSkeleton(load("cholecalciferol.mol"))).toMatchObject({ refusals: [{ reason: "partial-core" }] });
   });
 
   it("still matches a steroid with a small carbocycle or a heterocycle fused on, and reads its faces", () => {
@@ -255,17 +260,69 @@ describe("recognition (decision 181)", () => {
       const suggestion = suggestSteroidSkeleton(mol);
       expect(suggestion.kind, file).toBe("match");
       if (suggestion.kind !== "match") continue;
-      expect(suggestion.skeleton.core, file).toEqual(ids(numbers));
-      expect(extraFusedCarbocycles(mol, STEROID_SKELETON, suggestion.skeleton.core), file).toEqual([]);
-      expect(faceTable(mol, steroidFaces(mol, stereoConfig(mol), suggestion.skeleton.core)), file).toMatchObject(faces);
+      expect(suggestion.skeletons.map((s) => s.core), file).toEqual([ids(numbers)]);
+      const core = suggestion.skeletons[0]!.core;
+      expect(extraFusedCarbocycles(mol, STEROID_SKELETON, core), file).toEqual([]);
+      expect(faceTable(mol, steroidFaces(mol, stereoConfig(mol), core)), file).toMatchObject(faces);
     }
   });
 
-  it("refuses two steroid species in one drawing as several-cores: one acceptance holds one core", () => {
+  it("offers one core per species: the Oppenauer scheme numbers cholesterol and cholest-4-en-3-one (decision 195)", () => {
     const scheme = loadSkeleton("oppenauer-scheme.mol");
+    expect(species(scheme)).toHaveLength(2);
     const suggestion = suggestSteroidSkeleton(scheme);
-    expect(suggestion).toMatchObject({ kind: "refused", reason: "several-cores" });
-    if (suggestion.kind === "refused") expect(suggestion.atomIds).toHaveLength(34);
+    expect(suggestion.kind).toBe("match");
+    if (suggestion.kind !== "match") return;
+    // Cholesterol is the SMILES's first species, read as cholesterol.mol is;
+    // the enone's 28 atoms follow, C1 a53, C3 a50 (the ketone), C10 a54.
+    expect(suggestion.skeletons).toEqual([
+      { name: "steroid", core: ids([22, 23, 24, 25, 20, 19, 18, 17, 16, 21, 15, 14, 13, 12, 11, 10, 9]) },
+      { name: "steroid", core: ids([53, 52, 50, 49, 48, 47, 46, 45, 44, 54, 43, 42, 41, 40, 39, 38, 37]) },
+    ]);
+    expect(suggestion.refusals).toEqual([]);
+    for (const skeleton of suggestion.skeletons) {
+      expect(acceptedSkeletonMisfit(scheme, STEROID_SKELETON, skeleton)).toBeUndefined();
+    }
+    // Both numbered to C25, cholestane's 26 and 27 left blank: 25 each.
+    expect(suggestion.locants.size).toBe(50);
+    expect(suggestion.locants.get("a24")).toBe("3");
+    expect(suggestion.locants.get("a50")).toBe("3");
+    expect(suggestion.locants.get("a56")).toBe("18");
+    expect(suggestion.locants.get("a29")).toBe("21");
+    // The 3β-OH is cholesterol's alone; both keep 8β-H, 10β and 17β.
+    const config = stereoConfig(scheme);
+    const [cholesterol, enone] = suggestion.skeletons.map((s) => faceTable(scheme, steroidFaces(scheme, config, s.core)));
+    expect(cholesterol).toMatchObject({ "3/O:a26": "beta", "8/H": "beta", "10/C:a27": "beta", "17/C:a2": "beta" });
+    expect(enone).toMatchObject({ "8/H": "beta", "9/H": "alpha", "10/C:a55": "beta", "17/C:a30": "beta" });
+    expect(Object.keys(enone!).some((key) => key.startsWith("3/"))).toBe(false);
+  });
+
+  it("refuses two cores in ONE species as several-cores: the scheme's steroids joined as one compound", () => {
+    const joined = joinSpecies(loadSkeleton("oppenauer-scheme.mol"), ["a1", "a29"]);
+    expect(species(joined)).toHaveLength(1);
+    const suggestion = suggestSteroidSkeleton(joined);
+    expect(suggestion).toMatchObject({ kind: "refused", refusals: [{ reason: "several-cores" }] });
+    if (suggestion.kind === "refused") expect(suggestion.refusals[0]!.atomIds).toHaveLength(34);
+  });
+
+  it("offers the species that match and says why the others do not: a scheme with a 9,10-seco product", () => {
+    // The enone with its C9-C10 bond cut: ring B is open, so the product is a
+    // partial core while cholesterol beside it is still offered.
+    const scheme = loadSkeleton("oppenauer-scheme.mol");
+    const seco = removeBonds(scheme, [bondBetween(scheme, "a44", "a54")!.id]);
+    const suggestion = suggestSteroidSkeleton(seco);
+    expect(suggestion.kind).toBe("match");
+    if (suggestion.kind !== "match") return;
+    expect(suggestion.skeletons.map((s) => s.core)).toEqual([ids([22, 23, 24, 25, 20, 19, 18, 17, 16, 21, 15, 14, 13, 12, 11, 10, 9])]);
+    expect(suggestion.refusals).toEqual([
+      {
+        name: "steroid",
+        reason: "partial-core",
+        atomIds: ids([37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 52, 53, 54]),
+        missingBond: ["9", "10"],
+      },
+    ]);
+    expect([...suggestion.locants.values()].filter((locant) => locant === "3")).toHaveLength(1);
   });
 
   it("says nothing about a molecule with no steroid in it", () => {

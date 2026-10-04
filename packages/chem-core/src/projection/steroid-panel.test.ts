@@ -1,6 +1,7 @@
 /**
- * The steroid panel and a planar panel's accepted skeleton (decisions 163,
- * 181, 182), on the PubChem steroids of test/fixtures/steroid.
+ * The steroid panel and a planar panel's accepted skeletons (decisions 163,
+ * 181, 182, 195, 220), on the PubChem steroids of test/fixtures/steroid and
+ * the Oppenauer scheme of test/fixtures/skeleton.
  *
  * Every centre's letter is asserted before a layout runs (steroid.test.ts
  * pins them against RDKit), every layout must place every unit, and the
@@ -20,6 +21,7 @@ import { readMolblock } from "../molblock-read.js";
 import { removeAtoms, setAtomPosition } from "../ops.js";
 import { suggestSteroidSkeleton } from "../skeleton/steroid.js";
 import type { AcceptedSkeleton } from "../skeleton/table.js";
+import { joinSpecies, species } from "../species.js";
 import { descriptorFromConfig, stereoConfig, stereoTopology, type StereoConfig } from "../stereo-config.js";
 import { rotateAtoms } from "../transform.js";
 import type { AtomId, Molecule } from "../types.js";
@@ -34,6 +36,11 @@ function load(file: string): Molecule {
   return readMolblock(readFileSync(join(FIXTURES, file), "utf8")).molecule;
 }
 
+/** Cholesterol and cholest-4-en-3-one as one drawing: two species, a1-a28 and a29-a56. */
+function oppenauer(): Molecule {
+  return readMolblock(readFileSync(join(FIXTURES, "..", "skeleton", "oppenauer-scheme.mol"), "utf8")).molecule;
+}
+
 const STEROIDS = [
   "cholesterol.mol",
   "testosterone.mol",
@@ -46,19 +53,47 @@ const STEROIDS = [
   "cholesteryl-alpha-d-glucopyranoside.mol",
 ] as const;
 
-function accept(mol: Molecule): AcceptedSkeleton {
+/** Every core the suggestion offers, one per species. */
+function acceptAll(mol: Molecule): readonly AcceptedSkeleton[] {
   const suggestion = suggestSteroidSkeleton(mol);
   if (suggestion.kind !== "match") throw new Error(`no match: ${JSON.stringify(suggestion)}`);
-  return suggestion.skeleton;
+  return suggestion.skeletons;
 }
 
-function view(template: PlanarView["template"], skeleton?: AcceptedSkeleton, rotationDeg = 0, mirror = false): PlanarView {
+/** The one core of a single-steroid fixture. */
+function accept(mol: Molecule): AcceptedSkeleton {
+  const skeletons = acceptAll(mol);
+  if (skeletons.length !== 1) throw new Error(`${skeletons.length} cores offered`);
+  return skeletons[0]!;
+}
+
+function view(
+  template: PlanarView["template"],
+  accepted?: AcceptedSkeleton | readonly AcceptedSkeleton[],
+  rotationDeg = 0,
+  mirror = false,
+): PlanarView {
+  const skeletons = accepted === undefined ? undefined : "core" in accepted ? [accepted] : accepted;
   return {
     kind: "planar",
     template,
     frame: {},
-    params: skeleton === undefined ? { rotationDeg, mirror } : { rotationDeg, mirror, skeleton },
+    params: skeletons === undefined ? { rotationDeg, mirror } : { rotationDeg, mirror, skeletons },
   };
+}
+
+/** Rings A to D left to right and ring C above ring B, for one core of `layout`. */
+function expectStandardOrientation(layout: ProjectedLayout, core: readonly AtomId[], label = ""): void {
+  const at = (locant: number) => layout.positions[core[locant - 1]!]!;
+  const centroid = (locants: readonly number[]) => ({
+    x: locants.reduce((s, l) => s + at(l).x, 0) / locants.length,
+    y: locants.reduce((s, l) => s + at(l).y, 0) / locants.length,
+  });
+  const [a, b, c, d] = [[1, 2, 3, 4, 5, 10], [5, 6, 7, 8, 9, 10], [8, 9, 11, 12, 13, 14], [13, 14, 15, 16, 17]].map(centroid);
+  expect(a!.x, label).toBeLessThan(b!.x);
+  expect(b!.x, label).toBeLessThan(c!.x);
+  expect(c!.x, label).toBeLessThan(d!.x);
+  expect(c!.y, label).toBeGreaterThan(b!.y);
 }
 
 function layoutOf(result: ProjectionResult): ProjectedLayout {
@@ -120,16 +155,7 @@ describe("the steroid template", () => {
       expect(letters(mol, read.config)).toEqual(before);
 
       // Rings A to D left to right, ring C above ring B.
-      const at = (locant: number) => layout.positions[accepted.core[locant - 1]!]!;
-      const centroid = (locants: readonly number[]) => ({
-        x: locants.reduce((s, l) => s + at(l).x, 0) / locants.length,
-        y: locants.reduce((s, l) => s + at(l).y, 0) / locants.length,
-      });
-      const [a, b, c, d] = [[1, 2, 3, 4, 5, 10], [5, 6, 7, 8, 9, 10], [8, 9, 11, 12, 13, 14], [13, 14, 15, 16, 17]].map(centroid);
-      expect(a!.x).toBeLessThan(b!.x);
-      expect(b!.x).toBeLessThan(c!.x);
-      expect(c!.x).toBeLessThan(d!.x);
-      expect(c!.y).toBeGreaterThan(b!.y);
+      expectStandardOrientation(layout, accepted.core);
 
       // Each mark at a core centre is a wedge exactly when the ligand it
       // points to is beta. The faces come from the configuration, the marks
@@ -260,6 +286,110 @@ describe("the steroid template", () => {
     expect(layout.coverage.centres).not.toContain(c3);
     expect(layout.faceLabels.some((l) => l.atomId === c3)).toBe(false);
     expect(layout.faceLabels.length).toBeGreaterThan(0);
+  });
+});
+
+describe("a scheme of two steroids, one accepted core per species (decisions 195, 220)", () => {
+  it("numbers and labels both steroids, each turned into the standard orientation in place", () => {
+    const mol = oppenauer();
+    const config = stereoConfig(mol);
+    const before = letters(mol, config);
+    expect(Object.keys(before)).toHaveLength(15);
+    for (const letter of Object.values(before)) expect(letter).toMatch(/^[RSrs]$/);
+    const accepted = acceptAll(mol);
+    expect(accepted).toHaveLength(2);
+    const layout = layoutOf(project(mol, config, view("steroid", accepted)));
+    expect(layout.unplaced).toEqual([]);
+    const read = readProjection(mol, layout);
+    if (read.kind !== "read") throw new Error("refused");
+    expect(letters(mol, read.config)).toEqual(before);
+    for (const [index, skeleton] of accepted.entries()) expectStandardOrientation(layout, skeleton.core, `core ${index}`);
+    // Each steroid's own numbering, the ketone's carbon a C3 like the
+    // carbinol's, and both sets of faces: 3β-OH is cholesterol's alone.
+    expect(layout.locants["a24"]).toBe("3");
+    expect(layout.locants["a50"]).toBe("3");
+    expect(Object.values(layout.locants).filter((locant) => locant === "17")).toHaveLength(2);
+    expect(labelTexts(layout)).toEqual([
+      "17β", "14α-H", "13β", "9α-H", "8β-H", "10β", "3β-OH",
+      "17β", "14α-H", "13β", "9α-H", "8β-H", "10β",
+    ]);
+    // Turned in place: each core's centroid is where the author drew it, so
+    // the scheme keeps its arrangement (RDKit drew the enone up and left).
+    for (const { core } of accepted) {
+      const mean = (pos: (id: AtomId) => { x: number; y: number }) => ({
+        x: core.reduce((sum, id) => sum + pos(id).x, 0) / core.length,
+        y: core.reduce((sum, id) => sum + pos(id).y, 0) / core.length,
+      });
+      const drawn = mean((id) => mol.atoms[id]!.pos);
+      const placed = mean((id) => layout.positions[id]!);
+      expect(placed.x).toBeCloseTo(drawn.x, 9);
+      expect(placed.y).toBeCloseTo(drawn.y, 9);
+    }
+  });
+
+  it("turns each steroid by a motion of its own, and leaves a species with no accepted core as drawn", () => {
+    const mol = oppenauer();
+    const [, enone] = species(mol);
+    const accepted = acceptAll(mol);
+    const layout = layoutOf(project(mol, stereoConfig(mol), view("steroid", accepted)));
+    // The product redrawn upside down: only its own placement changes, and
+    // only by where it sits on the page.
+    const turned = rotateAtoms(mol, enone!.atomIds, mol.atoms["a41"]!.pos, Math.PI);
+    const turnedLayout = layoutOf(project(turned, stereoConfig(turned), view("steroid", accepted)));
+    expect(turnedLayout.faceLabels).toEqual(layout.faceLabels);
+    expect(turnedLayout.marks).toEqual(layout.marks);
+    // Cholesterol's placement is untouched (to rounding: the panel's bond
+    // length is a median over every bond, the turned ones included).
+    for (const id of species(mol)[0]!.atomIds) {
+      expect(turnedLayout.positions[id]!.x).toBeCloseTo(layout.positions[id]!.x, 9);
+      expect(turnedLayout.positions[id]!.y).toBeCloseTo(layout.positions[id]!.y, 9);
+    }
+    const shift = {
+      x: turnedLayout.positions["a41"]!.x - layout.positions["a41"]!.x,
+      y: turnedLayout.positions["a41"]!.y - layout.positions["a41"]!.y,
+    };
+    for (const id of enone!.atomIds) {
+      expect(turnedLayout.positions[id]!.x - shift.x).toBeCloseTo(layout.positions[id]!.x, 6);
+      expect(turnedLayout.positions[id]!.y - shift.y).toBeCloseTo(layout.positions[id]!.y, 6);
+    }
+    // With cholesterol's core alone accepted, the enone is drawn where the
+    // author drew it and carries no numbering.
+    const one = layoutOf(project(turned, stereoConfig(turned), view("steroid", accepted[0]!)));
+    for (const id of enone!.atomIds) expect(one.positions[id]).toEqual(turned.atoms[id]!.pos);
+    expect(enone!.atomIds.some((id) => Object.hasOwn(one.locants, id))).toBe(false);
+  });
+
+  it("is skeleton-mismatch, naming both cores, once an edit puts the two in one species", () => {
+    const mol = oppenauer();
+    const accepted = acceptAll(mol);
+    const joined = joinSpecies(mol, ["a1", "a29"]);
+    for (const template of ["steroid", "wedgeDash", "mills"] as const) {
+      const result = project(joined, stereoConfig(joined), view(template, accepted));
+      expect(result, template).toMatchObject({ kind: "unavailable", reason: "skeleton-mismatch" });
+      if (result.kind === "unavailable") expect(result.atomIds, template).toHaveLength(34);
+    }
+    // The topology cache sees the join, though no atom or bond changed.
+    expect(project(mol, stereoConfig(mol), view("steroid", accepted)).kind).toBe("available");
+  });
+
+  it("stores the list in one order, so two spellings of one acceptance are one view, and refuses a shared atom", () => {
+    const mol = oppenauer();
+    const accepted = acceptAll(mol);
+    const reversed = canonicalProjectionView(view("steroid", [...accepted].reverse()));
+    expect(reversed).toEqual(view("steroid", accepted));
+    expect(canonicalProjectionView(view("steroid", []))).toEqual(view("steroid"));
+    // The same core twice, or two cores sharing C10, have no canonical form.
+    expect(canonicalProjectionView(view("steroid", [accepted[0]!, accepted[0]!]))).toMatchObject({
+      kind: "unavailable",
+      reason: "skeleton-mismatch",
+    });
+    const sharing = { name: "steroid" as const, core: [...accepted[1]!.core.slice(0, 9), "a21", ...accepted[1]!.core.slice(10)] };
+    expect(canonicalProjectionView(view("steroid", [accepted[0]!, sharing]))).toEqual({
+      kind: "unavailable",
+      reason: "skeleton-mismatch",
+      atomIds: ["a21"],
+      bondIds: [],
+    });
   });
 });
 

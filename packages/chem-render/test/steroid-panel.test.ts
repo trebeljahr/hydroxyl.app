@@ -37,7 +37,7 @@ function load(dir: "projection" | "steroid", file: string): Molecule {
 }
 
 function steroidView(skeleton: AcceptedSkeleton): PlanarView {
-  return { kind: "planar", template: "steroid", frame: {}, params: { rotationDeg: 0, mirror: false, skeleton } };
+  return { kind: "planar", template: "steroid", frame: {}, params: { rotationDeg: 0, mirror: false, skeletons: [skeleton] } };
 }
 
 function layoutFor(mol: Molecule, view: PlanarView): ProjectedLayout {
@@ -48,8 +48,8 @@ function layoutFor(mol: Molecule, view: PlanarView): ProjectedLayout {
 
 function accepted(mol: Molecule): AcceptedSkeleton {
   const suggestion = suggestSteroidSkeleton(mol);
-  if (suggestion.kind !== "match") throw new Error("no steroid");
-  return suggestion.skeleton;
+  if (suggestion.kind !== "match" || suggestion.skeletons.length !== 1) throw new Error("not one steroid");
+  return suggestion.skeletons[0]!;
 }
 
 function byId(primitives: readonly ScenePrimitive[], id: string): ScenePrimitive | undefined {

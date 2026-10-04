@@ -319,7 +319,7 @@ function planarSection(): { readonly molecule: Molecule; readonly rows: readonly
     kind: "planar",
     template: "steroid",
     frame: {},
-    params: { rotationDeg: 0, mirror: false, skeleton: suggestion.skeleton },
+    params: { rotationDeg: 0, mirror: false, skeletons: suggestion.skeletons },
   });
   const mills = layoutOf({ kind: "planar", template: "mills", frame: {}, params: { rotationDeg: 0, mirror: false } });
   const labelled = representation("skeletal", { showStereoDescriptors: true, showLocants: true });

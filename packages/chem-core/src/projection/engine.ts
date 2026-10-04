@@ -62,6 +62,7 @@
 import { cipTopologyFingerprint } from "../cip.js";
 import { LruCache } from "../rings.js";
 import { compareIds } from "../selection.js";
+import { speciesJoinsOf } from "../species.js";
 import {
   readConfig,
   stereoTopology,
@@ -147,9 +148,9 @@ let topologyComputations = 0;
 function topologyViewKey(view: ProjectionView): string {
   switch (view.kind) {
     case "planar":
-      // The accepted skeleton is topology: which atoms are the core, checked
-      // against the molecule (decision 163).
-      return JSON.stringify([view.kind, view.template, view.params.skeleton ?? null]);
+      // The accepted skeletons are topology: which atoms are each core,
+      // checked against the molecule (decisions 163, 195).
+      return JSON.stringify([view.kind, view.template, view.params.skeletons ?? null]);
     case "chain":
       return JSON.stringify([view.kind, view.template, view.frame, view.params.top]);
     case "ring":
@@ -164,7 +165,9 @@ function topologyRecord(mol: Molecule, view: ProjectionView): TopologyRecord {
   let perInstance = TOPOLOGY_BY_INSTANCE.get(mol);
   const hit = perInstance?.get(viewKey);
   if (hit !== undefined) return hit;
-  const key = `${cipTopologyFingerprint(mol)}\u0000${viewKey}`;
+  // Species joins are topology too: accepted skeletons are checked one per
+  // species (decision 220), and the CIP fingerprint leaves the joins out.
+  const key = `${cipTopologyFingerprint(mol)}\u0000${JSON.stringify(speciesJoinsOf(mol))}\u0000${viewKey}`;
   let record = TOPOLOGY_BY_KEY.get(key);
   if (record === undefined) {
     // Incremented here and nowhere else, so a cache hit never looks like work.

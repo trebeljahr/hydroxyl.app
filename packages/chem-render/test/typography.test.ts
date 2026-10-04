@@ -145,7 +145,7 @@ describe("an unmeasured code point is reported, never thrown (decision 206)", ()
       kind: "planar",
       template: "steroid",
       frame: {},
-      params: { rotationDeg: 0, mirror: false, skeleton: suggestion.skeleton },
+      params: { rotationDeg: 0, mirror: false, skeletons: suggestion.skeletons },
     };
     const result = project(mol, stereoConfig(mol), view);
     if (result.kind !== "available") throw new Error(JSON.stringify(result));

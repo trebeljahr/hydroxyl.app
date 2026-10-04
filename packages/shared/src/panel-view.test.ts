@@ -3,18 +3,25 @@
  * strictly, and allowed to go stale without breaking the document.
  *
  * Every molecule here is a real one read from chem-core's structure
- * dictionary — aldehydo-D-glucose, beta-D-glucopyranose, cholesterol — so a
- * failure reads as "the Fischer of glucose changed", not as a graph error.
+ * dictionary — aldehydo-D-glucose, beta-D-glucopyranose, cholesterol — or
+ * from its skeleton fixtures (the Oppenauer scheme, cholesterol beside
+ * cholest-4-en-3-one), so a failure reads as "the Fischer of glucose
+ * changed", not as a graph error.
  * Where a test asserts that two views draw the same picture, it first asserts
  * that the picture states something: the centres resolve to R or S and
  * nothing is unplaced, or a layout that stated nothing would pass.
  */
+
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   FRAME_KINDS,
   PROJECTION_TEMPLATES,
   carbohydrates,
   descriptorFromConfig,
+  joinSpecies,
   project,
   readMolblock,
   readProjection,
@@ -25,6 +32,7 @@ import {
   stereoDisagreements,
   suggestSteroidSkeleton,
   sugarRings,
+  type AcceptedSkeleton,
   type AtomId,
   type ChainView,
   type Molecule,
@@ -72,6 +80,15 @@ function dictionaryMolecule(id: string): Molecule {
 const glucose = (): Molecule => dictionaryMolecule("aldehydo-d-glucose");
 const glucopyranose = (): Molecule => dictionaryMolecule("beta-d-glucopyranose");
 const cholesterol = (): Molecule => dictionaryMolecule("cholesterol");
+
+/** Cholesterol (a1-a28) and cholest-4-en-3-one (a29-a56) as one drawing, two species. */
+function oppenauerScheme(): Molecule {
+  const file = join(
+    dirname(fileURLToPath(import.meta.url)),
+    "..", "..", "chem-core", "test", "fixtures", "skeleton", "oppenauer-scheme.mol",
+  );
+  return readMolblock(readFileSync(file, "utf8")).molecule;
+}
 
 /** The glucose backbone as sugar perception numbers it: C1 first. */
 function glucoseBackbone(mol: Molecule): readonly AtomId[] {
@@ -250,24 +267,28 @@ describe("a panel's projection view round-trips (decision 162)", () => {
   });
 });
 
-describe("an accepted steroid skeleton round-trips (decision 163)", () => {
-  function acceptedSteroidView(mol: Molecule): ProjectionView {
+describe("accepted steroid skeletons round-trip, one per species (decisions 163, 195, 220)", () => {
+  function acceptedSkeletons(mol: Molecule): readonly AcceptedSkeleton[] {
     const suggestion = suggestSteroidSkeleton(mol);
-    if (suggestion.kind !== "match") throw new Error(`cholesterol was not suggested: ${suggestion.kind}`);
-    return {
-      kind: "planar",
-      template: "steroid",
-      frame: {},
-      params: { rotationDeg: 0, mirror: false, skeleton: suggestion.skeleton },
-    };
+    if (suggestion.kind !== "match") throw new Error(`no steroid was suggested: ${suggestion.kind}`);
+    return suggestion.skeletons;
   }
 
-  it("keeps the core in locant order and draws the same alpha/beta labels after the round trip", () => {
+  function steroidView(skeletons: readonly AcceptedSkeleton[]): ProjectionView {
+    return { kind: "planar", template: "steroid", frame: {}, params: { rotationDeg: 0, mirror: false, skeletons } };
+  }
+
+  function skeletonsOf(view: ProjectionView): readonly AcceptedSkeleton[] | undefined {
+    return view.kind === "planar" ? view.params.skeletons : undefined;
+  }
+
+  it("keeps cholesterol's core in locant order and draws the same alpha/beta labels after the round trip", () => {
     const mol = cholesterol();
-    const view = acceptedSteroidView(mol);
-    const core = view.kind === "planar" ? view.params.skeleton!.core : [];
+    const view = steroidView(acceptedSkeletons(mol));
+    const core = skeletonsOf(view)![0]!.core;
     // Non-vacuous: the core is 17 atoms in LOCANT order, which is not the
     // sorted order a set would be stored in, so a codec that sorted it fails.
+    expect(skeletonsOf(view)).toHaveLength(1);
     expect(core).toHaveLength(17);
     expect([...core].sort()).not.toEqual([...core]);
     const original = documentWith(mol, [panel("panel-steroid", "skeletal", view)]);
@@ -275,7 +296,7 @@ describe("an accepted steroid skeleton round-trips (decision 163)", () => {
     expect(decoded).toEqual(original);
     expect(undefinedValuedPaths(encodeDocument(decoded))).toEqual([]);
     const stored = viewOf(decoded, "panel-steroid");
-    expect(stored.kind === "planar" && stored.params.skeleton).toEqual({ name: "steroid", core });
+    expect(skeletonsOf(stored)).toEqual([{ name: "steroid", core }]);
     const before = layoutOf(original.molecule, viewOf(original, "panel-steroid"));
     const after = layoutOf(decoded.molecule, stored);
     // Cholesterol states 3beta-OH, 10beta- and 13beta-methyl at least.
@@ -283,19 +304,68 @@ describe("an accepted steroid skeleton round-trips (decision 163)", () => {
     expect(JSON.stringify(after)).toBe(JSON.stringify(before));
   });
 
-  it("refuses a skeleton this build does not name and a number where a core atom goes", () => {
-    const mol = cholesterol();
-    const doc = documentWith(mol, [panel("panel-steroid", "skeletal", acceptedSteroidView(mol))]);
-    const cases: ((skeleton: Record<string, any>) => void)[] = [
-      (skeleton) => (skeleton.name = "hopane"),
-      (skeleton) => (skeleton.core = [0, ...skeleton.core.slice(1)]),
-      (skeleton) => (skeleton.extra = true),
+  it("numbers and labels both steroids of the Oppenauer scheme after the round trip, in either stored order", () => {
+    const mol = oppenauerScheme();
+    const skeletons = acceptedSkeletons(mol);
+    expect(skeletons.map((s) => s.core[2])).toEqual(["a24", "a50"]);
+    const original = documentWith(mol, [panel("panel-steroid", "skeletal", steroidView(skeletons))]);
+    const decoded = roundTrip(original);
+    expect(decoded).toEqual(original);
+    expect(skeletonsOf(viewOf(decoded, "panel-steroid"))).toEqual(skeletons);
+    const after = layoutOf(decoded.molecule, viewOf(decoded, "panel-steroid"));
+    // Non-vacuous: both C3s numbered, and both steroids' faces stated.
+    expect(after.locants["a24"]).toBe("3");
+    expect(after.locants["a50"]).toBe("3");
+    expect(after.faceLabels.filter((l) => l.locant === "10")).toHaveLength(2);
+    expect(JSON.stringify(after)).toBe(JSON.stringify(layoutOf(mol, viewOf(original, "panel-steroid"))));
+    // The product's core listed first is a second spelling of one acceptance.
+    const file = encoded(original);
+    file.panels[0].view.params.skeletons.reverse();
+    expect(decodeDocument(file)).toEqual(original);
+    expect(panel("p", "skeletal", steroidView([...skeletons].reverse()))).toEqual(
+      panel("p", "skeletal", steroidView(skeletons)),
+    );
+  });
+
+  it("decodes two cores an edit put in one species, and the panel says to accept again", () => {
+    const joined = joinSpecies(oppenauerScheme(), ["a1", "a29"]);
+    const doc = documentWith(joined, [panel("panel-steroid", "skeletal", steroidView(acceptedSkeletons(oppenauerScheme())))]);
+    const decoded = roundTrip(doc);
+    expect(decoded).toEqual(doc);
+    const verdict = projectedViewAvailability(decoded.molecule, "skeletal", viewOf(decoded, "panel-steroid"));
+    expect(verdict.status).toBe("unavailable");
+    if (verdict.status !== "unavailable") throw new Error("unreachable");
+    expect(verdict.reason).toBe("skeleton-mismatch");
+    expect(verdict.atomIds).toHaveLength(34);
+  });
+
+  it("refuses an unnamed skeleton, a number for a core atom, an empty list, a shared atom and the retired key", () => {
+    const mol = oppenauerScheme();
+    const doc = documentWith(mol, [panel("panel-steroid", "skeletal", steroidView(acceptedSkeletons(mol)))]);
+    const cases: ((params: Record<string, any>) => void)[] = [
+      (params) => (params.skeletons[0].name = "hopane"),
+      (params) => (params.skeletons[0].core = [0, ...params.skeletons[0].core.slice(1)]),
+      (params) => (params.skeletons[0].extra = true),
+      (params) => (params.skeletons = []),
+      (params) => params.skeletons.push(params.skeletons[0]),
+      (params) => (params.skeletons[1].core[9] = params.skeletons[0].core[9]),
+      // `skeleton` shipped behind no UI and no file holds it: no alias.
+      (params) => {
+        params.skeleton = params.skeletons[0];
+        delete params.skeletons;
+      },
     ];
     for (const breakIt of cases) {
       const raw = encoded(doc);
-      breakIt(raw.panels[0].view.params.skeleton);
+      breakIt(raw.panels[0].view.params);
       expect(safeDecodeDocument(raw).ok, String(breakIt)).toBe(false);
     }
+    // A repeat inside ONE core is the engine's, as a backbone's is.
+    const raw = encoded(doc);
+    raw.panels[0].view.params.skeletons[0].core[1] = raw.panels[0].view.params.skeletons[0].core[0];
+    const repeated = decodeDocument(raw);
+    const verdict = projectedViewAvailability(repeated.molecule, "skeletal", viewOf(repeated, "panel-steroid"));
+    expect(verdict.status === "unavailable" && verdict.reason).toBe("skeleton-mismatch");
   });
 });
 
@@ -687,6 +757,8 @@ describe("the projection value lists and chem-core stay in step", () => {
       "ring.params.conformer.frontAtomId",
       "sightedBond.frame.frontReference",
       "sightedBond.frame.backReference",
+      "planar.params.skeletons[].name",
+      "planar.params.skeletons[].core",
     ]) {
       expect(covered, optional).toContain(optional);
     }

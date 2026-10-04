@@ -66,6 +66,35 @@ export interface AcceptedSkeleton {
   readonly core: readonly AtomId[];
 }
 
+/**
+ * A panel's accepted skeletons in their one stored order (decisions 195,
+ * 220): by each core's lowest atom id, every core itself left in locant
+ * order. Not by species: the order must not depend on the molecule, and a
+ * species' lowest atom id moves when two species are joined or split.
+ */
+export function sortedSkeletons(skeletons: readonly AcceptedSkeleton[]): AcceptedSkeleton[] {
+  const lowest = (core: readonly AtomId[]): AtomId => [...core].sort(compareIds)[0] ?? "";
+  return [...skeletons].sort((a, b) => compareIds(lowest(a.core), lowest(b.core)));
+}
+
+/**
+ * Atoms named by two of `skeletons`' cores, by `compareIds`; empty when the
+ * cores are disjoint. A repeat inside one core is not counted here: like a
+ * backbone's, it is the engine's to report (decision 220).
+ */
+export function sharedSkeletonAtoms(skeletons: readonly AcceptedSkeleton[]): AtomId[] {
+  const owner = new Map<AtomId, number>();
+  const shared = new Set<AtomId>();
+  skeletons.forEach((skeleton, index) => {
+    for (const id of skeleton.core) {
+      const seen = owner.get(id);
+      if (seen === undefined) owner.set(id, index);
+      else if (seen !== index) shared.add(id);
+    }
+  });
+  return [...shared].sort(compareIds);
+}
+
 export interface SkeletonTable {
   readonly name: SkeletonName;
   /** The core's locants, in the order `AcceptedSkeleton.core` lists atoms. */
@@ -178,6 +207,10 @@ export class SkeletonSearchLimit extends Error {
  * so a bridged system does not pass for the table's. A ring fused ONTO the
  * core is not seen here; `extraFusedCarbocycles` is the caller's check.
  *
+ * `within`, when given, limits the search to embeddings rooted in those
+ * atoms; pass whole species (or components), since an embedding is grown
+ * along bonds and so never leaves the component its root is in.
+ *
  * Throws `SkeletonSearchLimit` when `budget.nodes` runs out.
  */
 export function skeletonEmbeddings(
@@ -185,6 +218,7 @@ export function skeletonEmbeddings(
   table: SkeletonTable,
   skip: number | undefined,
   budget: { nodes: number },
+  within?: ReadonlySet<AtomId>,
 ): AtomId[][] {
   const size = table.locants.length;
   const adjacent: Set<number>[] = table.locants.map(() => new Set());
@@ -215,6 +249,7 @@ export function skeletonEmbeddings(
   const used = new Set<AtomId>();
   const found = new Map<string, AtomId[]>();
   const degree = (atomId: AtomId): number => bondsAt(mol, atomId).length;
+  const roots = within === undefined ? mol.atomIds : mol.atomIds.filter((id) => within.has(id));
 
   const fits = (locant: number, atomId: AtomId): boolean => {
     if (used.has(atomId) || degree(atomId) < adjacent[locant]!.size) return false;
@@ -237,7 +272,7 @@ export function skeletonEmbeddings(
       return;
     }
     const locant = order[k]!;
-    const candidates = k === 0 ? mol.atomIds : neighborIds(mol, image[via[locant]!]!);
+    const candidates = k === 0 ? roots : neighborIds(mol, image[via[locant]!]!);
     for (const atomId of candidates) {
       if (!fits(locant, atomId)) continue;
       image[locant] = atomId;

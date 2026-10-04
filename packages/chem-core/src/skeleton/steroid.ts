@@ -8,6 +8,12 @@
  * A panel numbers a steroid and labels its faces only while its planar
  * params hold the accepted core (projection/types.ts, `PlanarParams`).
  *
+ * ONE ANSWER PER SPECIES (decisions 195, 220). A reaction scheme is one
+ * Molecule, and cholesterol beside cholest-4-en-3-one is two steroids, each
+ * numbered on its own. Every species gets its own verdict in the order
+ * below; a `match` offers one core per species that has one and carries the
+ * other species' refusals beside it, so a refusal is never silent.
+ *
  * THE MATCH IS THE FUSION TOPOLOGY, NOT THE RING SIZES (decision 181): the
  * gonane core — cyclopenta[a]phenanthrene, perhydro — embedded as a graph,
  *
@@ -22,10 +28,13 @@
  * 1,2-methylene, stanozolol's pyrazole and triamcinolone acetonide's
  * 16,17-acetonide are steroids, lupane and hopane are not.
  *
- * The answer, in the order it is decided (decision 185, refining 181):
+ * A species' verdict, in the order it is decided (decision 185, refining
+ * 181):
  *
  *   match                  exactly one core, in no larger carbocyclic system
- *   several-cores          two or more such cores: one acceptance holds one
+ *   several-cores          two or more such cores in the ONE species (a
+ *                          bis-steroid, two steroids joined as one compound):
+ *                          a species holds one accepted core
  *   larger-ring-system     every core found has a carbocycle of five or more
  *                          atoms fused onto it: a pentacyclic triterpene
  *                          (betulin, lupeol, hopane) has its own numbering;
@@ -45,7 +54,10 @@
  *                          offered as a broken steroid
  *
  * and `search-limit` wherever the embedding search runs out of budget; never
- * a guess.
+ * a guess. The budget is the call's, not each species': out of it in the
+ * whole-molecule search, everything is `search-limit`; out of it in the seco
+ * search, which runs only on species with no verdict yet, the matches found
+ * stand and one `search-limit` refusal covers the rest.
  *
  * THE NUMBERING IS A LOOKUP TABLE, NOT A SEARCH. A lowest-locant search gives
  * a different, defensible-looking, wrong answer. Locants 1-17 come from the
@@ -68,6 +80,7 @@
 import { bondsAt, otherEnd, requireAtom } from "../molecule.js";
 import { ringMembership, rings } from "../rings.js";
 import { compareIds } from "../selection.js";
+import { species, speciesIndexOf } from "../species.js";
 import type { StereoConfig } from "../stereo-config.js";
 import type { AtomId, Molecule } from "../types.js";
 import {
@@ -76,6 +89,7 @@ import {
   SkeletonSearchLimit,
   skeletonEmbeddings,
   skeletonFaces,
+  sortedSkeletons,
   type AcceptedSkeleton,
   type LigandFace,
   type SkeletonName,
@@ -119,84 +133,152 @@ export type SkeletonRefusalReason =
   | "partial-core"
   | "search-limit";
 
+/** Why one species is not numbered. */
+export interface SkeletonRefusal {
+  readonly name: SkeletonName;
+  readonly reason: SkeletonRefusalReason;
+  /** The atoms to look at, by `compareIds`; empty for `search-limit`. */
+  readonly atomIds: readonly AtomId[];
+  /** partial-core: the missing bond's two locants, lower first. */
+  readonly missingBond?: readonly [string, string];
+}
+
 export type SkeletonSuggestion =
   | {
       readonly kind: "match";
-      /** Ready to store as `PlanarParams.skeleton` once the user accepts. */
-      readonly skeleton: AcceptedSkeleton;
-      /** The numbering the acceptance would apply, core and beyond. */
+      /**
+       * One core per species that holds exactly one, in `sortedSkeletons`
+       * order: ready to store as `PlanarParams.skeletons` once the user
+       * accepts.
+       */
+      readonly skeletons: readonly AcceptedSkeleton[];
+      /** The numbering the acceptance would apply, every core and beyond. */
       readonly locants: ReadonlyMap<AtomId, string>;
+      /** Every other steroid-like species, and why it is not offered, in species order. */
+      readonly refusals: readonly SkeletonRefusal[];
     }
   | {
       readonly kind: "refused";
-      readonly name: SkeletonName;
-      readonly reason: SkeletonRefusalReason;
-      /** The atoms to look at, by `compareIds`. */
-      readonly atomIds: readonly AtomId[];
-      /** partial-core: the missing bond's two locants, lower first. */
-      readonly missingBond?: readonly [string, string];
+      /** One per steroid-like species, in species order; never empty. */
+      readonly refusals: readonly SkeletonRefusal[];
     }
   | { readonly kind: "none" };
 
+/** One species' answer: the core it offers, or why it offers none. */
+type SpeciesVerdict = { readonly core: readonly AtomId[] } | SkeletonRefusal;
+
 /**
- * Whether `mol` holds a steroid core, and which atoms are which locant. Pure;
- * nothing is numbered until the user accepts the match (decision 163).
+ * Whether `mol` holds steroid cores, one per species, and which atoms are
+ * which locant. Pure; nothing is numbered until the user accepts the match
+ * (decision 163).
  */
 export function suggestSteroidSkeleton(mol: Molecule): SkeletonSuggestion {
   const table = STEROID_SKELETON;
   const budget = { nodes: SKELETON_SEARCH_BUDGET };
+  const all = species(mol);
+  const speciesOfCore = (atoms: readonly AtomId[]): number => speciesIndexOf(mol, atoms[0]!)!;
+  const verdicts = new Map<number, SpeciesVerdict>();
+  let full: AtomId[][];
   try {
-    // A core inside a larger carbocyclic system (a pentacyclic triterpene)
-    // is set aside, never matched (decision 185).
-    const full = skeletonEmbeddings(mol, table, undefined, budget);
-    const larger: AtomId[] = [];
-    const cores = full.filter((core) => {
-      const extra = extraFusedCarbocycles(mol, table, core);
-      for (const ring of extra) larger.push(...ring);
-      return extra.length === 0;
-    });
-    if (cores.length === 1) {
-      const core = Object.freeze([...cores[0]!]);
-      return Object.freeze({
-        kind: "match",
-        skeleton: Object.freeze({ name: table.name, core }),
-        locants: steroidNumbering(mol, core),
-      });
+    full = skeletonEmbeddings(mol, table, undefined, budget);
+  } catch (error) {
+    if (error instanceof SkeletonSearchLimit) {
+      return Object.freeze({ kind: "refused", refusals: Object.freeze([refused("search-limit", [])]) });
     }
-    if (cores.length > 1) return refused("several-cores", cores.flat());
-    if (full.length > 0) return refused("larger-ring-system", larger);
-    // No core embeds: every 5-6-6-6 system found now has the wrong fusion.
-    const wrong = fourRingSystems(mol);
-    if (wrong.length > 0) return refused("wrong-fusion-topology", wrong);
+    throw error;
+  }
+  // A core inside a larger carbocyclic system (a pentacyclic triterpene)
+  // is set aside, never matched (decision 185).
+  const kept = new Map<number, AtomId[][]>();
+  const larger = new Map<number, AtomId[]>();
+  for (const core of full) {
+    const index = speciesOfCore(core);
+    const extra = extraFusedCarbocycles(mol, table, core);
+    if (extra.length === 0) kept.set(index, [...(kept.get(index) ?? []), core]);
+    else larger.set(index, [...(larger.get(index) ?? []), ...extra.flat()]);
+  }
+  for (const [index, cores] of kept) {
+    const only = cores.length === 1 ? cores[0]! : undefined;
+    verdicts.set(index, only === undefined ? refused("several-cores", cores.flat()) : { core: Object.freeze([...only]) });
+  }
+  for (const [index, atoms] of larger) {
+    if (!verdicts.has(index)) verdicts.set(index, refused("larger-ring-system", atoms));
+  }
+  // A species with no core: every 5-6-6-6 system in it has the wrong fusion.
+  const wrong = new Map<number, AtomId[]>();
+  for (const system of fourRingSystems(mol)) {
+    const index = speciesOfCore(system);
+    if (!verdicts.has(index)) wrong.set(index, [...(wrong.get(index) ?? []), ...system]);
+  }
+  for (const [index, atoms] of wrong) verdicts.set(index, refused("wrong-fusion-topology", atoms));
+
+  let searchLimited = false;
+  const open = new Set<AtomId>();
+  all.forEach((one, index) => {
+    if (!verdicts.has(index)) for (const id of one.atomIds) open.add(id);
+  });
+  if (open.size > 0) {
     const membership = ringMembership(mol);
     const shareRing = (a: AtomId, b: AtomId): boolean => {
       const of = membership.atoms[b] ?? [];
       return (membership.atoms[a] ?? []).some((index) => of.includes(index));
     };
-    for (let skip = 0; skip < table.bonds.length; skip++) {
-      const [p, q] = table.bonds[skip]!;
-      // Only a ring really left open is a seco-steroid: in a D-homo steroid
-      // or an oleanane the "missing" 13-17 bond's atoms still share a ring.
-      const partial = skeletonEmbeddings(mol, table, skip, budget).find(
-        (core) => !shareRing(core[p]!, core[q]!) && extraFusedCarbocycles(mol, table, core).length === 0,
-      );
-      if (partial === undefined) continue;
-      const pair = [table.locants[p]!, table.locants[q]!].sort((a, b) => Number(a) - Number(b));
-      return Object.freeze({
-        ...refused("partial-core", partial),
-        missingBond: Object.freeze([pair[0]!, pair[1]!] as const),
-      });
+    try {
+      for (let skip = 0; skip < table.bonds.length && open.size > 0; skip++) {
+        const [p, q] = table.bonds[skip]!;
+        for (const partial of skeletonEmbeddings(mol, table, skip, budget, open)) {
+          const index = speciesOfCore(partial);
+          if (verdicts.has(index)) continue;
+          // Only a ring really left open is a seco-steroid: in a D-homo
+          // steroid or an oleanane the "missing" 13-17 bond's atoms still
+          // share a ring.
+          if (shareRing(partial[p]!, partial[q]!)) continue;
+          if (extraFusedCarbocycles(mol, table, partial).length > 0) continue;
+          const pair = [table.locants[p]!, table.locants[q]!].sort((a, b) => Number(a) - Number(b));
+          verdicts.set(
+            index,
+            Object.freeze({
+              ...refused("partial-core", partial),
+              missingBond: Object.freeze([pair[0]!, pair[1]!] as const),
+            }),
+          );
+          for (const id of all[index]!.atomIds) open.delete(id);
+        }
+      }
+    } catch (error) {
+      if (!(error instanceof SkeletonSearchLimit)) throw error;
+      searchLimited = true;
     }
-    return Object.freeze({ kind: "none" });
-  } catch (error) {
-    if (error instanceof SkeletonSearchLimit) return refused("search-limit", []);
-    throw error;
   }
+
+  const matched: AcceptedSkeleton[] = [];
+  const refusals: SkeletonRefusal[] = [];
+  for (let index = 0; index < all.length; index++) {
+    const verdict = verdicts.get(index);
+    if (verdict === undefined) continue;
+    if ("core" in verdict) matched.push(Object.freeze({ name: table.name, core: verdict.core }));
+    else refusals.push(verdict);
+  }
+  if (searchLimited) refusals.push(refused("search-limit", []));
+  if (matched.length > 0) {
+    const skeletons = sortedSkeletons(matched);
+    const locants = new Map<AtomId, string>();
+    for (const { core } of skeletons) {
+      for (const [atomId, locant] of steroidNumbering(mol, core)) locants.set(atomId, locant);
+    }
+    return Object.freeze({
+      kind: "match",
+      skeletons: Object.freeze(skeletons),
+      locants,
+      refusals: Object.freeze(refusals),
+    });
+  }
+  if (refusals.length > 0) return Object.freeze({ kind: "refused", refusals: Object.freeze(refusals) });
+  return Object.freeze({ kind: "none" });
 }
 
-function refused(reason: SkeletonRefusalReason, atoms: readonly AtomId[]): SkeletonSuggestion & { kind: "refused" } {
+function refused(reason: SkeletonRefusalReason, atoms: readonly AtomId[]): SkeletonRefusal {
   return Object.freeze({
-    kind: "refused",
     name: STEROID_SKELETON.name,
     reason,
     atomIds: Object.freeze([...new Set(atoms)].sort(compareIds)),
@@ -204,11 +286,11 @@ function refused(reason: SkeletonRefusalReason, atoms: readonly AtomId[]): Skele
 }
 
 /**
- * The atoms of every ring system made of exactly four rings of 6, 6, 6 and 5
- * atoms (rings joined by a shared atom). Only asked once the core itself has
- * failed to embed, so every one found has the wrong fusion.
+ * Every ring system made of exactly four rings of 6, 6, 6 and 5 atoms (rings
+ * joined by a shared atom), as its atoms. Only read for a species whose core
+ * has failed to embed, so every one found there has the wrong fusion.
  */
-function fourRingSystems(mol: Molecule): AtomId[] {
+function fourRingSystems(mol: Molecule): AtomId[][] {
   const perceived = rings(mol);
   const membership = ringMembership(mol);
   const parent = perceived.map((_, i) => i);
@@ -234,11 +316,11 @@ function fourRingSystems(mol: Molecule): AtomId[] {
     if (list === undefined) systems.set(root, [i]);
     else list.push(i);
   });
-  const out: AtomId[] = [];
+  const out: AtomId[][] = [];
   for (const members of systems.values()) {
     const sizes = members.map((i) => perceived[i]!.size).sort((a, b) => a - b);
     if (sizes.join(",") !== "5,6,6,6") continue;
-    for (const i of members) out.push(...perceived[i]!.atomIds);
+    out.push(members.flatMap((i) => perceived[i]!.atomIds));
   }
   return out;
 }

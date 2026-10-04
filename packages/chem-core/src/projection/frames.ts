@@ -25,6 +25,7 @@ import { isKnownElement } from "../elements.js";
 import { bondBetween, neighborIds } from "../molecule.js";
 import { rings } from "../rings.js";
 import { compareIds } from "../selection.js";
+import { sharedSkeletonAtoms, sortedSkeletons } from "../skeleton/table.js";
 import {
   stereoTopology,
   type CentreReading,
@@ -67,10 +68,12 @@ function sortedUnique<T extends string>(ids: readonly T[]): T[] {
 
 /**
  * `view` in its one canonical spelling: angles in [0, 360), a ring's atoms and
- * an overlay's bonds as sorted sets, no key holding `undefined`. Two views
- * that draw the same picture canonicalise to deep-equal values, which is what
- * the engine's cache keys on. `invalid-parameter` for an angle that is not a
- * finite number.
+ * an overlay's bonds as sorted sets, a planar panel's accepted skeletons in
+ * their stored order, no key holding `undefined`. Two views that draw the
+ * same picture canonicalise to deep-equal values, which is what the engine's
+ * cache keys on. `invalid-parameter` for an angle that is not a finite
+ * number; `skeleton-mismatch` naming the atoms when two accepted cores share
+ * one.
  */
 export function canonicalProjectionView(
   view: ProjectionView,
@@ -79,20 +82,25 @@ export function canonicalProjectionView(
     case "planar": {
       const rotationDeg = canonicalDegrees(view.params.rotationDeg);
       if (rotationDeg === undefined) return projectionUnavailable("invalid-parameter");
-      const skeleton = view.params.skeleton;
+      const skeletons = view.params.skeletons ?? [];
+      // An atom in two cores is a second spelling of a smaller list, which no
+      // edit produces (decision 220); there is no canonical form to give it.
+      const shared = sharedSkeletonAtoms(skeletons);
+      if (shared.length > 0) return projectionUnavailable("skeleton-mismatch", shared);
       return {
         kind: "planar",
         template: view.template,
         frame: {},
-        // The accepted skeleton's core is ORDERED (atom per locant), so it is
-        // copied as it is, never sorted like a ring's set.
+        // Each accepted core is ORDERED (atom per locant), so it is copied as
+        // it is, never sorted like a ring's set; only the LIST is put in its
+        // stored order, and an empty one is no acceptance at all.
         params:
-          skeleton === undefined
+          skeletons.length === 0
             ? { rotationDeg, mirror: view.params.mirror === true }
             : {
                 rotationDeg,
                 mirror: view.params.mirror === true,
-                skeleton: { name: skeleton.name, core: [...skeleton.core] },
+                skeletons: sortedSkeletons(skeletons).map((s) => ({ name: s.name, core: [...s.core] })),
               },
       };
     }

@@ -254,9 +254,8 @@ function bondIdOf(mol: Molecule, [a, b]: readonly [AtomId, AtomId]): BondId {
  * The view `key` draws of `fixture`, or why there is none to draw: no frame
  * declared, or (for the steroid panel) no steroid core to accept.
  *
- * The steroid panel is given the skeleton `suggestSteroidSkeleton` offers,
- * accepted as a user would (decision 163). Kept in this one function so the
- * change to one accepted core per species (decision 195) touches one place.
+ * The steroid panel is given every core `suggestSteroidSkeleton` offers, one
+ * per species (decision 195), accepted as a user would (decision 163).
  */
 export function viewFor(
   fixture: HarnessFixture,
@@ -278,7 +277,7 @@ export function viewFor(
         kind: "planar",
         template: "steroid",
         frame: {},
-        params: { rotationDeg: 0, mirror: false, skeleton: suggestion.skeleton },
+        params: { rotationDeg: 0, mirror: false, skeletons: suggestion.skeletons },
       });
     }
     case "chain/fischer":

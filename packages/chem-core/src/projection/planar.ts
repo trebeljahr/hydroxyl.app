@@ -48,7 +48,7 @@ import { readConfig, type CentreReading, type StereoConfig } from "../stereo-con
 import type { AtomId, BondStereo, Molecule } from "../types.js";
 import type { Vec2 } from "../vec.js";
 import { writeCentreMarks } from "./marks.js";
-import { attachSkeletonLabels, resolvePanelSkeleton, type PanelSkeleton } from "./skeleton-labels.js";
+import { attachSkeletonLabels, resolvePanelSkeletons, type PanelSkeleton } from "./skeleton-labels.js";
 import {
   draftLayoutAccess,
   emptyPlacedLayout,
@@ -64,19 +64,19 @@ import type { BondDepth, LayoutMark, PlanarView, ProjectionCoverage } from "./ty
 
 export const WEDGE_HASH = Object.freeze({ kind: "wedgeHash" as const });
 
-/** What a planar template's topology half hands on: an accepted skeleton, if any. */
+/** What a planar template's topology half hands on: the accepted skeletons, if any. */
 export interface PlanarSkeleton {
-  readonly labels?: PanelSkeleton;
+  readonly labels?: readonly PanelSkeleton[];
 }
 
 /**
  * The topology half every planar template shares: the view's accepted
- * skeleton, checked against `mol` (decision 163). None stored is fine.
+ * skeletons, checked against `mol` (decisions 163, 220). None stored is fine.
  */
 export function resolvePlanar(mol: Molecule, view: PlanarView): ProjectionTemplateResolution<PlanarSkeleton> {
-  const resolved = resolvePanelSkeleton(mol, view);
+  const resolved = resolvePanelSkeletons(mol, view);
   if (resolved.kind === "unavailable") return resolved;
-  return { kind: "available", skeleton: resolved.kind === "accepted" ? { labels: resolved.skeleton } : {} };
+  return { kind: "available", skeleton: resolved.kind === "accepted" ? { labels: resolved.skeletons } : {} };
 }
 
 export const planarWedgeDashTemplate: ProjectionTemplateImplementation<PlanarView, PlanarSkeleton> = {

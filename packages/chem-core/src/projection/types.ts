@@ -159,15 +159,18 @@ export interface PlanarParams {
   readonly rotationDeg: number;
   readonly mirror: boolean;
   /**
-   * A skeleton the user ACCEPTED for this panel (decision 163): suggested by
-   * `suggestSteroidSkeleton`, confirmed, and stored here with the view. While
-   * it is set and still fits the molecule, a planar panel of any template
-   * carries the skeleton's numbering and alpha/beta labels; the `steroid`
-   * template needs it to know where the core is. One that no longer fits
-   * makes the panel `unavailable: skeleton-mismatch` rather than guess.
-   * Omitted when nothing was accepted.
+   * The skeletons the user ACCEPTED for this panel (decision 163), at most
+   * one core per species (decision 195): suggested by
+   * `suggestSteroidSkeleton`, confirmed, and stored here with the view, so a
+   * scheme numbers each of its steroids. While they are set and still fit the
+   * molecule, a planar panel of any template carries their numbering and
+   * alpha/beta labels; the `steroid` template needs them to know where each
+   * core is. One that no longer fits, or two cores an edit has put in one
+   * species, makes the panel `unavailable: skeleton-mismatch` rather than
+   * guess. Stored in `sortedSkeletons` order, never empty (decision 220);
+   * omitted when nothing was accepted.
    */
-  readonly skeleton?: AcceptedSkeleton;
+  readonly skeletons?: readonly AcceptedSkeleton[];
 }
 
 /** Which end of the backbone is drawn at the top of the page. */
@@ -637,8 +640,9 @@ export type ProjectionUnavailableReason =
   /** The steroid template, with no skeleton accepted for the panel (decision 163). */
   | "skeleton-not-accepted"
   /**
-   * The accepted skeleton no longer fits: an atom gone, or a core bond
-   * broken or added. The atoms are the ones to look at; accept again.
+   * An accepted skeleton no longer fits: an atom gone, a core bond broken or
+   * added, or two accepted cores now in one species (decision 220). The atoms
+   * are the ones to look at; accept again.
    */
   | "skeleton-mismatch"
   /** The template is listed but owed by a later task. */

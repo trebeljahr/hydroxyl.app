@@ -40,6 +40,7 @@
 import {
   PROJECTION_TEMPLATES,
   SKELETON_NAMES,
+  sharedSkeletonAtoms,
   canonicalProjectionView,
   isTestOnlyMolecule,
   makeAtom,
@@ -1752,6 +1753,20 @@ function idSetSchema(what: string) {
 }
 
 /**
+ * A planar panel's accepted skeletons (decisions 195, 220): never empty, and
+ * no atom in two cores. Whether two cores share a SPECIES needs the molecule
+ * and an edit can bring it about, so that is left to the engine.
+ */
+const acceptedSkeletonsSchema = z
+  .array(z.strictObject({ name: z.enum(SKELETON_NAMES), core: z.array(nonEmptyString) }))
+  .min(1)
+  .superRefine((skeletons, ctx) => {
+    for (const id of sharedSkeletonAtoms(skeletons)) {
+      ctx.addIssue({ code: "custom", message: `atom ${id} is in two accepted skeleton cores` });
+    }
+  });
+
+/**
  * The stored view, arm by arm, as chem-core types it (decision 162).
  *
  * ATOM IDS ARE NOT CHECKED AGAINST THE MOLECULE (decision 175), unlike an
@@ -1775,13 +1790,16 @@ const projectionViewShapeSchema = z.discriminatedUnion("kind", [
     params: z.strictObject({
       rotationDeg: z.number(),
       mirror: z.boolean(),
-      // The skeleton the user accepted for the panel (decision 163). `core` is
-      // ORDERED, one atom per locant, so it is never a set and never sorted; a
-      // core that no longer fits is the engine's `skeleton-mismatch`, not a
-      // corrupt file (decision 175).
-      skeleton: z
-        .strictObject({ name: z.enum(SKELETON_NAMES), core: z.array(nonEmptyString) })
-        .optional(),
+      // The skeletons the user accepted for the panel (decision 163), at most
+      // one core per species (decision 195). Each `core` is ORDERED, one atom
+      // per locant, so it is never a set and never sorted; only the list is
+      // put in its stored order by the transform (decision 220). A core that
+      // no longer fits, or two cores an edit has put in one species, is the
+      // engine's `skeleton-mismatch`, not a corrupt file (decision 175); an
+      // empty list and an atom named by two cores are second spellings no
+      // edit produces, and are refused. The retired single `skeleton` key is
+      // refused as unknown: it shipped behind no UI, so no file holds it.
+      skeletons: acceptedSkeletonsSchema.optional(),
     }),
   }),
   z.strictObject({

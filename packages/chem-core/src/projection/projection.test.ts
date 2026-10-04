@@ -927,7 +927,7 @@ describe("turning a panel (decision 209)", () => {
       kind: "planar",
       template: "steroid",
       frame: {},
-      params: { rotationDeg: 0, mirror: false, skeleton: { name: "steroid", core: ["a3", "a1", "a2"] } },
+      params: { rotationDeg: 0, mirror: false, skeletons: [{ name: "steroid", core: ["a3", "a1", "a2"] }] },
     };
     const quarter = rotateProjectionView(steroid, 90);
     expect(quarter.kind === "rotated" && quarter.view).toEqual({
