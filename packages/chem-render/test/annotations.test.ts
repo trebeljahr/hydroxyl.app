@@ -524,10 +524,13 @@ describe("decision 35: an annotation reads as its own atom's", () => {
         for (const [view, showImplicitHydrogens] of [
           ["skeletal", false], ["skeletal", true], ["kekule", false], ["explicitH", false], ["lewis", false],
         ] as const) {
+          // Only the skeletal+H row sets the flag. Explicit H and Lewis
+          // default it on, and passing `false` there folded their hydrogens
+          // into the labels: never the crowded pages this sweep most needs.
           const rep = representation(view, {
             showStereoDescriptors: true,
             showLocants: true,
-            showImplicitHydrogens,
+            ...(showImplicitHydrogens ? { showImplicitHydrogens: true } : {}),
           });
           const layout = annotationLayout(molecule, style, rep, { locants });
           const centres = molecule.atomIds.map((id) => ({
@@ -2503,12 +2506,18 @@ function boxMeetsSegment(box: LabelBox, a: ScenePoint, b: ScenePoint): boolean {
 }
 
 /**
- * Reported placements that read as another atom's, because every slot that
- * reads as their own prints over an annotation already placed (decision 45's
- * first key), each marked "(dropped)" when it is off the page (decisions 58
- * and 64). Decision 188 ranks drawn above dropped only among candidates that
- * read as their own, so a drawn entry here is decision 45's ruling, not a
- * slot the fallback reached for.
+ * Reported placements that read as another atom's, each marked "(dropped)"
+ * when it is off the page (decisions 58 and 64). Two causes, and only two:
+ * every slot that reads as their own prints over an annotation already placed
+ * (decision 45's first key outranks its second), or no slot reads as their
+ * own at all (two atoms on one spot). Decision 188 ranks drawn above dropped
+ * only among candidates that read as their own, so a drawn entry here is
+ * decision 45's ruling, not a slot the fallback reached for.
+ *
+ * Explicit H and Lewis are swept with their own default, every hydrogen
+ * drawn as an atom. Until 2026-10-05 the sweep passed them
+ * `showImplicitHydrogens: false`, which folded the hydrogens into the labels
+ * ("H3C", "CH2") and never drew the crowded pages.
  */
 const NOT_OWN_REPORTED: readonly string[] = [
   // The steroid's C13 locant (a3), placed after four descriptors that have
@@ -2517,13 +2526,19 @@ const NOT_OWN_REPORTED: readonly string[] = [
   // be dropped and is now drawn, and its box covers every slot that reads as
   // C10's, so C10's "10" is left only slots nearer C4 and C5. Without C9's
   // locant it is back beside C10 (and dropped there, 11 px from it).
+  // Explicit H and Lewis, hydrogens drawn, add none.
   "steroidSkeleton/publication@13.3px/kekule/atom:a3:locant",
   "steroidSkeleton/publication@13.3px/skeletal+H/atom:a13:locant",
   "steroidSkeleton/publication@13.3px/skeletal+H/atom:a3:locant (dropped)",
   "steroidSkeleton/publication@13.3px/skeletal/atom:a3:locant",
-  // Both of unmergedDropOverlap's locants, on the pair of atoms that
-  // fixture draws a third of a bond apart — no slot there is 15% nearer
-  // one than the other.
+  // Both of unmergedDropOverlap's locants: the hydroxyl O (a3, "3") and the
+  // dropped carbon (a6, "4") that fixture draws 0.03 of a bond apart, 1.32 px
+  // at Screen and 0.72 px at Publication. No ladder slot, even on an empty
+  // page, is 15% nearer one than the other, so rule 2 holds for no candidate
+  // and decision 188's key never applies: whether each is drawn falls out of
+  // glyph ink and line hits. Screen's explicitH "3" is drawn north-east of
+  // the pair, 18.8 px from the carbon and 19.8 px from its own O — it reads as
+  // C4's, though on the page the two letters print on one another.
   "unmergedDropOverlap/publication-crowded@14.2px/explicitH/atom:a3:locant (dropped)",
   "unmergedDropOverlap/publication-crowded@14.2px/explicitH/atom:a6:locant (dropped)",
   "unmergedDropOverlap/publication-crowded@14.2px/kekule/atom:a3:locant",
@@ -2538,14 +2553,14 @@ const NOT_OWN_REPORTED: readonly string[] = [
   "unmergedDropOverlap/publication@13.3px/explicitH/atom:a6:locant (dropped)",
   "unmergedDropOverlap/publication@13.3px/kekule/atom:a3:locant (dropped)",
   "unmergedDropOverlap/publication@13.3px/kekule/atom:a6:locant",
-  "unmergedDropOverlap/publication@13.3px/lewis/atom:a3:locant",
+  "unmergedDropOverlap/publication@13.3px/lewis/atom:a3:locant (dropped)",
   "unmergedDropOverlap/publication@13.3px/lewis/atom:a6:locant (dropped)",
   "unmergedDropOverlap/publication@13.3px/skeletal+H/atom:a3:locant (dropped)",
   "unmergedDropOverlap/publication@13.3px/skeletal+H/atom:a6:locant (dropped)",
   "unmergedDropOverlap/publication@13.3px/skeletal/atom:a3:locant (dropped)",
   "unmergedDropOverlap/publication@13.3px/skeletal/atom:a6:locant",
-  "unmergedDropOverlap/screen@13.6px/explicitH/atom:a3:locant (dropped)",
-  "unmergedDropOverlap/screen@13.6px/explicitH/atom:a6:locant",
+  "unmergedDropOverlap/screen@13.6px/explicitH/atom:a3:locant",
+  "unmergedDropOverlap/screen@13.6px/explicitH/atom:a6:locant (dropped)",
   "unmergedDropOverlap/screen@13.6px/kekule/atom:a3:locant",
   "unmergedDropOverlap/screen@13.6px/kekule/atom:a6:locant",
   "unmergedDropOverlap/screen@13.6px/lewis/atom:a3:locant (dropped)",
