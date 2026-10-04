@@ -24,11 +24,12 @@ import type { Page } from "@playwright/test";
  * the status bar's "not shown" notice is asserted absent, because when the
  * copies landed half a bond apart they crowded four letters off the canvas.
  *
- * AT SCREEN, ON PURPOSE. New documents open in Publication, and there a
- * sugar's letters have no slot decision 71's geometry allows even with the
- * sugar alone on the page: the "HC" and "OH" labels at every carbon leave
- * no ink-free room within 0.85 of the way to a neighbour. That is a ruled
- * outcome, reported in the status bar, and not what this spec is about.
+ * IN PUBLICATION, THE DEFAULT. It used to pin Screen: at Publication every
+ * wedged CH centre drew "HC", and those labels left a sugar's letters no
+ * slot decision 71's geometry allows, so even one glucose lost two of four.
+ * Decision 219 leaves that hydrogen implicit beside three drawn bonds, and
+ * the figure a new document opens in now draws all fourteen letters, which
+ * is what this asserts.
  */
 
 const CANVAS = "[data-canvas-root]";
@@ -42,8 +43,7 @@ const NOT_SHOWN = '[data-status="annotations"]';
 async function openEmptyEditor(page: Page): Promise<void> {
   await page.goto("/editor");
   await expect(page.locator(`${SCENE} circle[data-atom-id]`)).toHaveCount(6);
-  await page.locator('[data-command="view.style-screen"]').click();
-  await expect(page.locator('[data-shell="style-preset"]')).toHaveAttribute("data-style-preset", "screen");
+  await expect(page.locator('[data-shell="style-preset"]')).toHaveAttribute("data-style-preset", "publication");
   await page.locator(CANVAS).click({ position: { x: 4, y: 4 } });
   await page.keyboard.press("ControlOrMeta+a");
   await page.keyboard.press("Delete");
