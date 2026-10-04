@@ -25,9 +25,10 @@
  * touches. The per-atom radius is the only thing that separates those cases.
  *
  * A per-atom radius is still not enough on its own, because a big label cuts
- * the bond INTO it short. At the publication preset "HC" trims butan-2-ol's
- * C1-C2 to under 0.4 of a bond, and the middle of that stub sits inside bare
- * C1's target: the line the user sees is not clickable as a bond. So the
+ * the bond INTO it short. At the publication preset a "13CH2", or the "HC"
+ * butan-2-ol's C2 drew until decision 219, trims the bond from a bare
+ * neighbour to under 0.4 of a bond, and the middle of that stub sits inside
+ * the bare vertex's target: the line the user sees is not clickable as a bond. So the
  * renderer also reports each bond's DRAWN span, `drawnSpan(bondId)`, and the
  * middle of what is drawn belongs to the bond whatever its endpoints' radii
  * say (decision 198).
@@ -71,8 +72,8 @@ export const DEFAULT_LABEL_RADIUS = 0.18;
  * beats both of its endpoint atoms.
  *
  * 0.4 is the figure `DEFAULT_LABEL_RADIUS` already gives a bond between bare
- * vertices, measured on the ink instead of the axis: a 0.39-bond stub into an
- * "HC" keeps its middle 40% too, where a bare vertex's fixed radius would
+ * vertices, measured on the ink instead of the axis: a 0.39-bond stub into a
+ * big label keeps its middle 40% too, where a bare vertex's fixed radius would
  * otherwise cover half of it.
  */
 export const DRAWN_BOND_MIDDLE = 0.4;

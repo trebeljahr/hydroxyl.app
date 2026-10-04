@@ -26,6 +26,22 @@ const MENU = "[data-context-menu]";
 
 const MOLFILE = readFileSync(join(process.cwd(), "e2e", "fixtures", "butan2ol-wedge.mol"), "utf8");
 
+/** Propane with C2 as carbon-13: a carbon whose label stays drawn ("13CH2"). */
+const PROPANE_2_13C = [
+  "propane-2-13C",
+  "  e2e               2D",
+  "",
+  "  3  2  0  0  0  0  0  0  0  0999 V2000",
+  "    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0",
+  "    1.2990    0.7500    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0",
+  "    2.5981    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0",
+  "  1  2  1  0  0  0  0",
+  "  2  3  1  0  0  0  0",
+  "M  ISO  1   2  13",
+  "M  END",
+  "",
+].join("\n");
+
 async function openEditor(page: Page): Promise<void> {
   await page.goto("/editor");
   await expect(page.locator(`${SCENE} [data-atom-id]`)).toHaveCount(6);
@@ -133,20 +149,28 @@ test("right-click a single bond, choose Double: that bond is redrawn double", as
 
 test("right-click the middle of a bond stub cut short by a label: the bond menu opens", async ({ page }) => {
   await openEditor(page);
-  await dropMolfile(page, "butan2ol-wedge.mol", MOLFILE);
-  await expect(page.locator(`${SCENE} [data-atom-id]`)).toHaveCount(5);
+  await dropMolfile(page, "propane-2-13c.mol", PROPANE_2_13C);
+  await expect(page.locator(`${SCENE} [data-atom-id]`)).toHaveCount(3);
 
-  // An import opens in Publication (decision 135), where C2's "HC" trims
-  // C1-C2 to the SHORTEST single line, well under half the untrimmed ones.
-  // Its middle is inside bare C1's 0.18-bond radius plus the grab slack, and
-  // before decision 198 a right-click there opened the atom menu for C1.
-  const singles = (await drawnBonds(page))
-    .filter((bond) => bond.lines === 1)
-    .sort((a, b) => a.length - b.length);
-  const stub = singles[0];
-  const full = singles[singles.length - 1];
-  if (stub === undefined || full === undefined) throw new Error("butan-2-ol drew no single bond as a line");
-  expect(stub.length / full.length).toBeLessThan(0.5);
+  // An import opens in Publication (decision 135), where C2's "13CH2" trims
+  // C1-C2 and C2-C3 to stubs well under half a bond. A stub's middle is
+  // inside bare C1's 0.18-bond radius plus the grab slack, and before
+  // decision 198 a right-click there opened the atom menu for C1. (Butan-2-ol's
+  // "HC" made the same stub until decision 219 left that hydrogen implicit.)
+  const stub = (await drawnBonds(page)).sort((a, b) => a.length - b.length)[0];
+  if (stub === undefined) throw new Error("propane drew no bond as a line");
+  // The untrimmed bond, from the two dots' centres.
+  const dots = await page.evaluate((scene) =>
+    [...document.querySelectorAll<SVGCircleElement>(`${scene} circle[data-atom-id]`)].map((c) => {
+      const p = new DOMPoint(c.cx.baseVal.value, c.cy.baseVal.value).matrixTransform(c.getScreenCTM()!);
+      return { x: p.x, y: p.y };
+    }),
+  SCENE);
+  const [c1, c3] = dots;
+  if (c1 === undefined || c3 === undefined) throw new Error("propane drew fewer than two bare vertices");
+  // C1 and C3 sit two bonds' 120-degree chord apart: sqrt(3) bonds.
+  const bond = Math.hypot(c3.x - c1.x, c3.y - c1.y) / Math.sqrt(3);
+  expect(stub.length / bond).toBeLessThan(0.5);
 
   await page.mouse.click(stub.midpoint.x, stub.midpoint.y, { button: "right" });
 

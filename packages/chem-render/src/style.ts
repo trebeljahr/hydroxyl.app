@@ -273,10 +273,13 @@ export const PUBLICATION_STYLE: RenderStyle = Object.freeze({
   // rungs, 63's proximity margin, 65's filled-shape ink, 67's near-first
   // ladder, 68's bond proximity and 188's drawn-before-dropped fallback key,
   // and with the explicit-H separation pass in place (`modes/explicitH.ts`):
-  //   78 of 516 reported, 22 of them not drawn (decisions 58 and 64).
-  //   22 of the 28 descriptors are reported, 6 not drawn.
+  //   74 of 516 reported, 20 of them not drawn (decisions 58 and 64).
+  //   20 of the 28 descriptors are reported.
   //   Screen, on its 44 px bond, reports 10 and drops 2, no descriptor among
-  //   them. The crowded 0.85 setting reports 106 and drops 31.
+  //   them. The crowded 0.85 setting reports 106 and drops 27.
+  //   It was 78 and 22 (crowded 106 and 31) before decision 219 stopped
+  //   labelling a CH centre with three drawn bonds "HC": butan-2-ol's (R)
+  //   and the steroid's C13 locant turned clear, and C17's locant is drawn.
   //   It was 78 and 43 before that pass: moving a derived hydrogen off
   //   another's ink rearranges the page this ladder searches, and it came
   //   out ahead — three locants that were dropped were drawn, against two
@@ -304,15 +307,14 @@ export const PUBLICATION_STYLE: RenderStyle = Object.freeze({
   // WHAT IS LEFT IS GEOMETRY, NOT A TUNING CHOICE. An 8 pt "(S)" measures
   // about 19.8 x 16.9 px with its clearance, and at a fused-ring junction the
   // gap between two of the atom's own bonds at 10.8 px out is about 18 px
-  // wide. So on the steroid all four descriptors are still reported, and
-  // butan-2-ol's (R) with them — reported, and drawn where they only cross
-  // lines. Screen's 44 px bond leaves a 34 px gap for the same run and
+  // wide. So on the steroid all four descriptors are still reported —
+  // reported, and drawn where they only cross lines. Screen's 44 px bond leaves a 34 px gap for the same run and
   // reports none of them. Notable, all pinned by id in annotations.test.ts:
   //   - the steroid's C13, C17, C10 and C3 descriptors in every view, drawn
   //     in skeletal and kekule; in explicitH and Lewis the derived hydrogens
   //     leave no clearance and C13's and C10's are dropped.
-  //   - butan-2-ol's C2 (R) in every view, drawn in skeletal and kekule and
-  //     dropped once the hydrogens are drawn.
+  //   - butan-2-ol's C2 (R) once the hydrogens are drawn, where it is
+  //     dropped; clear in skeletal and kekule since decision 219.
   //   - chrysene's a16 locant, and the locants of atoms whose numbering
   //     neighbours sit as close as their own atom does.
   //

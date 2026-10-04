@@ -288,9 +288,28 @@ describe("atomLabelReason", () => {
     expect(atomLabelReason(mol, "a1", SKELETAL)).toBeUndefined();
   });
 
-  it("labels a stereocentre's carbon but not the atom at the wide end", () => {
+  it("leaves the hydrogen implicit on a centre with three drawn bonds (decision 219)", () => {
+    // Butan-2-ol's C2: the wedge and three drawn bonds already fix where the
+    // hydrogen is, so it stays a bare vertex, as IUPAC ST-1.1 and ACS draw it.
     const mol = butan2olWedged();
+    expect(implicitHydrogenCount(mol, "a2")).toBe(1);
+    expect(revealsStereoHydrogen(mol, "a2")).toBe(false);
+    expect(atomLabelReason(mol, "a2", SKELETAL)).toBeUndefined();
+  });
+
+  it("draws the hydrogen of a wedged carbon with two drawn bonds, but not at the wide end", () => {
+    // Two drawn bonds leave the other two positions open, so the H has to
+    // show for the wedge to say anything.
+    const mol = buildMolecule((b) => {
+      const c1 = b.atom("C", ORIGIN);
+      const c2Pos = step(ORIGIN, 30);
+      const c2 = b.atom("C", c2Pos);
+      const o = b.atom("O", step(c2Pos, 90));
+      b.bond(c1, c2, 1);
+      b.bond(c2, o, 1, "wedge");
+    });
     expect(atomLabelReason(mol, "a2", SKELETAL)).toBe("stereocentre");
+    expect(atomLabelReason(mol, "a3", SKELETAL)).toBe("non-carbon");
     expect(atomLabelReason(mol, "a1", SKELETAL)).toBeUndefined();
   });
 
@@ -845,27 +864,27 @@ describe("placeAtomLabel", () => {
 
   it("places the same input to the same numbers, whatever order the neighbours arrive in", () => {
     const mol = butan2olWedged();
-    const label = composeAtomLabel(mol, "a2", SKELETAL)!;
-    const centre = modelToPx(PUBLICATION_STYLE, getAtom(mol, "a2")!.pos);
-    const neighbours = neighborIds(mol, "a2").map((id) =>
+    const label = composeAtomLabel(mol, "a5", SKELETAL)!;
+    const centre = modelToPx(PUBLICATION_STYLE, getAtom(mol, "a5")!.pos);
+    const neighbours = neighborIds(mol, "a5").map((id) =>
       modelToPx(PUBLICATION_STYLE, getAtom(mol, id)!.pos),
     );
     const base = placeAtomLabel({
-      atomId: "a2",
+      atomId: "a5",
       centre,
       neighbourCentres: neighbours,
       label,
       style: PUBLICATION_STYLE,
     });
     const again = placeAtomLabel({
-      atomId: "a2",
+      atomId: "a5",
       centre,
       neighbourCentres: neighbours,
       label,
       style: PUBLICATION_STYLE,
     });
     const permuted = placeAtomLabel({
-      atomId: "a2",
+      atomId: "a5",
       centre,
       neighbourCentres: [...neighbours].reverse(),
       label,

@@ -127,9 +127,10 @@ describe("hitTest with per-atom label sizes", () => {
 describe("hitTest on a bond cut short by a label (decision 198)", () => {
   /**
    * Butan-2-ol as e2e/fixtures/butan2ol-wedge.mol lays it out, scaled to unit
-   * bonds. At the publication preset the wedged stereocentre C2 draws "HC",
-   * and the renderer trims C1-C2 to the first 0.39 of its axis (91 px of a
-   * 234 px bond, measured 2026-09-29). C1 is a bare vertex.
+   * bonds. At the publication preset the wedged stereocentre C2 drew "HC"
+   * until decision 219, and the renderer trimmed C1-C2 to the first 0.39 of
+   * its axis (91 px of a 234 px bond, measured 2026-09-29). The geometry is
+   * injected here, so it stands for any big label beside a bare C1.
    */
   const butan2ol = buildMolecule((b) => {
     const c1 = b.atom("C", vec(0, 0));

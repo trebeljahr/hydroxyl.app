@@ -174,8 +174,9 @@ test("switching to Publication moves nothing: only the ink changes", async ({ pa
   // The ink is what changed: labels against the same on-screen bond, from
   // Screen's 16 px on 44 to the ACS 1996 setting's 10 pt on 14.4 pt.
   const bondOnScreen = 44 * screen.scale;
-  // Six oxygens and the five ring stereocentres are labelled.
-  expect(Object.keys(screen.fontPx)).toHaveLength(11);
+  // The six oxygens are labelled. The ring stereocentres are bare vertices:
+  // three drawn bonds and a wedge leave their hydrogen implicit (decision 219).
+  expect(Object.keys(screen.fontPx)).toHaveLength(6);
   for (const [atom, px] of Object.entries(screen.fontPx)) {
     expect(px / bondOnScreen, `${atom} at Screen`).toBeCloseTo(16 / 44, 3);
     expect(publication.fontPx[atom]! / bondOnScreen, `${atom} at Publication`).toBeCloseTo(

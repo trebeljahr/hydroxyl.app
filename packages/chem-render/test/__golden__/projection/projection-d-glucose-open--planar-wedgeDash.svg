@@ -2,27 +2,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-35.266 -53.355 186.491 94.62" width="186.491px" height="94.62px">
   <line id="bond:b13:line" data-bond="b13" x1="-12.702" y1="-9.759" x2="1.05" y2="-1.819" stroke="#000000" stroke-width="1"/>
   <line id="bond:b13:line2" data-bond="b13" x1="-12.702" y1="-4.909" x2="-1.05" y2="1.819" stroke="#000000" stroke-width="1"/>
-  <line id="bond:b14:line" data-bond="b14" x1="0" y1="0" x2="8.083" y2="-4.667" stroke="#000000" stroke-width="1"/>
-  <path id="bond:b15:hash" data-bond="b15" d="M20.364 -19.333 L21.204 -19.333 M19.804 -22.444 L21.764 -22.444 M19.244 -25.556 L22.324 -25.556 M18.684 -28.667 L22.884 -28.667" fill="none" stroke="#000000" stroke-width="1"/>
-  <line id="bond:b16:line" data-bond="b16" x1="28.402" y1="-7.602" x2="33.952" y2="-4.398" stroke="#000000" stroke-width="1"/>
-  <path id="bond:b17:hash" data-bond="b17" d="M41.99 7.333 L41.15 7.333 M42.55 10.444 L40.59 10.444 M43.11 13.556 L40.03 13.556 M43.67 16.667 L39.47 16.667" fill="none" stroke="#000000" stroke-width="1"/>
-  <path id="bond:b19:hash" data-bond="b19" d="M61.934 -19.333 L62.774 -19.333 M61.374 -22.444 L63.334 -22.444 M60.814 -25.556 L63.894 -25.556 M60.254 -28.667 L64.454 -28.667" fill="none" stroke="#000000" stroke-width="1"/>
-  <line id="bond:b20:line" data-bond="b20" x1="69.972" y1="-7.602" x2="75.521" y2="-4.398" stroke="#000000" stroke-width="1"/>
-  <polygon id="bond:b21:wedge" data-bond="b21" points="83.139,7.333 85.239,16.667 81.039,16.667" fill="#000000"/>
-  <line id="bond:b22:line" data-bond="b22" x1="95.84" y1="-7.333" x2="103.923" y2="-12" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b14:line" data-bond="b14" x1="0" y1="0" x2="20.784" y2="-12" stroke="#000000" stroke-width="1"/>
+  <path id="bond:b15:hash" data-bond="b15" d="M20.364 -12 L21.204 -12 M20.084 -14.778 L21.484 -14.778 M19.804 -17.556 L21.764 -17.556 M19.524 -20.333 L22.044 -20.333 M19.244 -23.111 L22.324 -23.111 M18.964 -25.889 L22.604 -25.889 M18.684 -28.667 L22.884 -28.667" fill="none" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b16:line" data-bond="b16" x1="20.784" y1="-12" x2="41.57" y2="0" stroke="#000000" stroke-width="1"/>
+  <path id="bond:b17:hash" data-bond="b17" d="M41.99 0 L41.15 0 M42.27 2.778 L40.87 2.778 M42.55 5.556 L40.59 5.556 M42.83 8.333 L40.31 8.333 M43.11 11.111 L40.03 11.111 M43.39 13.889 L39.75 13.889 M43.67 16.667 L39.47 16.667" fill="none" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b18:line" data-bond="b18" x1="41.57" y1="0" x2="62.354" y2="-12" stroke="#000000" stroke-width="1"/>
+  <path id="bond:b19:hash" data-bond="b19" d="M61.934 -12 L62.774 -12 M61.654 -14.778 L63.054 -14.778 M61.374 -17.556 L63.334 -17.556 M61.094 -20.333 L63.614 -20.333 M60.814 -23.111 L63.894 -23.111 M60.534 -25.889 L64.174 -25.889 M60.254 -28.667 L64.454 -28.667" fill="none" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b20:line" data-bond="b20" x1="62.354" y1="-12" x2="83.139" y2="0" stroke="#000000" stroke-width="1"/>
+  <polygon id="bond:b21:wedge" data-bond="b21" points="83.139,0 85.239,16.667 81.039,16.667" fill="#000000"/>
+  <line id="bond:b22:line" data-bond="b22" x1="83.139" y1="0" x2="103.923" y2="-12" stroke="#000000" stroke-width="1"/>
   <line id="bond:b23:line" data-bond="b23" x1="103.923" y1="-12" x2="116.625" y2="-4.666" stroke="#000000" stroke-width="1"/>
   <text id="atom:a1:label" data-atom="a1" x="-27.266" y="-6.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>O</tspan></text>
   <circle id="atom:a2:dot" data-atom="a2" cx="0" cy="0" r="0.9" fill="#000000"/>
-  <text id="atom:a3:label" data-atom="a3" x="2.73" y="-6.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan><tspan>C</tspan></text>
+  <circle id="atom:a3:dot" data-atom="a3" cx="20.784" cy="-12" r="0.9" fill="#000000"/>
   <text id="atom:a4:label" data-atom="a4" x="14.302" y="-30.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>O</tspan><tspan>H</tspan></text>
-  <text id="atom:a5:label" data-atom="a5" x="35.552" y="5.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>C</tspan><tspan>H</tspan></text>
+  <circle id="atom:a5:dot" data-atom="a5" cx="41.57" cy="0" r="0.9" fill="#000000"/>
   <text id="atom:a6:label" data-atom="a6" x="35.088" y="29.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>O</tspan><tspan>H</tspan></text>
-  <text id="atom:a7:label" data-atom="a7" x="44.299" y="-6.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan><tspan>C</tspan></text>
+  <circle id="atom:a7:dot" data-atom="a7" cx="62.354" cy="-12" r="0.9" fill="#000000"/>
   <text id="atom:a8:label" data-atom="a8" x="55.872" y="-30.267" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>O</tspan><tspan>H</tspan></text>
-  <text id="atom:a9:label" data-atom="a9" x="77.121" y="5.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>C</tspan><tspan>H</tspan></text>
+  <circle id="atom:a9:dot" data-atom="a9" cx="83.139" cy="0" r="0.9" fill="#000000"/>
   <text id="atom:a10:label" data-atom="a10" x="76.657" y="29.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>O</tspan><tspan>H</tspan></text>
   <circle id="atom:a11:dot" data-atom="a11" cx="103.923" cy="-12" r="0.9" fill="#000000"/>
   <text id="atom:a12:label" data-atom="a12" x="118.225" y="5.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>O</tspan><tspan>H</tspan></text>
   <text id="atom:a3:descriptor" data-atom="a3" x="20.784" y="8.009" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>(R)</tspan></text>
+  <text id="atom:a5:descriptor" data-atom="a5" x="41.57" y="-10.764" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>(S)</tspan></text>
+  <text id="atom:a7:descriptor" data-atom="a7" x="62.354" y="8.009" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>(R)</tspan></text>
   <text id="atom:a9:descriptor" data-atom="a9" x="83.139" y="-10.764" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>(R)</tspan></text>
 </svg>

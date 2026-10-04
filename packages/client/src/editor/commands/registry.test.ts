@@ -13,7 +13,6 @@ import type { Molecule } from "@starter/chem-core";
 import { dictionaryEntryById } from "@starter/chem-core/dictionary";
 import { SCREEN_STYLE, cyanideAdditionToAcetone, serializeFigure } from "@starter/chem-render";
 import { createDocument } from "@starter/shared";
-import type { StylePresetId } from "@starter/shared";
 
 import { buildCanvasScene } from "@/canvas/scene-bridge";
 import { documentFigure } from "@/lib/export/figure";
@@ -31,9 +30,9 @@ import {
   setClipboardForTest,
 } from "./registry";
 
-function storeWith(molecule: Molecule, stylePreset?: StylePresetId): EditorStore {
+function storeWith(molecule: Molecule): EditorStore {
   return createEditorStore({
-    document: createDocument({ molecule, stylePreset, now: "2024-01-01T00:00:00.000Z" }),
+    document: createDocument({ molecule, now: "2024-01-01T00:00:00.000Z" }),
     viewportSize: { width: 800, height: 600 },
     now: () => "2024-01-01T00:00:00.000Z",
   });
@@ -434,10 +433,9 @@ describe("view commands", () => {
 
   it("enables the locants toggle over a document that numbers an atom, and draws them (decision 168)", () => {
     // L-cysteine: C1 the carboxyl, C2 the alpha carbon, C3 the CH2SH. In
-    // Screen: at Publication, where new documents open (decision 135), C2's
-    // locant has no clear slot and is reported instead (decision 71).
+    // Publication, where new documents open (decision 135).
     const cysteine = readMolblock(dictionaryEntryById("l-cysteine")!.molblock).molecule;
-    const store = storeWith(cysteine, "screen");
+    const store = storeWith(cysteine);
     const command = commandById("view.show-locants");
     expect(command.enabled(store.getState())).toBe(true);
     expect(command.disabledReason?.(store.getState())).toBeUndefined();

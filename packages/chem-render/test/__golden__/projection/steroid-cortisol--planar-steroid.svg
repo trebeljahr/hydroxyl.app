@@ -13,8 +13,8 @@
   <line id="bond:b35:line" data-bond="b35" x1="10.861" y1="88.591" x2="31.645" y2="76.591" stroke="#000000" stroke-width="1"/>
   <line id="bond:b36:line" data-bond="b36" x1="31.645" y1="52.591" x2="31.645" y2="76.591" stroke="#000000" stroke-width="1"/>
   <line id="bond:b37:line" data-bond="b37" x1="31.645" y1="52.591" x2="10.861" y2="40.591" stroke="#000000" stroke-width="1"/>
-  <line id="bond:b38:line" data-bond="b38" x1="10.861" y1="40.591" x2="10.861" y2="23.924" stroke="#000000" stroke-width="1"/>
-  <line id="bond:b39:line" data-bond="b39" x1="23.562" y1="9.258" x2="31.645" y2="4.591" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b38:line" data-bond="b38" x1="10.861" y1="40.591" x2="10.861" y2="16.591" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b39:line" data-bond="b39" x1="10.861" y1="16.591" x2="31.645" y2="4.591" stroke="#000000" stroke-width="1"/>
   <line id="bond:b40:line" data-bond="b40" x1="31.645" y1="4.591" x2="52.431" y2="16.591" stroke="#000000" stroke-width="1"/>
   <line id="bond:b41:line" data-bond="b41" x1="52.431" y1="16.591" x2="52.431" y2="40.591" stroke="#000000" stroke-width="1"/>
   <line id="bond:b42:line" data-bond="b42" x1="52.431" y1="40.591" x2="75.255" y2="48.007" stroke="#000000" stroke-width="1"/>
@@ -27,7 +27,7 @@
   <line id="bond:b48:line" data-bond="b48" x1="116.824" y1="9.175" x2="129.528" y2="1.841" stroke="#000000" stroke-width="1"/>
   <path id="bond:b49:hash" data-bond="b49" d="M74.853 9.298 L75.656 9.052 M73.577 6.272 L75.023 5.83 M72.301 3.247 L74.389 2.608 M71.024 0.221 L73.756 -0.614 M69.748 -2.804 L73.122 -3.836 M68.472 -5.83 L72.489 -7.058" fill="none" stroke="#000000" stroke-width="1"/>
   <polygon id="bond:b50:wedge" data-bond="b50" points="52.431,16.591 49.91,-7.369 54.11,-7.443" fill="#000000"/>
-  <polygon id="bond:b51:wedge" data-bond="b51" points="3.243,12.193 -2.893,11.075 -0.793,7.438" fill="#000000"/>
+  <polygon id="bond:b51:wedge" data-bond="b51" points="10.861,16.591 -2.893,11.075 -0.793,7.438" fill="#000000"/>
   <line id="bond:b52:line" data-bond="b52" x1="-9.925" y1="76.591" x2="-9.925" y2="52.591" stroke="#000000" stroke-width="1"/>
   <line id="bond:b53:line" data-bond="b53" x1="10.861" y1="40.591" x2="-9.925" y2="52.591" stroke="#000000" stroke-width="1"/>
   <line id="bond:b54:line" data-bond="b54" x1="52.431" y1="40.591" x2="31.645" y2="52.591" stroke="#000000" stroke-width="1"/>
@@ -44,7 +44,7 @@
   <circle id="atom:a10:dot" data-atom="a10" cx="31.645" cy="76.591" r="0.9" fill="#000000"/>
   <circle id="atom:a11:dot" data-atom="a11" cx="31.645" cy="52.591" r="0.9" fill="#000000"/>
   <circle id="atom:a12:dot" data-atom="a12" cx="10.861" cy="40.591" r="0.9" fill="#000000"/>
-  <text id="atom:a13:label" data-atom="a13" x="4.843" y="22.324" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>C</tspan><tspan>H</tspan></text>
+  <circle id="atom:a13:dot" data-atom="a13" cx="10.861" cy="16.591" r="0.9" fill="#000000"/>
   <circle id="atom:a14:dot" data-atom="a14" cx="31.645" cy="4.591" r="0.9" fill="#000000"/>
   <circle id="atom:a15:dot" data-atom="a15" cx="52.431" cy="16.591" r="0.9" fill="#000000"/>
   <circle id="atom:a16:dot" data-atom="a16" cx="52.431" cy="40.591" r="0.9" fill="#000000"/>

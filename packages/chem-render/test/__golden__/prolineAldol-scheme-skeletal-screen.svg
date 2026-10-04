@@ -14,9 +14,9 @@
   <line id="bond:b21:line" data-bond="b21" x1="694.61" y1="-22" x2="694.61" y2="-57.5" stroke="#1f2937" stroke-width="2"/>
   <line id="bond:b21:line2" data-bond="b21" x1="701.61" y1="-22" x2="701.61" y2="-57.5" stroke="#1f2937" stroke-width="2"/>
   <line id="bond:b23:line" data-bond="b23" x1="698.11" y1="-22" x2="736.21" y2="0" stroke="#1f2937" stroke-width="2"/>
-  <line id="bond:b25:line" data-bond="b25" x1="736.21" y1="0" x2="765.54" y2="-16.93" stroke="#1f2937" stroke-width="2"/>
-  <polygon id="bond:b27:wedge" data-bond="b27" points="774.32,-30.5 770.82,-57.5 777.82,-57.5" fill="#1f2937"/>
-  <line id="bond:b29:line" data-bond="b29" x1="789.04" y1="-13.5" x2="812.42" y2="0" stroke="#1f2937" stroke-width="2"/>
+  <line id="bond:b25:line" data-bond="b25" x1="736.21" y1="0" x2="774.32" y2="-22" stroke="#1f2937" stroke-width="2"/>
+  <polygon id="bond:b27:wedge" data-bond="b27" points="774.32,-22 770.82,-57.5 777.82,-57.5" fill="#1f2937"/>
+  <line id="bond:b29:line" data-bond="b29" x1="774.32" y1="-22" x2="812.42" y2="0" stroke="#1f2937" stroke-width="2"/>
   <line id="bond:b31:line" data-bond="b31" x1="812.42" y1="0" x2="850.53" y2="-22" stroke="#1f2937" stroke-width="2"/>
   <line id="bond:b33:line" data-bond="b33" x1="812.42" y1="0" x2="812.42" y2="44" stroke="#1f2937" stroke-width="2"/>
   <circle id="atom:a1:dot" data-atom="a1" cx="0" cy="0" r="2" fill="#111827"/>
@@ -32,7 +32,7 @@
   <circle id="atom:a18:dot" data-atom="a18" cx="698.11" cy="-22" r="2" fill="#111827"/>
   <text id="atom:a20:label" data-atom="a20" x="691.88" y="-60.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start"><tspan>O</tspan></text>
   <circle id="atom:a22:dot" data-atom="a22" cx="736.21" cy="0" r="2" fill="#111827"/>
-  <text id="atom:a24:label" data-atom="a24" x="768.54" y="-16.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start"><tspan>C</tspan><tspan>H</tspan></text>
+  <circle id="atom:a24:dot" data-atom="a24" cx="774.32" cy="-22" r="2" fill="#111827"/>
   <text id="atom:a26:label" data-atom="a26" x="768.09" y="-60.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start"><tspan>O</tspan><tspan>H</tspan></text>
   <circle id="atom:a28:dot" data-atom="a28" cx="812.42" cy="0" r="2" fill="#111827"/>
   <circle id="atom:a30:dot" data-atom="a30" cx="850.53" cy="-22" r="2" fill="#111827"/>

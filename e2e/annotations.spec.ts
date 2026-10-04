@@ -15,12 +15,11 @@ import type { Page } from "@playwright/test";
  * deliberately is not), and the count in the status bar comes from that same
  * build rather than a second opinion.
  *
- * Butan-2-ol rather than a ring: one stereocentre and four heavy atoms. At
- * the Publication style its "(R)" has no slot both clear of the bonds and
- * visibly nearer C2 than its neighbours (decision 63), so the pass reports it
- * as tight — and still draws it, which is why the status bar stays quiet
- * (decision 70). Reveal the hydrogens and there is nowhere left that keeps
- * the ink's clearance, so it is dropped and the bar says so.
+ * Butan-2-ol rather than a ring: one stereocentre and four heavy atoms. Its
+ * "(R)" is drawn in both styles and in every view, so the status bar stays
+ * quiet (decision 70). Before decision 219, C2 drew "HC" at Publication and
+ * the (R) was dropped once the hydrogens were shown; a dropped annotation's
+ * count is now pinned on the steroid in shell/StatusBar.test.tsx.
  */
 
 const CANVAS = "[data-canvas-root]";
@@ -55,7 +54,7 @@ async function setViewFlag(page: Page, flag: string): Promise<void> {
   await page.keyboard.press("Escape");
 }
 
-test("keeps quiet while the descriptor is drawn, and says so when it is not", async ({
+test("keeps quiet while the descriptor is drawn, in both styles and with every hydrogen shown", async ({
   page,
 }) => {
   await openEditor(page);
@@ -65,10 +64,8 @@ test("keeps quiet while the descriptor is drawn, and says so when it is not", as
   await expect(page.locator(UNPLACED)).toHaveCount(0);
 
   // An imported structure opens in Publication (decision 135), which sets
-  // the descriptor at 8 pt on a 24 px bond. No slot is both clear of the
-  // bonds and visibly nearer C2 than its neighbours, so the pass reports it —
-  // but it is drawn, so nothing is missing and the status bar says nothing
-  // (decision 70).
+  // the descriptor at 8 pt on a 24 px bond. With C2 a bare vertex
+  // (decision 219) it has a clear slot, and the status bar says nothing.
   const presets = page.locator('[data-shell="style-preset"]');
   await expect(presets).toHaveAttribute("data-style-preset", "publication");
   await setViewFlag(page, "showStereoDescriptors");
@@ -88,12 +85,18 @@ test("keeps quiet while the descriptor is drawn, and says so when it is not", as
   await presets.locator('[data-command="view.style-publication"]').click();
   await expect(presets).toHaveAttribute("data-style-preset", "publication");
 
-  // Revealing the hydrogens fills the room around C2 with "H" glyphs. The
-  // descriptor's ink can no longer keep its clearance from them, so it leaves
-  // the drawing — and THAT the status bar reports, by name.
+  // With the hydrogens shown, and in the Explicit H view that draws every
+  // one of them, the (R) still keeps its clearance: C2 itself draws no "HC"
+  // since decision 219, so nothing is dropped and the bar stays quiet. The
+  // count for an annotation that IS dropped (the steroid's C13 and C10 (S)
+  // in Explicit H) is pinned in shell/StatusBar.test.tsx.
   await setViewFlag(page, "showImplicitHydrogens");
-  await expect(descriptor).toHaveCount(0);
-  await expect(unplaced).toHaveText("1 annotation not shown");
-  await expect(unplaced).toHaveAttribute("data-not-shown", "1");
-  await expect(unplaced).toHaveAttribute("title", /^Not shown: a\d+ \(R\)$/);
+  await expect(descriptor).toHaveCount(1);
+  await expect(unplaced).toHaveCount(0);
+  await page.locator('[data-shell="figure-panels"] [data-panel-kind="skeletal"] [role="combobox"]').click();
+  await page.getByRole("option", { name: "Explicit H", exact: true }).click();
+  await expect(page.locator('[data-shell="figure-panels"] [data-panel-kind="explicitH"]')).toHaveCount(1);
+  await expect(descriptor).toHaveCount(1);
+  await expect(descriptor).toHaveText("(R)");
+  await expect(unplaced).toHaveCount(0);
 });

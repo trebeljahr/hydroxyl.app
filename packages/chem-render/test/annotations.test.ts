@@ -1552,7 +1552,12 @@ describe("decision 54: Publication annotations at the 8 pt floor", () => {
     expect([...sizes]).toEqual([PUBLICATION_STYLE.fontSizePx * PUBLICATION_STYLE.stereoDescriptorScale]);
   });
 
-  it("reports what style.ts records: 78 of 516 at 0.80 (22 of 28 descriptors), 22 not drawn", () => {
+  it("reports what style.ts records: 74 of 516 at 0.80 (20 of 28 descriptors), 20 not drawn", () => {
+    // 78, 22 and 22 before decision 219, which stops labelling a CH centre
+    // with three drawn bonds "HC". Butan-2-ol's C2 (R) is clear in skeletal
+    // and kekule once its own "HC" is gone, and the steroid's C13 locant turns
+    // clear and C17's is drawn in both views.
+    //
     // 78 and 43 before the explicit-H separation pass. Moving derived
     // hydrogens off each other's ink rearranges the page the annotation
     // ladder searches, and it came out ahead: three locants that used to be
@@ -1579,9 +1584,9 @@ describe("decision 54: Publication annotations at the 8 pt floor", () => {
     expect(counts(PUBLICATION_STYLE)).toEqual({
       total: 516,
       descriptors: 28,
-      unplaced: 78,
-      unplacedDescriptors: 22,
-      dropped: 22,
+      unplaced: 74,
+      unplacedDescriptors: 20,
+      dropped: 20,
     });
     // Screen, on its 44 px bond, has room for nearly everything. It dropped 3
     // before decision 134. Decision 188 moves none of these.
@@ -1606,7 +1611,8 @@ describe("decision 54: Publication annotations at the 8 pt floor", () => {
       descriptors: 28,
       unplaced: 106,
       unplacedDescriptors: 22,
-      dropped: 31,
+      // 31 before decision 219.
+      dropped: 27,
     });
   });
 
@@ -1616,9 +1622,7 @@ describe("decision 54: Publication annotations at the 8 pt floor", () => {
     expect(reportedIds(PUBLICATION_STYLE)).toEqual(
       [
         "butan2olWedged/explicitH/a2:descriptor (dropped)",
-        "butan2olWedged/kekule/a2:descriptor",
         "butan2olWedged/lewis/a2:descriptor (dropped)",
-        "butan2olWedged/skeletal/a2:descriptor",
         "chrysene/explicitH/a15:locant",
         "chrysene/explicitH/a16:locant",
         "chrysene/explicitH/a24:locant",
@@ -1655,9 +1659,8 @@ describe("decision 54: Publication annotations at the 8 pt floor", () => {
         "steroidSkeleton/kekule/C10:descriptor",
         "steroidSkeleton/kekule/C10:locant",
         "steroidSkeleton/kekule/C13:descriptor",
-        "steroidSkeleton/kekule/C13:locant",
         "steroidSkeleton/kekule/C17:descriptor",
-        "steroidSkeleton/kekule/C17:locant (dropped)",
+        "steroidSkeleton/kekule/C17:locant",
         "steroidSkeleton/kekule/C3:descriptor",
         "steroidSkeleton/lewis/C10:descriptor (dropped)",
         "steroidSkeleton/lewis/C10:locant (dropped)",
@@ -1677,9 +1680,8 @@ describe("decision 54: Publication annotations at the 8 pt floor", () => {
         "steroidSkeleton/skeletal/C10:descriptor",
         "steroidSkeleton/skeletal/C10:locant",
         "steroidSkeleton/skeletal/C13:descriptor",
-        "steroidSkeleton/skeletal/C13:locant",
         "steroidSkeleton/skeletal/C17:descriptor",
-        "steroidSkeleton/skeletal/C17:locant (dropped)",
+        "steroidSkeleton/skeletal/C17:locant",
         "steroidSkeleton/skeletal/C3:descriptor",
         "trans2Butene/explicitH/b3:descriptor",
         "trans2Butene/lewis/b3:descriptor",
@@ -2077,6 +2079,8 @@ describe("determinism", () => {
     expect(origins[0]!.y).toBeGreaterThan(0);
   });
 
+  // Every fixture in every style, view and circle setting: 2.5 s alone, and
+  // past vitest's 5 s default while the whole workspace runs in parallel.
   it("never moves a descriptor when locants are switched on", () => {
     // Decision 17's reason, as a test: descriptors claim first, so adding
     // locants cannot move one — in any fixture, view, preset or flag set.
@@ -2120,7 +2124,7 @@ describe("determinism", () => {
       annotationLayout(molecule, PUBLICATION_STYLE, representation("skeletal", { showStereoDescriptors: true }))
         .placements.map((p) => p.text),
     ).toEqual(["(S)", "(S)", "(S)", "(S)"]);
-  });
+  }, 30_000);
 
   it("emits a descriptor-only scene in the order it always had: atoms, then bonds", () => {
     const scene = buildScene(butan2olWedged(), PUBLICATION_STYLE, representation("skeletal", { showStereoDescriptors: true }));
@@ -2401,10 +2405,12 @@ describe("clearance on fused rings", () => {
             // - Publication (0.80, decision 54) and the crowded 0.85: even
             //   from the near ladder (decision 67) an 8 pt "(S)" beside a
             //   fused-ring junction touches a bond, so all four steroid
-            //   descriptors are reported, and the locants of C13, C17 and
-            //   C10 after them. C17's locant is dropped at Publication (it
-            //   would land on text); the rest cross lines only and are drawn.
-            //   Butan-2-ol's (R) and chrysene's a16 locant go the same way.
+            //   descriptors are reported, and the locants of C17 and C10
+            //   after them (C13's too at 0.85); they cross lines only and are
+            //   drawn. Chrysene's a16 locant goes the same way. Since
+            //   decision 219 no junction carbon draws "HC", which clears
+            //   C13's locant at 0.80 and butan-2-ol's (R) everywhere but
+            //   the crowded 0.85.
             const { locants: steroidLocants } = steroidSkeletonWithLocants();
             const byLocant = (text: string): AtomId =>
               Object.entries(steroidLocants).find(([, t]) => t === text)![0] as AtomId;
@@ -2419,12 +2425,14 @@ describe("clearance on fused rings", () => {
                       `atom:${c17}:descriptor`,
                       `atom:${byLocant("10")}:descriptor`,
                       `atom:${byLocant("3")}:descriptor`,
-                      `atom:${c13}:locant`,
+                      ...(style === CROWDED_PUBLICATION_STYLE ? [`atom:${c13}:locant`] : []),
                       `atom:${c17}:locant`,
                       `atom:${byLocant("10")}:locant`,
                     ]
                   : name === "butan2olWedged"
-                    ? ["atom:a2:descriptor"]
+                    ? style === CROWDED_PUBLICATION_STYLE
+                      ? ["atom:a2:descriptor"]
+                      : []
                     : name === "chrysene"
                       ? style === CROWDED_PUBLICATION_STYLE
                         ? ["atom:a16:locant", "atom:a25:locant"]
@@ -2526,11 +2534,12 @@ const NOT_OWN_REPORTED: readonly string[] = [
   // be dropped and is now drawn, and its box covers every slot that reads as
   // C10's, so C10's "10" is left only slots nearer C4 and C5. Without C9's
   // locant it is back beside C10 (and dropped there, 11 px from it).
-  // Explicit H and Lewis, hydrogens drawn, add none.
-  "steroidSkeleton/publication@13.3px/kekule/atom:a3:locant",
+  // Explicit H and Lewis, hydrogens drawn, add none. Since decision 219 the
+  // junction's carbons draw no "HC", and C13's locant reads as its own at
+  // 13.3 px in every view; only the crowded 14.2 px setting with hydrogens
+  // shown still pushes it off its atom.
+  "steroidSkeleton/publication-crowded@14.2px/skeletal+H/atom:a3:locant (dropped)",
   "steroidSkeleton/publication@13.3px/skeletal+H/atom:a13:locant",
-  "steroidSkeleton/publication@13.3px/skeletal+H/atom:a3:locant (dropped)",
-  "steroidSkeleton/publication@13.3px/skeletal/atom:a3:locant",
   // Both of unmergedDropOverlap's locants: the hydroxyl O (a3, "3") and the
   // dropped carbon (a6, "4") that fixture draws 0.03 of a bond apart, 1.32 px
   // at Screen and 0.72 px at Publication. No ladder slot, even on an empty

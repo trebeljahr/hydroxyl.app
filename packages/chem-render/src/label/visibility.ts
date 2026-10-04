@@ -102,9 +102,14 @@ export function radicalDotCount(atom: Atom): number {
  *
  * A wedge or hash from a carbon says "this substituent is toward you / away
  * from you", and on a CH stereocentre the fourth substituent IS the implicit
- * hydrogen. Leaving it implicit there leaves the reader counting to four in
- * their head; every drawing package spells it out, and that is the one place
- * a skeletal drawing puts an H on a carbon.
+ * hydrogen.
+ *
+ * ONLY WITH FEWER THAN THREE DRAWN BONDS (decision 219). Three drawn bonds and
+ * one stereobond already fix where the hydrogen is: IUPAC 2006 (ST-1.1)
+ * accepts that drawing and the ACS default leaves the H out. Spelling it out
+ * as "HC" on every such centre crowded rings at Publication's ACS label size:
+ * beta-D-glucopyranose's five ring labels overlapped and hid the ring, and
+ * three of its locants had nowhere to go.
  *
  * NARROW END ONLY. chem-core fixes the wedge convention as "narrow end at
  * `from`", so the stereocentre is the atom the wedge starts at; the atom at
@@ -120,6 +125,7 @@ export function revealsStereoHydrogen(mol: Molecule, atomId: AtomId): boolean {
   // legitimate and needs no label.
   if (getAtom(mol, atomId) === undefined) return false;
   if (implicitHydrogenCount(mol, atomId) === 0) return false;
+  if (degree(mol, atomId) >= 3) return false;
   for (const bond of bondsAt(mol, atomId)) {
     if (bond.from !== atomId) continue;
     if (bond.stereo === "wedge" || bond.stereo === "hash") return true;

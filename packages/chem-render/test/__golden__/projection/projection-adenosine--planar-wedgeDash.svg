@@ -9,17 +9,17 @@
   <line id="bond:b26:line" data-bond="b26" x1="12" y1="-20.784" x2="17.033" y2="-36.276" stroke="#000000" stroke-width="1"/>
   <line id="bond:b27:line" data-bond="b27" x1="11.798" y1="-49.145" x2="0" y2="-57.717" stroke="#000000" stroke-width="1"/>
   <line id="bond:b28:line" data-bond="b28" x1="0" y1="-57.717" x2="-11.798" y2="-49.145" stroke="#000000" stroke-width="1"/>
-  <path id="bond:b29:hash" data-bond="b29" d="M-34.494 -48.95 L-34.753 -48.151 M-31.791 -48.661 L-32.397 -46.797 M-29.088 -48.371 L-30.04 -45.442 M-26.385 -48.082 L-27.683 -44.087" fill="none" stroke="#000000" stroke-width="1"/>
-  <line id="bond:b30:line" data-bond="b30" x1="-52.336" y1="-43.692" x2="-53.576" y2="-42.791" stroke="#000000" stroke-width="1"/>
-  <line id="bond:b31:line" data-bond="b31" x1="-69.74" y1="-42.791" x2="-70.98" y2="-43.692" stroke="#000000" stroke-width="1"/>
-  <path id="bond:b32:hash" data-bond="b32" d="M-88.563 -48.151 L-88.823 -48.95 M-91.501 -46.843 L-91.968 -48.281 M-94.438 -45.535 L-95.113 -47.613 M-97.376 -44.228 L-98.258 -46.944 M-100.313 -42.92 L-101.403 -46.275 M-103.25 -41.612 L-104.548 -45.607" fill="none" stroke="#000000" stroke-width="1"/>
+  <path id="bond:b29:hash" data-bond="b29" d="M-42.112 -51.425 L-42.371 -50.626 M-38.966 -50.756 L-39.434 -49.318 M-35.821 -50.088 L-36.496 -48.011 M-32.676 -49.419 L-33.558 -46.703 M-29.53 -48.751 L-30.621 -45.395 M-26.385 -48.082 L-27.683 -44.087" fill="none" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b30:line" data-bond="b30" x1="-42.242" y1="-51.026" x2="-53.576" y2="-42.791" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b31:line" data-bond="b31" x1="-69.74" y1="-42.791" x2="-81.075" y2="-51.026" stroke="#000000" stroke-width="1"/>
+  <path id="bond:b32:hash" data-bond="b32" d="M-80.945 -50.626 L-81.205 -51.425 M-83.734 -49.499 L-84.123 -50.698 M-86.522 -48.373 L-87.041 -49.97 M-89.31 -47.246 L-89.959 -49.243 M-92.098 -46.119 L-92.877 -48.516 M-94.886 -44.993 L-95.794 -47.789 M-97.674 -43.866 L-98.712 -47.061 M-100.462 -42.739 L-101.63 -46.334 M-103.25 -41.612 L-104.548 -45.607" fill="none" stroke="#000000" stroke-width="1"/>
   <line id="bond:b33:line" data-bond="b33" x1="-103.899" y1="-43.61" x2="-113.654" y2="-52.392" stroke="#000000" stroke-width="1"/>
-  <line id="bond:b34:line" data-bond="b34" x1="-78.692" y1="-58.359" x2="-76.041" y2="-66.518" stroke="#000000" stroke-width="1"/>
-  <polygon id="bond:b35:wedge" data-bond="b35" points="-78.985,-81.184 -84.136,-84.701 -80.738,-87.17" fill="#000000"/>
-  <line id="bond:b36:line" data-bond="b36" x1="-66.04" y1="-73.851" x2="-57.276" y2="-73.851" stroke="#000000" stroke-width="1"/>
-  <polygon id="bond:b37:wedge" data-bond="b37" points="-44.33,-81.184 -42.578,-87.17 -39.18,-84.701" fill="#000000"/>
+  <line id="bond:b34:line" data-bond="b34" x1="-81.075" y1="-51.026" x2="-73.658" y2="-73.851" stroke="#000000" stroke-width="1"/>
+  <polygon id="bond:b35:wedge" data-bond="b35" points="-73.658,-73.851 -84.136,-84.701 -80.738,-87.17" fill="#000000"/>
+  <line id="bond:b36:line" data-bond="b36" x1="-73.658" y1="-73.851" x2="-49.658" y2="-73.851" stroke="#000000" stroke-width="1"/>
+  <polygon id="bond:b37:wedge" data-bond="b37" points="-49.658,-73.851 -42.578,-87.17 -39.18,-84.701" fill="#000000"/>
   <line id="bond:b38:line" data-bond="b38" x1="12" y1="-20.784" x2="24" y2="0" stroke="#000000" stroke-width="1"/>
-  <line id="bond:b39:line" data-bond="b39" x1="-47.275" y1="-66.518" x2="-44.624" y2="-58.359" stroke="#000000" stroke-width="1"/>
+  <line id="bond:b39:line" data-bond="b39" x1="-49.658" y1="-73.851" x2="-42.242" y2="-51.026" stroke="#000000" stroke-width="1"/>
   <line id="bond:b40:line" data-bond="b40" x1="-17.033" y1="-36.276" x2="-12" y2="-20.784" stroke="#000000" stroke-width="1"/>
   <circle id="ring:a6+a7+a8+a9+a10:aromaticCircle" data-ring="a6 a7 a8 a9 a10" cx="0" cy="-37.301" r="12.387" fill="none" stroke="#000000" stroke-width="1"/>
   <circle id="ring:a2+a3+a4+a5+a6+a7:aromaticCircle" data-ring="a2 a3 a4 a5 a6 a7" cx="0" cy="0" r="15.588" fill="none" stroke="#000000" stroke-width="1"/>
@@ -33,16 +33,17 @@
   <text id="atom:a8:label" data-atom="a8" x="13.398" y="-37.876" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>N</tspan></text>
   <circle id="atom:a9:dot" data-atom="a9" cx="0" cy="-57.717" r="0.9" fill="#000000"/>
   <text id="atom:a10:label" data-atom="a10" x="-25.434" y="-37.876" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>N</tspan></text>
-  <text id="atom:a11:label" data-atom="a11" x="-60.296" y="-45.292" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan><tspan>C</tspan></text>
+  <circle id="atom:a11:dot" data-atom="a11" cx="-42.242" cy="-51.026" r="0.9" fill="#000000"/>
   <text id="atom:a12:label" data-atom="a12" x="-68.14" y="-31.187" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>O</tspan></text>
-  <text id="atom:a13:label" data-atom="a13" x="-87.093" y="-45.292" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>C</tspan><tspan>H</tspan></text>
+  <circle id="atom:a13:dot" data-atom="a13" cx="-81.075" cy="-51.026" r="0.9" fill="#000000"/>
   <circle id="atom:a14:dot" data-atom="a14" cx="-103.899" cy="-43.61" r="0.9" fill="#000000"/>
   <text id="atom:a15:label" data-atom="a15" x="-140.254" y="-53.936" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan><tspan>O</tspan></text>
-  <text id="atom:a16:label" data-atom="a16" x="-91.712" y="-68.118" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan><tspan>C</tspan></text>
+  <circle id="atom:a16:dot" data-atom="a16" cx="-73.658" cy="-73.851" r="0.9" fill="#000000"/>
   <text id="atom:a17:label" data-atom="a17" x="-106.283" y="-87.536" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan><tspan>O</tspan></text>
-  <text id="atom:a18:label" data-atom="a18" x="-55.676" y="-68.118" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>C</tspan><tspan>H</tspan></text>
+  <circle id="atom:a18:dot" data-atom="a18" cx="-49.658" cy="-73.851" r="0.9" fill="#000000"/>
   <text id="atom:a19:label" data-atom="a19" x="-42.034" y="-87.536" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>O</tspan><tspan>H</tspan></text>
-  <text id="atom:a11:descriptor" data-atom="a11" x="-42.242" y="-31.017" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>(R)</tspan></text>
-  <text id="atom:a13:descriptor" data-atom="a13" x="-81.075" y="-31.017" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>(R)</tspan></text>
-  <text id="atom:a16:descriptor" data-atom="a16" x="-66.892" y="-85.563" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>(S)</tspan></text>
+  <text id="atom:a11:descriptor" data-atom="a11" x="-30.55" y="-58.094" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>(R)</tspan></text>
+  <text id="atom:a13:descriptor" data-atom="a13" x="-92.766" y="-58.094" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>(R)</tspan></text>
+  <text id="atom:a16:descriptor" data-atom="a16" x="-63.588" y="-79.298" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>(S)</tspan></text>
+  <text id="atom:a18:descriptor" data-atom="a18" x="-53.791" y="-59.251" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>(R)</tspan></text>
 </svg>
