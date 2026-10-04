@@ -82,6 +82,7 @@ describe("no RDKit at module scope", () => {
       "inchi.node.test.ts",
       "insert-fidelity.node.test.ts",
       "nuclide-masses.node.test.ts",
+      "projection-oracle.node.test.ts",
       "stereo-centres.node.test.ts",
       "stereo-groups.node.test.ts",
       "valence-table.node.test.ts",
