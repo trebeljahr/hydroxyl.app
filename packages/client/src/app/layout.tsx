@@ -3,6 +3,7 @@ import "@/styles/globals.css";
 
 import { Analytics } from "@/components/Analytics";
 import { DonationReturn } from "@/components/DonationReturn";
+import { ReleaseLifetime } from "@/components/ReleaseLifetime";
 import { siteUrl } from "@/lib/deployment";
 import { SITE_DESCRIPTION, SITE_NAME } from "@/lib/site";
 
@@ -28,6 +29,7 @@ export default function RootLayout({
       <body className="min-h-screen bg-background font-sans antialiased">
         <Analytics />
         <DonationReturn />
+        <ReleaseLifetime />
         {children}
       </body>
     </html>

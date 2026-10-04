@@ -92,6 +92,14 @@ COPY --from=build /app/packages/client/.next/static ./packages/client/.next/stat
 COPY --from=build /app/packages/client/public ./packages/client/public
 
 COPY drain.cjs /usr/local/lib/drain.cjs
+# Browser assets every overlapping container serves from the shared release
+# volume; see scripts/RETAINED-ASSETS.md.
+COPY --from=build /app/packages/client/.next/static ./release-assets/_next/static
+COPY --from=build /app/packages/client/public/version.json ./release-assets/version.json
+COPY shared-assets.cjs /usr/local/lib/shared-assets.cjs
+COPY scripts/shared-asset-releases.mjs /usr/local/lib/releases/shared-asset-releases.mjs
+COPY --chmod=755 release-entrypoint.sh /usr/local/bin/release-entrypoint
+ENV CHEMISTRY_SHARED_ASSETS=1
 
 USER node
 EXPOSE 6337
@@ -99,4 +107,6 @@ EXPOSE 6337
 HEALTHCHECK --interval=2s --timeout=5s --start-period=15s --retries=5 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||'6337')).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 
-CMD ["node", "--require", "/usr/local/lib/drain.cjs", "packages/client/server.js"]
+ENTRYPOINT ["/usr/local/bin/release-entrypoint"]
+# shared-assets.cjs loads first, so the drain probe stays the outer handler.
+CMD ["node", "--require", "/usr/local/lib/shared-assets.cjs", "--require", "/usr/local/lib/drain.cjs", "packages/client/server.js"]

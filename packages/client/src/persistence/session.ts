@@ -275,3 +275,28 @@ export function resetEditorPersistence(): void {
   titleBase = null;
   resetSaveState();
 }
+
+export type ReleaseSaveResult = { readonly ok: true } | { readonly ok: false; readonly message: string };
+
+/**
+ * Save the open document before this tab reloads into a newer release, and say
+ * whether the reload is safe.
+ *
+ * A reload is a teardown the page chose, so unlike `pagehide` it can wait for
+ * the IndexedDB write and refuse when it fails. The journal copy goes first
+ * anyway: it is the one write that survives if the browser kills the page
+ * mid-flush. Refuses, rather than reloading, when the write fails, when the
+ * document is held because another tab deleted it (a reload would drop this
+ * tab's copy), or when a newer edit arrived while the write was running.
+ */
+export async function saveBeforeReleaseReload(): Promise<ReleaseSaveResult> {
+  const doc = session?.pending() ?? null;
+  if (doc === null) return { ok: true };
+  if (held !== null && held.id === doc.id) return { ok: false, message: held.message };
+  writeJournal(doc);
+  const result = await flushEditorDocument();
+  if (result !== null && !result.ok) return { ok: false, message: result.error.message };
+  if ((session?.pending() ?? null) !== null)
+    return { ok: false, message: "The latest change is still being saved." };
+  return { ok: true };
+}
