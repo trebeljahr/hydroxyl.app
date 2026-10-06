@@ -463,8 +463,8 @@ describe("StatusBar — the Feedback link (decisions 140 and 167)", () => {
     const link = screen.getByRole("link", { name: "Feedback" });
     // The whole href, so a `?body=` built from the benzene on the canvas
     // would fail here: a drawn structure must not leave the browser.
-    expect(link).toHaveAttribute("href", "mailto:feedback@chemistry.trebeljahr.com");
-    expect(link).toHaveAttribute("title", "feedback@chemistry.trebeljahr.com");
+    expect(link).toHaveAttribute("href", "mailto:feedback@hydroxyl.app");
+    expect(link).toHaveAttribute("title", "feedback@hydroxyl.app");
     // A mail program takes it; the page stays, so no new tab.
     expect(link).not.toHaveAttribute("target");
   });
@@ -474,7 +474,7 @@ describe("StatusBar — the Feedback link (decisions 140 and 167)", () => {
     render(<StatusBar />);
     expect(screen.getByRole("link", { name: "Feedback" })).toHaveAttribute(
       "href",
-      "mailto:feedback@chemistry.trebeljahr.com",
+      "mailto:feedback@hydroxyl.app",
     );
     expect(screen.queryByRole("link", { name: "Donate" })).toBeNull();
   });

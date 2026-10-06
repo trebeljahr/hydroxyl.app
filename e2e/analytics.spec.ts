@@ -20,7 +20,7 @@ import type { Page, Request } from "@playwright/test";
  */
 
 const PLAUSIBLE_ORIGIN = "https://plausible.e2e.invalid";
-const DOMAIN = "chemistry.trebeljahr.com";
+const DOMAIN = "hydroxyl.app";
 
 const SCENE_ATOM = '[data-canvas-root] [data-layer="scene"] circle[data-atom-id]';
 const FORMULA = '[data-status="formula"]';

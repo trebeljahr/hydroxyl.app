@@ -85,15 +85,15 @@ describe("the landing page", () => {
     // Decisions 140 and 167. The address is the link text, so it can be
     // copied where no mail program is set up.
     const { unmount } = render(<Landing />);
-    const link = screen.getByRole("link", { name: "feedback@chemistry.trebeljahr.com" });
-    expect(link).toHaveAttribute("href", "mailto:feedback@chemistry.trebeljahr.com");
+    const link = screen.getByRole("link", { name: "feedback@hydroxyl.app" });
+    expect(link).toHaveAttribute("href", "mailto:feedback@hydroxyl.app");
     expect(link.closest("footer")).not.toBeNull();
     unmount();
 
     vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "1");
     render(<Landing />);
     expect(
-      screen.getByRole("link", { name: "feedback@chemistry.trebeljahr.com" }),
-    ).toHaveAttribute("href", "mailto:feedback@chemistry.trebeljahr.com");
+      screen.getByRole("link", { name: "feedback@hydroxyl.app" }),
+    ).toHaveAttribute("href", "mailto:feedback@hydroxyl.app");
   });
 });

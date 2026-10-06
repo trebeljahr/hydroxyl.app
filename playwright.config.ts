@@ -54,7 +54,7 @@ export default defineConfig({
     env: {
       PORT: String(PORT),
       NEXT_FILE_EXPORT: "",
-      NEXT_PUBLIC_PLAUSIBLE_DOMAIN: "chemistry.trebeljahr.com",
+      NEXT_PUBLIC_PLAUSIBLE_DOMAIN: "hydroxyl.app",
       NEXT_PUBLIC_PLAUSIBLE_SCRIPT_URL: "https://plausible.e2e.invalid/js/script.js",
     },
   },

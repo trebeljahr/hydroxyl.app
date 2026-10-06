@@ -13,6 +13,6 @@
  * chemist who wants to show a structure attaches an export themselves.
  */
 
-export const FEEDBACK_ADDRESS = "feedback@chemistry.trebeljahr.com";
+export const FEEDBACK_ADDRESS = "feedback@hydroxyl.app";
 
 export const FEEDBACK_HREF = `mailto:${FEEDBACK_ADDRESS}`;

@@ -11,7 +11,7 @@ import { PAGEVIEW_SCRIPT_ID, pageviewScript, parsePlausibleSettings } from "./an
  * payload against a real build and a drawn document; these pin the rules.
  */
 
-const DOMAIN = "chemistry.trebeljahr.com";
+const DOMAIN = "hydroxyl.app";
 const SCRIPT_URL = "https://plausible.example/js/script.js";
 const SETTINGS = { domain: DOMAIN, endpoint: "https://plausible.example/api/event" };
 
@@ -33,7 +33,7 @@ describe("parsePlausibleSettings", () => {
   it("posts to the script host's /api/event, as Plausible's tracker does", () => {
     expect(parsePlausibleSettings(DOMAIN, SCRIPT_URL)).toEqual(SETTINGS);
     expect(
-      parsePlausibleSettings("Chemistry.Trebeljahr.com", "https://stats.example:8443/js/script.js"),
+      parsePlausibleSettings("Hydroxyl.App", "https://stats.example:8443/js/script.js"),
     ).toEqual({ domain: DOMAIN, endpoint: "https://stats.example:8443/api/event" });
   });
 
@@ -49,7 +49,7 @@ describe("parsePlausibleSettings", () => {
   });
 
   it("fails the build on a malformed value", () => {
-    expect(() => parsePlausibleSettings("https://chemistry.trebeljahr.com", SCRIPT_URL)).toThrow(
+    expect(() => parsePlausibleSettings("https://hydroxyl.app", SCRIPT_URL)).toThrow(
       /not a host name/,
     );
     expect(() => parsePlausibleSettings(DOMAIN, "plausible.example/js/script.js")).toThrow(

@@ -56,7 +56,7 @@ jobs:
       - name: Static export must keep building
         run: NEXT_FILE_EXPORT=1 pnpm run build
         env:
-          NEXT_PUBLIC_PLAUSIBLE_DOMAIN: chemistry.trebeljahr.com
+          NEXT_PUBLIC_PLAUSIBLE_DOMAIN: hydroxyl.app
           NEXT_PUBLIC_PLAUSIBLE_SCRIPT_URL: https://plausible.export-check.invalid/js/script.js
       # "It built" is not "it runs": a nested page under assetPrefix "./"
       # builds cleanly and then 404s every one of its own chunks.
