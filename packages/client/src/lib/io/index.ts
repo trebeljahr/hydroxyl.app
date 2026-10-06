@@ -11,3 +11,4 @@ export * from "./open";
 export * from "./save";
 export * from "./file-system";
 export * from "./library";
+export * from "./fragment";

@@ -46,6 +46,11 @@
  * exactly the figure they just saw. It follows the fixture's rules — see
  * `exampleFromSearch`.
  *
+ * `#smiles=` and `#molfile=` are the third (decision 230): a structure carried
+ * in the link, opened as a new sketch by the same rules, and taken off the URL
+ * once read so a reload does not import it again. See `@/lib/io/fragment`.
+ * `?doc=` wins over both, because it names stored work.
+ *
  * ── THE LOAD DECISION IS MADE ON THE DOCUMENT'S ID, NOT ON EMPTINESS ───────
  *
  * It used to read `?doc=` only inside `if (isEmpty(molecule))`, and that was
@@ -72,6 +77,7 @@ import type { SketchDocument } from "@starter/shared";
 import { fixtureDocument, stressDocument, STRESS_HEAVY_ATOMS } from "@/canvas";
 import { armCanvasCrash, CRASH_GLOBAL } from "@/canvas/crash";
 import { exampleNamed } from "@/components/landing/example-document";
+import { openTextAs, structureFromHash } from "@/lib/io";
 import { EditorShell } from "@/shell";
 import { editorStore, STARTUP_DOCUMENT_ID } from "@/state";
 import {
@@ -225,6 +231,17 @@ function installStorageOverride(search: string): void {
   }
 }
 
+/**
+ * Take `#smiles=…` / `#molfile=…` off the URL once it has been acted on, so a
+ * reload opens the sketch the visitor has since been editing — or, before the
+ * first edit, a bare `/editor` — rather than importing the link a second time.
+ * `history.state` is passed through: Next keeps its router state there.
+ */
+function clearFragment(): void {
+  const { pathname, search } = window.location;
+  window.history.replaceState(window.history.state, "", pathname + search);
+}
+
 export default function EditorPage(): ReactElement {
   useEffect(() => {
     const search = window.location.search;
@@ -348,8 +365,40 @@ export default function EditorPage(): ReactElement {
       // `?example=` opens the same way as the fixture: an undoable entry and
       // then a baseline, so nothing is stored until the first edit and one
       // Ctrl+Z lands on the placeholder, which is never written (decision 85).
+      const fragment = structureFromHash(window.location.hash);
+      if (fragment.kind === "refused") {
+        clearFragment();
+        state.setStatusMessage(fragment.message);
+      }
       const example = exampleFromSearch(search);
-      if (example.kind === "found") {
+      if (fragment.kind === "structure") {
+        // Nothing is opened until the read settles: an import through the
+        // worker takes a moment, and benzene flashing up first would look
+        // like the link had failed. The placeholder is never written, so
+        // baselining it here is only what every other path does.
+        baselineEditorDocument(state.document);
+        void openTextAs(fragment.format, fragment.text).then((result) => {
+          // Cancelled means StrictMode's first mount, or a navigation away.
+          // The fragment is left in place for the mount that replaces this
+          // one, which is why it is cleared here and not before the read.
+          if (cancelled) return;
+          clearFragment();
+          const next = editorStore.getState();
+          const opened = result.ok ? result.value.documents[0] : undefined;
+          if (opened !== undefined && result.ok) {
+            next.openDocument(opened, "Open from link");
+            next.setStatusMessage(result.value.warnings[0] ?? null);
+          } else {
+            next.openDocument(fixtureDocument(), "Open Benzene");
+            next.setStatusMessage(
+              `The structure in the link could not be opened: ${
+                result.ok ? "it holds no structure." : result.message
+              }`,
+            );
+          }
+          baselineEditorDocument(editorStore.getState().document);
+        });
+      } else if (example.kind === "found") {
         state.openDocument(example.document, "Open example");
       } else {
         const requested = documentFromSearch(search);
@@ -357,7 +406,9 @@ export default function EditorPage(): ReactElement {
           requested === null ? "Open Benzene" : "Open stress fixture");
         if (example.kind === "unknown") state.setStatusMessage(example.message);
       }
-      baselineEditorDocument(editorStore.getState().document);
+      if (fragment.kind !== "structure") {
+        baselineEditorDocument(editorStore.getState().document);
+      }
     } else {
       baselineEditorDocument(state.document);
     }

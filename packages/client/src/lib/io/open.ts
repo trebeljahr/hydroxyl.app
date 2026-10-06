@@ -307,6 +307,23 @@ async function openSmiles(text: string, options: OpenTextOptions): Promise<OpenR
 }
 
 /**
+ * Read text whose format the caller already knows, skipping the sniff.
+ *
+ * For a URL fragment (`@/lib/io/fragment`), whose key says what the value is:
+ * sniffing would let `#smiles=` carry a whole sketch file, and a molfile whose
+ * header lines happen to be blank would be guessed at instead of read.
+ */
+export async function openTextAs(
+  kind: "smiles" | "molfile",
+  text: string,
+  options: OpenTextOptions = {},
+): Promise<OpenResult> {
+  return kind === "smiles"
+    ? openSmiles(text, options)
+    : openMolblock(text, options, { kind: "molblock" });
+}
+
+/**
  * Read whatever this is into documents.
  *
  * Never throws: a bad drop is an ordinary outcome to report, the same way a

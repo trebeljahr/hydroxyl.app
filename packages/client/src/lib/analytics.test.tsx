@@ -123,6 +123,13 @@ describe("the pageview script", () => {
     });
   });
 
+  it("does not carry a structure opened from the link (decision 230)", () => {
+    window.history.replaceState(null, "", "/editor/#smiles=CC(%3DO)O");
+    const body = JSON.stringify(run()[0]?.body);
+    expect(body).not.toContain("smiles");
+    expect(body).not.toContain("CC(");
+  });
+
   it("drops a same-origin referrer, which can name a document", () => {
     setReferrer(`${window.location.origin}/editor/?doc=doc_7f3a`);
     expect(run()[0]?.body).toMatchObject({ r: null });

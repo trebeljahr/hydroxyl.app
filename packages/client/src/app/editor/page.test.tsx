@@ -23,6 +23,22 @@ vi.mock("@/persistence", async (importOriginal) => ({
   setDocumentStore: () => undefined,
 }));
 
+// The worker cannot run under jsdom. `open.ts` imports the bridge dynamically,
+// and this stands in for it: any SMILES reads as benzene, except "bad".
+vi.mock("@/lib/rdkit", async () => {
+  const { benzene: drawBenzene } = await import("@starter/chem-core");
+  return {
+    fromSmiles: (smiles: string) =>
+      Promise.resolve(
+        smiles === "bad"
+          ? { ok: false, error: { kind: "parse-failed", message: "SMILES Parse Error" } }
+          : { ok: true, value: { molecule: drawBenzene(), title: "" }, report: { warnings: [] } },
+      ),
+  };
+});
+
+import { moleculeToMolblock } from "@/lib/rdkit/translate";
+import { MAX_FRAGMENT_LENGTH } from "@/lib/io/fragment";
 import { EXAMPLE_VIEWS, exampleDocument } from "@/components/landing/example-document";
 
 import EditorPage, { documentIdFromSearch, exampleFromSearch } from "./editor-page";
@@ -334,5 +350,76 @@ describe("exampleFromSearch", () => {
     if (result.kind !== "unknown") return;
     expect(result.message).toContain(`“${"x".repeat(39)}…”`);
     expect(result.message.length).toBeLessThan(120);
+  });
+});
+
+/** `#smiles=` / `#molfile=` — a structure carried in the link (decision 230). */
+describe("/editor#<format>=<structure>", () => {
+  function freshMount(path: string) {
+    editorStore.getState().loadDocument(startupDocument());
+    editorStore.getState().setStatusMessage(null);
+    window.history.replaceState(null, "", `/editor${path}`);
+    return render(<EditorPage />);
+  }
+
+  async function opened(): Promise<void> {
+    await waitFor(() => {
+      expect(editorStore.getState().document.id).not.toBe(STARTUP_DOCUMENT_ID);
+    });
+  }
+
+  it("opens a SMILES as a new unsaved sketch and takes it off the URL", async () => {
+    const page = freshMount(`#smiles=${encodeURIComponent("c1ccccc1")}`);
+    await opened();
+    expect(editorStore.getState().document.molecule.atomIds).toHaveLength(6);
+    expect(window.location.hash).toBe("");
+    expect(window.location.pathname).toBe("/editor");
+    // Nothing stored until the first edit, as with ?example=.
+    await expect(flushEditorDocument()).resolves.toBeNull();
+    editorStore.getState().undo();
+    expect(editorStore.getState().document.id).toBe(STARTUP_DOCUMENT_ID);
+    page.unmount();
+  });
+
+  it("opens a molfile through chem-core's reader, keeping the query string", async () => {
+    const written = moleculeToMolblock(ethanol(), "Ethanol");
+    expect(written.ok).toBe(true);
+    if (!written.ok) return;
+    const page = freshMount(`?storage=x#molfile=${encodeURIComponent(written.value)}`);
+    await opened();
+    const doc = editorStore.getState().document;
+    expect(doc.metadata.title).toBe("Ethanol");
+    expect(doc.molecule.atomIds).toHaveLength(3);
+    expect(window.location.hash).toBe("");
+    expect(window.location.search).toBe("?storage=x");
+    page.unmount();
+  });
+
+  it("opens benzene and says why when the structure does not read", async () => {
+    const page = freshMount("#smiles=bad");
+    await opened();
+    expect(editorStore.getState().document.metadata.title).toBe("Benzene");
+    expect(editorStore.getState().ui.statusMessage).toBe(
+      "The structure in the link could not be opened: SMILES Parse Error",
+    );
+    expect(window.location.hash).toBe("");
+    page.unmount();
+  });
+
+  it("refuses a fragment over the size limit with a status-line message", async () => {
+    const page = freshMount(`#smiles=${"C".repeat(MAX_FRAGMENT_LENGTH)}`);
+    await opened();
+    expect(editorStore.getState().document.metadata.title).toBe("Benzene");
+    expect(editorStore.getState().ui.statusMessage).toContain("at most 100,000");
+    expect(window.location.hash).toBe("");
+    page.unmount();
+  });
+
+  it("gives way to ?doc=, which names stored work", async () => {
+    const page = freshMount(`?doc=${FIRST.id}#smiles=CCO`);
+    await waitFor(() => {
+      expect(editorStore.getState().document.id).toBe(FIRST.id);
+    });
+    page.unmount();
   });
 });
