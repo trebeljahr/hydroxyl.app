@@ -1,7 +1,9 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const ORIGINS = ["https://chemistry.trebeljahr.com"];
+// hydroxyl.app is the product's domain; chemistry.trebeljahr.com stays an alias until
+// sketch libraries saved there have a way across (IndexedDB is per origin).
+export const ORIGINS = ["https://hydroxyl.app", "https://chemistry.trebeljahr.com"];
 export const PAGE_MARKER = "chemistry";
 const pause = (ms) => new Promise((done) => setTimeout(done, ms));
 
