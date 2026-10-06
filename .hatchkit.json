@@ -1,9 +1,9 @@
 {
-  "version": 3,
+  "version": 5,
   "cliVersion": "0.2.18",
   "scaffoldedAt": "2026-09-01T18:48:32.745Z",
   "name": "chemistry-sketcher",
-  "domain": "chemistry.trebeljahr.com",
+  "domain": "hydroxyl.app",
   "description": "Chemical structure editor for publication figures",
   "features": [
     "analytics"
@@ -42,5 +42,53 @@
         "value": "v=spf1 include:amazonses.com ~all"
       }
     ]
-  }
+  },
+  "topology": "single-origin",
+  "identifiers": {
+    "slug": "chemistry-sketcher",
+    "token": "chemistrysketcher",
+    "productName": "chemistry-sketcher",
+    "shortName": "chemistry-sk",
+    "orgDomain": "example.com",
+    "bundleId": "com.example.chemistrysketcher",
+    "storagePrefix": "chemistrysketcher",
+    "keychainService": "chemistrysketcher",
+    "clientHeader": "x-chemistrysketcher-client",
+    "webhookHeaderPrefix": "X-ChemistrySketcher-",
+    "clientIds": {
+      "desktop": "chemistrysketcher-desktop",
+      "mobile": "chemistrysketcher-mobile",
+      "extension": "chemistrysketcher-extension",
+      "raycast": "chemistrysketcher-raycast",
+      "mcp": "chemistrysketcher-mcp",
+      "cli": "chemistrysketcher-cli"
+    },
+    "databaseName": "chemistrysketcher",
+    "exportFilePrefix": "chemistrysketcher",
+    "envPrefix": "CHEMISTRYSKETCHER",
+    "npmScope": "@chemistry-sketcher",
+    "desktopOrigin": {
+      "scheme": "app",
+      "host": "-"
+    }
+  },
+  "deferred": [
+    {
+      "key": "migrate:email-routing:setup",
+      "label": "migrate-domain / email-routing (prepare)",
+      "kind": "failed",
+      "reason": "Cloudflare token lacks Email Routing permissions for hydroxyl.app (10000: Authentication error)",
+      "command": "hatchkit migrate-domain --to hydroxyl.app --from chemistry.trebeljahr.com --phase prepare --only email-routing",
+      "hint": [
+        "The Cloudflare DNS token cannot read Email Routing on hydroxyl.app — it is missing permissions, not expired.",
+        "Edit the token at https://dash.cloudflare.com/profile/api-tokens and add: Zone → Email Routing Rules → Edit + Account → Email Routing Addresses → Edit",
+        "(keep Zone → DNS → Edit + Zone → Zone → Read; scope the zone permissions to the zones you use)",
+        "Then re-run `hatchkit config add dns` if you created a new token instead of editing the old one."
+      ],
+      "deferredAt": "2026-10-06T23:07:59.642Z"
+    }
+  ],
+  "aliases": [
+    "chemistry.trebeljahr.com"
+  ]
 }
