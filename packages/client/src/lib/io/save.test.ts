@@ -14,7 +14,7 @@ describe("exporting a native sketch", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(decodeDocument(JSON.parse(result.text))).toEqual(doc);
-    expect(result.filename).toBe("Benzene.chemsketch.json");
+    expect(result.filename).toBe("Benzene.hydroxyl.json");
   });
 });
 

@@ -24,6 +24,7 @@
 import type { ReactElement, ReactNode } from "react";
 
 import { editorHref } from "@/lib/deployment";
+import { SITE_NAME } from "@/lib/site";
 
 import { ACS_GUIDELINE, cmFromPt, decimal, guideNumbers } from "./journal-figure-size";
 import type { WorkedFigure } from "./journal-figure-size";
@@ -242,9 +243,9 @@ export function JournalFigureSizeGuide(): ReactElement {
         </p>
       </Section>
 
-      <Section id="editor" heading="Export at these sizes with Chemistry Sketcher">
+      <Section id="editor" heading={`Export at these sizes with ${SITE_NAME}`}>
         <p>
-          Chemistry Sketcher prints every bond at <N k="bond-cm">{n.bondCm}</N> cm, which is{" "}
+          {SITE_NAME} prints every bond at <N k="bond-cm">{n.bondCm}</N> cm, which is{" "}
           <N k="bond-pt">{n.bondPt}</N> pt. Its Publication style uses the ACS 1996 settings at
           that bond: <N k="label-pt">{n.labelPt}</N> pt labels and{" "}
           <N k="line-width-pt">{n.lineWidthPt}</N> pt lines. The export dialog applies them.

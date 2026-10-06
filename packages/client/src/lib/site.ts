@@ -3,7 +3,7 @@
  * metadata needs it. Where it is served is `siteUrl()` in `@/lib/deployment`.
  */
 
-export const SITE_NAME = "Chemistry Sketcher";
+export const SITE_NAME = "Hydroxyl";
 
 export const SITE_DESCRIPTION =
   "A chemical structure editor for publication figures. Draw a molecule once and " +

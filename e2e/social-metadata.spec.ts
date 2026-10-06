@@ -39,8 +39,8 @@ async function headMeta(request: APIRequestContext, path: string): Promise<Map<s
 }
 
 for (const page of [
-  { path: "/", title: "Chemistry Sketcher" },
-  { path: "/about", title: "About Chemistry Sketcher" },
+  { path: "/", title: "Hydroxyl" },
+  { path: "/about", title: "About Hydroxyl" },
 ]) {
   test(`${page.path} carries an Open Graph and Twitter card with the social card`, async ({
     request,
@@ -48,7 +48,7 @@ for (const page of [
     const meta = await headMeta(request, page.path);
 
     expect(meta.get("og:type")).toBe("website");
-    expect(meta.get("og:site_name")).toBe("Chemistry Sketcher");
+    expect(meta.get("og:site_name")).toBe("Hydroxyl");
     expect(meta.get("og:title")).toBe(page.title);
     expect(meta.get("og:description")).toBe(meta.get("description"));
     // Absolute, from the manifest's domain; the trailing slash is the build's.

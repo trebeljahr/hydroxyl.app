@@ -171,7 +171,7 @@ export async function duplicateDocument(
 /**
  * Re-id any incoming document that would OVERWRITE a newer stored one.
  *
- * A native `.chemsketch.json` carries its own `doc.id` — `openJson` returns
+ * A native `.hydroxyl.json` carries its own `doc.id` — `openJson` returns
  * the decoded document verbatim, and it has to, or reopening an exported
  * sketch on a fresh machine would not be the same sketch. But all three object
  * stores key on that id, so importing a file whose stored counterpart has

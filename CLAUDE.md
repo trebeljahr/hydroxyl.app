@@ -3,6 +3,15 @@
 Chemical structure editor for publication figures. Draw a molecule once,
 view and export it in every representation a figure might need.
 
+The product is called **Hydroxyl**: `SITE_NAME` in
+`packages/client/src/lib/site.ts`, which every header, title and the social
+card read. The repository and every browser-storage name keep
+`chemistry-sketcher` — the IndexedDB database, the localStorage keys, the
+BroadcastChannel. Do not rename those: a renamed store opens empty and every
+saved sketch is orphaned. New exports are `.hydroxyl.json` and
+`hydroxyl-library-<date>.json`; the library reader still accepts the old
+`chemistry-sketcher-library` envelope (decision 229).
+
 ## Hatchkit Context
 
 This starter is normally generated and maintained by `hatchkit`.

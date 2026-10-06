@@ -16,6 +16,7 @@ import type { ReactElement } from "react";
 
 import { JournalFigureSizeGuide } from "@/components/guides/JournalFigureSizeGuide";
 import { aboutHref, editorHref, recentsHref } from "@/lib/deployment";
+import { SITE_NAME } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "How big should a chemical structure be in a single-column figure?",
@@ -29,7 +30,7 @@ export default function JournalFigureSizePage(): ReactElement {
     <div className="bg-background text-foreground min-h-screen">
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-4 py-3 sm:px-6">
         <a href={recentsHref()} className="text-lg font-semibold tracking-tight">
-          Chemistry Sketcher
+          {SITE_NAME}
         </a>
         <nav className="ml-auto flex items-center gap-2 text-sm">
           <a

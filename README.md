@@ -1,7 +1,9 @@
-# chemistry-sketcher
+# Hydroxyl
 
-A chemical structure editor aimed at producing figures for papers — draw a
-molecule once, then export it in whichever representation the figure needs.
+A chemical structure editor for figures in papers. Draw a molecule once, then
+export it in each representation the figure needs.
+
+The repository keeps its working name, `chemistry-sketcher`.
 
 Status: **early**. The chemistry core, the renderer and the editor canvas are
 built and tested: `/editor` draws, edits, and renders every 2D representation

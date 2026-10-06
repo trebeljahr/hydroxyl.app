@@ -131,7 +131,7 @@ export type StylePresetId = "publication" | "screen";
  * the Publication canvas is the exported figure at the zoom you work at
  * (decision 107). Opening in Screen meant editing one picture and exporting
  * another. A document that already HAS a preset keeps it: a saved one, a
- * `.chemsketch.json` file, and a copy, which `copyOf` hands its source's.
+ * `.hydroxyl.json` file, and a copy, which `copyOf` hands its source's.
  * This is only the answer when nobody has chosen.
  */
 export const NEW_DOCUMENT_PRESET: StylePresetId = "publication";

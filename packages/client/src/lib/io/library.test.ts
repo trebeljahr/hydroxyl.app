@@ -6,6 +6,7 @@ import { createDocument, encodeDocument, SCHEMA_VERSION } from "@starter/shared"
 
 import {
   isLibraryFile,
+  LEGACY_LIBRARY_FORMATS,
   LIBRARY_FORMAT,
   LIBRARY_FORMAT_VERSION,
   libraryFileName,
@@ -26,7 +27,7 @@ function library() {
 
 describe("the library file", () => {
   it("names itself after the export's UTC day", () => {
-    expect(libraryFileName(NOW)).toBe("chemistry-sketcher-library-2026-09-29.json");
+    expect(libraryFileName(NOW)).toBe("hydroxyl-library-2026-09-29.json");
   });
 
   it("round-trips real molecules with their chemistry intact", () => {
@@ -57,6 +58,8 @@ describe("the library file", () => {
 
   it("is recognised by its envelope, and nothing else is", () => {
     expect(isLibraryFile({ format: LIBRARY_FORMAT })).toBe(true);
+    expect(isLibraryFile({ format: "chemistry-sketcher-library" })).toBe(true);
+    expect(isLibraryFile({ format: "some-other-library" })).toBe(false);
     expect(isLibraryFile(encodeDocument(library()[0]!))).toBe(false);
     expect(isLibraryFile(null)).toBe(false);
     // Untrusted input: an inherited `format` is not the file saying so.
@@ -132,5 +135,21 @@ describe("the library file", () => {
     expect(result.value.documents).toHaveLength(3);
     expect(result.value.warnings).toEqual([]);
     expect(rdkitLoads).toBe(0);
+  });
+
+  it("still opens a backup written under the old name (decision 229)", async () => {
+    // A file exported before the rename differs from today's in the
+    // envelope's name and nothing else.
+    expect(LEGACY_LIBRARY_FORMATS).toContain("chemistry-sketcher-library");
+    const today = JSON.parse(serializeLibrary(library(), NOW).text) as Record<string, unknown>;
+    const old = JSON.stringify({ ...today, format: "chemistry-sketcher-library" });
+
+    const result = await openText(old, { loadRdkit: () => Promise.reject(new Error("not needed")) });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const [benzeneBack, acetateBack, sulfoneBack] = result.value.documents;
+    expect(molecularFormula(benzeneBack!.molecule)).toBe("C6H6");
+    expect(netCharge(acetateBack!.molecule)).toBe(-1);
+    expect(elementCounts(sulfoneBack!.molecule)).toEqual(elementCounts(dimethylSulfone()));
   });
 });

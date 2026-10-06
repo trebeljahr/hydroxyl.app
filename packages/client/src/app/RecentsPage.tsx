@@ -89,6 +89,7 @@ import {
 import type { DocumentMeta } from "@/persistence/types";
 import { aboutHref, editorHref } from "@/lib/deployment";
 import { exportLibrary, importIntoLibrary, type ActionReport } from "@/lib/io/library-actions";
+import { SITE_NAME } from "@/lib/site";
 import { cn } from "@/lib/utils";
 
 interface Row {
@@ -248,9 +249,9 @@ export default function RecentsPage({ landing }: RecentsPageProps = {}): ReactEl
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-4 py-3 sm:px-6">
         {/* The page's h1 is the landing headline when the landing shows. */}
         {showLanding ? (
-          <p className="text-lg font-semibold tracking-tight">Chemistry Sketcher</p>
+          <p className="text-lg font-semibold tracking-tight">{SITE_NAME}</p>
         ) : (
-          <h1 className="text-xl font-semibold tracking-tight">Chemistry Sketcher</h1>
+          <h1 className="text-xl font-semibold tracking-tight">{SITE_NAME}</h1>
         )}
         <nav className="ml-auto flex flex-wrap items-center gap-2 text-sm">
           {showLanding ? null : (

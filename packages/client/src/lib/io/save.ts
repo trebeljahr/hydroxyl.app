@@ -1,7 +1,7 @@
 /**
  * Documents -> files. The export half of the file plumbing.
  *
- * TWO FORMATS, AND THEY ARE NOT INTERCHANGEABLE. The native `.chemsketch.json`
+ * TWO FORMATS, AND THEY ARE NOT INTERCHANGEABLE. The native `.hydroxyl.json`
  * is the only lossless one — it carries the panels, the style preset, the
  * captions and the display flags, which is to say the figure rather than only
  * the molecule. A `.mol` carries the structure and nothing else, and is what
@@ -29,6 +29,7 @@ import { encodeDocument } from "@starter/shared";
 import type { SketchDocument } from "@starter/shared";
 
 import { moleculeToMolblock } from "@/lib/rdkit/translate";
+import { SITE_NAME } from "@/lib/site";
 
 import { writeTextFile, type WriteOutcome } from "./file-system";
 
@@ -66,7 +67,9 @@ export function serializeForExport(
       // figures they made, and a one-line JSON makes every change a whole-file
       // diff — the same reason chem-render's serializer indents by default.
       text: JSON.stringify(encodeDocument(doc), null, 2),
-      filename: `${base}.chemsketch.json`,
+      // Builds before decision 229 wrote `.chemsketch.json`. Opening sniffs
+      // the content and never reads the name, so those files still open.
+      filename: `${base}.hydroxyl.json`,
     };
   }
   const written = moleculeToMolblock(doc.molecule, doc.metadata.title);
@@ -80,7 +83,7 @@ const MIME: Readonly<Record<ExportFormat, string>> = {
 };
 
 const DESCRIPTION: Readonly<Record<ExportFormat, string>> = {
-  sketch: "Chemistry Sketcher document",
+  sketch: `${SITE_NAME} document`,
   mol: "MDL molfile",
 };
 

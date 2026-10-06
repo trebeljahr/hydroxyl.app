@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { benzene, molecularFormula } from "@starter/chem-core";
+import { benzene, molecularFormula, netCharge } from "@starter/chem-core";
 import { acetate } from "@starter/chem-render";
 import { createDocument } from "@starter/shared";
 import type { SketchDocument } from "@starter/shared";
@@ -60,9 +60,9 @@ describe("Export all sketches", () => {
 
     expect(report).toEqual({
       outcome: "done",
-      message: "Exported 2 sketches to chemistry-sketcher-library-2026-09-29.json.",
+      message: "Exported 2 sketches to hydroxyl-library-2026-09-29.json.",
     });
-    expect(written.filename).toBe("chemistry-sketcher-library-2026-09-29.json");
+    expect(written.filename).toBe("hydroxyl-library-2026-09-29.json");
     const file = JSON.parse(written.text ?? "{}") as { documents: unknown[] };
     expect(file.documents).toHaveLength(2);
   });
@@ -97,13 +97,32 @@ describe("Import", () => {
     store = createMemoryDocumentStore();
     setDocumentStore(store);
     const report = await importIntoLibrary({
-      pick: () => Promise.resolve([{ name: "chemistry-sketcher-library-2026-09-29.json", text }]),
+      pick: () => Promise.resolve([{ name: "hydroxyl-library-2026-09-29.json", text }]),
     });
 
     expect(report).toEqual({ outcome: "done", message: "Imported 2 sketches." });
     const benzeneBack = await store.get("doc_1");
     expect(benzeneBack.ok && molecularFormula(benzeneBack.value.molecule)).toBe("C6H6");
     expect((await store.get("doc_2")).ok).toBe(true);
+  });
+
+  it("restores a backup exported before the rename (decision 229)", async () => {
+    await put(createDocument({ id: "doc_1", title: "Benzene", molecule: benzene(), now: NOW }));
+    await put(createDocument({ id: "doc_2", title: "Acetate", molecule: acetate(), now: NOW }));
+    const today = JSON.parse(await exported()) as Record<string, unknown>;
+    const text = JSON.stringify({ ...today, format: "chemistry-sketcher-library" });
+
+    store = createMemoryDocumentStore();
+    setDocumentStore(store);
+    const report = await importIntoLibrary({
+      pick: () => Promise.resolve([{ name: "chemistry-sketcher-library-2026-09-29.json", text }]),
+    });
+
+    expect(report).toEqual({ outcome: "done", message: "Imported 2 sketches." });
+    const benzeneBack = await store.get("doc_1");
+    expect(benzeneBack.ok && molecularFormula(benzeneBack.value.molecule)).toBe("C6H6");
+    const acetateBack = await store.get("doc_2");
+    expect(acetateBack.ok && netCharge(acetateBack.value.molecule)).toBe(-1);
   });
 
   it("never overwrites a sketch edited after the file was written", async () => {

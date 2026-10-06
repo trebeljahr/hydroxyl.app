@@ -17,7 +17,7 @@
  * The two ways out are (a) split it into a server shell that exports metadata
  * and renders a client child, or (b) let the root layout's title template
  * stand. (b) wins: the shell would exist solely to carry one static string
- * that the layout already supplies ("Chemistry Sketcher"), and the title worth
+ * that the layout already supplies (`SITE_NAME`), and the title worth
  * showing — the document's own — is not knowable at build time anyway, so it
  * would still be wrong on a route the user opened with a different sketch
  * loaded. The document title is rendered in the header below instead, where it

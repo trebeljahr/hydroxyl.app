@@ -89,7 +89,7 @@ function woffToSfnt(woff) {
 /** The card module, bundled for node: it imports through `@/` and the
  *  workspace packages, which only a bundler resolves. */
 async function loadCardModule() {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "chemistry-sketcher-social-card-"));
+  const dir = await mkdtemp(path.join(os.tmpdir(), "hydroxyl-social-card-"));
   try {
     const outfile = path.join(dir, "social-card.mjs");
     await esbuild.build({

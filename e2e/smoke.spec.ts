@@ -13,7 +13,7 @@ import { expect, test } from "@playwright/test";
 test("the landing page is the recents grid, and it starts empty", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByText("Chemistry Sketcher").first()).toBeVisible();
+  await expect(page.getByText("Hydroxyl", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
   await expect(page.locator('[data-recents="empty"]')).toBeVisible();
   // A regex, because `trailingSlash` is true for the standalone build and

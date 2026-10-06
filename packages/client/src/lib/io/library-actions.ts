@@ -22,6 +22,7 @@
 
 import type { SketchDocument } from "@starter/shared";
 
+import { SITE_NAME } from "@/lib/site";
 import { importDocuments, loadAllDocuments } from "@/persistence/documents";
 
 import { OPEN_ACCEPT, pickTextFiles, writeBlobFile, type PickedFile } from "./file-system";
@@ -73,7 +74,7 @@ export async function exportLibrary(options: ExportLibraryOptions = {}): Promise
     },
     filename,
     "application/json",
-    "Chemistry Sketcher library",
+    `${SITE_NAME} library`,
     ".json",
   );
 

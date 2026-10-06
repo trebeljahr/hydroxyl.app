@@ -37,6 +37,7 @@ import {
 } from "@/lib/deployment";
 import { DONATE_URL } from "@/lib/donation";
 import { FEEDBACK_ADDRESS, FEEDBACK_HREF } from "@/lib/feedback";
+import { SITE_NAME } from "@/lib/site";
 
 import { LANDING_HEADLINE } from "./copy";
 import { LANDING_EXAMPLE } from "./example-document";
@@ -87,7 +88,7 @@ export function Landing(): ReactElement {
             drawing the molecule twice, and fixing it twice when it changes.
           </p>
           <p className="text-muted-foreground mt-4 max-w-prose text-lg leading-relaxed">
-            Chemistry Sketcher keeps one structure and draws each view from it. Put the views side
+            {SITE_NAME} keeps one structure and draws each view from it. Put the views side
             by side as lettered panels and export them as one figure, sized for a journal column.
           </p>
           <div className="mt-7 flex flex-wrap items-center gap-3">
@@ -206,7 +207,7 @@ export function Landing(): ReactElement {
       </Section>
 
       <footer className="text-muted-foreground flex flex-wrap gap-x-6 gap-y-2 border-t py-6 text-sm">
-        <span>Chemistry Sketcher</span>
+        <span>{SITE_NAME}</span>
         <a href={thirdPartyNoticesHref()} className="hover:text-foreground underline-offset-2 hover:underline">
           Third-party licences
         </a>

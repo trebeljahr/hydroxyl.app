@@ -4,7 +4,9 @@ import { fileURLToPath } from "node:url";
 // hydroxyl.app is the product's domain; chemistry.trebeljahr.com stays an alias until
 // sketch libraries saved there have a way across (IndexedDB is per origin).
 export const ORIGINS = ["https://hydroxyl.app", "https://chemistry.trebeljahr.com"];
-export const PAGE_MARKER = "chemistry";
+// The product name: the homepage's <title> is `SITE_NAME`
+// (packages/client/src/lib/site.ts), so a rename changes this too.
+export const PAGE_MARKER = "hydroxyl";
 const pause = (ms) => new Promise((done) => setTimeout(done, ms));
 
 // Public HTTP proves the serving build. The rollout operator also verifies

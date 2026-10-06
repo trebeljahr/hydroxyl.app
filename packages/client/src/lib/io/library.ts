@@ -10,7 +10,7 @@
  * pressure, or a new laptop loses the library. One file that restores
  * everything is the local-only answer to all three.
  *
- * ── EACH ENTRY IS A `.chemsketch.json`, VERBATIM ───────────────────────────
+ * ── EACH ENTRY IS A `.hydroxyl.json`, VERBATIM ─────────────────────────────
  *
  * `encodeDocument(doc)` per entry, exactly what the single-sketch export
  * writes, so the two formats cannot drift and every entry goes back through
@@ -33,11 +33,19 @@
 import { encodeDocument } from "@starter/shared";
 import type { SketchDocument } from "@starter/shared";
 
+import { SITE_NAME } from "@/lib/site";
 import { decodeStored } from "@/persistence/migrate";
 
 /** The envelope's `format` value. Checked with `Object.hasOwn`, since the
  *  file is untrusted input (see the note in persistence/migrate.ts). */
-export const LIBRARY_FORMAT = "chemistry-sketcher-library";
+export const LIBRARY_FORMAT = "hydroxyl-library";
+
+/**
+ * Envelope names this build no longer writes but still reads, forever: every
+ * backup made before the product was renamed says `chemistry-sketcher-library`
+ * (decision 229). Only the name changed, so the same reader takes both.
+ */
+export const LEGACY_LIBRARY_FORMATS: readonly string[] = ["chemistry-sketcher-library"];
 
 /** Bumped only when the ENVELOPE changes. A document schema change is the
  *  migration ladder's business, entry by entry. */
@@ -51,10 +59,10 @@ export interface LibraryFile {
   readonly documents: readonly unknown[];
 }
 
-/** `chemistry-sketcher-library-2026-09-29.json`. The date is the export's
- *  UTC day, which is what `exportedAt` inside the file says too. */
+/** `hydroxyl-library-2026-09-29.json`. The date is the export's UTC day,
+ *  which is what `exportedAt` inside the file says too. */
 export function libraryFileName(exportedAt: string): string {
-  return `chemistry-sketcher-library-${exportedAt.slice(0, 10)}.json`;
+  return `hydroxyl-library-${exportedAt.slice(0, 10)}.json`;
 }
 
 export function serializeLibrary(
@@ -75,7 +83,8 @@ export function serializeLibrary(
 export function isLibraryFile(parsed: unknown): boolean {
   if (typeof parsed !== "object" || parsed === null) return false;
   if (!Object.hasOwn(parsed, "format")) return false;
-  return (parsed as Record<string, unknown>)["format"] === LIBRARY_FORMAT;
+  const format = (parsed as Record<string, unknown>)["format"];
+  return format === LIBRARY_FORMAT || LEGACY_LIBRARY_FORMATS.some((legacy) => legacy === format);
 }
 
 export type ReadLibraryResult =
@@ -96,7 +105,7 @@ function field(value: object, key: string): unknown {
 /** Read a parsed library file into documents. Never throws. */
 export function readLibrary(parsed: unknown): ReadLibraryResult {
   if (!isLibraryFile(parsed) || typeof parsed !== "object" || parsed === null) {
-    return { ok: false, message: "That file is not a Chemistry Sketcher library." };
+    return { ok: false, message: `That file is not a ${SITE_NAME} library.` };
   }
   const version = field(parsed, "formatVersion");
   if (typeof version !== "number" || !Number.isInteger(version) || version < 1) {

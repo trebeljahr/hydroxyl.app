@@ -34,7 +34,7 @@ export default function AboutPage(): ReactElement {
     <div className="bg-background text-foreground min-h-screen">
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-4 py-3 sm:px-6">
         <a href={recentsHref()} className="text-lg font-semibold tracking-tight">
-          Chemistry Sketcher
+          {SITE_NAME}
         </a>
         <nav className="ml-auto flex items-center gap-2 text-sm">
           <a

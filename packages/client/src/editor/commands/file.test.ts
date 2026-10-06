@@ -30,7 +30,7 @@ function ethanol() {
 }
 
 /**
- * The import path's ONE destructive edge: a native `.chemsketch.json` carries
+ * The import path's ONE destructive edge: a native `.hydroxyl.json` carries
  * its own `doc.id`, and every object store keys on it.
  */
 

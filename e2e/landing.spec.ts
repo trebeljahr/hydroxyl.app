@@ -160,11 +160,11 @@ test("Export all sketches writes one file that Import restores in an empty brows
     page.waitForEvent("download"),
     page.locator('[data-recents="export-all"]').click(),
   ]);
-  expect(download.suggestedFilename()).toMatch(/^chemistry-sketcher-library-\d{4}-\d{2}-\d{2}\.json$/);
+  expect(download.suggestedFilename()).toMatch(/^hydroxyl-library-\d{4}-\d{2}-\d{2}\.json$/);
   await expect(page.locator('[data-recents="notice"]')).toContainText("Exported 2 sketches");
   const path = await download.path();
   const file = JSON.parse(await readFile(path, "utf8")) as { format: string; documents: unknown[] };
-  expect(file.format).toBe("chemistry-sketcher-library");
+  expect(file.format).toBe("hydroxyl-library");
   expect(file.documents).toHaveLength(2);
 
   // Another computer: a fresh context has its own, empty IndexedDB.
