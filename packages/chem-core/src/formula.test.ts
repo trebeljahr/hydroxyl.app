@@ -323,3 +323,140 @@ describe("isotope labels", () => {
     expect(missing).toEqual([]);
   });
 });
+
+/** Aspirin, C9H8O4: acetylsalicylic acid, ring drawn Kekulé. */
+function aspirin() {
+  return buildMolecule((b) => {
+    const ring = Array.from({ length: 6 }, () => b.atom("C"));
+    for (let i = 0; i < 6; i++) b.bond(ring[i]!, ring[(i + 1) % 6]!, i % 2 === 0 ? 2 : 1);
+    const acid = b.atom("C");
+    b.bond(ring[0]!, acid, 1);
+    b.bond(acid, b.atom("O"), 2);
+    b.bond(acid, b.atom("O"), 1);
+    const ester = b.atom("O");
+    b.bond(ring[1]!, ester, 1);
+    const acyl = b.atom("C");
+    b.bond(ester, acyl, 1);
+    b.bond(acyl, b.atom("O"), 2);
+    b.bond(acyl, b.atom("C"), 1);
+  });
+}
+
+/**
+ * N-Acetylphenylalanine ethyl ester, C13H17NO3 — the formula of the ACS
+ * Guide's own example line, so the expected numbers are the Guide's.
+ */
+function acetylPhenylalanineEthylEster() {
+  return buildMolecule((b) => {
+    const ring = Array.from({ length: 6 }, () => b.atom("C"));
+    for (let i = 0; i < 6; i++) b.bond(ring[i]!, ring[(i + 1) % 6]!, i % 2 === 0 ? 2 : 1);
+    const benzylic = b.atom("C");
+    b.bond(ring[0]!, benzylic, 1);
+    const alpha = b.atom("C");
+    b.bond(benzylic, alpha, 1);
+    const n = b.atom("N");
+    b.bond(alpha, n, 1);
+    const amide = b.atom("C");
+    b.bond(n, amide, 1);
+    b.bond(amide, b.atom("O"), 2);
+    b.bond(amide, b.atom("C"), 1);
+    const carbonyl = b.atom("C");
+    b.bond(alpha, carbonyl, 1);
+    b.bond(carbonyl, b.atom("O"), 2);
+    const ether = b.atom("O");
+    b.bond(carbonyl, ether, 1);
+    const ch2 = b.atom("C");
+    b.bond(ether, ch2, 1);
+    b.bond(ch2, b.atom("C"), 1);
+  });
+}
+
+/** Dimethyl sulfoxide, C2H6OS. */
+function dmso() {
+  return buildMolecule((b) => {
+    const s = b.atom("S");
+    b.bond(s, b.atom("O"), 2);
+    b.bond(s, b.atom("C"), 1);
+    b.bond(s, b.atom("C"), 1);
+  });
+}
+
+describe("elementalComposition", () => {
+  it("gives aspirin's mass percentages from standard atomic weights", () => {
+    const pct = F.elementalComposition(aspirin());
+    expect(pct["C"]).toBeCloseTo(60.002, 3);
+    expect(pct["H"]).toBeCloseTo(4.476, 3);
+    expect(pct["O"]).toBeCloseTo(35.522, 3);
+  });
+
+  it("sums to 100 and lists only the elements present", () => {
+    const pct = F.elementalComposition(dmso());
+    expect(Object.keys(pct).sort()).toEqual(["C", "H", "O", "S"]);
+    expect(Object.values(pct).reduce((a, b) => a + b, 0)).toBeCloseTo(100, 10);
+  });
+
+  it("counts a labelled carbon at its nuclide's mass, as molecularWeight does", () => {
+    const labelled = methanol(13);
+    const carbon = (F.elementalComposition(labelled)["C"] ?? 0) / 100;
+    expect(carbon * F.molecularWeight(labelled)).toBeCloseTo(nuclideMass("C", 13)!, 6);
+    expect(F.elementalComposition(labelled)["C"]).toBeGreaterThan(
+      F.elementalComposition(methanol())["C"]!,
+    );
+  });
+
+  it("is empty for an empty structure", () => {
+    expect(F.elementalComposition(emptyMolecule())).toEqual({});
+  });
+});
+
+describe("elementalAnalysisLine", () => {
+  it("reproduces the ACS Guide's own example line for C13H17NO3", () => {
+    const line = F.elementalAnalysisLine(acetylPhenylalanineEthylEster());
+    expect(line).toEqual({
+      ok: true,
+      text: "Anal. Calcd for C13H17NO3: C, 66.36; H, 7.28; N, 5.95.",
+      html: "Anal. Calcd for C<sub>13</sub>H<sub>17</sub>NO<sub>3</sub>: C, 66.36; H, 7.28; N, 5.95.",
+    });
+  });
+
+  it("writes aspirin's line with two decimals, trailing zeros kept, and no oxygen", () => {
+    const line = F.elementalAnalysisLine(aspirin());
+    expect(line.ok && line.text).toBe("Anal. Calcd for C9H8O4: C, 60.00; H, 4.48.");
+  });
+
+  it("lists sulfur after nitrogen's slot for a sulfoxide", () => {
+    const line = F.elementalAnalysisLine(dmso());
+    expect(line.ok && line.text).toBe("Anal. Calcd for C2H6OS: C, 30.75; H, 7.74; S, 41.03.");
+  });
+
+  it("refuses an empty drawing", () => {
+    expect(F.elementalAnalysisLine(emptyMolecule()).ok).toBe(false);
+  });
+
+  it("refuses a charged species — an analysed sample is neutral", () => {
+    const line = F.elementalAnalysisLine(acetate());
+    expect(line.ok).toBe(false);
+    expect(!line.ok && line.reason).toContain("net charge of -1");
+  });
+
+  it("refuses two compounds drawn side by side", () => {
+    const scheme = buildMolecule((b) => {
+      const c1 = b.atom("C");
+      b.bond(c1, b.atom("O"), 1);
+      b.atom("C", { x: 5, y: 0 });
+    });
+    const line = F.elementalAnalysisLine(scheme);
+    expect(line.ok).toBe(false);
+    expect(!line.ok && line.reason).toContain("more than one compound");
+  });
+
+  it("refuses a structure with none of C, H, N, S", () => {
+    expect(F.elementalAnalysisLine(singleAtom("Ne")).ok).toBe(false);
+  });
+
+  it("refuses a label with no nuclide mass on record rather than approximating", () => {
+    const line = F.elementalAnalysisLine(methanol(99));
+    expect(line.ok).toBe(false);
+    expect(!line.ok && line.reason).toContain("nuclide");
+  });
+});

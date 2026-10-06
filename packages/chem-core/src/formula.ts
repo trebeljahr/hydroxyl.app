@@ -12,6 +12,7 @@ import { requireElement } from "./elements.js";
 import type { ElementSymbol } from "./elements.js";
 import { requireAtom } from "./molecule.js";
 import { nuclideMass } from "./nuclides.js";
+import { species } from "./species.js";
 import type { Molecule } from "./types.js";
 import { implicitHydrogenCount } from "./valence.js";
 
@@ -267,5 +268,116 @@ export function massSummary(mol: Molecule): MassSummary {
     exactMass: typeof exact === "number" ? exact : undefined,
     netCharge: netCharge(mol),
     heavyAtomCount: heavy,
+  };
+}
+
+/**
+ * Mass percentage of each element, from the same per-atom masses as
+ * `molecularWeight` (IUPAC standard atomic weights, a labelled atom at its
+ * nuclide's mass). Keys are the elements present; the values sum to 100.
+ *
+ * Throws `MissingIsotopeDataError` where `molecularWeight` does. Empty for an
+ * empty structure.
+ */
+export function elementalComposition(mol: Molecule): Readonly<Record<ElementSymbol, number>> {
+  const hydrogenWeight = requireElement("H").weight;
+  const byElement: Record<ElementSymbol, number> = {};
+  const add = (symbol: ElementSymbol, mass: number) => {
+    byElement[symbol] = (byElement[symbol] ?? 0) + mass;
+  };
+  for (const atomId of mol.atomIds) {
+    const atom = requireAtom(mol, atomId);
+    const mass =
+      atom.isotope === undefined
+        ? requireElement(atom.element).weight
+        : nuclideMass(atom.element, atom.isotope);
+    if (mass === undefined) throw new MissingIsotopeDataError(atom.element, atom.isotope);
+    add(atom.element, mass);
+    const hydrogens = implicitHydrogenCount(mol, atomId);
+    if (hydrogens > 0) add("H", hydrogens * hydrogenWeight);
+  }
+  const total = Object.values(byElement).reduce((sum, mass) => sum + mass, 0);
+  const percentages: Record<ElementSymbol, number> = {};
+  for (const [symbol, mass] of Object.entries(byElement)) {
+    percentages[symbol] = (100 * mass) / total;
+  }
+  return percentages;
+}
+
+/**
+ * The elements a CHNS combustion analyser measures, in the order the
+ * "Anal. Calcd" line lists them. Oxygen is not among them: CHNS combustion
+ * does not measure it, and the Calcd line conventionally leaves it out.
+ */
+const COMBUSTION_ELEMENTS: readonly ElementSymbol[] = ["C", "H", "N", "S"];
+
+export type ElementalAnalysisLine =
+  | {
+      readonly ok: true;
+      /** "Anal. Calcd for C9H8O4: C, 60.00; H, 4.48." */
+      readonly text: string;
+      /** The same line with the formula's counts as `<sub>`, for a word processor. */
+      readonly html: string;
+    }
+  | { readonly ok: false; readonly reason: string };
+
+/**
+ * The calculated half of an experimental-section elemental analysis, in the
+ * ACS Guide to Scholarly Communication form the JOC author guidelines quote:
+ * "Anal. Calcd for C13H17NO3: C, 66.36; H, 7.28; N, 5.95." Percentages to two
+ * decimals, the formula in Hill order. The "Found:" half is the chemist's
+ * measurement, so it is never written. Decision 233.
+ *
+ * Refused, with the reason as a sentence, for a structure an analysis cannot
+ * describe: an empty one, one of several species (a reaction scheme has no
+ * single composition), one with a net charge (an analysed bulk sample is
+ * neutral — a salt is drawn with both ions), one with none of C, H, N, S,
+ * and one whose isotope label has no mass on record.
+ */
+export function elementalAnalysisLine(mol: Molecule): ElementalAnalysisLine {
+  if (mol.atomIds.length === 0) {
+    return { ok: false, reason: "Nothing has been drawn yet, so there is nothing to analyse." };
+  }
+  if (species(mol).length > 1) {
+    return {
+      ok: false,
+      reason:
+        "The drawing holds more than one compound, and an elemental analysis describes one. " +
+        "Select the compound and copy the selection's analysis.",
+    };
+  }
+  const charge = netCharge(mol);
+  if (charge !== 0) {
+    return {
+      ok: false,
+      reason:
+        `The structure has a net charge of ${charge > 0 ? "+" : ""}${String(charge)}, and an analysed ` +
+        "sample is neutral. Draw the counter-ion too.",
+    };
+  }
+  let percentages: Readonly<Record<ElementSymbol, number>>;
+  try {
+    percentages = elementalComposition(mol);
+  } catch (error) {
+    if (error instanceof MissingIsotopeDataError) return { ok: false, reason: error.message };
+    throw error;
+  }
+  const listed = COMBUSTION_ELEMENTS.filter((symbol) => percentages[symbol] !== undefined);
+  if (listed.length === 0) {
+    return {
+      ok: false,
+      reason: "The structure has no carbon, hydrogen, nitrogen or sulfur, so a CHNS analysis has nothing to report.",
+    };
+  }
+  const values = listed
+    .map((symbol) => `${symbol}, ${(percentages[symbol] ?? 0).toFixed(2)}`)
+    .join("; ");
+  const parts = formulaParts(mol);
+  const text = parts.map((p) => p.text).join("");
+  const html = parts.map((p) => (p.kind === "count" ? `<sub>${p.text}</sub>` : p.text)).join("");
+  return {
+    ok: true,
+    text: `Anal. Calcd for ${text}: ${values}.`,
+    html: `Anal. Calcd for ${html}: ${values}.`,
   };
 }

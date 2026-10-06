@@ -94,6 +94,7 @@ import type { EditorState, EditorStore, Selection } from "@/state";
 import { cleanUpStructure } from "./cleanup";
 import { clearOfDrawingOffset, revealAtoms } from "./insert";
 import {
+  copyElementalAnalysis,
   copyFigure,
   copyMolblock,
   copyInchi,
@@ -1069,6 +1070,15 @@ const EDIT_COMMANDS: readonly Command[] = [
     disabledReason: whenOff(hasAtoms, REASONS.noAtomSelected),
     run: (store) => copyMolblock(store, "selection"),
   },
+  {
+    id: "edit.copy-selection-elemental-analysis",
+    title: "Copy selection's elemental analysis",
+    keywords: ["copy", "clipboard", "elemental", "analysis", "anal", "calcd", "chn", "chns", "combustion", "percent", "selection"],
+    group: "edit",
+    enabled: hasAtoms,
+    disabledReason: whenOff(hasAtoms, REASONS.noAtomSelected),
+    run: (store) => copyElementalAnalysis(store, "selection"),
+  },
 ];
 
 const SELECT_COMMANDS: readonly Command[] = [
@@ -1845,6 +1855,15 @@ const FIGURE_COMMANDS: readonly Command[] = [
     enabled: hasStructure,
     disabledReason: whenOff(hasStructure, REASONS.emptyDrawing),
     run: (store) => copyMolblock(store),
+  },
+  {
+    id: "figure.copy-elemental-analysis",
+    title: "Copy elemental analysis",
+    keywords: ["copy", "clipboard", "elemental", "analysis", "anal", "calcd", "chn", "chns", "combustion", "percent", "experimental"],
+    group: "figure",
+    enabled: hasStructure,
+    disabledReason: whenOff(hasStructure, REASONS.emptyDrawing),
+    run: (store) => copyElementalAnalysis(store),
   },
   // One per view kind, gated by the availability function — the palette shows
   // the kinds this molecule cannot be drawn as disabled rather than hiding

@@ -1,6 +1,7 @@
 /**
  * The figure commands: export SVG, export PNG, copy the figure, copy the
- * structure as SMILES, InChI, InChIKey or a molfile, download it as CDXML.
+ * structure as SMILES, InChI, InChIKey or a molfile, download it as CDXML,
+ * copy its elemental analysis.
  *
  * Kept out of `registry.ts` for the reason the file commands are: the registry
  * stays importable by a plain-node test, and this is where the browser APIs
@@ -17,7 +18,7 @@
  * See `writeClipboardParts` and `writeBlobFile`.
  */
 
-import { extractFragment, isEmpty, writeCdxml } from "@starter/chem-core";
+import { elementalAnalysisLine, extractFragment, isEmpty, writeCdxml } from "@starter/chem-core";
 import type { AtomId, Molecule } from "@starter/chem-core";
 
 import {
@@ -257,6 +258,43 @@ export async function copyMolblock(
     );
   } catch (error) {
     report(store, `The molfile could not be copied: ${describe(error)}`);
+  }
+}
+
+/**
+ * The "Anal. Calcd for …" line of an experimental section (decision 233), as
+ * plain text and as HTML whose formula counts are real subscripts, so a word
+ * processor pastes C<sub>9</sub>H<sub>8</sub>O<sub>4</sub> rather than C9H8O4.
+ * chem-core decides what is refused; this only routes the sentence.
+ */
+export async function copyElementalAnalysis(
+  store: EditorStore,
+  scope: CopyScope = "structure",
+): Promise<void> {
+  const source = copySource(store, scope);
+  if (source === null || isEmpty(source.molecule)) {
+    report(
+      store,
+      scope === "selection"
+        ? "No atoms are selected, so there is no elemental analysis to copy."
+        : "Nothing has been drawn yet, so there is no elemental analysis to copy.",
+    );
+    return;
+  }
+  const line = elementalAnalysisLine(source.molecule);
+  if (!line.ok) {
+    report(store, line.reason);
+    return;
+  }
+  const { done } = writeClipboardParts({
+    "text/plain": Promise.resolve(textBlob(line.text)),
+    "text/html": Promise.resolve(textBlob(line.html, "text/html")),
+  });
+  try {
+    await done;
+    report(store, `Copied the ${source.noun}'s elemental analysis: ${line.text}`);
+  } catch (error) {
+    report(store, `The elemental analysis could not be copied: ${describe(error)}`);
   }
 }
 

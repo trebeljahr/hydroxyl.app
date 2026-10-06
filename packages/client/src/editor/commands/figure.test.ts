@@ -33,7 +33,7 @@ vi.mock("@/lib/rdkit/client", () => ({
   }),
 }));
 
-import { copyFigure, copyInchi, copyMolblock } from "./figure";
+import { copyElementalAnalysis, copyFigure, copyInchi, copyMolblock } from "./figure";
 import { molblockVersionNotice } from "@/lib/rdkit/translate";
 
 const NOW = "2024-01-01T00:00:00.000Z";
@@ -309,5 +309,28 @@ describe("Copy selection as molfile", () => {
     await copyMolblock(store, "selection");
     expect(writes).toHaveLength(0);
     expect(store.getState().ui.statusMessage).toMatch(/No atoms are selected/);
+  });
+});
+
+describe("Copy elemental analysis", () => {
+  it("copies the Anal. Calcd line and repeats it in the status bar", async () => {
+    await copyElementalAnalysis(store);
+    const text = await (await writes[0]![0]!.parts["text/plain"]!).text();
+    expect(text).toBe("Anal. Calcd for C2H6O: C, 52.14; H, 13.13.");
+    expect(store.getState().ui.statusMessage).toBe(
+      `Copied the structure's elemental analysis: ${text}`,
+    );
+  });
+
+  it("refuses two compounds with chem-core's sentence and writes nothing", async () => {
+    store = editor(
+      buildMolecule((b) => {
+        b.bond(b.atom("C"), b.atom("O"), 1);
+        b.atom("C", { x: 5, y: 0 });
+      }),
+    );
+    await copyElementalAnalysis(store);
+    expect(writes).toHaveLength(0);
+    expect(store.getState().ui.statusMessage).toContain("more than one compound");
   });
 });
