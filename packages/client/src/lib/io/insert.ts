@@ -28,12 +28,14 @@
  * that contains the letters c-o ("alcohol", "glucose", "cocaine") beneath it
  * would bury the one reading that was meant.
  *
- * ── NOTHING LEAVES THE BROWSER ─────────────────────────────────────────────
+ * ── NOTHING LEAVES THE BROWSER WITHOUT A CLICK ─────────────────────────────
  *
- * A name outside the list is refused with a sentence saying so. Resolving
- * arbitrary names needs a server (OPSIN) or a third party (PubChem); that was
- * put to the product owner and deferred, and this file is where it would plug
- * in.
+ * A name or CAS number outside the list is refused with a sentence saying so,
+ * and `pubchemQuery` names the text the box may OFFER to look up on PubChem
+ * (decision 227, revising 114). Offering is all this file does on a keystroke;
+ * the request is `resolvePubChemLookup`, and only the box's "Look up on
+ * PubChem" button calls it. A formula is never offered: it names no single
+ * structure here, and PubChem would happily pick one.
  *
  * `interpretInsertText` is synchronous and pure, so the box can re-run it on
  * every keystroke. `resolveInsertCandidate` does the reading, and is the only
@@ -47,6 +49,7 @@ import type { DictionaryEntry } from "@starter/chem-core/dictionary";
 import { molblockToMolecule } from "@/lib/rdkit/translate";
 
 import { INCHI_UNSUPPORTED, type LoadRdkit } from "./open";
+import { isCasNumber, lookUpOnPubChem, type FetchLike } from "./pubchem";
 import { sniffFormat, splitSdfRecords } from "./sniff";
 
 /** The dictionary module, passed in rather than imported: the app loads it on
@@ -74,13 +77,22 @@ export interface InsertInterpretation {
   readonly notice: string | null;
   /** Why nothing can be inserted, or null. Set only when `candidates` is empty. */
   readonly refusal: string | null;
+  /** The text the box may offer to look up on PubChem, or null. A name or
+   *  CAS number with no exact built-in match; never a formula, a SMILES, a
+   *  molfile or anything multi-line. */
+  readonly pubchemQuery: string | null;
 }
 
 const EMPTY: InsertInterpretation = Object.freeze({
   candidates: Object.freeze([]),
   notice: null,
   refusal: null,
+  pubchemQuery: null,
 });
+
+/** PubChem's own names run long ("N-[2-(…)ethyl]…"), but a whole paragraph
+ *  is not a name, and sending one would be sending the user's notes. */
+const MAX_PUBCHEM_QUERY = 200;
 
 /**
  * Could this be a SMILES, judged by its alphabet alone?
@@ -128,9 +140,10 @@ export function interpretInsertText(
         refusal:
           "That is a saved sketch, not a structure. Open it with “Open a file…”; " +
           "this box adds one structure to the sketch you are drawing.",
+        pubchemQuery: null,
       };
     case "inchi":
-      return { candidates: [], notice: null, refusal: INCHI_UNSUPPORTED };
+      return { candidates: [], notice: null, refusal: INCHI_UNSUPPORTED, pubchemQuery: null };
     case "sdf":
       if (format.records > 1) {
         return {
@@ -139,11 +152,12 @@ export function interpretInsertText(
           refusal:
             `That SDF holds ${String(format.records)} structures. Open it with “Open a file…” ` +
             "to get one sketch per structure; this box inserts one.",
+          pubchemQuery: null,
         };
       }
-      return { candidates: [{ kind: "molblock" }], notice: null, refusal: null };
+      return { candidates: [{ kind: "molblock" }], notice: null, refusal: null, pubchemQuery: null };
     case "molblock":
-      return { candidates: [{ kind: "molblock" }], notice: null, refusal: null };
+      return { candidates: [{ kind: "molblock" }], notice: null, refusal: null, pubchemQuery: null };
     case "smiles":
     case "unknown":
       break;
@@ -175,20 +189,38 @@ export function interpretInsertText(
             "pick one. A formula alone does not name one structure.";
   }
 
-  const smiles = looksLikeSmiles(trimmed);
+  // A CAS number has no letters, so by alphabet it is a SMILES; RDKit would
+  // only refuse it. It is a name to look up instead.
+  const cas = isCasNumber(trimmed);
+  const smiles = !cas && looksLikeSmiles(trimmed);
   if (smiles) candidates.push({ kind: "smiles" });
-  else for (const match of dictionary.searchDictionary(trimmed)) add(match.entry, "suggestion");
+  else if (!cas) for (const match of dictionary.searchDictionary(trimmed)) add(match.entry, "suggestion");
 
-  if (candidates.length > 0) return { candidates, notice, refusal: null };
+  const pubchemQuery =
+    named === undefined &&
+    counts === undefined &&
+    !smiles &&
+    !trimmed.includes("\n") &&
+    trimmed.length <= MAX_PUBCHEM_QUERY
+      ? trimmed
+      : null;
+
+  if (candidates.length > 0) return { candidates, notice, refusal: null, pubchemQuery };
   return {
     candidates,
     notice,
     refusal:
       notice !== null
         ? null
-        : `“${trimmed}” is not a name in the built-in list of ` +
-          `${String(dictionary.STRUCTURE_DICTIONARY.length)} compounds, a SMILES or a molfile. ` +
-          "Names outside the list cannot be looked up here; paste a SMILES or a molfile instead.",
+        : cas
+          ? `${trimmed} is a CAS number, and the built-in list does not look those up. ` +
+            "Look it up on PubChem, or paste a SMILES or a molfile."
+          : `“${trimmed}” is not a name in the built-in list of ` +
+            `${String(dictionary.STRUCTURE_DICTIONARY.length)} compounds, a SMILES or a molfile. ` +
+            (pubchemQuery === null
+              ? "Paste a SMILES or a molfile instead."
+              : "Look it up on PubChem, or paste a SMILES or a molfile."),
+    pubchemQuery,
   };
 }
 
@@ -267,4 +299,45 @@ export async function resolveInsertCandidate(
       };
     }
   }
+}
+
+export interface PubChemLookupOptions extends ResolveOptions {
+  /** Defaults to the global `fetch`; tests pass a mock. */
+  readonly fetch?: FetchLike | undefined;
+}
+
+/**
+ * Look the text up on PubChem and read the SMILES it returns through RDKit.
+ * The one function in this file that touches the network, and only the box's
+ * "Look up on PubChem" button calls it (decision 227). Never throws.
+ */
+export async function resolvePubChemLookup(
+  query: string,
+  options: PubChemLookupOptions = {},
+): Promise<InsertResult> {
+  const found = await lookUpOnPubChem(query, { fetch: options.fetch });
+  if (!found.ok) return found;
+  const { cid, smiles, title, matches } = found.value;
+  const load = options.loadRdkit ?? loadRdkitBridge;
+  let bridge;
+  try {
+    bridge = await load();
+  } catch (error) {
+    return {
+      ok: false,
+      message: `The structure reader could not be loaded: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+  const read = await bridge.fromSmiles(smiles);
+  if (!read.ok) {
+    return { ok: false, message: `PubChem's SMILES for CID ${String(cid)} could not be read: ${read.error.message}` };
+  }
+  // The CID goes in the title so the undo entry and status line say which
+  // record arrived; a name with several records says it took the first.
+  const source =
+    matches > 1 ? `PubChem CID ${String(cid)}, first of ${String(matches)}` : `PubChem CID ${String(cid)}`;
+  return {
+    ok: true,
+    value: { molecule: normalizeBondLength(read.value.molecule), title: `${title} (${source})` },
+  };
 }

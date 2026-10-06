@@ -62,7 +62,7 @@ describe("looksLikeSmiles", () => {
 
 describe("reading the insert box", () => {
   it("offers nothing and says nothing for an empty box", () => {
-    expect(read("   ")).toEqual({ candidates: [], notice: null, refusal: null });
+    expect(read("   ")).toEqual({ candidates: [], notice: null, refusal: null, pubchemQuery: null });
   });
 
   it("resolves a bare sugar name to the anomer the dictionary declares, and lists the other forms after it", () => {
@@ -109,11 +109,31 @@ describe("reading the insert box", () => {
     expect(ids(read("Ala").candidates)[0]).toBe("name:l-alanine");
   });
 
-  it("refuses a name outside the list without pretending to look it up", () => {
-    const { candidates, refusal } = read("2-methylpropan-1-ol");
+  it("refuses a name outside the list, and offers that text (only) for a PubChem lookup", () => {
+    const { candidates, refusal, pubchemQuery } = read("  2-methylpropan-1-ol ");
     expect(candidates).toEqual([]);
     expect(refusal).toContain("is not a name in the built-in list");
-    expect(refusal).toContain("cannot be looked up");
+    expect(refusal).toContain("Look it up on PubChem");
+    expect(pubchemQuery).toBe("2-methylpropan-1-ol");
+  });
+
+  it("reads a CAS number as something to look up, not as a SMILES", () => {
+    // Aspirin. No letters, so by alphabet alone it would be a SMILES.
+    const { candidates, refusal, pubchemQuery } = read("50-78-2");
+    expect(candidates).toEqual([]);
+    expect(refusal).toContain("is a CAS number");
+    expect(pubchemQuery).toBe("50-78-2");
+  });
+
+  it("offers PubChem beside partial-name suggestions, but never for an exact name, a formula or a SMILES", () => {
+    expect(read("glucosam").pubchemQuery).toBe("glucosam");
+    expect(read("caffeine").pubchemQuery).toBeNull();
+    expect(read("C6H12O6").pubchemQuery).toBeNull();
+    expect(read("C4H10").pubchemQuery).toBeNull();
+    expect(read("CCO").pubchemQuery).toBeNull();
+    expect(read(BENZENE_MOLBLOCK).pubchemQuery).toBeNull();
+    expect(read(BENZENE_INCHI).pubchemQuery).toBeNull();
+    expect(read("x".repeat(201)).pubchemQuery).toBeNull();
   });
 
   it("reads a molfile as a molfile and offers nothing else", () => {

@@ -21,6 +21,14 @@
  * It is ~80 kB of molblock text behind its own entry point, so the editor
  * route does not carry it until someone asks for it. RDKit loads later still:
  * only when a SMILES is actually inserted, exactly as for a pasted SMILES.
+ *
+ * ── PUBCHEM ONLY ON A CLICK ────────────────────────────────────────────────
+ *
+ * A name or CAS number with no exact built-in match gets a "Look up on
+ * PubChem" button (decision 227). It sends the typed text, and only that, to
+ * PubChem; the line under it says so. Enter never presses it — Enter inserts
+ * the highlighted built-in reading, as it always has — so the request is
+ * always a deliberate click (or Space/Enter on the focused button).
  */
 
 import { molecularFormulaUnicode } from "@starter/chem-core";
@@ -34,17 +42,19 @@ import {
   interpretInsertText,
   loadDictionary,
   resolveInsertCandidate,
+  resolvePubChemLookup,
   type DictionaryModule,
   type InsertCandidate,
   type InsertInterpretation,
 } from "@/lib/io/insert";
+import { PUBCHEM_HOST } from "@/lib/io/pubchem";
 import { cn } from "@/lib/utils";
 import { editorStore, useEditorStore } from "@/state";
 
 const button =
   "hover:bg-accent focus-visible:ring-ring flex h-8 items-center justify-center rounded-md border px-3 text-xs focus-visible:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-40";
 
-const NOTHING: InsertInterpretation = { candidates: [], notice: null, refusal: null };
+const NOTHING: InsertInterpretation = { candidates: [], notice: null, refusal: null, pubchemQuery: null };
 
 const CATEGORY_TITLES: Readonly<Record<DictionaryCategory, string>> = {
   solvent: "solvent",
@@ -131,6 +141,8 @@ function InsertForm(): ReactElement {
   const activeIndex = Math.min(active, Math.max(0, candidates.length - 1));
   const chosen = candidates[activeIndex];
 
+  const [lookingUp, setLookingUp] = useState(false);
+
   async function insert(candidate: InsertCandidate | undefined): Promise<void> {
     if (candidate === undefined || dictionary === null || busy) return;
     setBusy(true);
@@ -138,6 +150,23 @@ function InsertForm(): ReactElement {
     const result = await resolveInsertCandidate(text, candidate, dictionary);
     if (!mounted.current) return;
     setBusy(false);
+    if (!result.ok) {
+      setError(result.message);
+      return;
+    }
+    insertStructure(editorStore, result.value.molecule, result.value.title);
+    editorStore.getState().setInsertDialogOpen(false);
+  }
+
+  async function lookUp(query: string): Promise<void> {
+    if (busy) return;
+    setBusy(true);
+    setLookingUp(true);
+    setError(null);
+    const result = await resolvePubChemLookup(query);
+    if (!mounted.current) return;
+    setBusy(false);
+    setLookingUp(false);
     if (!result.ok) {
       setError(result.message);
       return;
@@ -247,6 +276,25 @@ function InsertForm(): ReactElement {
           {reading.refusal}
         </p>
       )}
+      {reading.pubchemQuery === null ? null : (
+        <div className="flex flex-col items-start gap-1 rounded-md border border-dashed p-2">
+          <button
+            type="button"
+            data-shell="insert-pubchem"
+            className={button}
+            disabled={busy}
+            onClick={() => {
+              if (reading.pubchemQuery !== null) void lookUp(reading.pubchemQuery);
+            }}
+          >
+            {lookingUp ? "Looking up on PubChem…" : `Look up “${reading.pubchemQuery}” on PubChem`}
+          </button>
+          <p className="text-muted-foreground text-[11px]">
+            Sends only the text you typed to PubChem ({PUBCHEM_HOST}), run by the US National
+            Library of Medicine. Your drawing is not sent.
+          </p>
+        </div>
+      )}
       {error === null ? null : (
         <p data-shell="insert-error" role="alert" className="text-destructive text-xs">
           {error}
@@ -258,7 +306,7 @@ function InsertForm(): ReactElement {
           {dictionary === null
             ? "Names come from a built-in list."
             : `Names come from a built-in list of ${String(dictionary.STRUCTURE_DICTIONARY.length)} compounds.`}{" "}
-          Nothing you type leaves this browser.
+          Nothing you type leaves this browser unless you click “Look up on PubChem”.
         </p>
         <button
           type="button"
@@ -276,7 +324,7 @@ function InsertForm(): ReactElement {
             void insert(chosen);
           }}
         >
-          {busy ? "Reading…" : "Insert"}
+          {busy && !lookingUp ? "Reading…" : "Insert"}
         </button>
       </div>
     </div>
@@ -290,7 +338,7 @@ export function InsertDialog(): ReactElement {
       <DialogContent className="top-[10%] max-w-lg p-4" data-shell="insert-dialog">
         <DialogTitle className="text-sm font-semibold">Insert a structure</DialogTitle>
         <DialogDescription className="text-muted-foreground mb-2 text-xs">
-          Type a name, a sum formula or a SMILES, or paste a molfile. The structure is added
+          Type a name, a CAS number, a sum formula or a SMILES, or paste a molfile. The structure is added
           beside your drawing.
         </DialogDescription>
         {/* Mounted only while open, so the box starts empty every time. */}

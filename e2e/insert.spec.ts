@@ -10,7 +10,8 @@ import type { Page } from "@playwright/test";
  * What only a browser proves is the wiring: that the top bar opens the box,
  * that Enter inserts what the list highlights, that a name never fetches the
  * wasm while a SMILES does, that nothing is sent anywhere for a name outside
- * the list, and that a click on a drawn atom with the group tool armed lands
+ * the list until "Look up on PubChem" is clicked (and then only to a routed,
+ * never the real, PubChem), and that a click on a drawn atom with the group tool armed lands
  * the group on that atom.
  *
  * The assertions read the STATUS BAR's formula, because a formula is the
@@ -120,6 +121,69 @@ test("a name outside the list is refused, and nothing is sent anywhere", async (
   await page.keyboard.press("Enter");
   await expect(page.locator(FORMULA)).toHaveText("C₆H₆");
   expect(elsewhere).toEqual([]);
+});
+
+test("PubChem is asked only on a click, with only the typed text, and its SMILES is inserted", async ({
+  page,
+  baseURL,
+}) => {
+  // Never the real NIH server: the route answers with a reply copied from it.
+  const asked: string[] = [];
+  await page.route("https://pubchem.ncbi.nlm.nih.gov/**", async (route) => {
+    asked.push(route.request().url());
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "Access-Control-Allow-Origin": "*" },
+      body: JSON.stringify({
+        PropertyTable: {
+          Properties: [{ CID: 2519, SMILES: "CN1C=NC2=C1C(=O)N(C(=O)N2C)C", Title: "Caffeine" }],
+        },
+      }),
+    });
+  });
+  await openEditor(page);
+  const elsewhere: string[] = [];
+  page.on("request", (request) => {
+    const url = request.url();
+    if (!url.startsWith(baseURL ?? "") && !url.startsWith("https://pubchem.")) elsewhere.push(url);
+  });
+  await openInsertBox(page);
+
+  await page.locator(INPUT).fill("58-08-2");
+  const lookUp = page.locator('[data-shell="insert-pubchem"]');
+  await expect(lookUp).toHaveText("Look up “58-08-2” on PubChem");
+  // Enter does not press it: nothing is highlighted, and nothing is sent.
+  await page.keyboard.press("Enter");
+  expect(asked).toEqual([]);
+
+  await lookUp.click();
+  await expect(page.locator(MESSAGE)).toContainText("Caffeine (PubChem CID 2519)", { timeout: 30_000 });
+  await expect(page.locator(FORMULA)).toHaveText("C₁₄H₁₆N₄O₂");
+  expect(asked).toEqual([
+    "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/58-08-2/property/SMILES,Title/JSON",
+  ]);
+  expect(elsewhere).toEqual([]);
+});
+
+test("PubChem's not-found is shown in the box, and nothing is inserted", async ({ page }) => {
+  await page.route("https://pubchem.ncbi.nlm.nih.gov/**", (route) =>
+    route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      headers: { "Access-Control-Allow-Origin": "*" },
+      body: JSON.stringify({ Fault: { Code: "PUGREST.NotFound", Message: "No CID found" } }),
+    }),
+  );
+  await openEditor(page);
+  await openInsertBox(page);
+
+  await page.locator(INPUT).fill("notacompoundxyz");
+  await page.locator('[data-shell="insert-pubchem"]').click();
+  await expect(page.locator('[data-shell="insert-error"]')).toHaveText(
+    "PubChem has no compound named “notacompoundxyz”. Check the spelling, or paste a SMILES or a molfile.",
+  );
+  await expect(page.locator(FORMULA)).toHaveText("C₆H₆");
 });
 
 test("the group tool stamps the picked group on the clicked atom", async ({ page }) => {

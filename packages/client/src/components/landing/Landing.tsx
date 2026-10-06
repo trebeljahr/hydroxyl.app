@@ -172,6 +172,11 @@ export function Landing(): ReactElement {
           V2000 or V3000. Each record in an SDF file becomes its own sketch.
         </p>
         <p>
+          The <strong>Insert</strong> box adds a structure beside your drawing. Type a SMILES or a
+          name from its built-in list of common compounds. For any other name or a CAS number, click{" "}
+          <strong>Look up on PubChem</strong>. That click sends only the typed text to PubChem.
+        </p>
+        <p>
           <strong>Copy figure</strong> puts SVG and PNG on the clipboard, ready to paste into slides
           or a manuscript. You can also download SVG, PNG and molfiles, or copy the SMILES.
         </p>
@@ -184,7 +189,8 @@ export function Landing(): ReactElement {
       <Section id="storage" heading="Your sketches stay in this browser">
         <p>
           Every change saves to this browser as you work. There is no account, and no server
-          stores your sketches: the structures you draw do not leave your computer.
+          stores your sketches: the structures you draw do not leave your computer. Text
+          typed into the Insert box goes to PubChem only when you click Look up on PubChem.
         </p>
         <p>
           It also means a sketch exists only in the browser you drew it in. To back up your
