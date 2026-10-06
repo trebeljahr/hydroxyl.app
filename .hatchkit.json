@@ -23,5 +23,24 @@
   "email": {
     "transactional": "listmonk-ses",
     "mailingList": "listmonk-ses"
+  },
+  "ses": {
+    "identity": "mail.chemistry.trebeljahr.com",
+    "mailFromDomain": "bounce.mail.chemistry.trebeljahr.com",
+    "mailFromLabel": "bounce",
+    "mailFromBehaviorOnMxFailure": "UseDefaultValue",
+    "mailFromManagedDnsRecords": [
+      {
+        "type": "MX",
+        "name": "bounce.mail.chemistry.trebeljahr.com",
+        "value": "feedback-smtp.eu-west-1.amazonses.com",
+        "priority": 10
+      },
+      {
+        "type": "TXT",
+        "name": "bounce.mail.chemistry.trebeljahr.com",
+        "value": "v=spf1 include:amazonses.com ~all"
+      }
+    ]
   }
 }
