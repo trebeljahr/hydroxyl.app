@@ -67,6 +67,7 @@ export function exampleFigure(): ExampleFigure {
     customWidthCm: 12,
     dpi: 600,
     style: "publication",
+    pngBackground: "white",
   });
   if (!prepared.ok) {
     throw new Error(`The landing page example cannot be exported: ${prepared.message}`);

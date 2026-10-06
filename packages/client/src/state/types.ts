@@ -231,7 +231,16 @@ export interface FigureExportSettings {
    * A per-export choice: it never touches the document or the undo history.
    */
   readonly style: FigureStyleChoice;
+  /**
+   * What the PNG is drawn on — the download and Copy figure's PNG alike.
+   * White by default: many submission systems and viewers flatten a
+   * transparent PNG onto black. Transparent is for a slide or a coloured
+   * page, where a white box shows. The SVG is transparent either way.
+   */
+  readonly pngBackground: PngBackground;
 }
+
+export type PngBackground = "white" | "transparent";
 
 export type FigureStyleChoice = "publication" | "canvas";
 

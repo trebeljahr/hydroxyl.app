@@ -48,7 +48,7 @@ import {
 } from "./figure";
 
 const NOW = "2024-01-01T00:00:00.000Z";
-const SINGLE_300: FigureExportSettings = { width: "single", customWidthCm: 12, dpi: 300, style: "publication" };
+const SINGLE_300: FigureExportSettings = { width: "single", customWidthCm: 12, dpi: 300, style: "publication", pngBackground: "white" };
 
 function threePanelDoc(molecule = ethanol()): SketchDocument {
   const [skeletal, sum] = defaultPanelsFor("screen");
@@ -186,7 +186,7 @@ describe("the figure a document exports", () => {
         ],
         now: NOW,
       });
-      for (const svg of [figureSvgForFile(prepared(doc)), figureSvgForRaster(prepared(doc))]) {
+      for (const svg of [figureSvgForFile(prepared(doc)), figureSvgForRaster(prepared(doc), "white")]) {
         const ids = [...svg.matchAll(/\sid="([^"]*)"/g)].map((m) => m[1]!);
         expect(new Set(ids).size, preset).toBe(ids.length);
         const descriptors = ids.filter((id) => id.endsWith(":descriptor"));
@@ -201,11 +201,17 @@ describe("the figure a document exports", () => {
     const p = prepared(onePanelDoc(benzene()));
     expect(p.size.widthPx).toBe(Math.round((p.size.widthCm / 2.54) * 300));
     expect(p.size.widthPx).toBeLessThan(974);
-    const svg = figureSvgForRaster(p);
+    const svg = figureSvgForRaster(p, "white");
     expect(svg).toContain(`width="${p.size.widthPx}px"`);
     expect(svg).toContain(`height="${p.size.heightPx}px"`);
     // White under the raster, so a viewer that flattens alpha does not paint black.
     expect(svg).toContain('fill="#ffffff"');
+  });
+
+  it("draws no background under a raster asked to be transparent, for slides and coloured pages", () => {
+    const p = prepared(onePanelDoc(benzene()));
+    expect(figureSvgForRaster(p, "white")).toContain('data-decoration="background"');
+    expect(figureSvgForRaster(p, "transparent")).not.toContain('data-decoration="background"');
   });
 
   it("scales a figure wider than a single column down to exactly 8.25 cm, 974 px at 300 dpi, and says so", () => {
@@ -224,12 +230,12 @@ describe("the figure a document exports", () => {
     const percent = Math.floor(p.size.scale * 100);
     expect(scaleNotice(p.size, SINGLE_300)).toBe(`Scaled to ${percent}% to fit a single column.`);
     expect(
-      scaleNotice(p.size, { width: "custom", customWidthCm: 8.25, dpi: 300, style: "publication" }),
+      scaleNotice(p.size, { width: "custom", customWidthCm: 8.25, dpi: 300, style: "publication", pngBackground: "white" }),
     ).toBe(`Scaled to ${percent}% to fit the 8.25 cm custom width.`);
   });
 
   it("derives the double-column pixel width at 600 dpi for a figure that fills it", () => {
-    const p = prepared(onePanelDoc(linearChain(80)), { width: "double", customWidthCm: 12, dpi: 600, style: "publication" });
+    const p = prepared(onePanelDoc(linearChain(80)), { width: "double", customWidthCm: 12, dpi: 600, style: "publication", pngBackground: "white" });
     expect(p.size.scaled).toBe(true);
     expect(p.size.widthCm).toBe(17.8);
     expect(p.size.widthPx).toBe(4205);
@@ -308,7 +314,7 @@ describe("the figure a document exports", () => {
   });
 
   it("warns when scaling takes the labels under 8 pt, names the printed size, and still exports (decision 51)", () => {
-    const DOUBLE_300: FigureExportSettings = { width: "double", customWidthCm: 12, dpi: 300, style: "publication" };
+    const DOUBLE_300: FigureExportSettings = { width: "double", customWidthCm: 12, dpi: 300, style: "publication", pngBackground: "white" };
     // A C40 chain in Publication is about 17 cm: 10 pt labels at its natural
     // size, under 8 pt in a single column.
     const doc = onePanelDoc(linearChain(40), "publication");
@@ -357,12 +363,12 @@ describe("the figure a document exports", () => {
   });
 
   it("accepts a custom width in range and refuses one outside it", () => {
-    expect(exportWidthCm({ width: "custom", customWidthCm: 12.5, dpi: 300, style: "publication" })).toEqual({
+    expect(exportWidthCm({ width: "custom", customWidthCm: 12.5, dpi: 300, style: "publication", pngBackground: "white" })).toEqual({
       ok: true,
       widthCm: 12.5,
     });
-    expect(exportWidthCm({ width: "custom", customWidthCm: 0, dpi: 300, style: "publication" }).ok).toBe(false);
-    expect(exportWidthCm({ width: "custom", customWidthCm: Number.NaN, dpi: 300, style: "publication" }).ok).toBe(false);
+    expect(exportWidthCm({ width: "custom", customWidthCm: 0, dpi: 300, style: "publication", pngBackground: "white" }).ok).toBe(false);
+    expect(exportWidthCm({ width: "custom", customWidthCm: Number.NaN, dpi: 300, style: "publication", pngBackground: "white" }).ok).toBe(false);
   });
 
   it("refuses a raster a browser canvas cannot hold", () => {
@@ -374,7 +380,7 @@ describe("the figure a document exports", () => {
         b.atom("C", { x: 0, y: 300 });
       }),
     );
-    const p = prepared(tall, { width: "custom", customWidthCm: 60, dpi: 600, style: "publication" });
+    const p = prepared(tall, { width: "custom", customWidthCm: 60, dpi: 600, style: "publication", pngBackground: "white" });
     expect(p.size.scaled).toBe(false);
     expect(p.size.heightPx).toBeGreaterThan(MAX_RASTER_SIDE_PX);
     // Past the hard limits no probe is asked: no engine could say yes.
@@ -387,7 +393,7 @@ describe("the figure a document exports", () => {
     // taller than about 0.95 of that it is past iOS Safari's 16,777,216 px
     // area, and still far inside Chromium's. A 40-bond square fills it.
     const square = onePanelDoc(methaneSquare(40));
-    const p = prepared(square, { width: "double", customWidthCm: 12, dpi: 600, style: "publication" });
+    const p = prepared(square, { width: "double", customWidthCm: 12, dpi: 600, style: "publication", pngBackground: "white" });
     expect(p.size.scaled).toBe(true);
     expect(p.size.widthPx).toBe(4205);
     expect(p.size.widthPx * p.size.heightPx).toBeGreaterThan(SAFE_RASTER_AREA_PX);
@@ -463,6 +469,7 @@ describe("annotations below 8 pt (decision 60)", () => {
     customWidthCm,
     dpi: 300,
     style: "publication",
+    pngBackground: "white",
   });
 
   it("says nothing at Publication's natural size, where descriptors print at exactly 8 pt", () => {

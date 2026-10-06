@@ -86,9 +86,9 @@ export async function exportFigurePng(store: EditorStore): Promise<void> {
     return;
   }
   const { widthPx, heightPx } = figure.size;
-  const dpi = store.getState().ui.figureExport.dpi;
+  const { dpi, pngBackground } = store.getState().ui.figureExport;
   // Built now, rasterised only once the picker has its answer.
-  const svg = figureSvgForRaster(figure);
+  const svg = figureSvgForRaster(figure, pngBackground);
   const outcome = await writeBlobFile(
     () => rasterizeSvg(svg, widthPx, heightPx, dpi),
     `${figure.filenameBase}.png`,
@@ -114,12 +114,8 @@ export async function copyFigure(store: EditorStore): Promise<void> {
   };
   if (tooLarge === null) {
     const { widthPx, heightPx } = figure.size;
-    parts["image/png"] = rasterizeSvg(
-      figureSvgForRaster(figure),
-      widthPx,
-      heightPx,
-      store.getState().ui.figureExport.dpi,
-    );
+    const { dpi, pngBackground } = store.getState().ui.figureExport;
+    parts["image/png"] = rasterizeSvg(figureSvgForRaster(figure, pngBackground), widthPx, heightPx, dpi);
   }
   const { written, done } = writeClipboardParts(parts);
   try {

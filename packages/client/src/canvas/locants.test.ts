@@ -111,7 +111,7 @@ function canvasLocants(doc: SketchDocument): Record<AtomId, string> {
 
 /** Each locant the exported SVG file's skeletal panel draws, by atom. */
 function exportedLocants(doc: SketchDocument, style: FigureExportSettings["style"]): Record<AtomId, string> {
-  const prepared = prepareFigure(doc, { width: "double", customWidthCm: 12, dpi: 300, style });
+  const prepared = prepareFigure(doc, { width: "double", customWidthCm: 12, dpi: 300, style, pngBackground: "white" });
   if (!prepared.ok) throw new Error(prepared.message);
   const svg = figureSvgForFile(prepared.value);
   const drawn: Record<AtomId, string> = {};

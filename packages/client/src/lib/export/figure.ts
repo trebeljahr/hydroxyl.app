@@ -84,7 +84,7 @@ import {
   toRenderRepresentation,
 } from "@/canvas/scene-bridge";
 import { fileBaseName } from "@/lib/io/save";
-import type { FigureExportSettings, FigureStyleChoice } from "@/state/types";
+import type { FigureExportSettings, FigureStyleChoice, PngBackground } from "@/state/types";
 
 /** A custom width outside this range is refused rather than clamped. */
 export const CUSTOM_WIDTH_RANGE_CM = Object.freeze({ min: 2, max: 60 });
@@ -109,9 +109,15 @@ export const SAFE_RASTER_AREA_PX = 16_777_216;
 export const MAX_RASTER_AREA_PX = 268_435_456;
 export const MAX_RASTER_SIDE_PX = 32_767;
 
-/** Opaque white for the raster: many submission systems and viewers flatten
- *  a transparent PNG onto black. The SVG stays transparent. */
+/** Opaque white for the raster unless transparent is chosen: many submission
+ *  systems and viewers flatten a transparent PNG onto black. The SVG stays
+ *  transparent. */
 export const RASTER_BACKGROUND = "#ffffff";
+
+/** The fill `serializeFigure` draws under the figure for `choice`. */
+export function rasterBackground(choice: PngBackground): string | null {
+  return choice === "white" ? RASTER_BACKGROUND : null;
+}
 
 /**
  * The style an export draws with. "canvas" goes through the canvas's own
@@ -509,24 +515,32 @@ export function figureSvgForFile(prepared: PreparedFigure): string {
  * small intrinsic image into a large canvas would be an upscaled blur. The
  * font is embedded because an `<img>`-loaded SVG may not fetch anything.
  */
-export function figureSvgForRaster(prepared: PreparedFigure): string {
+export function figureSvgForRaster(prepared: PreparedFigure, background: PngBackground): string {
   return serializeFigure(prepared.figure, {
     standalone: false,
     indent: false,
     dimensions: { width: prepared.size.widthPx, height: prepared.size.heightPx, unit: "px" },
     embedFont: true,
-    background: RASTER_BACKGROUND,
+    background: rasterBackground(background),
   });
 }
 
-/** For the export dialog: unavailable panels MARKED, so the reason shows. */
-export function figurePreviewSvg(doc: SketchDocument, choice: FigureStyleChoice): string {
+/**
+ * For the export dialog: unavailable panels MARKED, so the reason shows. Drawn
+ * on the PNG's background, so a transparent choice shows the dialog's
+ * checkerboard through it.
+ */
+export function figurePreviewSvg(
+  doc: SketchDocument,
+  choice: FigureStyleChoice,
+  background: PngBackground = "white",
+): string {
   return serializeFigure(documentFigure(doc, choice), {
     standalone: false,
     indent: false,
     embedFont: true,
     unavailable: "mark",
-    background: RASTER_BACKGROUND,
+    background: rasterBackground(background),
   });
 }
 

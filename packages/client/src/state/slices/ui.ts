@@ -32,7 +32,7 @@ export const INITIAL_UI_STATE: UiState = Object.freeze({
   exportDialogOpen: false,
   periodicTableOpen: false,
   insertDialogOpen: false,
-  figureExport: Object.freeze({ width: "single", customWidthCm: 12, dpi: 300, style: "publication" }),
+  figureExport: Object.freeze({ width: "single", customWidthCm: 12, dpi: 300, style: "publication", pngBackground: "white" }),
   refusal: null,
 });
 
@@ -134,6 +134,7 @@ export function createUiSlice(
       if (patch.width !== undefined) next.width = patch.width;
       if (patch.dpi !== undefined) next.dpi = patch.dpi;
       if (patch.style !== undefined) next.style = patch.style;
+      if (patch.pngBackground !== undefined) next.pngBackground = patch.pngBackground;
       if (patch.customWidthCm !== undefined && Number.isFinite(patch.customWidthCm)) {
         next.customWidthCm = patch.customWidthCm;
       }
@@ -141,6 +142,7 @@ export function createUiSlice(
         next.width === current.width &&
         next.dpi === current.dpi &&
         next.style === current.style &&
+        next.pngBackground === current.pngBackground &&
         next.customWidthCm === current.customWidthCm
       ) {
         return;

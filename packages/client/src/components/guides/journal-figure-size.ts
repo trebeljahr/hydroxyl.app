@@ -116,6 +116,7 @@ const SINGLE_COLUMN: FigureExportSettings = {
   customWidthCm: 12,
   dpi: 600,
   style: "publication",
+  pngBackground: "white",
 };
 
 function worked(doc: SketchDocument): WorkedFigure {

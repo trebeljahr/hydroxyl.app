@@ -203,3 +203,32 @@ describe("ExportDialog panel chooser", () => {
     ]);
   });
 });
+
+describe("ExportDialog PNG background", () => {
+  it("defaults to white, and a transparent choice reaches the setting and the preview", () => {
+    act(() => {
+      const state = editorStore.getState();
+      state.openDocument(createDocument({ molecule: butan2olWedged(), now: NOW }));
+      state.setFigureExport({ width: "single", dpi: 300, style: "publication", pngBackground: "white" });
+      state.setExportDialogOpen(true);
+    });
+    render(<ExportDialog />);
+    const dialog = document.querySelector('[data-shell="export-dialog"]')!;
+    const preview = (): string =>
+      decodeURIComponent(dialog.querySelector<HTMLImageElement>('[data-shell="figure-preview"]')!.src);
+    const choice = (value: string): HTMLInputElement =>
+      dialog.querySelector<HTMLInputElement>(`input[name="figure-png-background"][value="${value}"]`)!;
+
+    expect(choice("white").checked).toBe(true);
+    expect(preview()).toContain('data-decoration="background"');
+
+    act(() => {
+      choice("transparent").click();
+    });
+    expect(editorStore.getState().ui.figureExport.pngBackground).toBe("transparent");
+    expect(preview()).not.toContain('data-decoration="background"');
+    expect(
+      dialog.querySelector('[data-shell="figure-preview-frame"]')!.getAttribute("data-png-background"),
+    ).toBe("transparent");
+  });
+});

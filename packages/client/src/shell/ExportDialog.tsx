@@ -47,7 +47,7 @@
  */
 
 import { useMemo } from "react";
-import type { ReactElement } from "react";
+import type { CSSProperties, ReactElement } from "react";
 
 import { JOURNAL_WIDTHS_CM } from "@starter/chem-render";
 
@@ -103,6 +103,11 @@ function Choice({
   );
 }
 
+const CHECKERBOARD: CSSProperties = {
+  backgroundImage: "repeating-conic-gradient(#d4d4d4 0% 25%, #ffffff 0% 50%)",
+  backgroundSize: "16px 16px",
+};
+
 export function ExportDialog(): ReactElement {
   const open = useEditorStore((state) => state.ui.exportDialogOpen);
   const doc = useEditorStore((state) => state.document);
@@ -115,11 +120,11 @@ export function ExportDialog(): ReactElement {
   const preview = useMemo(() => {
     if (!open) return null;
     try {
-      return svgDataUri(figurePreviewSvg(doc, settings.style));
+      return svgDataUri(figurePreviewSvg(doc, settings.style, settings.pngBackground));
     } catch (error) {
       return error instanceof Error ? error : new Error(String(error));
     }
-  }, [open, doc, settings.style]);
+  }, [open, doc, settings.style, settings.pngBackground]);
 
   const prepared = useMemo(() => (open ? prepareFigure(doc, settings) : null), [open, doc, settings]);
   const tooLarge = prepared?.ok === true ? rasterTooLarge(prepared.value, canvasCanHold) : null;
@@ -188,7 +193,14 @@ export function ExportDialog(): ReactElement {
         </div>
 
         <div className="mb-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_15rem]">
-          <div className="flex max-h-80 min-h-24 items-center justify-center overflow-auto rounded-md border bg-white p-2">
+          <div
+            data-shell="figure-preview-frame"
+            data-png-background={settings.pngBackground}
+            // A transparent PNG is previewed over the usual grey checkerboard,
+            // so it reads as "no background" rather than as white.
+            style={settings.pngBackground === "transparent" ? CHECKERBOARD : undefined}
+            className="flex max-h-80 min-h-24 items-center justify-center overflow-auto rounded-md border bg-white p-2"
+          >
             {preview instanceof Error ? (
               <p className="text-destructive text-xs">{preview.message}</p>
             ) : preview === null ? null : (
@@ -266,6 +278,25 @@ export function ExportDialog(): ReactElement {
               label="600 dpi"
               onSelect={() => set({ dpi: 600 })}
             />
+            <fieldset className="mt-2 flex flex-col gap-1" data-shell="png-background">
+              <legend className="text-muted-foreground mb-1 text-xs font-medium">
+                PNG background
+              </legend>
+              <Choice
+                name="figure-png-background"
+                value="white"
+                checked={settings.pngBackground === "white"}
+                label="White"
+                onSelect={() => set({ pngBackground: "white" })}
+              />
+              <Choice
+                name="figure-png-background"
+                value="transparent"
+                checked={settings.pngBackground === "transparent"}
+                label="Transparent"
+                onSelect={() => set({ pngBackground: "transparent" })}
+              />
+            </fieldset>
           </fieldset>
         </div>
 
