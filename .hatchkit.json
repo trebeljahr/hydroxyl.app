@@ -25,20 +25,20 @@
     "mailingList": "listmonk-ses"
   },
   "ses": {
-    "identity": "mail.chemistry.trebeljahr.com",
-    "mailFromDomain": "bounce.mail.chemistry.trebeljahr.com",
+    "identity": "mail.hydroxyl.app",
+    "mailFromDomain": "bounce.mail.hydroxyl.app",
     "mailFromLabel": "bounce",
     "mailFromBehaviorOnMxFailure": "UseDefaultValue",
     "mailFromManagedDnsRecords": [
       {
         "type": "MX",
-        "name": "bounce.mail.chemistry.trebeljahr.com",
+        "name": "bounce.mail.hydroxyl.app",
         "value": "feedback-smtp.eu-west-1.amazonses.com",
         "priority": 10
       },
       {
         "type": "TXT",
-        "name": "bounce.mail.chemistry.trebeljahr.com",
+        "name": "bounce.mail.hydroxyl.app",
         "value": "v=spf1 include:amazonses.com ~all"
       }
     ]
@@ -74,18 +74,15 @@
   },
   "deferred": [
     {
-      "key": "migrate:email-routing:setup",
-      "label": "migrate-domain / email-routing (prepare)",
+      "key": "migrate:listmonk:from",
+      "label": "migrate-domain / listmonk (cutover)",
       "kind": "failed",
-      "reason": "Cloudflare token lacks Email Routing permissions for hydroxyl.app (10000: Authentication error)",
-      "command": "hatchkit migrate-domain --to hydroxyl.app --from chemistry.trebeljahr.com --phase prepare --only email-routing",
+      "reason": "Listmonk GET /api/settings failed: HTTP 403 {\"message\":\"invalid API credentials\"}",
+      "command": "hatchkit migrate-domain --to hydroxyl.app --from chemistry.trebeljahr.com --phase cutover --only listmonk",
       "hint": [
-        "The Cloudflare DNS token cannot read Email Routing on hydroxyl.app — it is missing permissions, not expired.",
-        "Edit the token at https://dash.cloudflare.com/profile/api-tokens and add: Zone → Email Routing Rules → Edit + Account → Email Routing Addresses → Edit",
-        "(keep Zone → DNS → Edit + Zone → Zone → Read; scope the zone permissions to the zones you use)",
-        "Then re-run `hatchkit config add dns` if you created a new token instead of editing the old one."
+        "waiting on: SES reports VerifiedForSendingStatus=true for mail.hydroxyl.app"
       ],
-      "deferredAt": "2026-10-06T23:07:59.642Z"
+      "deferredAt": "2026-10-06T23:26:14.763Z"
     }
   ],
   "aliases": [
