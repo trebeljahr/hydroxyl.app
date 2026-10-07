@@ -423,6 +423,14 @@ export function ExportDialog(): ReactElement {
           <button
             type="button"
             className={button}
+            data-command="figure.export-cdxml"
+            onClick={() => run("figure.export-cdxml")}
+          >
+            Download CDXML
+          </button>
+          <button
+            type="button"
+            className={button}
             data-command="figure.copy-molblock"
             onClick={() => run("figure.copy-molblock")}
           >

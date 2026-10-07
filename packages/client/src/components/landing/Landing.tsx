@@ -178,8 +178,8 @@ export function Landing(): ReactElement {
         </p>
         <p>
           <strong>Copy figure</strong> puts SVG and PNG on the clipboard, ready to paste into slides
-          or a manuscript. You can also download SVG, PNG and molfiles, or copy the SMILES, InChI
-          or InChIKey.
+          or a manuscript. You can also download SVG, PNG, molfiles and ChemDraw CDXML, or copy the
+          SMILES, InChI or InChIKey.
         </p>
         <p>
           Draw wedge, hash and wavy bonds, and mark AND, OR and absolute stereo groups. A structure
@@ -210,7 +210,7 @@ export function Landing(): ReactElement {
             No InChI import. The editor copies an InChI but cannot read one back. Paste a SMILES or
             open a molfile instead.
           </li>
-          <li>No PDF, EPS or CDXML export. Most drawing programs open SVG.</li>
+          <li>No PDF or EPS export. Most drawing programs open SVG. For ChemDraw, download the structure as CDXML.</li>
           <li>No reaction arrows or schemes.</li>
           <li>No sync between computers. Export all sketches to one file to move them.</li>
         </ul>

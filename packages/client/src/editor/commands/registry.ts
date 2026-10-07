@@ -98,6 +98,7 @@ import {
   copyMolblock,
   copyInchi,
   copySmiles,
+  exportCdxml,
   exportFigurePng,
   exportFigureSvg,
 } from "./figure";
@@ -1826,6 +1827,15 @@ const FIGURE_COMMANDS: readonly Command[] = [
     enabled: hasStructure,
     disabledReason: whenOff(hasStructure, REASONS.emptyDrawing),
     run: (store) => copyInchi(store, "structure", "inchikey"),
+  },
+  {
+    id: "figure.export-cdxml",
+    title: "Download structure as CDXML",
+    keywords: ["export", "download", "cdxml", "chemdraw", "cdx", "structure"],
+    group: "figure",
+    enabled: hasStructure,
+    disabledReason: whenOff(hasStructure, REASONS.emptyDrawing),
+    run: (store) => exportCdxml(store),
   },
   {
     id: "figure.copy-molblock",

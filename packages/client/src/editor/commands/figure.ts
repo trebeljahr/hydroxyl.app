@@ -1,6 +1,6 @@
 /**
  * The figure commands: export SVG, export PNG, copy the figure, copy the
- * structure as SMILES, InChI, InChIKey or a molfile.
+ * structure as SMILES, InChI, InChIKey or a molfile, download it as CDXML.
  *
  * Kept out of `registry.ts` for the reason the file commands are: the registry
  * stays importable by a plain-node test, and this is where the browser APIs
@@ -17,7 +17,7 @@
  * See `writeClipboardParts` and `writeBlobFile`.
  */
 
-import { extractFragment, isEmpty } from "@starter/chem-core";
+import { extractFragment, isEmpty, writeCdxml } from "@starter/chem-core";
 import type { AtomId, Molecule } from "@starter/chem-core";
 
 import {
@@ -33,6 +33,7 @@ import type { PreparedFigure } from "@/lib/export/figure";
 import { textBlob, writeClipboardParts } from "@/lib/export/clipboard";
 import { canvasCanHold, rasterizeSvg } from "@/lib/export/png";
 import { writeBlobFile } from "@/lib/io/file-system";
+import { fileBaseName } from "@/lib/io/save";
 import { moleculeToMolblock, molblockVersionNotice } from "@/lib/rdkit/translate";
 import type { EditorStore } from "@/state";
 
@@ -98,6 +99,35 @@ export async function exportFigurePng(store: EditorStore): Promise<void> {
   );
   if (outcome.ok) {
     report(store, `Exported the figure as PNG, ${widthPx} × ${heightPx} px at ${dpi} dpi`);
+  } else if (!outcome.cancelled) {
+    report(store, outcome.message);
+  }
+}
+
+/**
+ * The structure as a ChemDraw CDXML file, for a co-author on ChemDraw.
+ *
+ * The STRUCTURE, not the figure: CDXML is a drawing a co-author edits, so it
+ * holds the molecule as drawn on the canvas and none of the panels. Needs no
+ * panel and no RDKit — chem-core writes it directly. What CDXML cannot hold is
+ * said in the status line, never dropped silently.
+ */
+export async function exportCdxml(store: EditorStore): Promise<void> {
+  const doc = store.getState().document;
+  if (isEmpty(doc.molecule)) {
+    report(store, "Nothing has been drawn yet, so there is no CDXML to download.");
+    return;
+  }
+  const { cdxml, dropped } = writeCdxml(doc.molecule, { program: "Hydroxyl" });
+  const outcome = await writeBlobFile(
+    textBlob(cdxml, "chemical/x-cdxml"),
+    `${fileBaseName(doc)}.cdxml`,
+    "chemical/x-cdxml",
+    "ChemDraw CDXML",
+    ".cdxml",
+  );
+  if (outcome.ok) {
+    report(store, ["Downloaded the structure as CDXML.", ...dropped].join(" "));
   } else if (!outcome.cancelled) {
     report(store, outcome.message);
   }
