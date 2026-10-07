@@ -51,8 +51,8 @@ import type { MoleculeEdit, Selection, ToolId, ToolOptions } from "@/state";
 /**
  * Modifier keys, sampled PER EVENT rather than once at the start of a gesture.
  *
- * Shift constrains and extends; Alt selects the spiro variant of a ring drop
- * and the rotate variant of a selection drag. Both are routinely pressed
+ * Shift constrains and extends; Alt selects the spiro variant of a ring drop,
+ * the rotate variant of a selection drag and the lasso variant of a sweep. Both are routinely pressed
  * AFTER the button goes down — you start dragging, then decide you wanted it
  * constrained — so a gesture that latched them at pointerdown would ignore
  * half the times they are used.
@@ -239,6 +239,19 @@ export type InteractionState =
       readonly point: Vec2;
       readonly additive: boolean;
       /** What was selected before the sweep, for the additive case. */
+      readonly baseSelection: Selection;
+    }
+  | {
+      /**
+       * Alt + drag from empty canvas: a freehand sweep (decision 231). The
+       * path is closed implicitly, from its last point back to its first.
+       */
+      readonly kind: "lasso";
+      /** Model-space points, thinned to at least `step` apart. */
+      readonly path: readonly Vec2[];
+      /** Minimum spacing between kept points, latched at drag start. */
+      readonly step: number;
+      readonly additive: boolean;
       readonly baseSelection: Selection;
     }
   | {

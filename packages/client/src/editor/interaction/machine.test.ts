@@ -553,6 +553,96 @@ describe("marquee", () => {
   });
 });
 
+describe("lasso", () => {
+  /** A freehand sweep through `points`, every frame carrying `modifiers`. */
+  function lasso(
+    driver: Driver,
+    points: readonly Vec2[],
+    modifiers: { shift?: boolean; alt?: boolean },
+  ): void {
+    const [first, second, ...rest] = points;
+    driver.send({ kind: "press", sample: sample(first!, undefined, modifiers) });
+    driver.send({
+      kind: "dragStart",
+      origin: sample(first!, undefined, modifiers),
+      sample: sample(second!, undefined, modifiers),
+    });
+    for (const point of rest) {
+      driver.send({ kind: "dragMove", sample: sample(point, undefined, modifiers) });
+    }
+  }
+
+  // A thin strip from a1 (bottom) to a3 (upper right). The box spanning the
+  // same two atoms holds a2 as well; the lasso does not.
+  const STRIP: readonly Vec2[] = [
+    { x: -0.23, y: -1.1 },
+    { x: 0.84, y: 0.75 },
+    { x: 1.1, y: 0.6 },
+    { x: 0.03, y: -1.25 },
+  ];
+
+  it("is what an alt-drag from empty canvas sweeps, and selects what it encloses", () => {
+    const driver = new Driver(benzene());
+    lasso(driver, STRIP, { alt: true });
+    expect(driver.state.kind).toBe("lasso");
+    expect(driver.selection.atomIds).toEqual(["a1", "a3"]);
+    // a1 and a3 are not bonded, so no bond comes with them.
+    expect(driver.selection.bondIds).toEqual([]);
+
+    driver.send({ kind: "dragEnd", sample: sample(STRIP[3]!, undefined, { alt: true }) });
+    expect(driver.state.kind).toBe("idle");
+    expect(driver.selection.atomIds).toEqual(["a1", "a3"]);
+    expect(driver.entries).toEqual([]);
+    expect(driver.count("beginTransaction")).toBe(0);
+  });
+
+  it("leaves a plain drag from empty canvas the marquee (decision 106)", () => {
+    const driver = new Driver(benzene());
+    lasso(driver, STRIP, {});
+    expect(driver.state.kind).toBe("marquee");
+  });
+
+  it("takes the bonds between enclosed atoms, as the marquee does", () => {
+    const driver = new Driver(benzene());
+    lasso(
+      driver,
+      [
+        { x: 0.5, y: -0.9 },
+        { x: 1.4, y: -0.9 },
+        { x: 1.4, y: 0.9 },
+        { x: 0.5, y: 0.9 },
+      ],
+      { alt: true },
+    );
+    expect(driver.selection.atomIds).toEqual(["a2", "a3"]);
+    expect(driver.selection.bondIds).toEqual(["b8"]);
+  });
+
+  it("extends with shift and restores the old selection when cancelled", () => {
+    const mol = benzene();
+    const driver = new Driver(mol);
+    driver.send({ kind: "click", sample: sample(pos(mol, "a5"), atomHit("a5")) });
+    lasso(driver, STRIP, { alt: true, shift: true });
+    expect(driver.selection.atomIds).toEqual(["a5", "a1", "a3"]);
+
+    driver.send({ kind: "cancel" });
+    expect(driver.selection.atomIds).toEqual(["a5"]);
+  });
+
+  it("drops points closer together than a twentieth of a bond", () => {
+    const driver = new Driver(benzene());
+    lasso(driver, [{ x: 2, y: 2 }, { x: 2.01, y: 2 }, { x: 2.02, y: 2 }, { x: 3, y: 2 }], {
+      alt: true,
+    });
+    const state = driver.state;
+    if (state.kind !== "lasso") throw new Error("expected a lasso");
+    expect(state.path).toEqual([
+      { x: 2, y: 2 },
+      { x: 3, y: 2 },
+    ]);
+  });
+});
+
 describe("moving a selection", () => {
   it("moves a selected atom instead of drawing from it", () => {
     const mol = benzene();

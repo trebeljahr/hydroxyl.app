@@ -107,9 +107,9 @@ export interface ToolDef {
 export const TOOLS: readonly ToolDef[] = Object.freeze([
   Object.freeze<ToolDef>({
     id: "select",
-    keywords: ["pointer", "arrow", "marquee", "move"],
+    keywords: ["pointer", "arrow", "marquee", "lasso", "move"],
     title: "Select",
-    hint: "Click to select, drag to draw or move, drag empty space to marquee",
+    hint: "Click to select, drag to draw or move, drag empty space to marquee, Alt-drag to lasso",
     hotkey: "v",
     cursor: "default",
     Icon: MousePointer2Icon,

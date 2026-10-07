@@ -54,6 +54,7 @@ import {
   type GesturePointer,
   type GestureState,
 } from "./gesture-reducer";
+import { setCanvasPointer } from "./pointer-anchor";
 
 export {
   CLICK_SLOP_PX,
@@ -189,6 +190,20 @@ function readPointer(
     // routinely pressed after the button goes down.
     modifiers: { shift: event.shiftKey, alt: event.altKey },
   };
+}
+
+/**
+ * Record where a mouse or pen rests for paste-at-pointer (see
+ * pointer-anchor.ts). A captured drag keeps reporting moves after the pointer
+ * has left the element, so a point outside the canvas clears the anchor
+ * rather than aiming a paste at somewhere the user cannot see.
+ */
+function trackPointer(svg: SVGSVGElement, pointer: GesturePointer): void {
+  if (pointer.pointerType === "touch") return;
+  const rect = svg.getBoundingClientRect();
+  const { x, y } = pointer.point;
+  const inside = x >= 0 && y >= 0 && x <= rect.width && y <= rect.height;
+  setCanvasPointer(inside ? pointer.point : null);
 }
 
 /**
@@ -570,7 +585,9 @@ export function useCanvasGestures(
     (event) => {
       const svg = svgRef.current;
       if (!svg) return;
-      dispatch({ kind: "move", pointer: readPointer(svg, event) }, event, svg);
+      const pointer = readPointer(svg, event);
+      trackPointer(svg, pointer);
+      dispatch({ kind: "move", pointer }, event, svg);
     },
     [dispatch, svgRef],
   );
@@ -586,6 +603,7 @@ export function useCanvasGestures(
 
   const onPointerCancel = useCallback<React.PointerEventHandler<SVGSVGElement>>(
     (event) => {
+      setCanvasPointer(null);
       dispatch({ kind: "cancel", pointerId: event.pointerId }, event);
     },
     [dispatch],
@@ -593,6 +611,7 @@ export function useCanvasGestures(
 
   const onPointerLeave = useCallback<React.PointerEventHandler<SVGSVGElement>>(
     (event) => {
+      setCanvasPointer(null);
       dispatch({ kind: "leave" }, event);
     },
     [dispatch],

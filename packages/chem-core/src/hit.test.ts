@@ -4,11 +4,13 @@ import {
   DEFAULT_ATOM_TOLERANCE,
   DEFAULT_LABEL_RADIUS,
   DRAWN_BOND_MIDDLE,
+  atomsInPolygon,
   atomsInRect,
   bondsInRect,
   hitTest,
   nearestAtom,
   nearestBond,
+  polygonContains,
   rectFromCorners,
 } from "./hit.js";
 import type { Bond, Molecule } from "./types.js";
@@ -290,5 +292,52 @@ describe("degenerate geometry", () => {
     expect(atom.kind).toBe("atom");
     if (atom.kind !== "atom") return;
     expect(atom.atomId).toBe("a2");
+  });
+});
+
+describe("lasso selection", () => {
+  const mol = benzene(1);
+
+  /** A strip `halfWidth` wide around the segment a -> b, overshooting both ends. */
+  function strip(a: Vec2, b: Vec2, halfWidth: number): Vec2[] {
+    const len = distance(a, b);
+    const d = vec((b.x - a.x) / len, (b.y - a.y) / len);
+    const n = vec(-d.y * halfWidth, d.x * halfWidth);
+    const start = vec(a.x - d.x * 0.2, a.y - d.y * 0.2);
+    const end = vec(b.x + d.x * 0.2, b.y + d.y * 0.2);
+    return [
+      vec(start.x + n.x, start.y + n.y),
+      vec(end.x + n.x, end.y + n.y),
+      vec(end.x - n.x, end.y - n.y),
+      vec(start.x - n.x, start.y - n.y),
+    ];
+  }
+
+  it("takes two atoms that no box could take without their neighbour", () => {
+    // a1 (bottom) and a3 (upper right): the box spanning them holds a2.
+    const a1 = mol.atoms["a1"]!.pos;
+    const a3 = mol.atoms["a3"]!.pos;
+    expect(atomsInRect(mol, rectFromCorners(a1, a3))).toContain("a2");
+    expect(atomsInPolygon(mol, strip(a1, a3, 0.15))).toEqual(["a1", "a3"]);
+  });
+
+  it("closes the path itself and is indifferent to its direction", () => {
+    const path = strip(mol.atoms["a1"]!.pos, mol.atoms["a3"]!.pos, 0.15);
+    expect(atomsInPolygon(mol, [...path].reverse())).toEqual(["a1", "a3"]);
+  });
+
+  it("reads a self-crossing loop by the even-odd rule", () => {
+    // A figure-eight: the lobe round (0,1) and the lobe round (0,-1) both
+    // count as inside; the crossing point between them does not.
+    const eight = [vec(-0.3, 1.3), vec(0.3, 1.3), vec(-0.3, -1.3), vec(0.3, -1.3)];
+    expect(polygonContains(eight, vec(0, 1))).toBe(true);
+    expect(polygonContains(eight, vec(0, -1))).toBe(true);
+    expect(polygonContains(eight, vec(0.25, 0))).toBe(false);
+    expect(atomsInPolygon(mol, eight)).toEqual(["a1", "a4"]);
+  });
+
+  it("encloses nothing with fewer than three points", () => {
+    expect(atomsInPolygon(mol, [])).toEqual([]);
+    expect(atomsInPolygon(mol, [vec(-2, -2), vec(2, 2)])).toEqual([]);
   });
 });

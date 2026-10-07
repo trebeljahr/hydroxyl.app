@@ -8,6 +8,7 @@ import {
 } from "./builders.js";
 import * as M from "./molecule.js";
 import { isFusionBond, isSpiroAtom, rings, ringsAtBond } from "./rings.js";
+import { molecularFormula } from "./formula.js";
 import { sprout } from "./sprout.js";
 import {
   appendChain,
@@ -16,6 +17,7 @@ import {
   isDegenerateBond,
   RING_TEMPLATES,
   spiroRingAtAtom,
+  templateRing,
   type RingTemplateName,
   type TemplateResult,
 } from "./templates.js";
@@ -198,14 +200,16 @@ const ALL_SIZES = [3, 4, 5, 6, 7] as const;
 // ---------------------------------------------------------------------------
 
 describe("RING_TEMPLATES", () => {
-  it("carries the six toolbar rings at their named sizes", () => {
+  it("carries the eight toolbar rings at their named sizes", () => {
     const expected: Record<RingTemplateName, number> = {
       cyclopropane: 3,
       cyclobutane: 4,
       cyclopentane: 5,
       cyclohexane: 6,
       cycloheptane: 7,
+      cyclooctane: 8,
       benzene: 6,
+      cyclopentadiene: 5,
     };
     expect(Object.keys(RING_TEMPLATES).sort()).toEqual(Object.keys(expected).sort());
     for (const [name, size] of Object.entries(expected)) {
@@ -213,8 +217,10 @@ describe("RING_TEMPLATES", () => {
     }
   });
 
-  it("makes benzene the only Kekule template", () => {
+  it("makes benzene and cyclopentadiene the only Kekule templates", () => {
     expect(RING_TEMPLATES.benzene.kekule).toBe(true);
+    expect(RING_TEMPLATES.cyclopentadiene.kekule).toBe(true);
+    expect(RING_TEMPLATES.cyclooctane.kekule).toBeUndefined();
     // The saturated rings must not carry the flag: a cyclohexane template that
     // quietly alternated would draw cyclohexatriene.
     expect(RING_TEMPLATES.cyclohexane.kekule).toBeUndefined();
@@ -1065,7 +1071,7 @@ describe("caller errors throw", () => {
 
   it("rejects an unknown template name", () => {
     expect(() =>
-      attachRingToAtom(start, start.atomIds[0]!, "cyclooctane" as RingTemplateName),
+      attachRingToAtom(start, start.atomIds[0]!, "cyclononane" as RingTemplateName),
     ).toThrow(/template/);
   });
 
@@ -1110,5 +1116,93 @@ describe("caller errors throw", () => {
     // A bond the molecule does not have: degenerate rather than a throw, so a
     // pre-flight question about a stale id is answerable.
     expect(isDegenerateBond(real, "b999")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Odd Kekule rings: cyclopentadiene (decision 231)
+// ---------------------------------------------------------------------------
+
+/** Atoms of `ringAtomIds` that carry more than one double bond. */
+function cumulatedAtoms(mol: Molecule, ringAtomIds: readonly AtomId[]): AtomId[] {
+  return ringAtomIds.filter(
+    (id) => M.bondsAt(mol, id).filter((bond) => bond.order === 2).length > 1,
+  );
+}
+
+describe("cyclopentadiene", () => {
+  it("draws free cyclopentadiene, C5H6, with its sp3 carbon at vertex 0", () => {
+    const mol = templateRing("cyclopentadiene");
+    expect(molecularFormula(mol)).toBe("C5H6");
+    expect(doubleBondCount(mol)).toBe(2);
+    expect(valenceIssues(mol)).toEqual([]);
+    expect(M.bondsAt(mol, mol.atomIds[0]!).every((bond) => bond.order === 1)).toBe(true);
+  });
+
+  it("draws a free benzene identical to the builder's", () => {
+    const fromTemplate = templateRing("benzene", 1.5, vec(2, 3));
+    const built = benzene(1.5, vec(2, 3));
+    expect(M.bonds(fromTemplate).map((bond) => bond.order)).toEqual(
+      M.bonds(built).map((bond) => bond.order),
+    );
+    expect(M.atoms(fromTemplate).map((atom) => atom.pos)).toEqual(
+      M.atoms(built).map((atom) => atom.pos),
+    );
+  });
+
+  it("attaches as cyclopenta-1,3-dien-1-yl: methylcyclopentadiene, C6H8", () => {
+    const result = attachRingToAtom(singleAtom("C"), "a1", "cyclopentadiene");
+    const mol = result.molecule;
+    expect(molecularFormula(mol)).toBe("C6H8");
+    expect(cumulatedAtoms(mol, result.ringAtomIds)).toEqual([]);
+    expect(valenceIssues(mol)).toEqual([]);
+    // The attachment carbon is sp2: the diene starts at it.
+    const attached = result.ringAtomIds[0]!;
+    expect(M.bondsAt(mol, attached).some((bond) => bond.order === 2)).toBe(true);
+  });
+
+  it("fused onto a Kekule double bond of benzene gives indene, C9H8", () => {
+    const start = benzene();
+    const doubleId = start.bondIds.find((id) => M.requireBond(start, id).order === 2)!;
+    const result = fuseRingOnBond(start, doubleId, "cyclopentadiene");
+    const mol = result.molecule;
+    expect(molecularFormula(mol)).toBe("C9H8");
+    expect(cumulatedAtoms(mol, result.ringAtomIds)).toEqual([]);
+    expect(valenceIssues(mol)).toEqual([]);
+    // Benzene's three doubles plus ONE in the new ring.
+    expect(doubleBondCount(mol)).toBe(4);
+  });
+
+  it("fused onto a Kekule single bond of benzene still gives indene", () => {
+    const start = benzene();
+    const singleId = start.bondIds.find((id) => M.requireBond(start, id).order === 1)!;
+    const result = fuseRingOnBond(start, singleId, "cyclopentadiene");
+    expect(molecularFormula(result.molecule)).toBe("C9H8");
+    expect(valenceIssues(result.molecule)).toEqual([]);
+  });
+
+  it("makes a spiro centre with four single bonds: spiro[4.4]nona-1,3-diene", () => {
+    const start = carbocycle(5);
+    const result = spiroRingAtAtom(start, start.atomIds[0]!, "cyclopentadiene");
+    const mol = result.molecule;
+    expect(molecularFormula(mol)).toBe("C9H12");
+    expect(valenceIssues(mol)).toEqual([]);
+    expect(M.bondsAt(mol, start.atomIds[0]!).every((bond) => bond.order === 1)).toBe(true);
+    expect(doubleBondCount(mol)).toBe(2);
+  });
+
+  it("leaves even Kekule rings strictly alternating", () => {
+    // The guard is for odd rings only: benzene keeps its three doubles.
+    const result = attachRingToAtom(singleAtom("C"), "a1", "benzene");
+    expect(doubleBondCount(result.molecule)).toBe(3);
+  });
+});
+
+describe("cyclooctane", () => {
+  it("attaches a saturated eight-membered ring: methylcyclooctane, C9H18", () => {
+    const result = attachRingToAtom(singleAtom("C"), "a1", "cyclooctane");
+    expect(result.ringAtomIds).toHaveLength(8);
+    expect(molecularFormula(result.molecule)).toBe("C9H18");
+    expect(doubleBondCount(result.molecule)).toBe(0);
   });
 });

@@ -17,6 +17,7 @@
  *   drag from a SELECTED atom or bond move the selection
  *   drag from an unselected bond      move that bond's two atoms
  *   drag from empty space             marquee (shift extends)
+ *   alt-drag from empty space         lasso (shift extends; decision 231)
  *   drag the rotate handle, or        rotate the selection about its centroid
  *     alt-drag inside the selection     (two atoms or more)
  *   click                            select / extend / clear
@@ -52,15 +53,15 @@
 import {
   areBonded,
   atomsCentroid,
+  atomsInPolygon,
   atomsInRect,
-  benzene as buildBenzene,
-  carbocycle,
   expandToBonds,
   isDegenerateBond,
   isFusionBond,
   rectFromCorners,
   selection as coreSelection,
   sproutDrag,
+  templateRing,
   DEFAULT_ANGLE_STEP,
   DEFAULT_BOND_LENGTH,
   DEFAULT_MERGE_RADIUS,
@@ -470,16 +471,14 @@ function snapTo(angle: number, step: number): number {
  * Free placement of a ring on empty canvas.
  *
  * chem-core's three template entry points all need an existing atom or bond to
- * hang off, so this is the one ring gesture that goes through the builders and
- * `insertFragment` instead. `RING_TEMPLATES` holds no hetero ring today, so
- * nothing is lost by `carbocycle` being unable to express one; when one is
- * added this is the call site that has to grow.
+ * hang off, so this is the one ring gesture that goes through `templateRing`
+ * and `insertFragment` instead.
  *
- * DRIVEN OFF `template.kekule`, NOT OFF `size === 6`. The size test was the
- * other half of the ring-template gap: it made a free 6-ring ALWAYS benzene
- * and cyclohexane unreachable, while the fuse/attach/spiro paths passed
- * `{ size }` and so made cyclohexane and never benzene. Same option, opposite
- * failures; both now read the one resolved template.
+ * DRIVEN OFF THE RESOLVED TEMPLATE, NOT OFF `size === 6`. The size test was
+ * the other half of the ring-template gap: it made a free 6-ring ALWAYS
+ * benzene and cyclohexane unreachable, while the fuse/attach/spiro paths
+ * passed `{ size }` and so made cyclohexane and never benzene. Same option,
+ * opposite failures; both now read the one resolved template.
  */
 function freeRing(
   mol: Molecule,
@@ -487,10 +486,7 @@ function freeRing(
   template: RingTemplate,
   bondLength: number,
 ): Molecule {
-  const ring = template.kekule
-    ? buildBenzene(bondLength, centre)
-    : carbocycle(template.size, template.elements?.[0] ?? "C", bondLength, centre);
-  return guardedOps.insertFragment(mol, ring).molecule;
+  return guardedOps.insertFragment(mol, templateRing(template, bondLength, centre)).molecule;
 }
 
 function ringClick(
@@ -739,7 +735,11 @@ function onDragStart(
     return result(started.state, [...stale, ...select, ...started.commands]);
   }
 
-  const swept = marqueeFrom(origin.point, sample, ctx);
+  // Empty canvas. Alt turns the sweep into a lasso; a plain drag stays the
+  // marquee, which decision 106 gives the primary drag (decision 231).
+  const swept = origin.modifiers.alt || sample.modifiers.alt
+    ? lassoFrom(origin.point, sample, ctx)
+    : marqueeFrom(origin.point, sample, ctx);
   return result(swept.state, [...stale, ...swept.commands]);
 }
 
@@ -858,6 +858,40 @@ function marqueeFrom(
 }
 
 /**
+ * Lasso points closer together than this, in bond lengths, are dropped. A
+ * pointer reports a point per frame, so a slow sweep would otherwise grow a
+ * path of thousands of near-duplicates that every later frame tests every atom
+ * against; at a twentieth of a bond the path is still far finer than any gap
+ * between two atoms it has to pass between.
+ */
+const LASSO_STEP_BONDS = 0.05;
+
+function lassoFrom(
+  origin: Vec2,
+  sample: PointerSample,
+  ctx: InteractionContext,
+): InteractionResult {
+  const step = LASSO_STEP_BONDS * documentBondLength(ctx.molecule);
+  const state: Extract<InteractionState, { kind: "lasso" }> = {
+    kind: "lasso",
+    path: extendPath([origin], sample.point, step),
+    step,
+    additive: sample.modifiers.shift,
+    baseSelection: ctx.selection,
+  };
+  return result(state, sweepCommands(state, atomsInPolygon(ctx.molecule, state.path), ctx));
+}
+
+/** `path` with `point` appended, unless it is within `step` of the last one. */
+function extendPath(path: readonly Vec2[], point: Vec2, step: number): readonly Vec2[] {
+  const last = path[path.length - 1];
+  if (last !== undefined && Math.hypot(point.x - last.x, point.y - last.y) < step) {
+    return path;
+  }
+  return [...path, point];
+}
+
+/**
  * The merge candidate under the pointer, if this drag can merge at all.
  *
  * Only a SINGLE dragged atom can merge. Dropping a whole fragment onto one
@@ -893,7 +927,15 @@ function marqueeCommands(
   ctx: InteractionContext,
 ): readonly InteractionCommand[] {
   const rect = rectFromCorners(state.origin, state.point);
-  const atomIds = atomsInRect(ctx.molecule, rect);
+  return sweepCommands(state, atomsInRect(ctx.molecule, rect), ctx);
+}
+
+/** The selection a marquee or a lasso sweeping `atomIds` stands for. */
+function sweepCommands(
+  state: { readonly additive: boolean; readonly baseSelection: Selection },
+  atomIds: readonly AtomId[],
+  ctx: InteractionContext,
+): readonly InteractionCommand[] {
   // `expandToBonds` explicitly, because `normalizeSelection` is purely
   // subtractive and will never derive the enclosed bonds back. A marquee that
   // skipped it looks right — the atoms highlight — and then deletes or copies
@@ -937,6 +979,12 @@ function onDragMove(
     case "marquee": {
       const next = { ...state, point: sample.point };
       return result(next, marqueeCommands(next, ctx));
+    }
+    case "lasso": {
+      const path = extendPath(state.path, sample.point, state.step);
+      if (path === state.path) return result(state);
+      const next = { ...state, path };
+      return result(next, sweepCommands(next, atomsInPolygon(ctx.molecule, path), ctx));
     }
     case "rotating": {
       const bearing = Math.atan2(
@@ -1022,6 +1070,7 @@ function onDragEnd(
     }
 
     case "marquee":
+    case "lasso":
       // Selection changes record no history entry of their own, so a marquee
       // never opened a transaction and has nothing to close.
       return result(IDLE, settled.commands);
@@ -1084,6 +1133,7 @@ function onCancel(state: InteractionState): InteractionResult {
         { kind: "status", message: null },
       ]);
     case "marquee":
+    case "lasso":
       return result(IDLE, [
         { kind: "setSelection", selection: state.baseSelection },
         { kind: "status", message: null },

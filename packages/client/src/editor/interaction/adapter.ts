@@ -80,6 +80,8 @@ export interface InteractionOverlayState {
   readonly target: TargetMark | null;
   /** The marquee's two corners, unnormalised — the overlay normalises in px. */
   readonly marquee: { readonly a: Vec2; readonly b: Vec2 } | null;
+  /** The lasso's points so far; the overlay closes the path back to the first. */
+  readonly lasso: readonly Vec2[] | null;
   /** The centroid a rotation is turning about. */
   readonly pivot: Vec2 | null;
   /**
@@ -97,6 +99,7 @@ export const NO_INTERACTION_OVERLAY: InteractionOverlayState = Object.freeze({
   ghost: null,
   target: null,
   marquee: null,
+  lasso: null,
   pivot: null,
   angle: 0,
   handleHovered: false,
@@ -147,6 +150,8 @@ function projectOverlay(state: InteractionState): InteractionOverlayState {
         ...NO_INTERACTION_OVERLAY,
         marquee: { a: state.origin, b: state.point },
       };
+    case "lasso":
+      return { ...NO_INTERACTION_OVERLAY, lasso: state.path };
     case "rotating":
       return { ...NO_INTERACTION_OVERLAY, pivot: state.pivot, angle: state.angle };
     // Held through the press too, until the drag threshold is crossed: the
@@ -187,10 +192,14 @@ function overlaysEqual(
     a.marquee === null || b.marquee === null
       ? a.marquee === b.marquee
       : sameVec(a.marquee.a, b.marquee.a) && sameVec(a.marquee.b, b.marquee.b);
+  // By identity: the machine hands back the SAME array when a move adds no
+  // point, and a new one whenever it does.
+  const lassoSame = a.lasso === b.lasso;
   return (
     ghostSame &&
     targetSame &&
     marqueeSame &&
+    lassoSame &&
     sameVec(a.pivot, b.pivot) &&
     a.angle === b.angle &&
     a.handleHovered === b.handleHovered

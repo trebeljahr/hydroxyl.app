@@ -46,6 +46,8 @@ import {
   CyclobutaneIcon,
   CycloheptaneIcon,
   CyclohexaneIcon,
+  CyclooctaneIcon,
+  CyclopentadieneIcon,
   CyclopentaneIcon,
   CyclopropaneIcon,
   DoubleBondIcon,
@@ -77,7 +79,9 @@ const RING_ICONS: Readonly<
   cyclopentane: CyclopentaneIcon,
   cyclohexane: CyclohexaneIcon,
   cycloheptane: CycloheptaneIcon,
+  cyclooctane: CyclooctaneIcon,
   benzene: BenzeneIcon,
+  cyclopentadiene: CyclopentadieneIcon,
 };
 
 const ORDER_ICONS = {
@@ -408,7 +412,7 @@ function RingOptions(): ReactElement {
           >
             <Icon className="size-4" />
             <span className="capitalize">{name}</span>
-            {RING_TEMPLATES[name].kekule ? (
+            {RING_TEMPLATES[name].kekule && RING_TEMPLATES[name].size % 2 === 0 ? (
               // `text-current` and not `text-muted-foreground`: the badge sits
               // INSIDE an entry that already states its own ink, and a fixed
               // grey on a `bg-primary` row was the one part of the selected

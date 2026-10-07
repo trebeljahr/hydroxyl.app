@@ -189,6 +189,25 @@ export function CycloheptaneIcon(props: ChemIconProps): ReactElement {
   );
 }
 
+export function CyclooctaneIcon(props: ChemIconProps): ReactElement {
+  return (
+    <Glyph viewBox="0 0 40 40" strokeWidth={4} className={props.className}>
+      <path d="M26.89 3.37 36.63 13.11 36.63 26.89 26.89 36.63 13.11 36.63 3.37 26.89 3.37 13.11 13.11 3.37Z" />
+    </Glyph>
+  );
+}
+
+/** Cyclopentadiene: the pentagon plus the two inner lines of its diene, with
+ *  the sp3 carbon at the apex. */
+export function CyclopentadieneIcon(props: ChemIconProps): ReactElement {
+  return (
+    <Glyph viewBox="0 0 40 40" strokeWidth={3} className={props.className}>
+      <path d="M20 3.44 37.12 15.88 30.58 36 9.42 36 2.88 15.88Z" />
+      <path d="M32.1 19.53 28.67 30.1M11.33 30.1 7.9 19.53" />
+    </Glyph>
+  );
+}
+
 /** Kekule benzene: the hexagon plus three alternating inner lines. */
 export function BenzeneIcon(props: ChemIconProps): ReactElement {
   return (

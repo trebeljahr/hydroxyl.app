@@ -64,10 +64,16 @@ import {
   STEREO_GROUP_KIND_VALUES,
   VIEW_KINDS,
 } from "@starter/shared";
-import { VIEW_KIND_TITLES, panelLetter, representationAvailability } from "@starter/chem-render";
+import {
+  VIEW_KIND_TITLES,
+  panelLetter,
+  pxToModel,
+  representationAvailability,
+} from "@starter/chem-render";
 import type { DisplayFlagKey, SketchDocument } from "@starter/shared";
 
 import { fitBounds } from "@/canvas/metrics";
+import { canvasPointer } from "@/canvas/pointer-anchor";
 import {
   STYLE_PRESETS,
   STYLE_PRESET_IN_SENTENCE,
@@ -88,7 +94,7 @@ import {
 import { TOOLS } from "@/editor/tools";
 import { toggleTheme } from "@/shell/theme";
 import { guardedOps } from "@/state/chem-guard";
-import { MAX_ZOOM, MIN_ZOOM } from "@/state/viewport";
+import { MAX_ZOOM, MIN_ZOOM, toModel } from "@/state/viewport";
 import type { EditorState, EditorStore, Selection } from "@/state";
 
 import { cleanUpStructure } from "./cleanup";
@@ -386,6 +392,27 @@ function copyOffset(mol: Molecule, source: Molecule, sourceIds: readonly AtomId[
   return clearOfDrawingOffset(mol, box, bondLength);
 }
 
+/**
+ * Where a paste lands: centred on the pointer when a mouse or pen is resting
+ * over the canvas, which is where a user who points before pressing Mod+V is
+ * asking for it (PubChem's sketcher does the same); beside its source
+ * otherwise, as `copyOffset` places it. An aimed paste may overlap what is
+ * there: the user chose the spot, and the copy arrives selected, so one drag
+ * moves it.
+ */
+function pasteOffset(state: EditorState, fragment: Molecule): Vec2 {
+  const mol = state.document.molecule;
+  const pointer = canvasPointer();
+  if (pointer === null) return copyOffset(mol, fragment, fragment.atomIds);
+  const style = buildCanvasScene(state.document, state.ui.activePanelId).style;
+  const target = pxToModel(style, toModel(state.viewport, pointer));
+  const box = bounds(fragment.atomIds.map((id) => fragment.atoms[id]!.pos));
+  return {
+    x: target.x - (box.min.x + box.max.x) / 2,
+    y: target.y - (box.min.y + box.max.y) / 2,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Nudge
 // ---------------------------------------------------------------------------
@@ -591,8 +618,13 @@ function ringTemplateCommands(): Command[] {
       "template",
       name,
       // The one that matters most: an organic chemist looks for "benzene",
-      // "arene" or "aromatic", and only benzene answers all three.
-      ...(RING_TEMPLATES[name].kekule ? ["arene", "aromatic", "phenyl"] : []),
+      // "arene" or "aromatic", and only benzene answers all three. An odd
+      // Kekule ring is a diene, not an arene (decision 231).
+      ...(RING_TEMPLATES[name].kekule
+        ? RING_TEMPLATES[name].size % 2 === 0
+          ? ["arene", "aromatic", "phenyl"]
+          : ["diene", "cp"]
+        : []),
       String(RING_TEMPLATES[name].size),
     ],
     group: "ring" as const,
@@ -998,7 +1030,7 @@ const EDIT_COMMANDS: readonly Command[] = [
       const fragment = clipboard;
       if (fragment === null || fragment.atomIds.length === 0) return;
       const state = store.getState();
-      const offset = copyOffset(state.document.molecule, fragment, fragment.atomIds);
+      const offset = pasteOffset(state, fragment);
       // The pasted ids are only knowable from the insert's own result, so the
       // molecule is built ONCE outside the edit and the closure returns it.
       // Running `insertFragment` inside the closure and reading its ids

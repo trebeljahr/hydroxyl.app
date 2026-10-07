@@ -555,6 +555,8 @@ const RING_LABELS = {
   cyclopentane: "Cyclopentane",
   cyclohexane: "Cyclohexane",
   cycloheptane: "Cycloheptane",
+  cyclooctane: "Cyclooctane",
+  cyclopentadiene: "Cyclopentadiene",
 } as const satisfies Record<RingTemplateName, string>;
 
 function fuseRingSection(state: EditorState): MenuSubmenu {

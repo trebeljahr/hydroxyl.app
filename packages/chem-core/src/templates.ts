@@ -44,7 +44,7 @@
  * included.
  */
 
-import { MoleculeBuilder } from "./builders.js";
+import { carbocycle, MoleculeBuilder } from "./builders.js";
 import type { ElementSymbol } from "./elements.js";
 import { insertFragment } from "./fragment.js";
 import {
@@ -102,14 +102,18 @@ export type RingTemplateName =
   | "cyclopentane"
   | "cyclohexane"
   | "cycloheptane"
-  | "benzene";
+  | "cyclooctane"
+  | "benzene"
+  | "cyclopentadiene";
 
 /**
  * The rings a drawing toolbar puts on its first row.
  *
  * `benzene` is a size-6 Kekule template rather than a distinct "aromatic
  * ring" kind, because there is no aromatic ring in the storage model to be
- * distinct from.
+ * distinct from. `cyclopentadiene` is the same flag on a size-5 ring: an odd
+ * ring cannot alternate all the way round, so the run stops short of a second
+ * double bond on any one atom and leaves one sp3 carbon (decision 231).
  */
 export const RING_TEMPLATES: Readonly<Record<RingTemplateName, RingTemplate>> =
   Object.freeze({
@@ -118,7 +122,9 @@ export const RING_TEMPLATES: Readonly<Record<RingTemplateName, RingTemplate>> =
     cyclopentane: Object.freeze({ size: 5 }),
     cyclohexane: Object.freeze({ size: 6 }),
     cycloheptane: Object.freeze({ size: 7 }),
+    cyclooctane: Object.freeze({ size: 8 }),
     benzene: Object.freeze({ size: 6, kekule: true }),
+    cyclopentadiene: Object.freeze({ size: 5, kekule: true }),
   });
 
 /** A template, or the name of one of the standard ones. */
@@ -238,6 +244,60 @@ function apothem(edge: number, size: number): number {
 function alternatingOrder(start: BondOrder, index: number): BondOrder {
   if (index % 2 === 0) return start;
   return start === 2 ? 1 : 2;
+}
+
+/** True when `atomId` already carries a double bond in `mol`. */
+function hasDoubleBond(mol: Molecule, atomId: AtomId): boolean {
+  return bondsAt(mol, atomId).some((bond) => bond.order === 2);
+}
+
+/**
+ * The order of one perimeter bond of `spec`, laid between `from` and `to` onto
+ * `mol` as it stands so far.
+ *
+ * Even Kekule rings alternate strictly, for the reason `alternatingOrder`
+ * gives. An ODD one is a diene, not an arene (decision 231): it has no
+ * alternation to be faithful to, only a choice of where its sp3 carbon goes,
+ * so it never lays a double bond onto an atom that already has one. That puts
+ * the sp3 carbon where the run meets itself — attached cyclopentadiene comes
+ * out as cyclopenta-1,3-dien-1-yl, and a fusion onto a Kekule double bond as
+ * indene — instead of an allene no chemist would draw in a five-membered ring.
+ */
+function perimeterOrder(
+  spec: RingTemplate,
+  mol: Molecule,
+  from: AtomId,
+  to: AtomId,
+  alternated: BondOrder,
+): BondOrder {
+  if (!spec.kekule) return 1;
+  if (spec.size % 2 === 0 || alternated !== 2) return alternated;
+  return hasDoubleBond(mol, from) || hasDoubleBond(mol, to) ? 1 : 2;
+}
+
+/**
+ * A template as a free-standing ring centred on `centre`, for a drop on empty
+ * canvas, where there is nothing to fuse to or hang off.
+ *
+ * `carbocycle`'s layout, flat-bottomed, with a Kekule template alternating
+ * from a SINGLE first bond: on benzene that is exactly `builders.ts`'s
+ * `benzene`, and on an odd ring it is the phase that never meets itself
+ * double onto double — bond 0 and the closing bond are both single, so
+ * cyclopentadiene's sp3 carbon is vertex 0, at the bottom (decision 231).
+ */
+export function templateRing(
+  template: RingTemplateSpec,
+  bondLength = DEFAULT_BOND_LENGTH,
+  centre: Vec2 = ORIGIN,
+): Molecule {
+  const spec = resolveTemplate(template);
+  const ring = carbocycle(spec.size, elementAt(spec, 0), bondLength, centre);
+  if (!spec.kekule) return ring;
+  const bonds = { ...ring.bonds };
+  ring.bondIds.forEach((id, index) => {
+    bonds[id] = { ...bonds[id]!, order: alternatingOrder(1, index) };
+  });
+  return { ...ring, bonds };
 }
 
 // ---------------------------------------------------------------------------
@@ -374,24 +434,22 @@ function connect(
  *
  * `orderAt` is asked per bond rather than handed a list so that the Kekule
  * phase stays the caller's decision: a fusion seeds it from the bond it
- * shares, attach and spiro from the first bond they draw.
+ * shares, attach and spiro from the first bond they draw. It also sees the
+ * molecule laid so far, which an odd Kekule ring needs — see `perimeterOrder`.
  */
 function connectPerimeter(
   mol: Molecule,
   ring: readonly AtomId[],
   startIndex: number,
-  orderAt: (index: number) => BondOrder,
+  orderAt: (index: number, current: Molecule, from: AtomId, to: AtomId) => BondOrder,
 ): { readonly molecule: Molecule; readonly bondIds: BondId[] } {
   const size = ring.length;
   let current = mol;
   const bondIds: BondId[] = [];
   for (let i = startIndex; i < size; i++) {
-    const joined = connect(
-      current,
-      ring[i]!,
-      ring[(i + 1) % size]!,
-      orderAt(i),
-    );
+    const from = ring[i]!;
+    const to = ring[(i + 1) % size]!;
+    const joined = connect(current, from, to, orderAt(i, current, from, to));
     current = joined.molecule;
     if (joined.id !== undefined) bondIds.push(joined.id);
   }
@@ -600,8 +658,8 @@ export function fuseRingOnBond(
   // shared bond's own order is never rewritten: it may be carrying a stereo
   // annotation and a ring the user drew earlier.
   const start: BondOrder = bond.order === 2 ? 1 : 2;
-  const wired = connectPerimeter(placed.molecule, perimeter, 1, (i) =>
-    spec.kekule ? alternatingOrder(start, i - 1) : 1,
+  const wired = connectPerimeter(placed.molecule, perimeter, 1, (i, current, from, to) =>
+    perimeterOrder(spec, current, from, to, alternatingOrder(start, i - 1)),
   );
 
   return {
@@ -731,8 +789,8 @@ export function attachRingToAtom(
 
   // No existing ring bond constrains the phase here, so alternation starts on
   // the first ring bond.
-  const wired = connectPerimeter(link.molecule, ring, 0, (i) =>
-    spec.kekule ? alternatingOrder(2, i) : 1,
+  const wired = connectPerimeter(link.molecule, ring, 0, (i, current, from, to) =>
+    perimeterOrder(spec, current, from, to, alternatingOrder(2, i)),
   );
   bondIds.push(...wired.bondIds);
 
@@ -791,8 +849,13 @@ export function spiroRingAtAtom(
   );
   const ring: AtomId[] = [atomId, ...placed.ids];
 
-  const wired = connectPerimeter(placed.molecule, ring, 0, (i) =>
-    spec.kekule ? alternatingOrder(2, i) : 1,
+  // An odd Kekule ring starts on a SINGLE bond here: a spiro centre has four
+  // single bonds by definition, and starting on a double would put the one
+  // bond the ring may not have on the one atom it shares (decision 231).
+  // Even rings keep the phase every other gesture uses.
+  const spiroStart: BondOrder = spec.size % 2 === 1 ? 1 : 2;
+  const wired = connectPerimeter(placed.molecule, ring, 0, (i, current, from, to) =>
+    perimeterOrder(spec, current, from, to, alternatingOrder(spiroStart, i)),
   );
 
   return {

@@ -13,8 +13,12 @@ import {
 import type { Molecule } from "@starter/chem-core";
 import { dictionaryEntryById, dictionaryMolecule } from "@starter/chem-core/dictionary";
 import { createDocument } from "@starter/shared";
+import { modelToPx } from "@starter/chem-render";
 
+import { setCanvasPointer } from "@/canvas/pointer-anchor";
+import { buildCanvasScene } from "@/canvas/scene-bridge";
 import { createEditorStore } from "@/state";
+import { toScreen } from "@/state/viewport";
 import type { EditorStore } from "@/state";
 
 import { INSERT_GAP_BONDS, clearOfDrawingOffset, insertOffset, insertStructure } from "./insert";
@@ -193,6 +197,32 @@ describe("paste and duplicate land clear of the drawing (decision 200)", () => {
     const zoomedOut = store.getState().viewport;
     commandById("edit.duplicate").run(store);
     expect(store.getState().viewport).toBe(zoomedOut);
+  });
+});
+
+describe("paste at the pointer", () => {
+  it("centres the paste on a mouse resting over the canvas", () => {
+    const store = storeWith(benzene());
+    store.getState().selectAll();
+    commandById("edit.copy").run(store);
+
+    // Aim at a model point well clear of the ring, through the same chain
+    // the canvas draws with: model -> scene px -> canvas px.
+    const target = { x: 5, y: 3 };
+    const state = store.getState();
+    const style = buildCanvasScene(state.document, state.ui.activePanelId).style;
+    setCanvasPointer(toScreen(state.viewport, modelToPx(style, target)));
+    try {
+      commandById("edit.paste").run(store);
+    } finally {
+      setCanvasPointer(null);
+    }
+
+    const after = store.getState();
+    const pasted = after.selection.atomIds.map((id) => after.document.molecule.atoms[id]!.pos);
+    const box = bounds(pasted);
+    expect((box.min.x + box.max.x) / 2).toBeCloseTo(target.x, 9);
+    expect((box.min.y + box.max.y) / 2).toBeCloseTo(target.y, 9);
   });
 });
 

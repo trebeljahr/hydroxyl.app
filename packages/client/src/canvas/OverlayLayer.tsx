@@ -189,7 +189,8 @@ export function OverlayLayer({
   const u = bondScale(style);
   const zoom =
     zoomProp !== undefined && Number.isFinite(zoomProp) && zoomProp > 0 ? zoomProp : 1;
-  const showHandle = handle !== undefined && interaction?.marquee == null;
+  const showHandle =
+    handle !== undefined && interaction?.marquee == null && interaction?.lasso == null;
   const errors = (issues ?? []).filter((issue) => issue.severity === "error");
   const warnings = (issues ?? []).filter((issue) => issue.severity !== "error");
   return (
@@ -237,6 +238,7 @@ export function OverlayLayer({
       {interaction?.marquee == null
         ? null
         : marqueeRect(style, u, interaction.marquee.a, interaction.marquee.b)}
+      {interaction?.lasso == null ? null : lassoPath(style, u, interaction.lasso)}
       {interaction?.pivot == null ? null : pivotMark(style, interaction.pivot, zoom)}
     </g>
   );
@@ -347,6 +349,36 @@ function marqueeRect(
       stroke={SELECTED_COLOR}
       strokeWidth={MARQUEE_WIDTH_PX * u}
       strokeDasharray={dashes(u, 4, 3)}
+    />
+  );
+}
+
+/**
+ * The lasso, drawn as the marquee is and closed with `Z`, because the
+ * selection test closes it the same way: what the dashed outline encloses is
+ * what gets selected, including the stretch from the pointer back to the
+ * start that the user has not drawn yet.
+ */
+function lassoPath(
+  style: Parameters<typeof modelToPx>[0],
+  u: number,
+  path: readonly Vec2[],
+): ReactElement | null {
+  const points = path.map((p) => modelToPx(style, p));
+  if (points.length < 2 || !points.every(isFinitePoint)) return null;
+  const d = `M${points.map((p) => `${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join("L")}Z`;
+  return (
+    <path
+      key="lasso"
+      data-overlay="lasso"
+      d={d}
+      fill={SELECTED_COLOR}
+      fillOpacity={0.08}
+      fillRule="evenodd"
+      stroke={SELECTED_COLOR}
+      strokeWidth={MARQUEE_WIDTH_PX * u}
+      strokeDasharray={dashes(u, 4, 3)}
+      strokeLinejoin="round"
     />
   );
 }

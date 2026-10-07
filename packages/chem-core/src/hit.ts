@@ -336,3 +336,42 @@ export function bondsInRect(mol: Molecule, rect: Rect): BondId[] {
   }
   return selected;
 }
+
+/**
+ * Whether `p` is inside the closed polygon `path`, by the even-odd rule.
+ *
+ * Even-odd rather than non-zero winding because a lasso is a freehand path
+ * and routinely crosses itself: a figure-eight around two rings selects both
+ * lobes either way, and a loop drawn back over its own start encloses what
+ * the eye sees enclosed. The closing edge from the last point back to the
+ * first is implied, as an SVG `Z` implies it, so the user never has to finish
+ * exactly where they began.
+ */
+export function polygonContains(path: readonly Vec2[], p: Vec2): boolean {
+  let inside = false;
+  for (let i = 0, j = path.length - 1; i < path.length; j = i++) {
+    const a = path[i]!;
+    const b = path[j]!;
+    // The half-open test on y counts a vertex exactly at the scanline once,
+    // not twice, so a ray through a vertex never flips the answer back.
+    if (a.y > p.y !== b.y > p.y) {
+      const x = a.x + ((p.y - a.y) / (b.y - a.y)) * (b.x - a.x);
+      if (p.x < x) inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/**
+ * Atoms inside a lasso, in the molecule's insertion order, for the same
+ * reason `atomsInRect` uses it. Fewer than three points enclose nothing.
+ */
+export function atomsInPolygon(mol: Molecule, path: readonly Vec2[]): AtomId[] {
+  if (path.length < 3) return [];
+  const selected: AtomId[] = [];
+  for (const atomId of mol.atomIds) {
+    const atom = mol.atoms[atomId];
+    if (atom && polygonContains(path, atom.pos)) selected.push(atomId);
+  }
+  return selected;
+}
