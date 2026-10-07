@@ -50,16 +50,16 @@
   <text id="projected:a6.H:label" data-projected-node="a6.H" data-projected-atoms="a6" x="25.627" y="34.324" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
   <path id="projected:a7.H:hash" data-projected-node="a7.H" data-projected-atoms="a7" d="M52.848 40.547 L52.013 40.635 M53.416 43.274 L52.024 43.42 M53.985 46 L52.035 46.205 M54.553 48.727 L52.046 48.99 M55.121 51.453 L52.058 51.775 M55.689 54.18 L52.069 54.561 M56.257 56.907 L52.08 57.346" fill="none" stroke="#000000" stroke-width="1"/>
   <text id="projected:a7.H:label" data-projected-node="a7.H" data-projected-atoms="a7" x="48.921" y="70.193" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan></text>
-  <text id="atom:a2:alphaBeta" data-atom="a2" x="52.431" y="32.013" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>13β</tspan></text>
+  <text id="atom:a2:alphaBeta" data-atom="a2" x="60.879" y="29.661" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>13β</tspan></text>
   <text id="atom:a5:alphaBeta" data-atom="a5" x="10.861" y="34.413" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>9α-H</tspan></text>
-  <text id="atom:a7:alphaBeta" data-atom="a7" x="57.441" y="57.31" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>14α-H</tspan></text>
+  <text id="atom:a7:alphaBeta" data-atom="a7" x="52.431" y="56.013" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>14α-H</tspan></text>
   <text id="atom:a1:locant" data-atom="a1" x="54.938" y="-13.456" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>18</tspan></text>
   <text id="atom:a3:locant" data-atom="a3" x="31.645" y="-1.587" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>12</tspan></text>
   <text id="atom:a4:locant" data-atom="a4" x="0.883" y="17.08" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>11</tspan></text>
   <text id="atom:a5:locant" data-atom="a5" x="18.498" y="52.85" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>9</tspan></text>
-  <text id="atom:a6:locant" data-atom="a6" x="31.645" y="68.013" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>8</tspan></text>
+  <text id="atom:a6:locant" data-atom="a6" x="25.757" y="71.429" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>8</tspan></text>
   <text id="atom:a7:locant" data-atom="a7" x="52.431" y="81.24" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>14</tspan></text>
-  <text id="atom:a8:locant" data-atom="a8" x="87.351" y="57.64" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>15</tspan></text>
+  <text id="atom:a8:locant" data-atom="a8" x="80.265" y="64.726" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>15</tspan></text>
   <text id="atom:a9:locant" data-atom="a9" x="100.162" y="33.213" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>16</tspan></text>
   <text id="atom:a10:locant" data-atom="a10" x="89.47" y="7.909" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>17</tspan></text>
   <text id="atom:a12:locant" data-atom="a12" x="39.282" y="88.85" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>7</tspan></text>

@@ -1,22 +1,20 @@
 /**
- * The ONE style hook for italic and Greek (decision 192).
+ * The ONE style hook for italic and Greek (decisions 192 and 252).
  *
  * Chemistry sets some things in italic (the R and S of a descriptor, `cat.`,
  * `aq.`) and some in Greek (alpha and beta on a sugar or a steroid, the delta
- * of a partial charge, Delta for heat, mu). The vendored Arimo is the LATIN
- * subset, upright only: it has no italic face and no Greek block. Vendoring
- * Arimo Italic and Arimo's Greek range is a download, and a download waits for
- * Rico's go-ahead, so v1 is upright and its Greek falls back to the next face
- * in the font stack.
+ * of a partial charge, Delta for heat, mu). The vendored Arimo is upright
+ * only: it has no italic face. Its Greek subset IS vendored (decision 252,
+ * from the same @fontsource/arimo release as the Latin one), so Greek is
+ * measured from its own advances and embedded in exported figures.
  *
  * Every place that would set italic or Greek asks THIS module, so the day the
  * faces are vendored is an asset change:
  *
- *   - `greek(name)` returns the letter's code point. The measurer charges an
- *     unvendored code point `.notdef`'s advance and ink (a tofu box three
- *     quarters of an em wide), which over-sizes the mark's box rather than
- *     clipping it; vendoring the Greek range makes the same call exact with no
- *     code change here or at any caller.
+ *   - `greek(name)` returns the letter's code point, which the merged metrics
+ *     table measures exactly. Before decision 252 it was charged `.notdef`'s
+ *     advance and ink; vendoring the range changed no code here or at any
+ *     caller, as this hook intended.
  *   - `italic(text)` returns the text UPRIGHT. A `TextSpan` has no slant field
  *     yet, and adding one before there is a face to set it in would be a flag
  *     with nothing behind it. Vendoring the italic face adds the field, and
@@ -35,10 +33,10 @@ import type { RenderScene, SceneSource, ScenePrimitive, TextSpan } from "../scen
 import { measurerFor } from "./measurer.js";
 import type { Measurer } from "./measurer.js";
 
-/** Which faces beyond the upright Latin subset are vendored. Decision 192: none. */
+/** Which faces beyond the upright Latin subset are vendored. Decision 252: Greek. */
 export const VENDORED_FACES = Object.freeze({
   /** Arimo's Greek range (U+0370-03FF). */
-  greek: false,
+  greek: true,
   /** Arimo Italic. */
   italic: false,
 });

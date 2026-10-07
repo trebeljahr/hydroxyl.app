@@ -83,12 +83,23 @@ describe("BUNDLED_MEASURER", () => {
     expect(br / i).not.toBeCloseTo(2, 1);
   });
 
-  it("falls back to .notdef for anything outside the latin subset", () => {
+  it("falls back to .notdef for anything outside both vendored subsets", () => {
+    const font = { family: "Arial", sizePx: FONT_SIZE_PX };
+    const ideograph = BUNDLED_MEASURER.measureText("中", font);
+    expect(ideograph.advanceWidthPx).toBe(EM_NOTDEF_ADVANCE * FONT_SIZE_PX);
+    expect(ideograph.advanceWidthPx).toBeGreaterThan(0);
+    expect(ideograph.notdefCount).toBe(1);
+  });
+
+  it("measures Greek from the vendored Greek face (decision 252)", () => {
     const font = { family: "Arial", sizePx: FONT_SIZE_PX };
     const omega = BUNDLED_MEASURER.measureText("Ω", font);
-    expect(omega.advanceWidthPx).toBe(EM_NOTDEF_ADVANCE * FONT_SIZE_PX);
-    expect(omega.advanceWidthPx).toBeGreaterThan(0);
-    expect(omega.notdefCount).toBe(1);
+    expect(omega.notdefCount).toBe(0);
+    // 1531 units: close to .notdef's 1536, which is why the width is pinned.
+    expect(omega.advanceWidthPx).toBe((1531 / 2048) * FONT_SIZE_PX);
+    const delta = BUNDLED_MEASURER.measureText("δ", font);
+    expect(delta.notdefCount).toBe(0);
+    expect(delta.advanceWidthPx).toBe((1140 / 2048) * FONT_SIZE_PX);
   });
 
   it("counts a surrogate pair as one code point, not two", () => {

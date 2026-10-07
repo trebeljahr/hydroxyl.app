@@ -24,8 +24,10 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  addedUnicodeRange,
   extractMetrics,
   fontSha256,
+  mergeMetrics,
   OUT_PATH,
   render,
 } from "../scripts/generate-font-metrics.mjs";
@@ -37,13 +39,18 @@ import {
   FONT_FAMILY,
   FONT_SHA256,
   FONT_VERSION,
+  GREEK_FONT_SHA256,
   INK_BOUNDS,
   NOTDEF_ADVANCE,
   NOTDEF_INK,
   UNITS_PER_EM,
   X_HEIGHT,
 } from "../src/text/generated/arimo-metrics.js";
-import { ARIMO_WOFF_BASE64 } from "../src/text/generated/arimo-woff.js";
+import {
+  ARIMO_GREEK_UNICODE_RANGE,
+  ARIMO_GREEK_WOFF_BASE64,
+  ARIMO_WOFF_BASE64,
+} from "../src/text/generated/arimo-woff.js";
 import {
   EM_ASCENT,
   EM_CAP_HEIGHT,
@@ -58,7 +65,15 @@ const FONT_BYTES = readFileSync(
   new URL("../assets/arimo-latin-400-normal.woff", import.meta.url),
 );
 
-const EXTRACTED = extractMetrics(FONT_BYTES);
+const GREEK_FONT_BYTES = readFileSync(
+  new URL("../assets/arimo-greek-400-normal.woff", import.meta.url),
+);
+
+const LATIN = extractMetrics(FONT_BYTES);
+const GREEK = extractMetrics(GREEK_FONT_BYTES);
+// The committed table is the Latin face plus what the Greek face adds
+// (decision 252).
+const EXTRACTED = mergeMetrics(LATIN, GREEK);
 
 describe("the committed table still describes the vendored font", () => {
   it("came from these exact bytes", () => {
@@ -66,6 +81,7 @@ describe("the committed table still describes the vendored font", () => {
     // wholesale — a new upstream release with identical metrics would slip
     // past every other check here.
     expect(fontSha256(FONT_BYTES)).toBe(FONT_SHA256);
+    expect(fontSha256(GREEK_FONT_BYTES)).toBe(GREEK_FONT_SHA256);
   });
 
   it("names the same face and release", () => {
@@ -106,7 +122,9 @@ describe("the committed table still describes the vendored font", () => {
   it("regenerates the committed file byte for byte", () => {
     // Stronger than the field checks: the generator's output IS the file, so
     // a hand edit anywhere in it — a comment included — fails here.
-    expect(render(EXTRACTED, fontSha256(FONT_BYTES))).toBe(readFileSync(OUT_PATH, "utf8"));
+    expect(render(EXTRACTED, fontSha256(FONT_BYTES), fontSha256(GREEK_FONT_BYTES))).toBe(
+      readFileSync(OUT_PATH, "utf8"),
+    );
   });
 
   it("is codepoint-ascending with no duplicates", () => {
@@ -123,6 +141,26 @@ describe("the committed table still describes the vendored font", () => {
     expect(new Set(ADVANCE_WIDTHS.map(([cp]) => cp)).size).toBe(
       ADVANCE_WIDTHS.length,
     );
+  });
+
+  it("takes the two faces from one release, with one em and one set of vertical metrics", () => {
+    // mergeMetrics refuses faces that disagree; this pins that they do not.
+    for (const key of ["version", "unitsPerEm", "ascender", "descender", "capHeight", "xHeight"] as const) {
+      expect(GREEK[key], key).toBe(LATIN[key]);
+    }
+    // Where both have a code point (only the spaces), they agree on its width.
+    const latin = new Map(LATIN.widths);
+    for (const [cp, width] of GREEK.widths) {
+      if (latin.has(cp)) expect(width, cp.toString(16)).toBe(latin.get(cp));
+    }
+  });
+
+  it("covers the Greek letters chemistry sets (decision 252)", () => {
+    for (const character of "αβγδΔμΩ") {
+      const codepoint = character.codePointAt(0)!;
+      expect(ADVANCE_WIDTHS.some(([cp]) => cp === codepoint), character).toBe(true);
+    }
+    expect(addedUnicodeRange(LATIN, GREEK)).toBe(ARIMO_GREEK_UNICODE_RANGE);
   });
 
   it("covers the characters chemical labels are actually made of", () => {
@@ -179,8 +217,8 @@ describe("metrics.ts derives em fractions from the table", () => {
     expect(zero.yMax).toBeLessThan(ASCENDER);
     expect(glyphInkUnits(0x28)!.yMin).toBeLessThan(-200);
     expect(glyphInkUnits(0x20)).toBeUndefined();
-    // Outside the subset: .notdef's box, which still paints.
-    expect(glyphInkUnits(0x03a9)).toEqual(
+    // Outside both subsets (a CJK ideograph): .notdef's box, which still paints.
+    expect(glyphInkUnits(0x4e00)).toEqual(
       NOTDEF_INK === undefined
         ? undefined
         : { xMin: NOTDEF_INK[0], yMin: NOTDEF_INK[1], xMax: NOTDEF_INK[2], yMax: NOTDEF_INK[3] },
@@ -191,8 +229,8 @@ describe("metrics.ts derives em fractions from the table", () => {
     for (const [codepoint, advance] of ADVANCE_WIDTHS) {
       expect(advanceWidthUnits(codepoint)).toBe(advance);
     }
-    // Greek omega is not in a latin subset.
-    expect(advanceWidthUnits(0x03a9)).toBe(NOTDEF_ADVANCE);
+    // A CJK ideograph is in neither subset.
+    expect(advanceWidthUnits(0x4e00)).toBe(NOTDEF_ADVANCE);
   });
 });
 
@@ -205,5 +243,8 @@ describe("the embeddable font string is the vendored font", () => {
     const decoded = Buffer.from(ARIMO_WOFF_BASE64, "base64");
     expect(fontSha256(decoded)).toBe(FONT_SHA256);
     expect(decoded.equals(FONT_BYTES)).toBe(true);
+    const greek = Buffer.from(ARIMO_GREEK_WOFF_BASE64, "base64");
+    expect(fontSha256(greek)).toBe(GREEK_FONT_SHA256);
+    expect(greek.equals(GREEK_FONT_BYTES)).toBe(true);
   });
 });

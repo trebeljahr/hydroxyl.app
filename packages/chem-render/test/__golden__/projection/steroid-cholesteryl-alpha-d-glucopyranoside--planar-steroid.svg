@@ -99,33 +99,32 @@
   <text id="atom:a29:descriptor" data-atom="a29" x="-113.848" y="60.6" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>(S)</tspan></text>
   <text id="atom:a30:descriptor" data-atom="a30" x="-134.632" y="39.533" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>(S)</tspan></text>
   <text id="atom:a31:descriptor" data-atom="a31" x="-134.632" y="70.413" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>(R)</tspan></text>
-  <text id="atom:a9:alphaBeta" data-atom="a9" x="79.388" y="23.775" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>17β</tspan></text>
-  <text id="atom:a12:alphaBeta" data-atom="a12" x="57.441" y="57.31" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>14α-H</tspan></text>
-  <text id="atom:a13:alphaBeta" data-atom="a13" x="52.431" y="32.013" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>13β</tspan></text>
+  <text id="atom:a9:alphaBeta" data-atom="a9" x="70.244" y="1.701" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>17β</tspan></text>
+  <text id="atom:a12:alphaBeta" data-atom="a12" x="56.564" y="35.235" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>14α-H</tspan></text>
   <text id="atom:a16:alphaBeta" data-atom="a16" x="10.861" y="34.413" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>9α-H</tspan></text>
-  <text id="atom:a21:alphaBeta" data-atom="a21" x="-9.925" y="68.013" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>10β</tspan></text>
-  <text id="atom:a24:alphaBeta" data-atom="a24" x="-51.493" y="98.893" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>3β</tspan></text>
+  <text id="atom:a21:alphaBeta" data-atom="a21" x="-24.293" y="63.165" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>10β</tspan></text>
+  <text id="atom:a24:alphaBeta" data-atom="a24" x="-61.562" y="71.144" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>3β</tspan></text>
   <text id="atom:a1:locant" data-atom="a1" x="116.125" y="-18.152" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>21</tspan></text>
-  <text id="atom:a2:locant" data-atom="a2" x="78.539" y="0.95" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>20</tspan></text>
   <text id="atom:a3:locant" data-atom="a3" x="56.635" y="-22.731" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>22</tspan></text>
   <text id="atom:a4:locant" data-atom="a4" x="84.007" y="-53.822" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>23</tspan></text>
   <text id="atom:a5:locant" data-atom="a5" x="47.992" y="-63.391" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>24</tspan></text>
   <text id="atom:a6:locant" data-atom="a6" x="75.423" y="-80.313" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>25</tspan></text>
-  <text id="atom:a9:locant" data-atom="a9" x="102.182" y="24.951" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>17</tspan></text>
+  <text id="atom:a9:locant" data-atom="a9" x="97.945" y="23.196" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>17</tspan></text>
   <text id="atom:a10:locant" data-atom="a10" x="99.399" y="43.25" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>16</tspan></text>
-  <text id="atom:a11:locant" data-atom="a11" x="86.913" y="64.288" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>15</tspan></text>
-  <text id="atom:a12:locant" data-atom="a12" x="52.431" y="81.24" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>14</tspan></text>
+  <text id="atom:a11:locant" data-atom="a11" x="79.388" y="62.607" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>15</tspan></text>
+  <text id="atom:a12:locant" data-atom="a12" x="47.42" y="57.31" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>14</tspan></text>
+  <text id="atom:a13:locant" data-atom="a13" x="42.453" y="17.08" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>13</tspan></text>
   <text id="atom:a14:locant" data-atom="a14" x="31.645" y="-1.587" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>12</tspan></text>
   <text id="atom:a15:locant" data-atom="a15" x="0.883" y="17.08" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>11</tspan></text>
   <text id="atom:a16:locant" data-atom="a16" x="18.498" y="52.85" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>9</tspan></text>
   <text id="atom:a17:locant" data-atom="a17" x="31.645" y="68.013" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>8</tspan></text>
-  <text id="atom:a18:locant" data-atom="a18" x="39.282" y="88.85" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>7</tspan></text>
+  <text id="atom:a18:locant" data-atom="a18" x="41.623" y="85.346" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>7</tspan></text>
   <text id="atom:a19:locant" data-atom="a19" x="10.861" y="104.013" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>6</tspan></text>
   <text id="atom:a20:locant" data-atom="a20" x="-9.925" y="94.307" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>5</tspan></text>
-  <text id="atom:a21:locant" data-atom="a21" x="-32.615" y="66.612" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>10</tspan></text>
+  <text id="atom:a21:locant" data-atom="a21" x="0.053" y="53.08" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>10</tspan></text>
   <text id="atom:a22:locant" data-atom="a22" x="-30.709" y="34.413" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>1</tspan></text>
-  <text id="atom:a23:locant" data-atom="a23" x="-59.129" y="64.85" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>2</tspan></text>
-  <text id="atom:a24:locant" data-atom="a24" x="-47.36" y="71.235" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>3</tspan></text>
+  <text id="atom:a23:locant" data-atom="a23" x="-43.856" y="64.85" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>2</tspan></text>
+  <text id="atom:a24:locant" data-atom="a24" x="-51.493" y="94.307" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>3</tspan></text>
   <text id="atom:a25:locant" data-atom="a25" x="-30.709" y="104.013" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>4</tspan></text>
   <text id="atom:a38:locant" data-atom="a38" x="-16.69" y="16.879" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>19</tspan></text>
   <text id="atom:a39:locant" data-atom="a39" x="38.414" y="-19.179" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>18</tspan></text>

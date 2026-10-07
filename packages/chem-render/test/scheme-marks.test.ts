@@ -169,7 +169,7 @@ const OPPENAUER_CONDITIONS = {
 describe("every scheme fixture draws clear, at both presets (decisions 203, 204, 213)", () => {
   for (const fixture of SCHEME_FIXTURES) {
     for (const style of STYLES) {
-      it(`draws every mark of ${fixture.name} at ${style.name} with nothing to report but the unvendored delta`, () => {
+      it(`draws every mark of ${fixture.name} at ${style.name} with nothing to report, the delta included (decision 252)`, () => {
         const { scene, schemeAnnotations: report } = build(fixture.molecule, fixture.annotations, style);
         expect(report.unresolved).toEqual([]);
         const laidOut = [
@@ -191,8 +191,8 @@ describe("every scheme fixture draws clear, at both presets (decisions 203, 204,
           }
         }
         for (const delta of report.partialCharges) {
-          // Pinned until Greek is vendored (decision 206), and nothing else.
-          expect(delta.findings).toEqual([{ kind: "unmeasured-glyphs", codePoints: [0x3b4] }]);
+          // The Greek face is vendored (decision 252), so delta measures exactly.
+          expect(delta.findings).toEqual([]);
           expect(delta.drawn).toBe(true);
         }
       });
@@ -801,14 +801,18 @@ describe("a transition state's partial bonds and deltas (decisions 205, 214)", (
     }
   });
 
-  it("reports the delta as the one unmeasured run of the scene, and throws on nothing (decision 206)", () => {
+  it("measures the delta from the vendored Greek face: no unmeasured run (decisions 206, 252)", () => {
     const fixture = sn2TransitionState();
     const { scene } = build(fixture.molecule, fixture.annotations);
-    const runs = unmeasuredTextRuns(scene);
-    expect(runs.map((r) => [r.primitiveId, r.text, r.codePoints])).toEqual([
-      [`atom:${fixture.tsOxygen}:partialCharge`, "δ−", [0x3b4]],
-      [`atom:${fixture.tsBromine}:partialCharge`, "δ−", [0x3b4]],
+    // Non-vacuous: both partial charges are drawn, delta and all.
+    const deltas = scene.primitives.filter(
+      (p) => p.type === "textRun" && p.id.endsWith(":partialCharge") && p.spans.some((s) => s.text.includes("δ")),
+    );
+    expect(deltas.map((p) => p.id)).toEqual([
+      `atom:${fixture.tsOxygen}:partialCharge`,
+      `atom:${fixture.tsBromine}:partialCharge`,
     ]);
+    expect(unmeasuredTextRuns(scene)).toEqual([]);
   });
 
   it("pins what chem-core reads off the SN2 transition state's unbonded fragments, until valence counts a partial bond", () => {

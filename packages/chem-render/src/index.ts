@@ -42,7 +42,7 @@ export * from "./scene/types.js";
 // package and a regeneration cannot become a breaking change for a caller.
 export * from "./text/metrics.js";
 export * from "./text/measurer.js";
-// The one hook for italic and Greek (decision 192), and the report of what
+// The one hook for italic and Greek (decisions 192 and 252), and the report of what
 // the vendored subset cannot measure (decision 206).
 export * from "./text/typography.js";
 export * from "./label/visibility.js";

@@ -76,8 +76,13 @@ SVG this tool produces is neither the software nor a derivative work of it.
 ## Arimo (the figure font)
 
 - **Files:** `packages/chem-render/assets/arimo-latin-400-normal.woff`,
-  regular weight, latin subset, 14.4 kB.
-- **Version:** 1.341. Extracted from `@fontsource/arimo@5.3.0`; the licence text
+  regular weight, latin subset, 14.4 kB; and
+  `packages/chem-render/assets/arimo-greek-400-normal.woff`, regular weight,
+  greek subset, 11.2 kB (decision 252).
+- **Version:** 1.341, both files. Extracted from `@fontsource/arimo@5.3.0`
+  (the Greek file fetched 2026-10-07 from
+  `cdn.jsdelivr.net/npm/@fontsource/arimo@5.3.0/files/`, where the Latin file
+  is byte-identical to the one vendored here); the licence text
   in `packages/chem-render/assets/OFL.txt` is the copy published alongside the
   font in `google/fonts`.
 - **Copyright:** Copyright The Arimo Project Authors
@@ -121,7 +126,11 @@ symbols, digits, `+`, the real minus sign U+2212, parentheses and brackets, and
 the middle dot. Radical electrons are drawn as circle primitives rather than
 glyphs, so no label depends on a bullet character being present.
 
-### The subset and scheme text (decisions 191, 192 and 206)
+### The subset and scheme text (decisions 191, 192, 206 and 252)
+
+*Decision 252 (2026-10-07) vendored the Greek subset; the "Not covered"
+bullet below is now history, and the Greek section after this one says what
+changed.*
 
 Reaction conditions, coefficients and a bracket's charge are set in this same
 subset, and **the subset was deliberately not changed** for them. The plan
@@ -150,6 +159,30 @@ from the WOFF.
   change.
 - **Size.** Measured, not assumed: this change adds 0 bytes to an exported
   SVG. Embedding the font costs 20,041 bytes per SVG (a test pins the number).
+
+### The Greek subset (decision 252)
+
+Rico approved the download on 2026-10-07. The checks the paragraph below
+asks for, as run on that file:
+
+- **Same licence and copyright.** Its `name` table carries the same copyright
+  line (ID 0, "Copyright 2020 The Arimo Project Authors") and licence URL
+  (ID 14, openfontlicense.org) as the Latin file, so `OFL.txt` covers it.
+- **No Reserved Font Name** appears in any `name` record.
+- **Verbatim.** The file is committed exactly as published (SHA-256
+  `5b632348…79474ad`), so OFL section 3 stays unengaged; the PDF writer
+  embeds it unmodified, unwrapped from WOFF to its TrueType tables.
+- **Still Arial's metrics.** Every one of the 127 Greek code points Arial
+  has (macOS Arial, 2048 units) has the same advance in this file; 8 archaic
+  letters Arial lacks are Arimo's own. Version, em and every vertical metric
+  match the Latin file, which `mergeMetrics` refuses to merge otherwise.
+- **Regenerated.** `arimo-metrics.ts` now holds both faces (Latin wins on the
+  two spaces they share, with identical widths), and `font-metrics.test.ts`
+  re-derives it from both files.
+- **Size.** An exported SVG without Greek is unchanged: 20,041 bytes of font.
+  One that sets a Greek letter embeds a second `@font-face` with a
+  `unicode-range`, 15,529 bytes more (a test pins both numbers). A PDF embeds
+  the Greek face only when it sets a Greek letter.
 
 **What a Greek or italic subset must re-check before it ships.** That the new
 files carry the same OFL 1.1 text and copyright line as `OFL.txt` (Arimo

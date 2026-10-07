@@ -541,16 +541,17 @@ export function figureSvgForRaster(prepared: PreparedFigure, background: PngBack
 
 /**
  * The sentence for a PDF that cannot embed every glyph, or null when it can
- * (decision 236). The vendored Arimo is the Latin subset, so a Greek letter
- * is set in the PDF reader's own Symbol font, which the file does not carry.
- * Said before the download, because a print shop's preflight flags exactly
- * that.
+ * (decision 236). Both vendored Arimo faces, Latin and Greek (decision 252),
+ * are embedded; an arrow or relation an author typed into free text may be in
+ * neither, and is set in the PDF reader's own Symbol font, which the file
+ * does not carry. Said before the download, because a print shop's preflight
+ * flags exactly that.
  */
 export function pdfFontNotice(prepared: PreparedFigure): string | null {
   const fallback = pdfFallbackCodePoints(prepared.figure);
   if (fallback.length === 0) return null;
   const letters = fallback.map((cp) => String.fromCodePoint(cp)).join(" ");
-  return `The PDF sets ${letters} in the reader's Symbol font and does not embed it. The bundled font has no Greek letters.`;
+  return `The PDF sets ${letters} in the reader's Symbol font and does not embed it. The bundled font has no glyph for ${fallback.length === 1 ? "it" : "them"}.`;
 }
 
 /**

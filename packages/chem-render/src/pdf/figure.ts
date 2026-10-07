@@ -13,21 +13,20 @@
  *
  * ── THE FONT IS EMBEDDED, SO IT PRINTS LIKE THE SVG ──────────────────────
  *
- * Every Latin glyph is set in the vendored Arimo, embedded whole as a
- * TrueType `FontFile2` behind a Type0 / Identity-H font, with a ToUnicode map
+ * Every glyph is set in the vendored Arimo — the Latin face, and the Greek
+ * face for Greek letters (decision 252) — each embedded whole as a TrueType
+ * `FontFile2` behind its own Type0 / Identity-H font, with a ToUnicode map
  * so the text still copies and searches. The glyphs are placed at the
  * measurer's own advances (the `/W` widths are the same font units the
  * measurer sums), so every label sits exactly where placement put it — on the
  * box the bonds were trimmed against and the page was cut from.
  *
- * The vendored face is the Latin subset (decision 192): it has no Greek. The
- * SVG falls back to the next face in its font stack for those; here a Greek
- * letter, and the few arrows and relations Symbol has, are set in the PDF
- * standard Symbol font, which every reader must supply and which is NOT
- * embedded. `pdfFallbackCodePoints` (symbol.ts) names them so the dialog
- * can say so. A
- * code point neither face has is drawn as Arimo's `.notdef`, at the advance
- * the measurer charged it — the box the SVG would show.
+ * A few arrows and relations a conditions line may carry are in neither
+ * face; those that the PDF standard Symbol font has are set in it, which
+ * every reader must supply and which is NOT embedded.
+ * `pdfFallbackCodePoints` (symbol.ts) names them so the dialog can say so. A
+ * code point no face has is drawn as Arimo's `.notdef`, at the advance the
+ * measurer charged it — the box the SVG would show.
  *
  * ── PAGE AND COORDINATES ─────────────────────────────────────────────────
  *
@@ -52,12 +51,7 @@ import type {
 } from "../scene/types.js";
 import { FigureUnavailableError, EMBEDDED_FONT_NOTICE } from "../svg/figure.js";
 import type { FigureDimensions, UnavailablePanel } from "../svg/figure.js";
-import {
-  ARIMO_SFNT_DEFLATED_BASE64,
-  ARIMO_SFNT_LENGTH,
-  FONT_BBOX,
-  GLYPH_IDS,
-} from "../text/generated/arimo-sfnt.js";
+import { PDF_FACES } from "../text/generated/arimo-sfnt.js";
 import { measureTextRun, measurerFor } from "../text/measurer.js";
 import type { Measurer } from "../text/measurer.js";
 import {
@@ -81,9 +75,15 @@ const SVG_MITER_LIMIT = 4;
 /** A circle as four cubics: the control distance for a quarter arc. */
 const KAPPA = 0.5522847498307936;
 
-const GLYPH_BY_CODEPOINT: ReadonlyMap<number, number> = new Map(
-  GLYPH_IDS.map(([codepoint, glyph]) => [codepoint, glyph]),
+/** Code point -> the embedded face it is set in, and its glyph id there. */
+const GLYPH_BY_CODEPOINT: ReadonlyMap<number, { readonly face: number; readonly glyph: number }> = new Map(
+  PDF_FACES.flatMap((face, index) =>
+    face.glyphIds.map(([codepoint, glyph]) => [codepoint, { face: index, glyph }] as const),
+  ),
 );
+
+/** Page resource names: /F1, /F2… for the embedded faces, /FS for Symbol. */
+const faceResource = (face: number): string => `F${face + 1}`;
 
 
 export interface FigurePdfOptions {
@@ -145,7 +145,8 @@ function colorOps(color: string, op: "rg" | "RG", context: string): string {
 
 /** The glyphs and Symbol bytes a figure uses, gathered while drawing. */
 interface FontUse {
-  readonly glyphs: Map<number, number>;
+  /** Per embedded face: glyph id -> the code point it stands for (-1: .notdef). */
+  readonly glyphs: Map<number, Map<number, number>>;
   symbol: boolean;
 }
 
@@ -234,13 +235,14 @@ function textRunOps(w: Writer, p: TextRunPrimitive): void {
     let pen = p.origin.x + box.startXPx + span.startXPx;
     const y = p.origin.y + span.dyPx;
     const size = fmt(span.fontSizePx, context);
-    let face: "arimo" | "symbol" | null = null;
+    // An embedded face's index, or "symbol".
+    let face: number | "symbol" | null = null;
     let codes = "";
     let at = pen;
     const flush = (): void => {
       if (face === null || codes === "") return;
       ops.push(
-        `BT /${face === "arimo" ? "F1" : "F2"} ${size} Tf 1 0 0 -1 ${fmt(at, context)} ${fmt(y, context)} Tm <${codes}> Tj ET`,
+        `BT /${face === "symbol" ? "FS" : faceResource(face)} ${size} Tf 1 0 0 -1 ${fmt(at, context)} ${fmt(y, context)} Tm <${codes}> Tj ET`,
       );
       codes = "";
     };
@@ -249,8 +251,9 @@ function textRunOps(w: Writer, p: TextRunPrimitive): void {
       const glyph = GLYPH_BY_CODEPOINT.get(codepoint);
       const symbol = glyph === undefined ? SYMBOL_CODES.get(codepoint) : undefined;
       // A Symbol glyph's own width is not what the measurer charged, so each
-      // one starts its own stretch, at the measurer's pen.
-      const next = symbol !== undefined ? "symbol" : "arimo";
+      // one starts its own stretch, at the measurer's pen. A code point no
+      // face has is the Latin face's .notdef.
+      const next = symbol !== undefined ? "symbol" : (glyph?.face ?? 0);
       if (next !== face || next === "symbol") {
         flush();
         face = next;
@@ -260,8 +263,10 @@ function textRunOps(w: Writer, p: TextRunPrimitive): void {
         w.fonts.symbol = true;
         codes += symbol.toString(16).toUpperCase().padStart(2, "0");
       } else {
-        const id = glyph ?? 0;
-        w.fonts.glyphs.set(id, glyph === undefined ? -1 : codepoint);
+        const id = glyph?.glyph ?? 0;
+        const used = w.fonts.glyphs.get(next as number) ?? new Map<number, number>();
+        used.set(id, glyph === undefined ? -1 : codepoint);
+        w.fonts.glyphs.set(next as number, used);
         codes += hex4(id);
       }
       pen += w.measurer.measureText(character, { family: p.fontFamily, sizePx: span.fontSizePx }).advanceWidthPx;
@@ -312,7 +317,7 @@ function cellOps(w: Writer, cell: FigureCell): void {
 const BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 /** No `atob`: chem-render's lib is ES2022 with no DOM, and Node has no need of one. */
-function decodeBase64(text: string): Uint8Array {
+function decodeBase64(text: string): Uint8Array<ArrayBuffer> {
   const clean = text.replace(/=+$/, "");
   const out = new Uint8Array(Math.floor((clean.length * 3) / 4));
   let bits = 0;
@@ -332,7 +337,8 @@ function decodeBase64(text: string): Uint8Array {
   return out;
 }
 
-let fontFile: Uint8Array | null = null;
+/** Each face's decoded font file, decoded on first use. */
+const fontFiles = new Map<number, Uint8Array<ArrayBuffer>>();
 
 function ascii(text: string): Uint8Array {
   const out = new Uint8Array(text.length);
@@ -448,40 +454,44 @@ export function serializeFigurePdf(
   const fontRefs: string[] = [];
   const later: (() => void)[] = [];
 
-  if (w.fonts.glyphs.size > 0) {
+  for (const [faceIndex, glyphs] of [...w.fonts.glyphs].sort(([a], [b]) => a - b)) {
+    const face = PDF_FACES[faceIndex];
+    if (face === undefined) throw new Error(`No embedded face ${faceIndex}`);
     const type0 = next;
     const cidFont = next + 1;
     const descriptor = next + 2;
     const file = next + 3;
     const toUnicode = next + 4;
     next += 5;
-    fontRefs.push(`/F1 ${ref(type0)}`);
+    fontRefs.push(`/${faceResource(faceIndex)} ${ref(type0)}`);
     later.push(() => {
-      const widths = [...w.fonts.glyphs]
+      const widths = [...glyphs]
         .sort(([a], [b]) => a - b)
         // -1 (.notdef) is in no table, so it reads as the notdef advance —
         // what the measurer charged for it.
         .map(([glyph, cp]) => `${glyph} [${glyphSpace(advanceWidthUnits(cp))}]`)
         .join(" ");
-      fontFile ??= decodeBase64(ARIMO_SFNT_DEFLATED_BASE64);
+      const bytes = fontFiles.get(faceIndex) ?? decodeBase64(face.deflatedBase64);
+      fontFiles.set(faceIndex, bytes);
+      const name = `/${face.baseFont}`;
       objects[type0 - 1] =
-        `<< /Type /Font /Subtype /Type0 /BaseFont /Arimo /Encoding /Identity-H /DescendantFonts [${ref(cidFont)}] /ToUnicode ${ref(toUnicode)} >>`;
+        `<< /Type /Font /Subtype /Type0 /BaseFont ${name} /Encoding /Identity-H /DescendantFonts [${ref(cidFont)}] /ToUnicode ${ref(toUnicode)} >>`;
       objects[cidFont - 1] =
-        `<< /Type /Font /Subtype /CIDFontType2 /BaseFont /Arimo /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ${ref(descriptor)} /CIDToGIDMap /Identity /W [${widths}] >>`;
+        `<< /Type /Font /Subtype /CIDFontType2 /BaseFont ${name} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ${ref(descriptor)} /CIDToGIDMap /Identity /W [${widths}] >>`;
       objects[descriptor - 1] =
-        `<< /Type /FontDescriptor /FontName /Arimo /Flags 32 /FontBBox [${FONT_BBOX.map(glyphSpace).join(" ")}] /ItalicAngle 0 /Ascent ${em(EM_ASCENT)} /Descent ${em(-EM_DESCENT)} /CapHeight ${em(EM_CAP_HEIGHT)} /XHeight ${em(EM_X_HEIGHT)} /StemV 80 /FontFile2 ${ref(file)} >>`;
+        `<< /Type /FontDescriptor /FontName ${name} /Flags 32 /FontBBox [${face.fontBBox.map(glyphSpace).join(" ")}] /ItalicAngle 0 /Ascent ${em(EM_ASCENT)} /Descent ${em(-EM_DESCENT)} /CapHeight ${em(EM_CAP_HEIGHT)} /XHeight ${em(EM_X_HEIGHT)} /StemV 80 /FontFile2 ${ref(file)} >>`;
       objects[file - 1] = {
-        dict: `<< /Length ${fontFile.length} /Length1 ${ARIMO_SFNT_LENGTH} /Filter /FlateDecode >>`,
-        stream: fontFile,
+        dict: `<< /Length ${bytes.length} /Length1 ${face.length} /Filter /FlateDecode >>`,
+        stream: bytes,
       };
-      const cmap = ascii(toUnicodeCMap(w.fonts.glyphs));
+      const cmap = ascii(toUnicodeCMap(glyphs));
       objects[toUnicode - 1] = { dict: `<< /Length ${cmap.length} >>`, stream: cmap };
     });
   }
   if (w.fonts.symbol) {
     const symbol = next;
     next += 1;
-    fontRefs.push(`/F2 ${ref(symbol)}`);
+    fontRefs.push(`/FS ${ref(symbol)}`);
     later.push(() => {
       objects[symbol - 1] = "<< /Type /Font /Subtype /Type1 /BaseFont /Symbol >>";
     });

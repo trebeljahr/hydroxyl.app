@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-26.518 -22.512 553.859 60.087" width="553.859px" height="60.087px">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-26.518 -22.512 553.859 60.217" width="553.859px" height="60.217px">
   <line id="bond:b4:line" data-bond="b4" x1="60" y1="0" x2="74.067" y2="0" stroke="#000000" stroke-width="1"/>
   <line id="bond:b10:line" data-bond="b10" x1="420" y1="0" x2="435.918" y2="0" stroke="#000000" stroke-width="1"/>
   <text id="atom:a1:label" data-atom="a1" x="-18.518" y="5.733" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16.667" fill="#000000" text-anchor="start"><tspan>H</tspan><tspan>O</tspan><tspan font-size="12" dy="-5.833">−</tspan></text>
@@ -15,16 +15,16 @@
   <text id="atom:a7:partialCharge" data-annotation="ann_6" x="307.973" y="4.622" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.333" fill="#000000" text-anchor="middle"><tspan>δ−</tspan></text>
   <line id="annotation:ann_3:partial-bond" data-annotation="ann_3" x1="200.082" y1="0" x2="232.382" y2="0" stroke="#000000" stroke-width="1" stroke-dasharray="2.4 1.8"/>
   <line id="annotation:ann_4:partial-bond" data-annotation="ann_4" x1="259.654" y1="0" x2="278.067" y2="0" stroke="#000000" stroke-width="1" stroke-dasharray="2.4 1.8"/>
-  <polyline id="annotation:ann_7:open" data-annotation="ann_7" points="173.649,-11.904 168.849,-11.904 168.849,29.075 173.649,29.075" fill="none" stroke="#000000" stroke-width="1"/>
-  <polyline id="annotation:ann_7:close" data-annotation="ann_7" points="317.415,-11.904 322.215,-11.904 322.215,29.075 317.415,29.075" fill="none" stroke="#000000" stroke-width="1"/>
-  <line id="annotation:ann_7:dagger-stem" data-annotation="ann_7" x1="327.06" y1="-11.904" x2="327.06" y2="-3.648" stroke="#000000" stroke-width="0.855"/>
-  <line id="annotation:ann_7:dagger-upper" data-annotation="ann_7" x1="324.583" y1="-9.592" x2="329.537" y2="-9.592" stroke="#000000" stroke-width="0.855"/>
-  <line id="annotation:ann_7:dagger-lower" data-annotation="ann_7" x1="324.583" y1="-5.96" x2="329.537" y2="-5.96" stroke="#000000" stroke-width="0.855"/>
-  <text id="annotation:ann_7:charge" data-annotation="ann_7" x="331.404" y="-3.648" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="12" fill="#000000" text-anchor="start"><tspan>−</tspan></text>
+  <polyline id="annotation:ann_7:open" data-annotation="ann_7" points="173.649,-11.904 168.849,-11.904 168.849,29.205 173.649,29.205" fill="none" stroke="#000000" stroke-width="1"/>
+  <polyline id="annotation:ann_7:close" data-annotation="ann_7" points="316.126,-11.904 320.926,-11.904 320.926,29.205 316.126,29.205" fill="none" stroke="#000000" stroke-width="1"/>
+  <line id="annotation:ann_7:dagger-stem" data-annotation="ann_7" x1="325.771" y1="-11.904" x2="325.771" y2="-3.648" stroke="#000000" stroke-width="0.855"/>
+  <line id="annotation:ann_7:dagger-upper" data-annotation="ann_7" x1="323.294" y1="-9.592" x2="328.248" y2="-9.592" stroke="#000000" stroke-width="0.855"/>
+  <line id="annotation:ann_7:dagger-lower" data-annotation="ann_7" x1="323.294" y1="-5.96" x2="328.248" y2="-5.96" stroke="#000000" stroke-width="0.855"/>
+  <text id="annotation:ann_7:charge" data-annotation="ann_7" x="330.115" y="-3.648" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="12" fill="#000000" text-anchor="start"><tspan>−</tspan></text>
   <path id="annotation:ann_1:plus" data-annotation="ann_1" d="M31.202 -0.002 L40.802 -0.002 M36.002 -4.802 L36.002 4.798" fill="none" stroke="#000000" stroke-width="1"/>
-  <line id="annotation:ann_2:shaft" data-annotation="ann_2" x1="106.203" y1="3.764" x2="145.453" y2="3.764" stroke="#000000" stroke-width="1"/>
-  <polygon id="annotation:ann_2:head" data-annotation="ann_2" points="154.203,3.764 144.203,1.264 145.453,3.764 144.203,6.264" fill="#000000"/>
-  <line id="annotation:ann_8:shaft" data-annotation="ann_8" x1="354.756" y1="3.764" x2="394.006" y2="3.764" stroke="#000000" stroke-width="1"/>
-  <polygon id="annotation:ann_8:head" data-annotation="ann_8" points="402.756,3.764 392.756,1.264 394.006,3.764 392.756,6.264" fill="#000000"/>
+  <line id="annotation:ann_2:shaft" data-annotation="ann_2" x1="106.203" y1="3.796" x2="145.453" y2="3.796" stroke="#000000" stroke-width="1"/>
+  <polygon id="annotation:ann_2:head" data-annotation="ann_2" points="154.203,3.796 144.203,1.296 145.453,3.796 144.203,6.296" fill="#000000"/>
+  <line id="annotation:ann_8:shaft" data-annotation="ann_8" x1="354.112" y1="3.796" x2="393.362" y2="3.796" stroke="#000000" stroke-width="1"/>
+  <polygon id="annotation:ann_8:head" data-annotation="ann_8" points="402.112,3.796 392.112,1.296 393.362,3.796 392.112,6.296" fill="#000000"/>
   <path id="annotation:ann_9:plus" data-annotation="ann_9" d="M474.296 -0.002 L483.896 -0.002 M479.096 -4.802 L479.096 4.798" fill="none" stroke="#000000" stroke-width="1"/>
 </svg>

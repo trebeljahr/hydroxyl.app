@@ -28,16 +28,14 @@ import { representation } from "../src/representation.js";
 import type { TextRunPrimitive } from "../src/scene/types.js";
 import { PUBLICATION_STYLE } from "../src/style.js";
 import { FigureUnavailableError, serializeFigure } from "../src/svg/figure.js";
-import {
-  ARIMO_SFNT_DEFLATED_BASE64,
-  ARIMO_SFNT_LENGTH,
-  FONT_BBOX,
-  GLYPH_IDS,
-} from "../src/text/generated/arimo-sfnt.js";
+import { PDF_FACES } from "../src/text/generated/arimo-sfnt.js";
 import { BUNDLED_MEASURER, measureTextRun } from "../src/text/measurer.js";
 
 const OUTPUT = new URL("./output/", import.meta.url);
 const FONT_BYTES = readFileSync(new URL("../assets/arimo-latin-400-normal.woff", import.meta.url));
+const GREEK_FONT_BYTES = readFileSync(new URL("../assets/arimo-greek-400-normal.woff", import.meta.url));
+const [LATIN_FACE, GREEK_FACE] = PDF_FACES;
+if (LATIN_FACE === undefined || GREEK_FACE === undefined) throw new Error("two faces");
 
 function writeOutput(name: string, bytes: Uint8Array | string): void {
   mkdirSync(OUTPUT, { recursive: true });
@@ -85,20 +83,28 @@ function find(objs: Map<number, string>, needle: string): string {
   return found;
 }
 
-describe("the generated TrueType", () => {
-  it("is the vendored WOFF unwrapped, byte for byte", () => {
-    const sfnt = buildSfnt(FONT_BYTES);
-    const committed = inflateSync(Buffer.from(ARIMO_SFNT_DEFLATED_BASE64, "base64"));
-    expect(committed.length).toBe(ARIMO_SFNT_LENGTH);
+describe("the generated TrueType faces", () => {
+  const faces = [
+    ["Latin", LATIN_FACE, FONT_BYTES],
+    ["Greek", GREEK_FACE, GREEK_FONT_BYTES],
+  ] as const;
+
+  it.each(faces)("%s is its vendored WOFF unwrapped, byte for byte", (_name, face, woff) => {
+    const sfnt = buildSfnt(woff);
+    const committed = inflateSync(Buffer.from(face.deflatedBase64, "base64"));
+    expect(committed.length).toBe(face.length);
     expect(Buffer.compare(committed, Buffer.from(sfnt))).toBe(0);
     // WOFF's header records the sfnt size its encoder started from.
-    expect(sfnt.length).toBe(new DataView(FONT_BYTES.buffer, FONT_BYTES.byteOffset).getUint32(16));
+    expect(sfnt.length).toBe(new DataView(woff.buffer, woff.byteOffset).getUint32(16));
+    expect(face.fontBBox).toEqual(extractPdfFontData(woff).fontBBox);
   });
 
-  it("has the glyph ids and font box the generator reads", () => {
-    const { glyphIds, fontBBox } = extractPdfFontData(FONT_BYTES);
-    expect(GLYPH_IDS).toEqual(glyphIds);
-    expect(FONT_BBOX).toEqual(fontBBox);
+  it("sets every code point from the first face that has it", () => {
+    expect(LATIN_FACE.glyphIds).toEqual(extractPdfFontData(FONT_BYTES).glyphIds);
+    const latin = new Set(LATIN_FACE.glyphIds.map(([cp]) => cp));
+    const greekOnly = extractPdfFontData(GREEK_FONT_BYTES).glyphIds.filter(([cp]) => !latin.has(cp));
+    expect(GREEK_FACE.glyphIds).toEqual(greekOnly);
+    expect(GREEK_FACE.glyphIds.some(([cp]) => cp === 0x3b4)).toBe(true);
   });
 });
 
@@ -127,17 +133,18 @@ describe("serializeFigurePdf", () => {
     const descriptor = find(objs, "/Type /FontDescriptor");
     expect(descriptor).toContain("/FontFile2");
     const file = find(objs, "/Length1");
-    expect(file).toContain(`/Length1 ${ARIMO_SFNT_LENGTH}`);
+    expect(file).toContain(`/Length1 ${LATIN_FACE.length}`);
     const inflated = inflateSync(streamBytes(pdf, file));
     expect(Buffer.compare(inflated, Buffer.from(buildSfnt(FONT_BYTES)))).toBe(0);
     expect(find(objs, "/Subtype /Type0")).toContain("/Encoding /Identity-H");
-    // No Greek in ethanol, so no unembedded Symbol font either.
+    // No Greek in ethanol, so neither the Greek face nor Symbol is written.
     expect([...objs.values()].some((o) => o.includes("/BaseFont /Symbol"))).toBe(false);
+    expect([...objs.values()].some((o) => o.includes("/BaseFont /Arimo-Greek"))).toBe(false);
   });
 
   it("maps every glyph it draws back to Unicode, so the text copies", () => {
     const cmap = latin1(streamBytes(pdf, find(objs, "beginbfchar")));
-    const glyphO = GLYPH_IDS.find(([cp]) => cp === 0x4f)?.[1] ?? -1;
+    const glyphO = LATIN_FACE.glyphIds.find(([cp]) => cp === 0x4f)?.[1] ?? -1;
     const hex = (n: number): string => n.toString(16).toUpperCase().padStart(4, "0");
     expect(cmap).toContain(`<${hex(glyphO)}> <004F>`);
   });
@@ -195,36 +202,64 @@ describe("serializeFigurePdf", () => {
   });
 });
 
-describe("Greek, which the vendored Latin subset does not have", () => {
+describe("Greek, from the vendored Greek face (decision 252)", () => {
   const base = composeFigure(ethanol(), PUBLICATION_STYLE, [PANELS[0] as FigurePanelSpec]);
   const cell = base.cells[0];
   if (cell === undefined) throw new Error("one cell");
-  const delta: TextRunPrimitive = {
-    id: "test:delta",
+  const run = (id: string, text: string, y: number): TextRunPrimitive => ({
+    id,
     source: { kind: "decoration" },
     type: "textRun",
-    origin: { x: base.bounds.minX + 4, y: base.bounds.minY + 12 },
-    spans: [{ text: "δ+" }],
+    origin: { x: base.bounds.minX + 4, y: base.bounds.minY + y },
+    spans: [{ text }],
     fontFamily: PUBLICATION_STYLE.fontFamily,
     fontSizePx: 10,
     fill: { color: "#000000" },
     anchor: "start",
-  };
-  const figure: Figure = { ...base, cells: [{ ...cell, decorations: [...cell.decorations, delta] }] };
+  });
+  const delta = run("test:delta", "δ+", 12);
+  // An arrow typed into free text: in neither Arimo face, but in Symbol.
+  const arrow = run("test:arrow", "→", 24);
+  const withFigure = (...runs: TextRunPrimitive[]): Figure => ({
+    ...base,
+    cells: [{ ...cell, decorations: [...cell.decorations, ...runs] }],
+  });
+  const figure = withFigure(delta);
   const pdf = serializeFigurePdf(figure);
   writeOutput("greek.pdf", pdf);
   const objs = objects(pdf);
+  const content = latin1(streamBytes(pdf, objs.get(4) ?? ""));
 
-  it("is set in the reader's Symbol font, and reported", () => {
-    expect(find(objs, "/BaseFont /Symbol")).toContain("/Subtype /Type1");
-    expect(pdfFallbackCodePoints(figure)).toEqual([0x3b4]);
-    expect(pdfFallbackCodePoints(base)).toEqual([]);
-    const content = latin1(streamBytes(pdf, objs.get(4) ?? ""));
-    // δ is byte 0x64 in Symbol's encoding; the + after it stays Arimo, at the
-    // pen the measurer charged δ (.notdef's advance).
-    expect(content).toMatch(/\/F2 10 Tf 1 0 0 -1 [-\d.]+ [-\d.]+ Tm <64> Tj/);
-    const plusX = delta.origin.x + BUNDLED_MEASURER.measureText("δ", { family: "", sizePx: 10 }).advanceWidthPx;
-    expect(content).toContain(`/F1 10 Tf 1 0 0 -1 ${Number(plusX.toFixed(4))} `);
+  it("embeds the Greek face beside the Latin one, and leaves nothing to Symbol", () => {
+    expect(find(objs, "/Subtype /CIDFontType2 /BaseFont /Arimo-Greek")).toContain("/CIDToGIDMap /Identity");
+    const file = find(objs, `/Length1 ${GREEK_FACE.length}`);
+    expect(Buffer.compare(inflateSync(streamBytes(pdf, file)), Buffer.from(buildSfnt(GREEK_FONT_BYTES)))).toBe(0);
+    expect([...objs.values()].some((o) => o.includes("/BaseFont /Symbol"))).toBe(false);
+    expect(pdfFallbackCodePoints(figure)).toEqual([]);
+  });
+
+  it("sets δ in the Greek face and the + after it in Latin, at the measurer's pen", () => {
+    const glyph = GREEK_FACE.glyphIds.find(([cp]) => cp === 0x3b4)?.[1] ?? -1;
+    const hex = glyph.toString(16).toUpperCase().padStart(4, "0");
+    const x = Number(delta.origin.x.toFixed(4));
+    expect(content).toContain(`/F2 10 Tf 1 0 0 -1 ${x} `);
+    expect(content).toContain(`<${hex}> Tj`);
+    // δ now measures at its own advance, not .notdef's.
+    const deltaPx = BUNDLED_MEASURER.measureText("δ", { family: "", sizePx: 10 }).advanceWidthPx;
+    expect(deltaPx).not.toBe(7.5);
+    expect(content).toContain(`/F1 10 Tf 1 0 0 -1 ${Number((delta.origin.x + deltaPx).toFixed(4))} `);
+    const cmaps = [...objs.values()].filter((o) => o.includes("beginbfchar"));
+    expect(cmaps.some((o) => latin1(streamBytes(pdf, o)).includes(`<${hex}> <03B4>`))).toBe(true);
+  });
+
+  it("falls back to Symbol only for what no face has, and reports it", () => {
+    const withArrow = withFigure(delta, arrow);
+    const out = serializeFigurePdf(withArrow);
+    const arrowObjs = objects(out);
+    expect(find(arrowObjs, "/BaseFont /Symbol")).toContain("/Subtype /Type1");
+    expect(pdfFallbackCodePoints(withArrow)).toEqual([0x2192]);
+    // → is byte 0xAE in Symbol's encoding.
+    expect(latin1(streamBytes(out, arrowObjs.get(4) ?? ""))).toMatch(/\/FS 10 Tf 1 0 0 -1 [-\d.]+ [-\d.]+ Tm <AE> Tj/);
   });
 });
 

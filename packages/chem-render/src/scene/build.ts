@@ -1571,8 +1571,8 @@ function annotationRequests(
   const faces = new Map<AtomId, string[]>();
   if (descriptors && layout !== undefined) {
     for (const label of layout.faceLabels) {
-      // Greek through the one style hook (decision 192): alpha and beta are
-      // outside the vendored Latin subset, measured at .notdef until vendored.
+      // Greek through the one style hook (decision 192): alpha and beta come
+      // from the vendored Greek face (decision 252), measured exactly.
       const text = `${label.locant}${greek(label.face)}${label.group === undefined ? "" : `-${label.group}`}`;
       faces.set(label.atomId, [...(faces.get(label.atomId) ?? []), text]);
     }

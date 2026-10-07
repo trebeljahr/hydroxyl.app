@@ -44,7 +44,7 @@ describe("the PDF download (decision 236)", () => {
     expect(pdfFontNotice(prepared(ethanolDoc))).toBeNull();
   });
 
-  it("names the Greek letters it leaves to the reader's Symbol font", () => {
+  it("embeds Greek rather than leaving it to the reader's fonts (decision 252)", async () => {
     const scheme = sn2TransitionState();
     const doc = createDocument({
       molecule: scheme.molecule,
@@ -52,8 +52,10 @@ describe("the PDF download (decision 236)", () => {
       panels: [createPanel("skeletal")],
       now: NOW,
     });
-    expect(pdfFontNotice(prepared(doc))).toBe(
-      "The PDF sets δ in the reader's Symbol font and does not embed it. The bundled font has no Greek letters.",
-    );
+    const figure = prepared(doc);
+    expect(pdfFontNotice(figure)).toBeNull();
+    const text = new TextDecoder("latin1").decode(await (await figurePdfBlob(figure)).arrayBuffer());
+    expect(text).toContain("/BaseFont /Arimo-Greek");
+    expect(text).not.toContain("/BaseFont /Symbol");
   });
 });

@@ -25,10 +25,13 @@ import { cipDescriptor, project, readMolblock, stereoConfig, suggestSteroidSkele
 import type { Molecule, PlanarView } from "@starter/chem-core";
 
 import { composeFigure } from "../src/figure/compose.js";
+import type { Figure } from "../src/figure/compose.js";
 import { representation } from "../src/representation.js";
 import { buildScene } from "../src/scene/build.js";
+import type { TextRunPrimitive } from "../src/scene/types.js";
 import { PUBLICATION_STYLE, SCREEN_STYLE } from "../src/style.js";
 import { serializeFigure } from "../src/svg/figure.js";
+import { ARIMO_GREEK_UNICODE_RANGE, ARIMO_GREEK_WOFF_BASE64 } from "../src/text/generated/arimo-woff.js";
 import { BUNDLED_MEASURER } from "../src/text/measurer.js";
 import {
   GREEK_LETTERS,
@@ -100,26 +103,26 @@ describe("the Latin corpus is measured, glyph for glyph (decision 206)", () => {
   });
 });
 
-describe("Greek and italic wait for Rico's go-ahead (decision 192)", () => {
-  it("vendors neither face yet", () => {
-    // When Greek or italic is vendored this fails first, and every pinned
-    // limit below is to be re-derived rather than edited to pass.
-    expect(VENDORED_FACES).toEqual({ greek: false, italic: false });
+describe("Greek is vendored, italic still waits (decisions 192 and 252)", () => {
+  it("vendors the Greek face and not the italic one", () => {
+    // When italic is vendored this fails first, and every pinned limit below
+    // is to be re-derived rather than edited to pass.
+    expect(VENDORED_FACES).toEqual({ greek: true, italic: false });
   });
 
-  it("pins each Greek string of the done-when as measured at .notdef, and nothing else in it", () => {
-    const pinned: readonly [string, readonly number[]][] = [
-      [`${greek("Delta")}, 100 °C`, [0x394]],
-      [`${greek("delta")}+`, [0x3b4]],
-      [`${greek("delta")}−`, [0x3b4]],
-      [`3${greek("beta")}-OH`, [0x3b2]],
-      [`5${greek("alpha")}-H`, [0x3b1]],
-      [`17${greek("alpha")}, 17${greek("beta")}-OH`, [0x3b1, 0x3b2]],
-      [`10 ${greek("mu")}L`, [0x3bc]],
+  it("measures each Greek string of the done-when exactly, none of it at .notdef", () => {
+    const pinned: readonly string[] = [
+      `${greek("Delta")}, 100 °C`,
+      `${greek("delta")}+`,
+      `${greek("delta")}−`,
+      `3${greek("beta")}-OH`,
+      `5${greek("alpha")}-H`,
+      `17${greek("alpha")}, 17${greek("beta")}-OH`,
+      `10 ${greek("mu")}L`,
     ];
-    for (const [text, codePoints] of pinned) {
-      expect(unmeasuredCodePoints(text, BUNDLED_MEASURER, FAMILY), text).toEqual(codePoints);
-      expect(notdefs(text), text).toBe(codePoints.length);
+    for (const text of pinned) {
+      expect(unmeasuredCodePoints(text, BUNDLED_MEASURER, FAMILY), text).toEqual([]);
+      expect(notdefs(text), text).toBe(0);
     }
   });
 
@@ -137,7 +140,7 @@ describe("Greek and italic wait for Rico's go-ahead (decision 192)", () => {
 });
 
 describe("an unmeasured code point is reported, never thrown (decision 206)", () => {
-  it("lists a steroid panel's alpha/beta runs, and only those, for cholesterol", () => {
+  it("has nothing to report for a steroid panel's alpha/beta runs now Greek is vendored", () => {
     const mol = load("steroid", "cholesterol.mol");
     const suggestion = suggestSteroidSkeleton(mol);
     if (suggestion.kind !== "match") throw new Error("cholesterol is a steroid");
@@ -154,15 +157,13 @@ describe("an unmeasured code point is reported, never thrown (decision 206)", ()
     const scene = buildScene(mol, SCREEN_STYLE, representation("skeletal", { showStereoDescriptors: true }), {
       layout: result.layout,
     });
-    const runs = unmeasuredTextRuns(scene);
-    expect(runs.length).toBeGreaterThan(0);
-    for (const run of runs) {
-      expect(run.primitiveId, run.text).toMatch(/:alphaBeta$/);
-      expect(run.codePoints.every((cp) => cp === 0x3b1 || cp === 0x3b2), run.text).toBe(true);
-    }
-    const faceRuns = scene.primitives.filter((p) => p.id.endsWith(":alphaBeta"));
-    expect(runs.map((r) => r.primitiveId)).toEqual(faceRuns.map((p) => p.id));
-    expect(runs.find((r) => r.primitiveId === "atom:a24:alphaBeta")?.text).toBe("3β-OH");
+    // Non-vacuous: the panel does draw its Greek face labels.
+    const faceRuns = scene.primitives.filter(
+      (p): p is TextRunPrimitive => p.type === "textRun" && p.id.endsWith(":alphaBeta"),
+    );
+    expect(faceRuns.length).toBeGreaterThan(0);
+    expect(faceRuns.find((p) => p.id === "atom:a24:alphaBeta")?.spans.map((s) => s.text).join("")).toBe("3β-OH");
+    expect(unmeasuredTextRuns(scene)).toEqual([]);
   });
 
   it("finds nothing to report in a plain skeletal panel", () => {
@@ -187,5 +188,32 @@ describe("the exported SVG does not grow (decision 206)", () => {
     const embedded = Buffer.byteLength(serializeFigure(figure, { embedFont: true }), "utf8");
     const bare = Buffer.byteLength(serializeFigure(figure, { embedFont: false }), "utf8");
     expect(embedded - bare).toBe(20041);
+  });
+
+  it("adds the Greek face only to a figure that sets a Greek letter (decision 252)", () => {
+    const base = composeFigure(ethanol(), PUBLICATION_STYLE, [
+      { id: "p1", representation: representation("skeletal") },
+    ]);
+    const cell = base.cells[0]!;
+    const delta: TextRunPrimitive = {
+      id: "test:delta",
+      source: { kind: "decoration" },
+      type: "textRun",
+      origin: { x: 0, y: 0 },
+      spans: [{ text: "δ+" }],
+      fontFamily: PUBLICATION_STYLE.fontFamily,
+      fontSizePx: 10,
+      fill: { color: "#000000" },
+      anchor: "start",
+    };
+    const figure: Figure = { ...base, cells: [{ ...cell, decorations: [...cell.decorations, delta] }] };
+    const svg = serializeFigure(figure, { embedFont: true });
+    const greekFace =
+      `@font-face{font-family:"Arimo";src:url(data:font/woff;base64,${ARIMO_GREEK_WOFF_BASE64}) format("woff");` +
+      `font-weight:400;font-style:normal;unicode-range:${ARIMO_GREEK_UNICODE_RANGE}}`;
+    expect(svg).toContain(greekFace);
+    expect(serializeFigure(base, { embedFont: true })).not.toContain(ARIMO_GREEK_UNICODE_RANGE);
+    const bare = Buffer.byteLength(serializeFigure(figure, { embedFont: false }), "utf8");
+    expect(Buffer.byteLength(svg, "utf8") - bare).toBe(20041 + greekFace.length);
   });
 });

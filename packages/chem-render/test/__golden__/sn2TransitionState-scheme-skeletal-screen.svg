@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-33.78 -52.44 988.5 103.45" width="988.5px" height="103.45px">
-  <rect data-decoration="background" x="-33.78" y="-52.44" width="988.5" height="103.45" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-33.78 -35.17 988.5 86.31" width="988.5px" height="86.31px">
+  <rect data-decoration="background" x="-33.78" y="-35.17" width="988.5" height="86.31" fill="#ffffff"/>
   <line id="bond:b4:line" data-bond="b4" x1="110" y1="0" x2="143" y2="0" stroke="#1f2937" stroke-width="2"/>
   <line id="bond:b10:line" data-bond="b10" x1="770" y1="0" x2="804.78" y2="0" stroke="#1f2937" stroke-width="2"/>
   <text id="atom:a1:label" data-atom="a1" x="-17.78" y="5.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start"><tspan>H</tspan><tspan>O</tspan><tspan font-size="11.52" dy="-5.6">−</tspan></text>
@@ -13,19 +13,19 @@
   <text id="atom:a9:label" data-atom="a9" x="807.78" y="5.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start"><tspan>O</tspan><tspan>H</tspan></text>
   <text id="atom:a11:label" data-atom="a11" x="916" y="5.5" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="16" fill="#111827" text-anchor="start"><tspan>Br</tspan><tspan font-size="11.52" dy="-5.6">−</tspan></text>
   <text id="atom:a5:partialCharge" data-annotation="ann_5" x="344.42" y="23.01" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.6" fill="#111827" text-anchor="middle"><tspan>δ−</tspan></text>
-  <text id="atom:a7:partialCharge" data-annotation="ann_6" x="535.58" y="-13.58" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.6" fill="#111827" text-anchor="middle"><tspan>δ−</tspan></text>
+  <text id="atom:a7:partialCharge" data-annotation="ann_6" x="547.8" y="4.71" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="13.6" fill="#111827" text-anchor="middle"><tspan>δ−</tspan></text>
   <line id="annotation:ann_3:partial-bond" data-annotation="ann_3" x1="361.22" y1="0" x2="431.22" y2="0" stroke="#1f2937" stroke-width="2" stroke-dasharray="4.4 3.3"/>
   <line id="annotation:ann_4:partial-bond" data-annotation="ann_4" x1="466.74" y1="0" x2="517" y2="0" stroke="#1f2937" stroke-width="2" stroke-dasharray="4.4 3.3"/>
-  <polyline id="annotation:ann_7:open" data-annotation="ann_7" points="333.34,-33.93 324.54,-33.93 324.54,34.01 333.34,34.01" fill="none" stroke="#1f2937" stroke-width="2"/>
-  <polyline id="annotation:ann_7:close" data-annotation="ann_7" points="546.18,-33.93 554.98,-33.93 554.98,34.01 546.18,34.01" fill="none" stroke="#1f2937" stroke-width="2"/>
-  <line id="annotation:ann_7:dagger-stem" data-annotation="ann_7" x1="560.15" y1="-33.93" x2="560.15" y2="-26.01" stroke="#111827" stroke-width="0.82"/>
-  <line id="annotation:ann_7:dagger-upper" data-annotation="ann_7" x1="557.78" y1="-31.72" x2="562.53" y2="-31.72" stroke="#111827" stroke-width="0.82"/>
-  <line id="annotation:ann_7:dagger-lower" data-annotation="ann_7" x1="557.78" y1="-28.23" x2="562.53" y2="-28.23" stroke="#111827" stroke-width="0.82"/>
-  <text id="annotation:ann_7:charge" data-annotation="ann_7" x="564.33" y="-26.01" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="11.52" fill="#111827" text-anchor="start"><tspan>−</tspan></text>
+  <polyline id="annotation:ann_7:open" data-annotation="ann_7" points="333.34,-16.67 324.54,-16.67 324.54,34.14 333.34,34.14" fill="none" stroke="#1f2937" stroke-width="2"/>
+  <polyline id="annotation:ann_7:close" data-annotation="ann_7" points="557.09,-16.67 565.89,-16.67 565.89,34.14 557.09,34.14" fill="none" stroke="#1f2937" stroke-width="2"/>
+  <line id="annotation:ann_7:dagger-stem" data-annotation="ann_7" x1="571.06" y1="-16.67" x2="571.06" y2="-8.74" stroke="#111827" stroke-width="0.82"/>
+  <line id="annotation:ann_7:dagger-upper" data-annotation="ann_7" x1="568.69" y1="-14.45" x2="573.44" y2="-14.45" stroke="#111827" stroke-width="0.82"/>
+  <line id="annotation:ann_7:dagger-lower" data-annotation="ann_7" x1="568.69" y1="-10.96" x2="573.44" y2="-10.96" stroke="#111827" stroke-width="0.82"/>
+  <text id="annotation:ann_7:charge" data-annotation="ann_7" x="575.23" y="-8.74" font-family="Arimo, Arial, Helvetica, sans-serif" font-size="11.52" fill="#111827" text-anchor="start"><tspan>−</tspan></text>
   <path id="annotation:ann_1:plus" data-annotation="ann_1" d="M51.39 0 L68.99 0 M60.19 -8.8 L60.19 8.8" fill="none" stroke="#1f2937" stroke-width="2"/>
-  <line id="annotation:ann_2:shaft" data-annotation="ann_2" x1="198.63" y1="-0.36" x2="269.13" y2="-0.36" stroke="#1f2937" stroke-width="2"/>
-  <polygon id="annotation:ann_2:head" data-annotation="ann_2" points="286.63,-0.36 266.63,-5.36 269.13,-0.36 266.63,4.64" fill="#1f2937"/>
-  <line id="annotation:ann_8:shaft" data-annotation="ann_8" x1="625.53" y1="-0.36" x2="696.03" y2="-0.36" stroke="#1f2937" stroke-width="2"/>
-  <polygon id="annotation:ann_8:head" data-annotation="ann_8" points="713.53,-0.36 693.53,-5.36 696.03,-0.36 693.53,4.64" fill="#1f2937"/>
+  <line id="annotation:ann_2:shaft" data-annotation="ann_2" x1="198.63" y1="3.99" x2="269.13" y2="3.99" stroke="#1f2937" stroke-width="2"/>
+  <polygon id="annotation:ann_2:head" data-annotation="ann_2" points="286.63,3.99 266.63,-1.01 269.13,3.99 266.63,8.99" fill="#1f2937"/>
+  <line id="annotation:ann_8:shaft" data-annotation="ann_8" x1="630.98" y1="3.99" x2="701.48" y2="3.99" stroke="#1f2937" stroke-width="2"/>
+  <polygon id="annotation:ann_8:head" data-annotation="ann_8" points="718.98,3.99 698.98,-1.01 701.48,3.99 698.98,8.99" fill="#1f2937"/>
   <path id="annotation:ann_9:plus" data-annotation="ann_9" d="M865.09 0 L882.69 0 M873.89 -8.8 L873.89 8.8" fill="none" stroke="#1f2937" stroke-width="2"/>
 </svg>

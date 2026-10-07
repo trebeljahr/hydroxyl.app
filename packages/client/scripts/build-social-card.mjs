@@ -121,17 +121,18 @@ const { SOCIAL_CARD, socialCardSvg, allGuideSocialCards } = await loadCardModule
 
 await initWasm(await readFile(fileURLToPath(import.meta.resolve("@resvg/resvg-wasm/index_bg.wasm"))));
 
-// The asset the generated ARIMO_WOFF_BASE64 is made from, beside chem-render's dist/.
-const arimo = woffToSfnt(
-  await readFile(
-    fileURLToPath(
-      new URL("../assets/arimo-latin-400-normal.woff", import.meta.resolve("@starter/chem-render")),
-    ),
-  ),
-);
+// The assets the generated ARIMO_WOFF_BASE64 and ARIMO_GREEK_WOFF_BASE64 are
+// made from, beside chem-render's dist/. The Greek face (decision 252) supplies
+// the alpha/beta and delta a figure may set; resvg falls back to it per glyph.
+const vendoredFace = async (file) =>
+  woffToSfnt(
+    await readFile(fileURLToPath(new URL(`../assets/${file}`, import.meta.resolve("@starter/chem-render")))),
+  );
+const arimo = await vendoredFace("arimo-latin-400-normal.woff");
+const arimoGreek = await vendoredFace("arimo-greek-400-normal.woff");
 const renderOptions = {
   font: {
-    fontBuffers: [arimo],
+    fontBuffers: [arimo, arimoGreek],
     loadSystemFonts: false,
     defaultFontFamily: "Arimo",
     sansSerifFamily: "Arimo",

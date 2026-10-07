@@ -23,7 +23,8 @@
  *
  * Labels are live `<text>`, so an illustrator can edit them. With
  * `embedFont`, the vendored Arimo WOFF is embedded once as an `@font-face`
- * data URI: an SVG opened on its own, or loaded into an `<img>` for the PNG
+ * data URI, and its Greek subset as a second one when a figure sets a Greek
+ * letter (decision 252): an SVG opened on its own, or loaded into an `<img>` for the PNG
  * export, cannot fetch a font, and the OFL permits embedding. The
  * `font-family` stack still names Arial and Helvetica after Arimo, which are
  * metric-compatible, for the editors that ignore `@font-face` and resolve
@@ -34,7 +35,12 @@
  */
 
 import type { Figure, FigureCell, UnavailableViewAvailability } from "../figure/compose.js";
-import { ARIMO_WOFF_BASE64 } from "../text/generated/arimo-woff.js";
+import { figureCodePoints, inGreekFace } from "../figure/text.js";
+import {
+  ARIMO_GREEK_UNICODE_RANGE,
+  ARIMO_GREEK_WOFF_BASE64,
+  ARIMO_WOFF_BASE64,
+} from "../text/generated/arimo-woff.js";
 import { FONT_VERSION } from "../text/generated/arimo-metrics.js";
 import { attr, emitPrimitive, escapeText, formatNumber, num, push } from "./emit.js";
 import type { Emitter } from "./emit.js";
@@ -189,7 +195,16 @@ export function serializeFigure(
       1,
       `<defs><style>@font-face{font-family:"Arimo";` +
         `src:url(data:font/woff;base64,${ARIMO_WOFF_BASE64}) format("woff");` +
-        `font-weight:400;font-style:normal}</style></defs>`,
+        `font-weight:400;font-style:normal}` +
+        // The Greek face only when a letter needs it (decision 252), declared
+        // second: for code points in its unicode-range a browser checks the
+        // last-declared face first, and every other code point stays Latin.
+        (figureCodePoints(figure).some(inGreekFace)
+          ? `@font-face{font-family:"Arimo";` +
+            `src:url(data:font/woff;base64,${ARIMO_GREEK_WOFF_BASE64}) format("woff");` +
+            `font-weight:400;font-style:normal;unicode-range:${ARIMO_GREEK_UNICODE_RANGE}}`
+          : "") +
+        `</style></defs>`,
     );
   }
 

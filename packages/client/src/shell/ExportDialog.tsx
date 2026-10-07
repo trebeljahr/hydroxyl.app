@@ -43,9 +43,9 @@
  * stay in the properties panel.
  *
  * PDF (decision 236). The same figure as the SVG, at the same printed size,
- * with Arimo embedded. A figure with Greek letters gets a sentence under the
- * buttons: the bundled face has none, so the PDF leaves them to the reader's
- * Symbol font.
+ * with Arimo embedded, Greek included (decision 252). A figure whose free
+ * text holds an arrow or relation the bundled faces lack gets a sentence
+ * under the buttons: the PDF leaves those to the reader's Symbol font.
  *
  * Every button runs a registry command synchronously inside its click, which
  * is what keeps the clipboard and the save picker inside the user gesture.
