@@ -24,6 +24,10 @@ export default defineConfig({
         test: {
           name: "dom",
           environment: "jsdom",
+          // jsdom renders run 2-3x slower on a GitHub runner than here; the
+          // 118-cell periodic table took 8 s there against vitest's 5 s
+          // default. The same 30 s as rdkit and chem-render.
+          testTimeout: 30_000,
           // Not cosmetic: @testing-library/react registers its
           // afterEach(cleanup) and the React act() environment only when
           // afterEach/beforeAll exist as globals. With globals:false a
@@ -45,6 +49,7 @@ export default defineConfig({
         test: {
           name: "node",
           environment: "node",
+          testTimeout: 30_000,
           include: ["src/state/**/*.test.ts"],
           // The retention harness lives here too but needs `--expose-gc`, so
           // it belongs to the `leak` project above. Without this exclusion it
