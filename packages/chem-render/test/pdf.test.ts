@@ -115,11 +115,30 @@ describe("the generated TrueType faces", () => {
   });
 });
 
+/** Splits a generated sfnt module into its inflated fonts and the text around them. */
+function splitDeflated(source: string): { rest: string; sfnts: Buffer[] } {
+  const sfnts: Buffer[] = [];
+  const rest = source.replace(/(deflatedBase64:\s*)"([^"]*)"/g, (_m, key: string, base64: string) => {
+    sfnts.push(inflateSync(Buffer.from(base64, "base64")));
+    return `${key}"<deflated>"`;
+  });
+  expect(sfnts.length).toBeGreaterThan(0);
+  return { rest, sfnts };
+}
+
 describe.each(FACES.map((face: { readonly id: string }) => [face.id, face] as const))(
   "the generated %s TrueType module (decision 250)",
   (_id, face) => {
+    // The deflated stream is compared inflated: zlib's output bytes differ
+    // between Node releases (CI's Node 24 and a local Node 26 disagree), while
+    // the TrueType file under them is what the PDF reader actually gets.
     it("regenerates byte for byte from its two WOFFs", () => {
-      expect(generateFace(face).sfntTs).toBe(readFileSync(face.sfntOutPath, "utf8"));
+      const generated = splitDeflated(generateFace(face).sfntTs);
+      const committed = splitDeflated(readFileSync(face.sfntOutPath, "utf8"));
+      expect(generated.rest).toBe(committed.rest);
+      expect(generated.sfnts.map((b) => b.toString("base64"))).toEqual(
+        committed.sfnts.map((b) => b.toString("base64")),
+      );
     });
   },
 );
