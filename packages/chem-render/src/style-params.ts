@@ -14,13 +14,18 @@
  * The proportions the label and annotation passes were measured against
  * (label padding, descriptor scales, the explicit-H ratios — decisions 54, 71
  * and 123 among them) stay with the preset, in px, and so scale with the bond.
- * The font face is not editable yet: the bundled measurer and the embedded
- * WOFF are Arimo regular alone, and a face it cannot measure would set every
- * label box wrong (see `FontRequest.family`).
+ *
+ * THE FONT IS AN ENUM. `fontFace` names one of the vendored faces and
+ * `fontWeight` one of their weights (decision 250), never a free family
+ * string: the measurer, the SVG's embedded WOFF and the PDF's embedded
+ * TrueType exist only for those, and a face none of them knows would set
+ * every label box wrong.
  */
 
 import { pxPerModelUnit, withStyle } from "./style.js";
 import type { RenderStyle } from "./style.js";
+import { FONT_FACE_FAMILY, FONT_FACES, FONT_WEIGHTS, fontFaceOfFamily } from "./text/metrics.js";
+import type { FontFace, FontWeight } from "./text/metrics.js";
 
 const POINTS_PER_INCH = 72;
 const MM_PER_INCH = 25.4;
@@ -44,6 +49,9 @@ export interface FigureStyleParams {
   readonly bondSpacingPt: number;
   /** Atom-label size. Subscripts and annotations keep their ratios to it. */
   readonly fontSizePt: number;
+  /** The vendored face every label and annotation is set in. */
+  readonly fontFace: FontFace;
+  readonly fontWeight: FontWeight;
   /** Whitespace around the drawing in an exported figure. */
   readonly marginMm: number;
   readonly bondColor: string;
@@ -58,7 +66,9 @@ export type NumericStyleParam = {
   readonly [K in keyof FigureStyleParams]: FigureStyleParams[K] extends number ? K : never;
 }[keyof FigureStyleParams];
 
-export type ColorStyleParam = Exclude<keyof FigureStyleParams, NumericStyleParam>;
+export type FontStyleParam = "fontFace" | "fontWeight";
+
+export type ColorStyleParam = Exclude<keyof FigureStyleParams, NumericStyleParam | FontStyleParam>;
 
 /**
  * The accepted range of each number, inclusive. Wide on purpose: they refuse
@@ -86,6 +96,14 @@ export const NUMERIC_STYLE_PARAMS: readonly NumericStyleParam[] = Object.freeze(
   "fontSizePt",
   "marginMm",
 ]);
+
+export const FONT_STYLE_PARAMS: readonly FontStyleParam[] = Object.freeze(["fontFace", "fontWeight"]);
+
+/** The values each font param accepts, in the order a picker lists them. */
+export const FONT_STYLE_PARAM_VALUES: Readonly<{
+  readonly fontFace: readonly FontFace[];
+  readonly fontWeight: readonly FontWeight[];
+}> = Object.freeze({ fontFace: FONT_FACES, fontWeight: FONT_WEIGHTS });
 
 export const COLOR_STYLE_PARAMS: readonly ColorStyleParam[] = Object.freeze([
   "bondColor",
@@ -137,6 +155,8 @@ export function styleParams(style: RenderStyle): FigureStyleParams {
     hashSpacingPt: printed("hashSpacingPt"),
     bondSpacingPt: printed("bondSpacingPt"),
     fontSizePt: printed("fontSizePt"),
+    fontFace: fontFaceOfFamily(style.fontFamily),
+    fontWeight: style.fontWeight,
     marginMm: printed("marginMm"),
     bondColor: style.colors.bond.toLowerCase(),
     labelColor: style.colors.label.toLowerCase(),
@@ -158,6 +178,11 @@ export function styleOverrideIssues(
       const range = STYLE_PARAM_RANGES[key as NumericStyleParam];
       if (typeof value !== "number" || !Number.isFinite(value) || value < range.min || value > range.max) {
         issues.push({ key, message: `${key} must be a number from ${range.min} to ${range.max}` });
+      }
+    } else if ((FONT_STYLE_PARAMS as readonly string[]).includes(key)) {
+      const allowed: readonly string[] = FONT_STYLE_PARAM_VALUES[key as FontStyleParam];
+      if (typeof value !== "string" || !allowed.includes(value)) {
+        issues.push({ key, message: `${key} must be one of ${allowed.join(", ")}` });
       }
     } else if ((COLOR_STYLE_PARAMS as readonly string[]).includes(key)) {
       const ok =
@@ -225,6 +250,12 @@ export function applyStyleOverrides(
     const { field, mm } = PX_FIELD[param];
     patch[field] = pxValue(params[param], mm, ptPx);
   }
+  // The face is written as its CSS stack only when it changes, so an edit
+  // that leaves the face alone keeps the preset's exact family string.
+  if (params.fontFace !== fontFaceOfFamily(base.fontFamily)) {
+    patch["fontFamily"] = FONT_FACE_FAMILY[params.fontFace];
+  }
+  if (params.fontWeight !== base.fontWeight) patch["fontWeight"] = params.fontWeight;
   const background = params.background === NO_BACKGROUND ? undefined : params.background;
   patch["colors"] =
     background === undefined

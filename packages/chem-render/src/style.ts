@@ -19,6 +19,7 @@ import type { Vec2 } from "@starter/chem-core";
 
 import type { ScenePoint } from "./scene/types.js";
 import type { Measurer } from "./text/measurer.js";
+import type { FontWeight } from "./text/metrics.js";
 
 export interface RenderColors {
   readonly bond: string;
@@ -90,6 +91,12 @@ export interface RenderStyle {
   /** Centre-to-centre separation of the two lines of a double bond, px. */
   readonly doubleBondGapPx: number;
   readonly fontFamily: string;
+  /**
+   * Weight of every label and annotation run (decision 250). "normal" in every
+   * preset, and a text primitive omits `font-weight` when it is, so an
+   * unedited figure serialises byte for byte as before the weight existed.
+   */
+  readonly fontWeight: FontWeight;
   readonly fontSizePx: number;
   /** Multiplier applied to fontSizePx for subscripts (H2O's 2). */
   readonly subscriptScale: number;
@@ -294,6 +301,7 @@ export const PUBLICATION_STYLE: RenderStyle = Object.freeze({
   // are metric-compatible with it by design, which is what makes the boxes
   // still correct on a machine that has no Arimo installed.
   fontFamily: "Arimo, Arial, Helvetica, sans-serif",
+  fontWeight: "normal",
   fontSizePx: 50 / 3,
   subscriptScale: 0.72,
   labelPaddingPx: 1.6,
@@ -453,6 +461,7 @@ export const NATURE_STYLE: RenderStyle = Object.freeze({
   // ChemDraw's bond spacing is centre to centre, as a fraction of the bond.
   doubleBondGapPx: 0.18 * 24,
   fontFamily: "Arimo, Arial, Helvetica, sans-serif",
+  fontWeight: "normal",
   fontSizePx: 40 / 3,
   subscriptScale: 0.72,
   // ChemDraw's margin width: the clear space between a label and its bonds.
@@ -500,6 +509,7 @@ export const SCREEN_STYLE: RenderStyle = Object.freeze({
   // are metric-compatible with it by design, which is what makes the boxes
   // still correct on a machine that has no Arimo installed.
   fontFamily: "Arimo, Arial, Helvetica, sans-serif",
+  fontWeight: "normal",
   fontSizePx: 16,
   subscriptScale: 0.72,
   labelPaddingPx: 3,

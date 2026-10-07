@@ -2,7 +2,7 @@
  * Text measurement.
  *
  * The expected widths below are hand-computed from the font units in
- * `generated/arimo-metrics.ts` — B=1366, r=682, I=569, O=1593, H=1479 against
+ * `generated/arimo-400-metrics.ts` — B=1366, r=682, I=569, O=1593, H=1479 against
  * a 2048-unit em — rather than read back from `measureTextRun`. A test that
  * calls the implementation to produce its own expectation asserts only that
  * the code is deterministic, which is not the interesting half.
@@ -33,6 +33,7 @@ const FONT_SIZE_PX = 10;
 
 const OPTIONS: MeasureRunOptions = {
   fontFamily: "Arial, Helvetica, sans-serif",
+  fontWeight: "normal" as const,
   fontSizePx: FONT_SIZE_PX,
   subscriptScale: 0.72,
   anchor: "start",
@@ -62,7 +63,7 @@ describe("the environment these numbers are produced in", () => {
 
 describe("BUNDLED_MEASURER", () => {
   it("measures a string from its font units", () => {
-    const font = { family: "Arial", sizePx: FONT_SIZE_PX };
+    const font = { family: "Arial", weight: "normal", sizePx: FONT_SIZE_PX };
     // "Br" is 1366 + 682 = 2048 units — exactly one em, which is a pleasant
     // accident worth pinning because it makes the arithmetic checkable by eye.
     expect(BUNDLED_MEASURER.measureText("Br", font).advanceWidthPx).toBe(10);
@@ -76,7 +77,7 @@ describe("BUNDLED_MEASURER", () => {
     // The whole point of real metrics: the old 0.6-em-per-character estimate
     // said "Br" was exactly twice "I". It is 3.6 times, and a bounds box built
     // on the estimate is wrong by more than a margin can hide.
-    const font = { family: "Arial", sizePx: FONT_SIZE_PX };
+    const font = { family: "Arial", weight: "normal", sizePx: FONT_SIZE_PX };
     const br = BUNDLED_MEASURER.measureText("Br", font).advanceWidthPx;
     const i = BUNDLED_MEASURER.measureText("I", font).advanceWidthPx;
     expect(br / i).toBeCloseTo(2048 / 569, 12);
@@ -84,7 +85,7 @@ describe("BUNDLED_MEASURER", () => {
   });
 
   it("falls back to .notdef for anything outside both vendored subsets", () => {
-    const font = { family: "Arial", sizePx: FONT_SIZE_PX };
+    const font = { family: "Arial", weight: "normal", sizePx: FONT_SIZE_PX };
     const ideograph = BUNDLED_MEASURER.measureText("中", font);
     expect(ideograph.advanceWidthPx).toBe(EM_NOTDEF_ADVANCE * FONT_SIZE_PX);
     expect(ideograph.advanceWidthPx).toBeGreaterThan(0);
@@ -92,7 +93,7 @@ describe("BUNDLED_MEASURER", () => {
   });
 
   it("measures Greek from the vendored Greek face (decision 252)", () => {
-    const font = { family: "Arial", sizePx: FONT_SIZE_PX };
+    const font = { family: "Arial", weight: "normal", sizePx: FONT_SIZE_PX };
     const omega = BUNDLED_MEASURER.measureText("Ω", font);
     expect(omega.notdefCount).toBe(0);
     // 1531 units: close to .notdef's 1536, which is why the width is pinned.
@@ -106,19 +107,40 @@ describe("BUNDLED_MEASURER", () => {
     // U+1D407 MATHEMATICAL BOLD CAPITAL H is two UTF-16 units. Charging it
     // twice would desynchronise our width from the browser's for exactly the
     // characters someone reached for because ASCII would not do.
-    const font = { family: "Arial", sizePx: FONT_SIZE_PX };
+    const font = { family: "Arial", weight: "normal", sizePx: FONT_SIZE_PX };
     const bold = BUNDLED_MEASURER.measureText("\u{1D407}", font);
     expect(bold.notdefCount).toBe(1);
     expect(bold.advanceWidthPx).toBe(EM_NOTDEF_ADVANCE * FONT_SIZE_PX);
   });
 
   it("reports vertical metrics scaled to the requested size", () => {
-    const v = BUNDLED_MEASURER.verticalMetrics({ family: "Arial", sizePx: 20 });
+    const v = BUNDLED_MEASURER.verticalMetrics({ family: "Arial", weight: "normal", sizePx: 20 });
     expect(v.ascentPx).toBe(EM_ASCENT * 20);
     expect(v.descentPx).toBe(EM_DESCENT * 20);
     expect(v.capHeightPx).toBe(EM_CAP_HEIGHT * 20);
     // Descent is a positive depth, so a naive ascent+descent is the line box.
     expect(v.descentPx).toBeGreaterThan(0);
+  });
+
+  it("measures bold Arimo wider than regular (decision 250)", () => {
+    // A bold style that measured a bromine at regular widths would run its
+    // bond into a glyph that is in fact wider. (C, H, O and the digits keep
+    // their widths in Arial Bold, so "OH" alone would not show it.)
+    for (const text of ["Br", "Cl", "CH2Cl", "SiMe3"]) {
+      const regular = BUNDLED_MEASURER.measureText(text, { family: "Arimo", weight: "normal", sizePx: 10 });
+      const bold = BUNDLED_MEASURER.measureText(text, { family: "Arimo", weight: "bold", sizePx: 10 });
+      expect(bold.advanceWidthPx, text).toBeGreaterThan(regular.advanceWidthPx);
+      expect(bold.notdefCount).toBe(0);
+    }
+  });
+
+  it("measures a Times stack with the Tinos table, not Arimo's", () => {
+    const tinos = BUNDLED_MEASURER.measureText("OH", { family: "Tinos, Times New Roman, serif", weight: "normal", sizePx: 10 });
+    const times = BUNDLED_MEASURER.measureText("OH", { family: '"Times New Roman", serif', weight: "normal", sizePx: 10 });
+    const arimo = BUNDLED_MEASURER.measureText("OH", { family: "Arimo, Arial", weight: "normal", sizePx: 10 });
+    expect(times.advanceWidthPx).toBe(tinos.advanceWidthPx);
+    expect(tinos.advanceWidthPx).not.toBe(arimo.advanceWidthPx);
+    expect(BUNDLED_MEASURER.verticalMetrics({ family: "Tinos", weight: "normal", sizePx: 2048 }).capHeightPx).toBe(1341);
   });
 
   it("is frozen and names itself", () => {
@@ -356,7 +378,7 @@ describe("glyphInkRects", () => {
   // O 97,-20,1495,1430 (advance 1593); H 168,0,1312,1409; 3 78,-20,1049,1430.
   it("gives each glyph its own outline box, once, at its pen position", () => {
     const box = measureTextRun([{ text: "OH" }], OPTIONS, BUNDLED_MEASURER);
-    const rects = glyphInkRects(box, { x: 100, y: 50 }, BUNDLED_MEASURER, OPTIONS.fontFamily);
+    const rects = glyphInkRects(box, { x: 100, y: 50 }, BUNDLED_MEASURER, OPTIONS.fontFamily, OPTIONS.fontWeight);
     expect(rects).toEqual([
       { minX: 100 + px(97), minY: 50 - px(1430), maxX: 100 + px(1495), maxY: 50 + px(20) },
       { minX: 100 + px(1593 + 168), minY: 50 - px(1409), maxX: 100 + px(1593 + 1312), maxY: 50 },
@@ -371,7 +393,7 @@ describe("glyphInkRects", () => {
 
   it("sets a subscript's ink at its own size and shift", () => {
     const box = measureTextRun([{ text: "H" }, { text: "3", script: "sub" }], OPTIONS, BUNDLED_MEASURER);
-    const [h, three] = glyphInkRects(box, { x: 0, y: 0 }, BUNDLED_MEASURER, OPTIONS.fontFamily);
+    const [h, three] = glyphInkRects(box, { x: 0, y: 0 }, BUNDLED_MEASURER, OPTIONS.fontFamily, OPTIONS.fontWeight);
     const sub = FONT_SIZE_PX * 0.72;
     const x = px(1479);
     const dy = FONT_SIZE_PX * 0.25;
@@ -386,9 +408,9 @@ describe("glyphInkRects", () => {
 
   it("gives a space no ink, and a run of spaces no ink box at all", () => {
     const box = measureTextRun([{ text: "O H" }], OPTIONS, BUNDLED_MEASURER);
-    expect(glyphInkRects(box, { x: 0, y: 0 }, BUNDLED_MEASURER, OPTIONS.fontFamily)).toHaveLength(2);
+    expect(glyphInkRects(box, { x: 0, y: 0 }, BUNDLED_MEASURER, OPTIONS.fontFamily, OPTIONS.fontWeight)).toHaveLength(2);
     const blank = measureTextRun([{ text: "  " }], OPTIONS, BUNDLED_MEASURER);
-    expect(textRunInkRect(blank, { x: 0, y: 0 }, BUNDLED_MEASURER, OPTIONS.fontFamily)).toBeUndefined();
+    expect(textRunInkRect(blank, { x: 0, y: 0 }, BUNDLED_MEASURER, OPTIONS.fontFamily, OPTIONS.fontWeight)).toBeUndefined();
   });
 
   it("falls back to each span's full band for a measurer that knows only advances", () => {
@@ -400,15 +422,15 @@ describe("glyphInkRects", () => {
       verticalMetrics: BUNDLED_MEASURER.verticalMetrics,
     };
     const box = measureTextRun([{ text: "OH" }], OPTIONS, advancesOnly);
-    expect(glyphInkRects(box, { x: 0, y: 0 }, advancesOnly, OPTIONS.fontFamily)).toEqual([
+    expect(glyphInkRects(box, { x: 0, y: 0 }, advancesOnly, OPTIONS.fontFamily, OPTIONS.fontWeight)).toEqual([
       textRunRect(box, { x: 0, y: 0 }),
     ]);
   });
 
   it("unions to the run's ink box", () => {
     const box = measureTextRun([{ text: "(S)" }], options({ anchor: "middle" }), BUNDLED_MEASURER);
-    const ink = textRunInkRect(box, { x: 0, y: 0 }, BUNDLED_MEASURER, OPTIONS.fontFamily)!;
-    const rects = glyphInkRects(box, { x: 0, y: 0 }, BUNDLED_MEASURER, OPTIONS.fontFamily);
+    const ink = textRunInkRect(box, { x: 0, y: 0 }, BUNDLED_MEASURER, OPTIONS.fontFamily, OPTIONS.fontWeight)!;
+    const rects = glyphInkRects(box, { x: 0, y: 0 }, BUNDLED_MEASURER, OPTIONS.fontFamily, OPTIONS.fontWeight);
     expect(rects).toHaveLength(3);
     expect(ink.minX).toBe(Math.min(...rects.map((r) => r.minX)));
     expect(ink.maxY).toBe(Math.max(...rects.map((r) => r.maxY)));

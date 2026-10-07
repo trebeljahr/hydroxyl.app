@@ -6,10 +6,11 @@
  * model coordinate. There is nothing here that could be scaled by a bond
  * length or flipped, and nothing here may acquire either.
  *
- * WHY A PLUGGABLE MEASURER AT ALL. The bundled table measures Arimo, which is
- * metrically compatible with Arial and Helvetica, and both shipped presets set
- * exactly that stack — so the default is exact for everything this package
- * actually draws. A house style that sets some other face needs a measurer
+ * WHY A PLUGGABLE MEASURER AT ALL. The bundled tables measure Arimo and Tinos,
+ * regular and bold (decision 250), which are metrically compatible with
+ * Arial/Helvetica and Times, and every face a style can choose is one of them
+ * — so the default is exact for everything this package actually draws. A
+ * house style that sets some other face needs a measurer
  * that knows it, and the seam is one optional field on `RenderStyle` resolved
  * in one function, `measurerFor`. There is deliberately NO module-level
  * default and no `setDefaultMeasurer`: an ambient mutable measurer brings back
@@ -28,31 +29,24 @@
 import type { RenderStyle } from "../style.js";
 import type { ScenePoint, TextSpan } from "../scene/types.js";
 
-import {
-  EM_ASCENT,
-  EM_CAP_HEIGHT,
-  EM_DESCENT,
-  EM_X_HEIGHT,
-  UNITS_PER_EM,
-  advanceWidthUnits,
-  advanceWidthUnitsOf,
-  glyphInkUnits,
-  scriptDyPx,
-  scriptFontSizePx,
-} from "./metrics.js";
+import { faceMetricsFor, scriptDyPx, scriptFontSizePx } from "./metrics.js";
+import type { FontWeight } from "./metrics.js";
 
 export interface FontRequest {
   /**
    * The CSS font family the text will be SET in.
    *
-   * SHARP EDGE: `BUNDLED_MEASURER` ignores this, and that is correct only
-   * because Arimo is metrically compatible with the Arial/Helvetica stack both
-   * presets declare. A style that names a face with different metrics and does
-   * not also install a matching `Measurer` is measured wrongly, and nothing
-   * detects it — the labels simply sit a little off and the boxes are a little
-   * loose or a little tight.
+   * `BUNDLED_MEASURER` reads only its FIRST name (`fontFaceOfFamily`): Tinos
+   * or a Times name picks the Tinos table, anything else Arimo's. A style
+   * that names a face with different metrics and does not also install a
+   * matching `Measurer` is measured as Arimo, and nothing detects it.
    */
   readonly family: string;
+  /**
+   * Required, not defaulted: bold Arimo is about 6 % wider than regular, and
+   * a call site that forgot the weight would measure every bold label short.
+   */
+  readonly weight: FontWeight;
   readonly sizePx: number;
 }
 
@@ -105,8 +99,9 @@ export interface InkRect {
 }
 
 /**
- * The vendored Arimo table, as a `Measurer`. Pure, synchronous, frozen; no
- * filesystem, no DOM, no async initialisation, no cache.
+ * The vendored tables, as a `Measurer`, picked per request by family and
+ * weight. Pure, synchronous, frozen; no filesystem, no DOM, no async
+ * initialisation, no cache.
  */
 export const BUNDLED_MEASURER: Measurer = Object.freeze({
   id: "arimo-table",
@@ -114,19 +109,21 @@ export const BUNDLED_MEASURER: Measurer = Object.freeze({
   measureText(text: string, font: FontRequest): GlyphRunMetrics {
     // Accumulate in integer font units, divide exactly once. Summing px per
     // character would make the total depend on the order of the additions.
-    const { units, notdefCount } = advanceWidthUnitsOf(text);
+    const face = faceMetricsFor(font.family, font.weight);
+    const { units, notdefCount } = face.advanceWidthUnitsOf(text);
     return {
-      advanceWidthPx: (units * font.sizePx) / UNITS_PER_EM,
+      advanceWidthPx: (units * font.sizePx) / face.unitsPerEm,
       notdefCount,
     };
   },
 
   verticalMetrics(font: FontRequest): FontVerticalMetrics {
+    const face = faceMetricsFor(font.family, font.weight);
     return {
-      ascentPx: EM_ASCENT * font.sizePx,
-      descentPx: EM_DESCENT * font.sizePx,
-      capHeightPx: EM_CAP_HEIGHT * font.sizePx,
-      xHeightPx: EM_X_HEIGHT * font.sizePx,
+      ascentPx: face.emAscent * font.sizePx,
+      descentPx: face.emDescent * font.sizePx,
+      capHeightPx: face.emCapHeight * font.sizePx,
+      xHeightPx: face.emXHeight * font.sizePx,
     };
   },
 
@@ -134,22 +131,24 @@ export const BUNDLED_MEASURER: Measurer = Object.freeze({
     // The pen advances in integer font units and each edge is divided once,
     // the same discipline as `measureText`, so a glyph's box does not depend
     // on how many glyphs came before it in floating point.
+    const face = faceMetricsFor(font.family, font.weight);
+    const em = face.unitsPerEm;
     const boxes: InkRect[] = [];
     let penUnits = 0;
     for (const character of text) {
       const codepoint = character.codePointAt(0);
       if (codepoint === undefined) continue;
-      const ink = glyphInkUnits(codepoint);
+      const ink = face.glyphInkUnits(codepoint);
       if (ink !== undefined) {
         boxes.push({
-          minX: ((penUnits + ink.xMin) * font.sizePx) / UNITS_PER_EM,
+          minX: ((penUnits + ink.xMin) * font.sizePx) / em,
           // y-up font units to y-down px: the top edge is the glyph's yMax.
-          minY: (-ink.yMax * font.sizePx) / UNITS_PER_EM,
-          maxX: ((penUnits + ink.xMax) * font.sizePx) / UNITS_PER_EM,
-          maxY: (-ink.yMin * font.sizePx) / UNITS_PER_EM,
+          minY: (-ink.yMax * font.sizePx) / em,
+          maxX: ((penUnits + ink.xMax) * font.sizePx) / em,
+          maxY: (-ink.yMin * font.sizePx) / em,
         });
       }
-      penUnits += advanceWidthUnits(codepoint);
+      penUnits += face.advanceWidthUnits(codepoint);
     }
     return boxes;
   },
@@ -158,7 +157,9 @@ export const BUNDLED_MEASURER: Measurer = Object.freeze({
 /**
  * THE single point at which "which measurer" is decided.
  *
- * Undefined on the style means the bundled table. Callers resolve here and
+ * Undefined on the style means the bundled tables, which then pick the face
+ * from each request's family and weight — `style.fontFamily` and
+ * `style.fontWeight`, both of which every call site passes on. Callers resolve here and
  * pass the result down explicitly; nothing else may read `style.measurer`, or
  * the two halves of a scene can end up measured by different backends.
  */
@@ -168,6 +169,7 @@ export function measurerFor(style: RenderStyle): Measurer {
 
 export interface MeasureRunOptions {
   readonly fontFamily: string;
+  readonly fontWeight: FontWeight;
   /** The RUN's size. Scripted spans are set at `fontSizePx * subscriptScale`. */
   readonly fontSizePx: number;
   readonly subscriptScale: number;
@@ -212,7 +214,7 @@ export interface TextRunBox {
    */
   readonly descentPx: number;
   /**
-   * `EM_CAP_HEIGHT * options.fontSizePx` — the RUN's cap band, not a max over
+   * The face's cap height times `options.fontSizePx` — the RUN's cap band, not a max over
    * spans. A label is centred on one band, so a superscript charge must not be
    * allowed to widen it and shift the whole label off its bond.
    */
@@ -250,11 +252,15 @@ export function measureTextRun(
   const measured: MeasuredSpan[] = [];
   let penXPx = 0;
   let notdefCount = 0;
+  // The vertical band is the face's own table even under a custom measurer,
+  // as it always was: the band is the box a viewBox is cut from, and it must
+  // not move with a backend that only knows advances.
+  const face = faceMetricsFor(options.fontFamily, options.fontWeight);
 
   // Seeded from the plain font so a run of nothing still reports a sane band;
   // any span with ink replaces these via the max below.
-  let ascentPx = EM_ASCENT * options.fontSizePx;
-  let descentPx = EM_DESCENT * options.fontSizePx;
+  let ascentPx = face.emAscent * options.fontSizePx;
+  let descentPx = face.emDescent * options.fontSizePx;
   let sawInk = false;
 
   for (const span of spans) {
@@ -269,6 +275,7 @@ export function measureTextRun(
     const dyPx = scriptDyPx(span.script, options.fontSizePx);
     const run = measurer.measureText(span.text, {
       family: options.fontFamily,
+      weight: options.fontWeight,
       sizePx,
     });
 
@@ -288,8 +295,8 @@ export function measureTextRun(
     // only span is an empty superscript is vertically a plain run, not one
     // hoisted a third of an em.
     if (span.text.length === 0) continue;
-    const spanAscent = -dyPx + EM_ASCENT * sizePx;
-    const spanDescent = dyPx + EM_DESCENT * sizePx;
+    const spanAscent = -dyPx + face.emAscent * sizePx;
+    const spanDescent = dyPx + face.emDescent * sizePx;
     if (!sawInk) {
       ascentPx = spanAscent;
       descentPx = spanDescent;
@@ -320,7 +327,7 @@ export function measureTextRun(
     advanceWidthPx: penXPx,
     ascentPx,
     descentPx,
-    capHeightPx: EM_CAP_HEIGHT * options.fontSizePx,
+    capHeightPx: face.emCapHeight * options.fontSizePx,
     startXPx,
     baselineYPx,
     spans: measured,
@@ -370,7 +377,9 @@ export function glyphInkRects(
   origin: ScenePoint,
   measurer: Measurer,
   fontFamily: string,
+  fontWeight: FontWeight,
 ): InkRect[] {
+  const face = faceMetricsFor(fontFamily, fontWeight);
   const penX = origin.x + box.startXPx;
   const baselineY = origin.y + box.baselineYPx;
   const rects: InkRect[] = [];
@@ -381,13 +390,13 @@ export function glyphInkRects(
     if (measurer.inkBoxes === undefined) {
       rects.push({
         minX: x,
-        minY: y - EM_ASCENT * span.fontSizePx,
+        minY: y - face.emAscent * span.fontSizePx,
         maxX: x + span.advanceWidthPx,
-        maxY: y + EM_DESCENT * span.fontSizePx,
+        maxY: y + face.emDescent * span.fontSizePx,
       });
       continue;
     }
-    for (const ink of measurer.inkBoxes(span.span.text, { family: fontFamily, sizePx: span.fontSizePx })) {
+    for (const ink of measurer.inkBoxes(span.span.text, { family: fontFamily, weight: fontWeight, sizePx: span.fontSizePx })) {
       rects.push({ minX: x + ink.minX, minY: y + ink.minY, maxX: x + ink.maxX, maxY: y + ink.maxY });
     }
   }
@@ -403,9 +412,10 @@ export function textRunInkRect(
   origin: ScenePoint,
   measurer: Measurer,
   fontFamily: string,
+  fontWeight: FontWeight,
 ): InkRect | undefined {
   let union: { minX: number; minY: number; maxX: number; maxY: number } | undefined;
-  for (const r of glyphInkRects(box, origin, measurer, fontFamily)) {
+  for (const r of glyphInkRects(box, origin, measurer, fontFamily, fontWeight)) {
     if (union === undefined) union = { ...r };
     else {
       if (r.minX < union.minX) union.minX = r.minX;

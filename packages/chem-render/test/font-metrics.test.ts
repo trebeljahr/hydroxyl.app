@@ -1,7 +1,7 @@
 /**
- * The drift test for the generated font table.
+ * The drift test for the generated font tables.
  *
- * `src/text/generated/arimo-metrics.ts` is committed rather than parsed at
+ * `src/text/generated/<face>-metrics.ts` is committed rather than parsed at
  * startup, because chem-render has to measure identically in a Node test, in a
  * static export and in the browser, with no filesystem access anywhere. That
  * is the right trade, but it buys a new failure mode: a table that no longer
@@ -26,162 +26,216 @@ import { describe, expect, it } from "vitest";
 import {
   addedUnicodeRange,
   extractMetrics,
+  FACES,
   fontSha256,
-  mergeMetrics,
-  OUT_PATH,
-  render,
+  generateFace,
 } from "../scripts/generate-font-metrics.mjs";
 import {
-  ADVANCE_WIDTHS,
   ASCENDER,
   CAP_HEIGHT,
   DESCENDER,
-  FONT_FAMILY,
-  FONT_SHA256,
-  FONT_VERSION,
-  GREEK_FONT_SHA256,
   INK_BOUNDS,
   NOTDEF_ADVANCE,
   NOTDEF_INK,
   UNITS_PER_EM,
   X_HEIGHT,
-} from "../src/text/generated/arimo-metrics.js";
-import {
-  ARIMO_GREEK_UNICODE_RANGE,
-  ARIMO_GREEK_WOFF_BASE64,
-  ARIMO_WOFF_BASE64,
-} from "../src/text/generated/arimo-woff.js";
+  ADVANCE_WIDTHS,
+} from "../src/text/generated/arimo-400-metrics.js";
+import * as ARIMO_400 from "../src/text/generated/arimo-400-metrics.js";
+import * as ARIMO_700 from "../src/text/generated/arimo-700-metrics.js";
+import * as TINOS_400 from "../src/text/generated/tinos-400-metrics.js";
+import * as TINOS_700 from "../src/text/generated/tinos-700-metrics.js";
 import {
   EM_ASCENT,
   EM_CAP_HEIGHT,
   EM_DESCENT,
   EM_NOTDEF_ADVANCE,
   EM_X_HEIGHT,
+  FONT_FACES,
+  FONT_WEIGHTS,
   advanceWidthUnits,
+  faceMetrics,
   glyphInkUnits,
 } from "../src/text/metrics.js";
+import { GREEK_UNICODE_RANGE, greekWoffBase64, woffBase64 } from "../src/text/woff.js";
 
-const FONT_BYTES = readFileSync(
-  new URL("../assets/arimo-latin-400-normal.woff", import.meta.url),
+/** Each generated module, by the generator's face id. */
+const TABLES = {
+  "arimo-400": ARIMO_400,
+  "arimo-700": ARIMO_700,
+  "tinos-400": TINOS_400,
+  "tinos-700": TINOS_700,
+} as const;
+
+/** The (face, weight) each generator id is served as. */
+const SERVED_AS = {
+  "arimo-400": ["arimo", "normal"],
+  "arimo-700": ["arimo", "bold"],
+  "tinos-400": ["tinos", "normal"],
+  "tinos-700": ["tinos", "bold"],
+} as const;
+
+/**
+ * The face each table must name. Metric compatibility is the whole reason a
+ * style may declare Arial or Times after it, so a merely similar face swapped
+ * in would keep every other check green and every label subtly wrong.
+ */
+const FAMILY = { "arimo-400": "Arimo", "arimo-700": "Arimo", "tinos-400": "Tinos", "tinos-700": "Tinos" } as const;
+
+type Face = (typeof FACES)[number] & { readonly id: keyof typeof TABLES };
+
+describe.each((FACES as readonly Face[]).map((face) => [face.id, face] as const))(
+  "the committed %s table still describes its vendored fonts",
+  (id, face) => {
+    const bytes = readFileSync(face.fontPath);
+    const greekBytes = readFileSync(face.greekFontPath);
+    const latin = extractMetrics(bytes);
+    const greek = extractMetrics(greekBytes);
+    const generated = generateFace(face);
+    // The committed table is the Latin file plus what the Greek file adds
+    // (decision 252).
+    const extracted = generated.metrics;
+    const table = TABLES[id];
+    const [faceName, weight] = SERVED_AS[id];
+
+    it("came from these exact bytes", () => {
+      // The sha is the one assertion that fails when a WOFF is replaced
+      // wholesale — a new upstream release with identical metrics would slip
+      // past every other check here.
+      expect(fontSha256(bytes)).toBe(table.FONT_SHA256);
+      expect(fontSha256(greekBytes)).toBe(table.GREEK_FONT_SHA256);
+    });
+
+    it("names the same face, release and weight", () => {
+      expect(extracted.family).toBe(table.FONT_FAMILY);
+      expect(extracted.version).toBe(table.FONT_VERSION);
+      expect(table.FONT_FAMILY).toBe(FAMILY[id]);
+      expect(extracted.weight).toBe(table.FONT_WEIGHT);
+      expect(table.FONT_WEIGHT).toBe(id.endsWith("700") ? 700 : 400);
+    });
+
+    it("agrees on the em and every vertical metric", () => {
+      expect(extracted.unitsPerEm).toBe(table.UNITS_PER_EM);
+      // The PDF writer's glyph space assumes it for every face.
+      expect(table.UNITS_PER_EM).toBe(2048);
+      expect(extracted.ascender).toBe(table.ASCENDER);
+      expect(extracted.descender).toBe(table.DESCENDER);
+      expect(extracted.capHeight).toBe(table.CAP_HEIGHT);
+      expect(extracted.xHeight).toBe(table.X_HEIGHT);
+      expect(extracted.notdefAdvance).toBe(table.NOTDEF_ADVANCE);
+      // The OS/2 descender is stored signed, as the spec requires.
+      expect(table.DESCENDER).toBeLessThan(0);
+    });
+
+    it("agrees on every advance width and every glyph's ink box", () => {
+      // Deep equality over the whole list rather than a spot check. The ink
+      // boxes decide proximity and overprint for annotations (decisions 55
+      // and 57); a stale one moves a placement silently.
+      expect(extracted.widths).toEqual(table.ADVANCE_WIDTHS.map(([cp, w]) => [cp, w]));
+      expect(extracted.inks).toEqual(table.INK_BOUNDS.map((row) => [...row]));
+      expect(extracted.notdefInk).toEqual(table.NOTDEF_INK === undefined ? null : [...table.NOTDEF_INK]);
+    });
+
+    it("regenerates the committed files byte for byte", () => {
+      // Stronger than the field checks: the generator's output IS the file, so
+      // a hand edit anywhere in it — a comment included — fails here.
+      expect(generated.metricsTs).toBe(readFileSync(face.outPath, "utf8"));
+      expect(generated.woffTs).toBe(readFileSync(face.woffOutPath, "utf8"));
+    });
+
+    it("is codepoint-ascending with no duplicates", () => {
+      // The lookup builds a Map from these pairs; a duplicate codepoint would
+      // silently keep the last one, and the ordering is what makes the
+      // generated file reviewable as a diff.
+      const widths = table.ADVANCE_WIDTHS;
+      for (let i = 1; i < widths.length; i++) {
+        expect(widths[i]![0]).toBeGreaterThan(widths[i - 1]![0]);
+      }
+      expect(new Set(widths.map(([cp]) => cp)).size).toBe(widths.length);
+    });
+
+    it("takes the Latin and Greek files from one release, with one em and one set of vertical metrics", () => {
+      // mergeMetrics refuses files that disagree; this pins that they do not.
+      for (const key of ["version", "weight", "unitsPerEm", "ascender", "descender", "capHeight", "xHeight"] as const) {
+        expect(greek[key], key).toBe(latin[key]);
+      }
+      // Where both have a code point (only the spaces), they agree on its width.
+      const latinWidths = new Map(latin.widths);
+      for (const [cp, width] of greek.widths) {
+        if (latinWidths.has(cp)) expect(width, cp.toString(16)).toBe(latinWidths.get(cp));
+      }
+    });
+
+    it("covers the Greek letters chemistry sets (decision 252), over the one unicode-range", () => {
+      for (const character of "αβγδΔμΩ") {
+        const codepoint = character.codePointAt(0)!;
+        expect(table.ADVANCE_WIDTHS.some(([cp]) => cp === codepoint), character).toBe(true);
+      }
+      // `woff.ts` serves one range for every face, so each must add exactly it.
+      expect(addedUnicodeRange(latin, greek)).toBe(GREEK_UNICODE_RANGE);
+    });
+
+    it("covers the characters chemical labels are actually made of", () => {
+      // Element symbols, hydrogen counts, the two charge signs. U+2212 MINUS
+      // SIGN in particular: a label that fell back to the ASCII hyphen would
+      // still render, just short and low and reading as a bond.
+      const required = [
+        ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+        ..."abcdefghijklmnopqrstuvwxyz",
+        ..."0123456789",
+        "+",
+        "−",
+        " ",
+      ];
+      for (const character of required) {
+        const codepoint = character.codePointAt(0)!;
+        expect(
+          table.ADVANCE_WIDTHS.some(([cp]) => cp === codepoint),
+          `${character} (U+${codepoint.toString(16).padStart(4, "0")}) is missing from the subset`,
+        ).toBe(true);
+      }
+    });
+
+    it("is the table metrics.ts serves for its face and weight", () => {
+      const served = faceMetrics(faceName, weight);
+      expect(served.sha256).toBe(table.FONT_SHA256);
+      expect(served.emCapHeight).toBe(table.CAP_HEIGHT / table.UNITS_PER_EM);
+      for (const [codepoint, advance] of table.ADVANCE_WIDTHS) {
+        expect(served.advanceWidthUnits(codepoint)).toBe(advance);
+      }
+    });
+
+    it("embeds as the exact bytes the metrics were measured from", () => {
+      // An exported figure embeds these strings. If one drifted from the WOFF
+      // the table was generated against, labels would be laid out for one face
+      // and drawn in another — the failure the whole metrics pipeline exists
+      // to rule out.
+      const decoded = Buffer.from(woffBase64(faceName, weight), "base64");
+      expect(fontSha256(decoded)).toBe(table.FONT_SHA256);
+      expect(decoded.equals(bytes)).toBe(true);
+      const decodedGreek = Buffer.from(greekWoffBase64(faceName, weight), "base64");
+      expect(fontSha256(decodedGreek)).toBe(table.GREEK_FONT_SHA256);
+      expect(decodedGreek.equals(greekBytes)).toBe(true);
+    });
+  },
 );
 
-const GREEK_FONT_BYTES = readFileSync(
-  new URL("../assets/arimo-greek-400-normal.woff", import.meta.url),
-);
-
-const LATIN = extractMetrics(FONT_BYTES);
-const GREEK = extractMetrics(GREEK_FONT_BYTES);
-// The committed table is the Latin face plus what the Greek face adds
-// (decision 252).
-const EXTRACTED = mergeMetrics(LATIN, GREEK);
-
-describe("the committed table still describes the vendored font", () => {
-  it("came from these exact bytes", () => {
-    // The sha is the one assertion that fails when the WOFF is replaced
-    // wholesale — a new upstream release with identical metrics would slip
-    // past every other check here.
-    expect(fontSha256(FONT_BYTES)).toBe(FONT_SHA256);
-    expect(fontSha256(GREEK_FONT_BYTES)).toBe(GREEK_FONT_SHA256);
+describe("the vendored faces (decision 250)", () => {
+  it("cover every face and weight a style can name, each from its own files", () => {
+    expect(FACES).toHaveLength(FONT_FACES.length * FONT_WEIGHTS.length);
+    const shas = FONT_FACES.flatMap((f) => FONT_WEIGHTS.map((w) => faceMetrics(f, w).sha256));
+    expect(new Set(shas).size).toBe(shas.length);
   });
 
-  it("names the same face and release", () => {
-    expect(EXTRACTED.family).toBe(FONT_FAMILY);
-    expect(EXTRACTED.version).toBe(FONT_VERSION);
-    // Metric compatibility with Arial/Helvetica is why both presets can
-    // declare that stack and still be measured by this table. Swapping in a
-    // face that is merely similar would keep every test below green and make
-    // every label subtly wrong, so pin the name.
-    expect(FONT_FAMILY).toBe("Arimo");
-  });
-
-  it("agrees on the em and every vertical metric", () => {
-    expect(EXTRACTED.unitsPerEm).toBe(UNITS_PER_EM);
-    expect(EXTRACTED.ascender).toBe(ASCENDER);
-    expect(EXTRACTED.descender).toBe(DESCENDER);
-    expect(EXTRACTED.capHeight).toBe(CAP_HEIGHT);
-    expect(EXTRACTED.xHeight).toBe(X_HEIGHT);
-    expect(EXTRACTED.notdefAdvance).toBe(NOTDEF_ADVANCE);
-    // The OS/2 descender is stored signed, as the spec requires.
-    expect(DESCENDER).toBeLessThan(0);
-  });
-
-  it("agrees on every advance width", () => {
-    // Deep equality over the whole list rather than a spot check: a subset
-    // regenerated from a different character set would differ only in the
-    // entries nobody thought to sample.
-    expect(EXTRACTED.widths).toEqual(ADVANCE_WIDTHS.map(([cp, w]) => [cp, w]));
-  });
-
-  it("agrees on every glyph's ink box", () => {
-    // The ink boxes decide proximity and overprint for annotations
-    // (decisions 55 and 57); a stale one moves a placement silently.
-    expect(EXTRACTED.inks).toEqual(INK_BOUNDS.map((row) => [...row]));
-    expect(EXTRACTED.notdefInk).toEqual(NOTDEF_INK === undefined ? null : [...NOTDEF_INK]);
-  });
-
-  it("regenerates the committed file byte for byte", () => {
-    // Stronger than the field checks: the generator's output IS the file, so
-    // a hand edit anywhere in it — a comment included — fails here.
-    expect(render(EXTRACTED, fontSha256(FONT_BYTES), fontSha256(GREEK_FONT_BYTES))).toBe(
-      readFileSync(OUT_PATH, "utf8"),
-    );
-  });
-
-  it("is codepoint-ascending with no duplicates", () => {
-    // `advanceWidthUnits` builds a Map from these pairs; a duplicate codepoint
-    // would silently keep the last one, and the ordering is what makes the
-    // generated file reviewable as a diff.
-    for (let i = 1; i < ADVANCE_WIDTHS.length; i++) {
-      const previous = ADVANCE_WIDTHS[i - 1];
-      const current = ADVANCE_WIDTHS[i];
-      expect(previous).toBeDefined();
-      expect(current).toBeDefined();
-      expect(current![0]).toBeGreaterThan(previous![0]);
-    }
-    expect(new Set(ADVANCE_WIDTHS.map(([cp]) => cp)).size).toBe(
-      ADVANCE_WIDTHS.length,
-    );
-  });
-
-  it("takes the two faces from one release, with one em and one set of vertical metrics", () => {
-    // mergeMetrics refuses faces that disagree; this pins that they do not.
-    for (const key of ["version", "unitsPerEm", "ascender", "descender", "capHeight", "xHeight"] as const) {
-      expect(GREEK[key], key).toBe(LATIN[key]);
-    }
-    // Where both have a code point (only the spaces), they agree on its width.
-    const latin = new Map(LATIN.widths);
-    for (const [cp, width] of GREEK.widths) {
-      if (latin.has(cp)) expect(width, cp.toString(16)).toBe(latin.get(cp));
-    }
-  });
-
-  it("covers the Greek letters chemistry sets (decision 252)", () => {
-    for (const character of "αβγδΔμΩ") {
-      const codepoint = character.codePointAt(0)!;
-      expect(ADVANCE_WIDTHS.some(([cp]) => cp === codepoint), character).toBe(true);
-    }
-    expect(addedUnicodeRange(LATIN, GREEK)).toBe(ARIMO_GREEK_UNICODE_RANGE);
-  });
-
-  it("covers the characters chemical labels are actually made of", () => {
-    // Element symbols, hydrogen counts, the two charge signs. U+2212 MINUS
-    // SIGN in particular: a label that fell back to the ASCII hyphen would
-    // still render, just short and low and reading as a bond.
-    const required = [
-      ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-      ..."abcdefghijklmnopqrstuvwxyz",
-      ..."0123456789",
-      "+",
-      "−",
-      " ",
-    ];
-    for (const character of required) {
-      const codepoint = character.codePointAt(0)!;
-      expect(
-        ADVANCE_WIDTHS.some(([cp]) => cp === codepoint),
-        `${character} (U+${codepoint.toString(16).padStart(4, "0")}) is missing from the subset`,
-      ).toBe(true);
-    }
+  it("give bold its own, wider advances", () => {
+    // Arimo is metric-compatible with Arial, so its bold advances are Arial
+    // Bold's. Not every glyph widens — Arial Bold's "O" is exactly as wide as
+    // Arial's — but a bold table equal to the regular one would mean the
+    // generator read the same file twice.
+    const regular = faceMetrics("arimo", "normal");
+    const bold = faceMetrics("arimo", "bold");
+    const labels = "BrClNaOHSiMgCa0123456789";
+    expect(bold.advanceWidthUnitsOf(labels).units).toBeGreaterThan(regular.advanceWidthUnitsOf(labels).units);
   });
 });
 
@@ -231,20 +285,5 @@ describe("metrics.ts derives em fractions from the table", () => {
     }
     // A CJK ideograph is in neither subset.
     expect(advanceWidthUnits(0x4e00)).toBe(NOTDEF_ADVANCE);
-  });
-});
-
-describe("the embeddable font string is the vendored font", () => {
-  it("decodes to the exact bytes the metrics were measured from", () => {
-    // An exported figure embeds this string. If it drifted from the WOFF the
-    // table was generated against, labels would be laid out for one face and
-    // drawn in another — the failure the whole metrics pipeline exists to
-    // rule out.
-    const decoded = Buffer.from(ARIMO_WOFF_BASE64, "base64");
-    expect(fontSha256(decoded)).toBe(FONT_SHA256);
-    expect(decoded.equals(FONT_BYTES)).toBe(true);
-    const greek = Buffer.from(ARIMO_GREEK_WOFF_BASE64, "base64");
-    expect(fontSha256(greek)).toBe(GREEK_FONT_SHA256);
-    expect(greek.equals(GREEK_FONT_BYTES)).toBe(true);
   });
 });

@@ -8,13 +8,15 @@
  * SVG-to-PDF converter and keeps chem-render dependency-free.
  *
  * Served from `@starter/chem-render/pdf` and never from the root barrel: the
- * embedded font is ~20 kB of base64, and only an actual PDF export should
- * load it.
+ * embedded fonts are ~20 kB of base64 each (four faces, each with a Greek
+ * subset; decisions 250 and 252), and only an actual PDF export should load
+ * them.
  *
  * ── THE FONT IS EMBEDDED, SO IT PRINTS LIKE THE SVG ──────────────────────
  *
- * Every glyph is set in the vendored Arimo — the Latin face, and the Greek
- * face for Greek letters (decision 252) — each embedded whole as a TrueType
+ * Every glyph is set in the style's vendored face (Arimo or Tinos, regular or
+ * bold; decision 250) — its Latin file, and its Greek file for Greek letters
+ * (decision 252) — each embedded whole as a TrueType
  * `FontFile2` behind its own Type0 / Identity-H font, with a ToUnicode map
  * so the text still copies and searches. The glyphs are placed at the
  * measurer's own advances (the `/W` widths are the same font units the
@@ -25,7 +27,7 @@
  * face; those that the PDF standard Symbol font has are set in it, which
  * every reader must supply and which is NOT embedded.
  * `pdfFallbackCodePoints` (symbol.ts) names them so the dialog can say so. A
- * code point no face has is drawn as Arimo's `.notdef`, at the advance the
+ * code point no face has is drawn as the Latin file's `.notdef`, at the advance the
  * measurer charged it — the box the SVG would show.
  *
  * ── PAGE AND COORDINATES ─────────────────────────────────────────────────
@@ -49,19 +51,17 @@ import type {
   SceneStroke,
   TextRunPrimitive,
 } from "../scene/types.js";
-import { FigureUnavailableError, EMBEDDED_FONT_NOTICE } from "../svg/figure.js";
+import { FigureUnavailableError, embeddedFontNotice } from "../svg/figure.js";
 import type { FigureDimensions, UnavailablePanel } from "../svg/figure.js";
-import { PDF_FACES } from "../text/generated/arimo-sfnt.js";
+import * as ARIMO_400 from "../text/generated/arimo-400-sfnt.js";
+import * as ARIMO_700 from "../text/generated/arimo-700-sfnt.js";
+import * as TINOS_400 from "../text/generated/tinos-400-sfnt.js";
+import * as TINOS_700 from "../text/generated/tinos-700-sfnt.js";
+import type { PdfFace } from "../text/generated/arimo-400-sfnt.js";
 import { measureTextRun, measurerFor } from "../text/measurer.js";
 import type { Measurer } from "../text/measurer.js";
-import {
-  EM_ASCENT,
-  EM_CAP_HEIGHT,
-  EM_DESCENT,
-  EM_X_HEIGHT,
-  UNITS_PER_EM,
-  advanceWidthUnits,
-} from "../text/metrics.js";
+import { faceMetrics, fontFaceOfFamily } from "../text/metrics.js";
+import type { FaceMetrics, FontFace, FontWeight } from "../text/metrics.js";
 import { pathOperators } from "./path.js";
 import { SYMBOL_CODES } from "./symbol.js";
 
@@ -75,12 +75,51 @@ const SVG_MITER_LIMIT = 4;
 /** A circle as four cubics: the control distance for a quarter arc. */
 const KAPPA = 0.5522847498307936;
 
-/** Code point -> the embedded face it is set in, and its glyph id there. */
-const GLYPH_BY_CODEPOINT: ReadonlyMap<number, { readonly face: number; readonly glyph: number }> = new Map(
-  PDF_FACES.flatMap((face, index) =>
-    face.glyphIds.map(([codepoint, glyph]) => [codepoint, { face: index, glyph }] as const),
-  ),
-);
+/** Every vendored face has a 2048-unit em; `font-metrics.test.ts` pins it. */
+const UNITS_PER_EM = 2048;
+
+const PDF_FACES: Readonly<Record<FontFace, Readonly<Record<FontWeight, readonly PdfFace[]>>>> = {
+  arimo: { normal: ARIMO_400.PDF_FACES, bold: ARIMO_700.PDF_FACES },
+  tinos: { normal: TINOS_400.PDF_FACES, bold: TINOS_700.PDF_FACES },
+};
+
+/**
+ * The files a figure's text is embedded from: the style's face at its weight
+ * (decision 250), its Latin file first and its Greek file second. Every run
+ * of a figure is set in the style's family and weight, so a PDF never needs
+ * two of these.
+ */
+interface EmbeddedFace {
+  readonly face: FontFace;
+  readonly weight: FontWeight;
+  readonly metrics: FaceMetrics;
+  readonly files: readonly PdfFace[];
+  /** Code point -> the file it is set in, and its glyph id there. */
+  readonly glyphByCodepoint: ReadonlyMap<number, { readonly face: number; readonly glyph: number }>;
+}
+
+const EMBEDDED_FACES = new Map<string, EmbeddedFace>();
+
+function embeddedFace(face: FontFace, weight: FontWeight): EmbeddedFace {
+  const key = `${face}-${weight}`;
+  let found = EMBEDDED_FACES.get(key);
+  if (found === undefined) {
+    const files = PDF_FACES[face][weight];
+    found = {
+      face,
+      weight,
+      metrics: faceMetrics(face, weight),
+      files,
+      glyphByCodepoint: new Map(
+        files.flatMap((file, index) =>
+          file.glyphIds.map(([codepoint, glyph]) => [codepoint, { face: index, glyph }] as const),
+        ),
+      ),
+    };
+    EMBEDDED_FACES.set(key, found);
+  }
+  return found;
+}
 
 /** Page resource names: /F1, /F2… for the embedded faces, /FS for Symbol. */
 const faceResource = (face: number): string => `F${face + 1}`;
@@ -152,6 +191,7 @@ interface FontUse {
 
 interface Writer {
   readonly ops: string[];
+  readonly face: EmbeddedFace;
   readonly fonts: FontUse;
   readonly measurer: Measurer;
   readonly subscriptScale: number;
@@ -223,6 +263,7 @@ function textRunOps(w: Writer, p: TextRunPrimitive): void {
     p.spans,
     {
       fontFamily: p.fontFamily,
+      fontWeight: p.fontWeight,
       fontSizePx: p.fontSizePx,
       subscriptScale: w.subscriptScale,
       anchor: p.anchor,
@@ -248,7 +289,7 @@ function textRunOps(w: Writer, p: TextRunPrimitive): void {
     };
     for (const character of span.span.text) {
       const codepoint = character.codePointAt(0) ?? 0;
-      const glyph = GLYPH_BY_CODEPOINT.get(codepoint);
+      const glyph = w.face.glyphByCodepoint.get(codepoint);
       const symbol = glyph === undefined ? SYMBOL_CODES.get(codepoint) : undefined;
       // A Symbol glyph's own width is not what the measurer charged, so each
       // one starts its own stretch, at the measurer's pen. A code point no
@@ -269,7 +310,7 @@ function textRunOps(w: Writer, p: TextRunPrimitive): void {
         w.fonts.glyphs.set(next as number, used);
         codes += hex4(id);
       }
-      pen += w.measurer.measureText(character, { family: p.fontFamily, sizePx: span.fontSizePx }).advanceWidthPx;
+      pen += w.measurer.measureText(character, { family: p.fontFamily, weight: p.fontWeight, sizePx: span.fontSizePx }).advanceWidthPx;
     }
     flush();
   }
@@ -338,7 +379,7 @@ function decodeBase64(text: string): Uint8Array<ArrayBuffer> {
 }
 
 /** Each face's decoded font file, decoded on first use. */
-const fontFiles = new Map<number, Uint8Array<ArrayBuffer>>();
+const fontFiles = new Map<string, Uint8Array<ArrayBuffer>>();
 
 function ascii(text: string): Uint8Array {
   const out = new Uint8Array(text.length);
@@ -425,6 +466,7 @@ export function serializeFigurePdf(
 
   const w: Writer = {
     ops: [],
+    face: embeddedFace(fontFaceOfFamily(style.fontFamily), style.fontWeight),
     fonts: { glyphs: new Map(), symbol: false },
     measurer: measurerFor(style),
     subscriptScale: style.subscriptScale,
@@ -455,7 +497,8 @@ export function serializeFigurePdf(
   const later: (() => void)[] = [];
 
   for (const [faceIndex, glyphs] of [...w.fonts.glyphs].sort(([a], [b]) => a - b)) {
-    const face = PDF_FACES[faceIndex];
+    const embedded = w.face;
+    const face = embedded.files[faceIndex];
     if (face === undefined) throw new Error(`No embedded face ${faceIndex}`);
     const type0 = next;
     const cidFont = next + 1;
@@ -465,21 +508,27 @@ export function serializeFigurePdf(
     next += 5;
     fontRefs.push(`/${faceResource(faceIndex)} ${ref(type0)}`);
     later.push(() => {
+      const m = embedded.metrics;
       const widths = [...glyphs]
         .sort(([a], [b]) => a - b)
         // -1 (.notdef) is in no table, so it reads as the notdef advance —
         // what the measurer charged for it.
-        .map(([glyph, cp]) => `${glyph} [${glyphSpace(advanceWidthUnits(cp))}]`)
+        .map(([glyph, cp]) => `${glyph} [${glyphSpace(m.advanceWidthUnits(cp))}]`)
         .join(" ");
-      const bytes = fontFiles.get(faceIndex) ?? decodeBase64(face.deflatedBase64);
-      fontFiles.set(faceIndex, bytes);
+      const key = `${embedded.face}-${embedded.weight}:${faceIndex}`;
+      const bytes = fontFiles.get(key) ?? decodeBase64(face.deflatedBase64);
+      fontFiles.set(key, bytes);
       const name = `/${face.baseFont}`;
+      // Flags: 32 nonsymbolic, plus 2 for a serif face. /FontWeight only for
+      // bold, so a regular figure's descriptor is byte for byte what it was.
+      const flags = embedded.face === "tinos" ? 34 : 32;
+      const fontWeight = embedded.weight === "bold" ? " /FontWeight 700" : "";
       objects[type0 - 1] =
         `<< /Type /Font /Subtype /Type0 /BaseFont ${name} /Encoding /Identity-H /DescendantFonts [${ref(cidFont)}] /ToUnicode ${ref(toUnicode)} >>`;
       objects[cidFont - 1] =
         `<< /Type /Font /Subtype /CIDFontType2 /BaseFont ${name} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ${ref(descriptor)} /CIDToGIDMap /Identity /W [${widths}] >>`;
       objects[descriptor - 1] =
-        `<< /Type /FontDescriptor /FontName ${name} /Flags 32 /FontBBox [${face.fontBBox.map(glyphSpace).join(" ")}] /ItalicAngle 0 /Ascent ${em(EM_ASCENT)} /Descent ${em(-EM_DESCENT)} /CapHeight ${em(EM_CAP_HEIGHT)} /XHeight ${em(EM_X_HEIGHT)} /StemV 80 /FontFile2 ${ref(file)} >>`;
+        `<< /Type /FontDescriptor /FontName ${name} /Flags ${flags} /FontBBox [${face.fontBBox.map(glyphSpace).join(" ")}] /ItalicAngle 0 /Ascent ${em(m.emAscent)} /Descent ${em(-m.emDescent)} /CapHeight ${em(m.emCapHeight)} /XHeight ${em(m.emXHeight)}${fontWeight} /StemV 80 /FontFile2 ${ref(file)} >>`;
       objects[file - 1] = {
         dict: `<< /Length ${bytes.length} /Length1 ${face.length} /Filter /FlateDecode >>`,
         stream: bytes,
@@ -506,7 +555,7 @@ export function serializeFigurePdf(
   objects[CONTENT - 1] = { dict: `<< /Length ${contentBytes.length} >>`, stream: contentBytes };
   const info = [`/Producer ${textString("Chemistry Sketcher")}`];
   if (options.title !== undefined && options.title !== "") info.push(`/Title ${textString(options.title)}`);
-  if (w.fonts.glyphs.size > 0) info.push(`/Subject ${textString(EMBEDDED_FONT_NOTICE)}`);
+  if (w.fonts.glyphs.size > 0) info.push(`/Subject ${textString(embeddedFontNotice(w.face.face))}`);
   objects[INFO - 1] = `<< ${info.join(" ")} >>`;
   for (const fill of later) fill();
 

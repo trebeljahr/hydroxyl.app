@@ -101,6 +101,7 @@ function runGlyphs(run: TextRunPrimitive, style: RenderStyle): Glyph[] {
     run.spans,
     {
       fontFamily: run.fontFamily,
+      fontWeight: run.fontWeight,
       fontSizePx: run.fontSizePx,
       subscriptScale: style.subscriptScale,
       anchor: run.anchor,
@@ -112,7 +113,7 @@ function runGlyphs(run: TextRunPrimitive, style: RenderStyle): Glyph[] {
     measurer,
   );
   const isHydrogen = run.source.kind === "hydrogen";
-  return glyphInkRects(measured, run.origin, measurer, run.fontFamily).map(
+  return glyphInkRects(measured, run.origin, measurer, run.fontFamily, run.fontWeight).map(
     (box) => ({ id: run.id, isHydrogen, box }),
   );
 }

@@ -7,7 +7,7 @@
  */
 
 import type { ScenePrimitive } from "../scene/types.js";
-import { ARIMO_GREEK_UNICODE_RANGE } from "../text/generated/arimo-woff.js";
+import { GREEK_UNICODE_RANGE } from "../text/woff.js";
 import type { Figure } from "./compose.js";
 
 /** Every code point any text run of `figure` sets, in first-drawn order. */
@@ -30,7 +30,7 @@ export function figureCodePoints(figure: Figure): readonly number[] {
 }
 
 /** The Greek face's `unicode-range`, read once into [first, last] pairs. */
-const GREEK_RANGES: readonly (readonly [number, number])[] = ARIMO_GREEK_UNICODE_RANGE.split(",").map(
+const GREEK_RANGES: readonly (readonly [number, number])[] = GREEK_UNICODE_RANGE.split(",").map(
   (part) => {
     const [first, last] = part.replace(/^U\+/, "").split("-");
     const a = parseInt(first ?? "", 16);

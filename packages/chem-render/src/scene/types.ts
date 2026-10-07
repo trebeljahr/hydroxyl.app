@@ -23,6 +23,7 @@ import type { AtomId, BondId } from "@starter/chem-core";
 import type { Representation } from "../representation.js";
 import type { SchemeAnnotationId } from "../scheme/annotation.js";
 import type { RenderStyle } from "../style.js";
+import type { FontWeight } from "../text/metrics.js";
 
 export interface ScenePoint {
   readonly x: number;
@@ -168,6 +169,8 @@ export interface TextRunPrimitive extends PrimitiveBase {
   readonly origin: ScenePoint;
   readonly spans: readonly TextSpan[];
   readonly fontFamily: string;
+  /** Emitted as `font-weight` only when not "normal" (decision 250). */
+  readonly fontWeight: FontWeight;
   readonly fontSizePx: number;
   readonly fill: SceneFill;
   readonly anchor: "start" | "middle" | "end";

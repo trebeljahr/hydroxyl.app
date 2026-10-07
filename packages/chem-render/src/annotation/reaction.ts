@@ -50,7 +50,7 @@ import type {
 import { formatNumber } from "../svg/emit.js";
 import { pxPerModelUnit } from "../style.js";
 import type { RenderStyle } from "../style.js";
-import { EM_CAP_HEIGHT } from "../text/metrics.js";
+import { faceMetricsFor } from "../text/metrics.js";
 import { measureTextRun } from "../text/measurer.js";
 import { unmeasuredCodePoints } from "../text/typography.js";
 import { arrowhead, arrowheadLengths } from "./arrowhead.js";
@@ -273,6 +273,7 @@ export function layoutStraightArrow(
   const room = line.gapPx - 2 * SCHEME_LAYOUT.speciesClearanceBonds * bond;
   const runOptions = {
     fontFamily: style.fontFamily,
+    fontWeight: style.fontWeight,
     fontSizePx,
     subscriptScale: style.subscriptScale,
     anchor: "middle" as const,
@@ -287,7 +288,7 @@ export function layoutStraightArrow(
   const text: ConditionsText =
     ends.conditions === undefined ? EMPTY_CONDITIONS_TEXT : conditionsText(ends.conditions, wrapWidth, measure);
   const lineHeight = SCHEME_LAYOUT.conditionsLineEm * fontSizePx;
-  const capHeight = EM_CAP_HEIGHT * fontSizePx;
+  const capHeight = faceMetricsFor(style.fontFamily, style.fontWeight).emCapHeight * fontSizePx;
   const widest = Math.max(0, ...[...text.above, ...text.below].map(measure));
   const columnHeight = (count: number): number => (count === 0 ? 0 : (count - 1) * lineHeight + capHeight);
   const natural =
@@ -339,6 +340,7 @@ export function layoutStraightArrow(
     conditions.map((c) => c.spans.map((span) => span.text).join("")).join(""),
     measurer,
     style.fontFamily,
+    style.fontWeight,
   );
   if (codePoints.length > 0) findings.push({ kind: "unmeasured-glyphs", codePoints });
 
@@ -362,6 +364,7 @@ export function layoutStraightArrow(
       origin: c.origin,
       spans: c.spans,
       fontFamily: style.fontFamily,
+      fontWeight: style.fontWeight,
       fontSizePx: c.fontSizePx,
       fill: { color: style.colors.label },
       anchor: c.anchor,

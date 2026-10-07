@@ -1,5 +1,6 @@
 /**
- * Regenerates `src/text/generated/arimo-metrics.ts` from the vendored WOFF.
+ * Regenerates `src/text/generated/<face>-metrics.ts` (and the matching
+ * `-woff.ts` and `-sfnt.ts`) for every vendored face in `FACES`.
  *
  *     node scripts/generate-font-metrics.mjs
  *
@@ -22,18 +23,41 @@ import { fileURLToPath } from "node:url";
 import { deflateSync, inflateSync } from "node:zlib";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const FONT_PATH = join(here, "..", "assets", "arimo-latin-400-normal.woff");
+const ASSETS = join(here, "..", "assets");
+const GENERATED = join(here, "..", "src", "text", "generated");
+
 /**
- * Arimo's Greek subset, from the same `@fontsource/arimo@5.3.0` release
- * (decision 252). A second face rather than a merged font: merging glyph
- * tables needs font tooling this repo does not carry, and two faces of one
- * family are what CSS `unicode-range` and a PDF's font resources both expect.
- * The Latin face wins wherever both cover a code point (only the two spaces).
+ * The vendored faces (decision 250): Arimo and Tinos, the Liberation designs
+ * metrically compatible with Arial/Helvetica and with Times, each at regular
+ * and bold, all from the `@fontsource/{arimo,tinos}@5.3.0` releases.
+ *
+ * Each face is its Latin subset plus its Greek subset (decision 252). A
+ * second file rather than a merged font: merging glyph tables needs font
+ * tooling this repo does not carry, and two faces of one family are what CSS
+ * `unicode-range` and a PDF's font resources both expect. The Latin file wins
+ * wherever both cover a code point (only the two spaces).
+ *
+ * `id` names the generated modules, `baseFont` the PDF font, `licence` the
+ * OFL text beside the WOFFs.
  */
-const GREEK_FONT_PATH = join(here, "..", "assets", "arimo-greek-400-normal.woff");
-const OUT_PATH = join(here, "..", "src", "text", "generated", "arimo-metrics.ts");
-const WOFF_OUT_PATH = join(here, "..", "src", "text", "generated", "arimo-woff.ts");
-const SFNT_OUT_PATH = join(here, "..", "src", "text", "generated", "arimo-sfnt.ts");
+const FACES = [
+  { id: "arimo-400", project: "Arimo", baseFont: "Arimo", licence: "OFL.txt" },
+  { id: "arimo-700", project: "Arimo", baseFont: "Arimo-Bold", licence: "OFL.txt" },
+  { id: "tinos-400", project: "Tinos", baseFont: "Tinos", licence: "OFL-Tinos.txt" },
+  { id: "tinos-700", project: "Tinos", baseFont: "Tinos-Bold", licence: "OFL-Tinos.txt" },
+].map((face) => {
+  const [family, weight] = face.id.split("-");
+  return {
+    ...face,
+    latinFile: `${family}-latin-${weight}-normal.woff`,
+    greekFile: `${family}-greek-${weight}-normal.woff`,
+    fontPath: join(ASSETS, `${family}-latin-${weight}-normal.woff`),
+    greekFontPath: join(ASSETS, `${family}-greek-${weight}-normal.woff`),
+    outPath: join(GENERATED, `${face.id}-metrics.ts`),
+    woffOutPath: join(GENERATED, `${face.id}-woff.ts`),
+    sfntOutPath: join(GENERATED, `${face.id}-sfnt.ts`),
+  };
+});
 
 const WOFF_SIGNATURE = 0x774f4646;
 
@@ -41,7 +65,7 @@ const WOFF_SIGNATURE = 0x774f4646;
 function readSfntTables(buf) {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   if (dv.getUint32(0) !== WOFF_SIGNATURE) {
-    throw new Error(`${FONT_PATH} is not a WOFF file`);
+    throw new Error("Not a WOFF file");
   }
   const tables = new Map();
   const numTables = dv.getUint16(12);
@@ -237,6 +261,8 @@ export function extractMetrics(fontBytes) {
   return {
     family: readName(name, 1),
     version: readName(name, 5),
+    // OS/2 usWeightClass: 400 regular, 700 bold.
+    weight: os2.getUint16(4),
     unitsPerEm,
     // OS/2 typographic metrics, not hhea's: hhea carries line-layout values a
     // browser may already have adjusted, while sTypo* is the designer's own
@@ -261,7 +287,7 @@ export function extractMetrics(fontBytes) {
  * against one face's band and drawn in the other's.
  */
 export function mergeMetrics(primary, secondary) {
-  for (const key of ["family", "version", "unitsPerEm", "ascender", "descender", "capHeight", "xHeight", "notdefAdvance"]) {
+  for (const key of ["family", "version", "weight", "unitsPerEm", "ascender", "descender", "capHeight", "xHeight", "notdefAdvance"]) {
     if (primary[key] !== secondary[key]) {
       throw new Error(`The faces disagree on ${key}: ${primary[key]} vs ${secondary[key]}`);
     }
@@ -293,7 +319,7 @@ export function fontSha256(fontBytes) {
   return createHash("sha256").update(fontBytes).digest("hex");
 }
 
-function render(metrics, sha256, greekSha256) {
+function render(face, metrics, sha256, greekSha256) {
   const rows = metrics.widths
     .map(([cp, advance]) => `  [0x${cp.toString(16).padStart(4, "0")}, ${advance}],`)
     .join("\n");
@@ -311,7 +337,7 @@ function render(metrics, sha256, greekSha256) {
  * GENERATED FILE — DO NOT EDIT.
  *
  * Produced by \`node scripts/generate-font-metrics.mjs\` from
- * \`assets/arimo-latin-400-normal.woff\` and \`arimo-greek-400-normal.woff\`
+ * \`assets/${face.latinFile}\` and \`${face.greekFile}\`
  * (decision 252; Latin wins where both have a code point).
  * \`font-metrics.test.ts\` re-extracts the same numbers from those files and
  * fails if this table has drifted, so the generator is the only sanctioned way
@@ -327,6 +353,9 @@ export const FONT_FAMILY = ${JSON.stringify(metrics.family)};
 
 /** \`name\` ID 5, so a bug report can name the exact release. */
 export const FONT_VERSION = ${JSON.stringify(metrics.version)};
+
+/** OS/2 usWeightClass: 400 regular, 700 bold. */
+export const FONT_WEIGHT = ${metrics.weight};
 
 /** SHA-256 of the Latin WOFF these numbers came from. */
 export const FONT_SHA256 = ${JSON.stringify(sha256)};
@@ -379,20 +408,24 @@ ${inkRows}
  * image may not fetch anything. `font-metrics.test.ts` decodes it and checks
  * its SHA-256 against `FONT_SHA256`, so it cannot drift from the file either.
  */
-function renderWoff(bytes, sha256, greekBytes, greekSha256, greekRange) {
+function licenceNote(face) {
+  return ` * ${face.project}, Copyright The ${face.project} Project Authors
+ * (https://github.com/googlefonts/${face.project.toLowerCase()}), licensed under the SIL Open Font
+ * License 1.1 — full text in assets/${face.licence}. The OFL permits embedding the
+ * font in a document, and places no obligation on the document.`;
+}
+
+function renderWoff(face, bytes, sha256, greekBytes, greekSha256, greekRange) {
   return `/**
  * GENERATED by scripts/generate-font-metrics.mjs from
- * assets/arimo-latin-400-normal.woff. Do not edit by hand.
+ * assets/${face.latinFile} and assets/${face.greekFile}. Do not edit by hand.
  *
- * Arimo, Copyright The Arimo Project Authors
- * (https://github.com/googlefonts/arimo), licensed under the SIL Open Font
- * License 1.1 — full text in assets/OFL.txt. The OFL permits embedding the
- * font in a document, and places no obligation on the document.
+${licenceNote(face)}
  *
  * SHA-256 of the decoded bytes: ${sha256}
  */
 
-export const ARIMO_WOFF_BASE64 =
+export const WOFF_BASE64 =
   ${JSON.stringify(Buffer.from(bytes).toString("base64"))};
 
 /**
@@ -400,10 +433,10 @@ export const ARIMO_WOFF_BASE64 =
  * figure that sets one of its letters, declared with this unicode-range so a
  * browser takes exactly those code points from it.
  */
-export const ARIMO_GREEK_WOFF_BASE64 =
+export const GREEK_WOFF_BASE64 =
   ${JSON.stringify(Buffer.from(greekBytes).toString("base64"))};
 
-export const ARIMO_GREEK_UNICODE_RANGE = ${JSON.stringify(greekRange)};
+export const GREEK_UNICODE_RANGE = ${JSON.stringify(greekRange)};
 `;
 }
 
@@ -424,7 +457,7 @@ export const ARIMO_GREEK_UNICODE_RANGE = ${JSON.stringify(greekRange)};
  */
 export function buildSfnt(buf) {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-  if (dv.getUint32(0) !== WOFF_SIGNATURE) throw new Error(`${FONT_PATH} is not a WOFF file`);
+  if (dv.getUint32(0) !== WOFF_SIGNATURE) throw new Error("Not a WOFF file");
   const flavor = dv.getUint32(4);
   const numTables = dv.getUint16(12);
   const entries = [];
@@ -479,7 +512,7 @@ export function extractPdfFontData(fontBytes) {
   };
 }
 
-function renderSfnt(faces) {
+function renderSfnt(face, faces) {
   const covered = new Set();
   const blocks = faces.map(({ name, bytes }) => {
     const sfnt = buildSfnt(bytes);
@@ -504,7 +537,7 @@ ${rows}
   });
   return `/**
  * GENERATED by scripts/generate-font-metrics.mjs from
- * assets/arimo-latin-400-normal.woff and assets/arimo-greek-400-normal.woff.
+ * assets/${face.latinFile} and assets/${face.greekFile}.
  * Do not edit by hand.
  *
  * Each face unwrapped to the TrueType file a PDF embeds as FontFile2 and
@@ -512,10 +545,7 @@ ${rows}
  * without a compressor (decision 236). Latin first; the Greek face carries
  * only the code points Latin lacks (decision 252).
  *
- * Arimo, Copyright The Arimo Project Authors
- * (https://github.com/googlefonts/arimo), licensed under the SIL Open Font
- * License 1.1 — full text in assets/OFL.txt. The OFL permits embedding the
- * font in a document, and places no obligation on the document.
+${licenceNote(face)}
  */
 
 export interface PdfFace {
@@ -539,29 +569,36 @@ ${blocks.join("\n")}
 `;
 }
 
-// Only write when run as a script; the test imports `extractMetrics` instead.
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const bytes = readFileSync(FONT_PATH);
-  const greekBytes = readFileSync(GREEK_FONT_PATH);
+/** Everything the generator writes for one face, as the strings it writes. */
+export function generateFace(face) {
+  const bytes = readFileSync(face.fontPath);
+  const greekBytes = readFileSync(face.greekFontPath);
   const latin = extractMetrics(bytes);
   const greek = extractMetrics(greekBytes);
   const metrics = mergeMetrics(latin, greek);
-  writeFileSync(OUT_PATH, render(metrics, fontSha256(bytes), fontSha256(greekBytes)));
-  writeFileSync(
-    WOFF_OUT_PATH,
-    renderWoff(bytes, fontSha256(bytes), greekBytes, fontSha256(greekBytes), addedUnicodeRange(latin, greek)),
-  );
-  writeFileSync(
-    SFNT_OUT_PATH,
-    renderSfnt([
-      { name: "Arimo", bytes },
-      { name: "Arimo-Greek", bytes: greekBytes },
+  return {
+    metrics,
+    metricsTs: render(face, metrics, fontSha256(bytes), fontSha256(greekBytes)),
+    woffTs: renderWoff(face, bytes, fontSha256(bytes), greekBytes, fontSha256(greekBytes), addedUnicodeRange(latin, greek)),
+    sfntTs: renderSfnt(face, [
+      { name: face.baseFont, bytes },
+      { name: `${face.baseFont}-Greek`, bytes: greekBytes },
     ]),
-  );
-  process.stdout.write(
-    `Wrote ${OUT_PATH}: ${metrics.widths.length} glyph advances from ` +
-      `${metrics.family} ${metrics.version}\n`,
-  );
+  };
 }
 
-export { render, renderWoff, renderSfnt, FONT_PATH, GREEK_FONT_PATH, OUT_PATH, WOFF_OUT_PATH, SFNT_OUT_PATH };
+// Only write when run as a script; the test imports `generateFace` instead.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  for (const face of FACES) {
+    const out = generateFace(face);
+    writeFileSync(face.outPath, out.metricsTs);
+    writeFileSync(face.woffOutPath, out.woffTs);
+    writeFileSync(face.sfntOutPath, out.sfntTs);
+    process.stdout.write(
+      `Wrote ${face.outPath}: ${out.metrics.widths.length} glyph advances from ` +
+        `${out.metrics.family} ${out.metrics.version} (${out.metrics.weight})\n`,
+    );
+  }
+}
+
+export { render, renderWoff, renderSfnt, FACES };

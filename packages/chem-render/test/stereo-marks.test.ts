@@ -418,6 +418,7 @@ describe("descriptor labels", () => {
               run.spans,
               {
                 fontFamily: run.fontFamily,
+                fontWeight: run.fontWeight,
                 fontSizePx: run.fontSizePx,
                 subscriptScale: style.subscriptScale,
                 anchor: run.anchor,

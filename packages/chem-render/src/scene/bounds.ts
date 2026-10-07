@@ -238,6 +238,7 @@ function addTextRun(
     run.spans,
     {
       fontFamily: run.fontFamily,
+      fontWeight: run.fontWeight,
       fontSizePx: run.fontSizePx,
       subscriptScale: style.subscriptScale,
       anchor: run.anchor,

@@ -36,7 +36,7 @@ import type { LinePrimitive, PolylinePrimitive, ScenePoint, ScenePrimitive, Text
 import type { BracketAnnotation } from "../scheme/annotation.js";
 import { pxPerModelUnit } from "../style.js";
 import type { RenderStyle } from "../style.js";
-import { EM_CAP_HEIGHT, glyphInkUnits, UNITS_PER_EM } from "../text/metrics.js";
+import { faceMetricsFor } from "../text/metrics.js";
 import { MINUS_SIGN } from "./conditions.js";
 import { annotationSource, primitivesBox, SCHEME_LAYOUT, schemeMarkPrimitiveId } from "./scheme-mark.js";
 import type { SchemeMarkFinding, SchemeMarkLayout, SchemeMarkSite } from "./scheme-mark.js";
@@ -157,7 +157,7 @@ export function layoutBracket(
 
   // The superscript band: its cap top on the bracket's top edge.
   const size = superscriptSizePx(style);
-  const capHeight = EM_CAP_HEIGHT * size;
+  const capHeight = faceMetricsFor(style.fontFamily, style.fontWeight).emCapHeight * size;
   const gap = SCHEME_LAYOUT.superscriptGapEm * size;
   let pen = maxX + stroke.width / 2 + gap;
   if (annotation.transitionState === true) {
@@ -181,6 +181,7 @@ export function layoutBracket(
       origin,
       spans: [{ text }],
       fontFamily: style.fontFamily,
+      fontWeight: style.fontWeight,
       fontSizePx: size,
       fill: { color: style.colors.label },
       anchor: "start",
@@ -207,8 +208,9 @@ export function layoutBracket(
  * for a measurer whose table has no minus at all.
  */
 export function daggerStrokePx(sizePx: number, style: RenderStyle): number {
-  const minus = glyphInkUnits(0x2212);
-  return minus === undefined ? style.bondLineWidthPx : ((minus.yMax - minus.yMin) * sizePx) / UNITS_PER_EM;
+  const face = faceMetricsFor(style.fontFamily, style.fontWeight);
+  const minus = face.glyphInkUnits(0x2212);
+  return minus === undefined ? style.bondLineWidthPx : ((minus.yMax - minus.yMin) * sizePx) / face.unitsPerEm;
 }
 
 /**

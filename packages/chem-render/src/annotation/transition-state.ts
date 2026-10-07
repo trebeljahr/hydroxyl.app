@@ -184,7 +184,7 @@ export function partialChargeLayout(
   if (placement !== undefined && !placement.clear) {
     findings.push(placement.drawn ? { kind: "crowded" } : { kind: "prints-on-text" });
   }
-  const codePoints = unmeasuredCodePoints(text, measurer, style.fontFamily);
+  const codePoints = unmeasuredCodePoints(text, measurer, style.fontFamily, style.fontWeight);
   if (codePoints.length > 0) findings.push({ kind: "unmeasured-glyphs", codePoints });
   return {
     annotationId: annotation.id,

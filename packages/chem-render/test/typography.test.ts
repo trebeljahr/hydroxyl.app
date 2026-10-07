@@ -31,7 +31,9 @@ import { buildScene } from "../src/scene/build.js";
 import type { TextRunPrimitive } from "../src/scene/types.js";
 import { PUBLICATION_STYLE, SCREEN_STYLE } from "../src/style.js";
 import { serializeFigure } from "../src/svg/figure.js";
-import { ARIMO_GREEK_UNICODE_RANGE, ARIMO_GREEK_WOFF_BASE64 } from "../src/text/generated/arimo-woff.js";
+import { GREEK_UNICODE_RANGE as ARIMO_GREEK_UNICODE_RANGE, greekWoffBase64 } from "../src/text/woff.js";
+
+const ARIMO_GREEK_WOFF_BASE64 = greekWoffBase64("arimo", "normal");
 import { BUNDLED_MEASURER } from "../src/text/measurer.js";
 import {
   GREEK_LETTERS,
@@ -53,7 +55,7 @@ function load(dir: "steroid" | "projection", file: string): Molecule {
 const FAMILY = PUBLICATION_STYLE.fontFamily;
 
 function notdefs(text: string): number {
-  return BUNDLED_MEASURER.measureText(text, { family: FAMILY, sizePx: 10 }).notdefCount;
+  return BUNDLED_MEASURER.measureText(text, { family: FAMILY, weight: "normal", sizePx: 10 }).notdefCount;
 }
 
 /**
@@ -89,14 +91,14 @@ describe("the Latin corpus is measured, glyph for glyph (decision 206)", () => {
   it("has no .notdef in any conditions line, coefficient or bracket charge", () => {
     for (const text of LATIN_CORPUS) {
       expect(notdefs(text), text).toBe(0);
-      expect(unmeasuredCodePoints(text, BUNDLED_MEASURER, FAMILY), text).toEqual([]);
+      expect(unmeasuredCodePoints(text, BUNDLED_MEASURER, FAMILY, "normal"), text).toEqual([]);
     }
   });
 
   it("measures a hyphen-minus narrower than the real minus a temperature prints with", () => {
     // Why a temperature is a number with a unit: a typed "-78 C" is the wrong
     // glyph, and the two do not even measure alike.
-    const size = { family: FAMILY, sizePx: 10 };
+    const size = { family: FAMILY, weight: "normal", sizePx: 10 };
     const hyphen = BUNDLED_MEASURER.measureText("-", size).advanceWidthPx;
     const minus = BUNDLED_MEASURER.measureText("−", size).advanceWidthPx;
     expect(minus).toBeGreaterThan(hyphen);
@@ -121,7 +123,7 @@ describe("Greek is vendored, italic still waits (decisions 192 and 252)", () => 
       `10 ${greek("mu")}L`,
     ];
     for (const text of pinned) {
-      expect(unmeasuredCodePoints(text, BUNDLED_MEASURER, FAMILY), text).toEqual([]);
+      expect(unmeasuredCodePoints(text, BUNDLED_MEASURER, FAMILY, "normal"), text).toEqual([]);
       expect(notdefs(text), text).toBe(0);
     }
   });
@@ -202,6 +204,7 @@ describe("the exported SVG does not grow (decision 206)", () => {
       origin: { x: 0, y: 0 },
       spans: [{ text: "δ+" }],
       fontFamily: PUBLICATION_STYLE.fontFamily,
+      fontWeight: PUBLICATION_STYLE.fontWeight,
       fontSizePx: 10,
       fill: { color: "#000000" },
       anchor: "start",

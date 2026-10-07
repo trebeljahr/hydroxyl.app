@@ -830,6 +830,18 @@ describe("figure-style edits (additive on v2, decision 237)", () => {
     expect(decodeDocument(encoded)).toEqual(original);
   });
 
+  it("round-trips a vendored font face and weight (decision 250)", () => {
+    const original = createDocument({
+      id: "doc-font",
+      molecule: ethanol(),
+      styleOverrides: { nature: { fontFace: "tinos", fontWeight: "bold" } },
+      now: NOW,
+    });
+    const encoded = raw(original);
+    expect(encoded.styleOverrides).toEqual({ nature: { fontFace: "tinos", fontWeight: "bold" } });
+    expect(decodeDocument(encoded)).toEqual(original);
+  });
+
   it("writes no key for a document that edited nothing, and decodes one without it", () => {
     const doc = createDocument({ id: "plain", molecule: ethanol(), now: NOW });
     expect(Object.hasOwn(raw(doc), "styleOverrides")).toBe(false);
@@ -843,6 +855,10 @@ describe("figure-style edits (additive on v2, decision 237)", () => {
       { publication: { fontSizePt: "10" } },
       { publication: { bondColor: "black" } },
       { publication: { fontFamily: "Times" } },
+      { publication: { fontFace: "times" } },
+      { publication: { fontFace: "Arimo" } },
+      { publication: { fontWeight: "600" } },
+      { publication: { fontWeight: 700 } },
       { publication: {} },
       { print: { lineWidthPt: 0.6 } },
       {},

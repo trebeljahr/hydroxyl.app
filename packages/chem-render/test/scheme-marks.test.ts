@@ -259,7 +259,7 @@ describe("a straight arrow is drawn geometry whose shaft stretches to its text (
         // Helvetica draws.
         const measured = measureTextRun(
           run.spans,
-          { fontFamily: run.fontFamily, fontSizePx: run.fontSizePx, subscriptScale: style.subscriptScale, anchor: "middle", baseline: "alphabetic" },
+          { fontFamily: run.fontFamily, fontWeight: run.fontWeight, fontSizePx: run.fontSizePx, subscriptScale: style.subscriptScale, anchor: "middle", baseline: "alphabetic" },
           BUNDLED_MEASURER,
         );
         expect(measured.advanceWidthPx).toBe(line.advanceWidthPx);
@@ -267,7 +267,7 @@ describe("a straight arrow is drawn geometry whose shaft stretches to its text (
         expect(box.maxX - box.minX).toBeCloseTo(line.advanceWidthPx, 9);
         expect((box.minX + box.maxX) / 2).toBeCloseTo(middle, 9);
         for (const span of run.spans) {
-          expect(BUNDLED_MEASURER.measureText(span.text, { family: run.fontFamily, sizePx: 10 }).notdefCount).toBe(0);
+          expect(BUNDLED_MEASURER.measureText(span.text, { family: run.fontFamily, weight: "normal", sizePx: 10 }).notdefCount).toBe(0);
         }
         if (line.side === "above") expect(box.maxY, `${index}`).toBeLessThan(shaftY);
         else expect(box.minY, `${index}`).toBeGreaterThan(shaftY);
@@ -494,10 +494,10 @@ describe("a straight arrow is drawn geometry whose shaft stretches to its text (
             lines++;
             const box = measureTextRun(
               run.spans,
-              { fontFamily: run.fontFamily, fontSizePx: run.fontSizePx, subscriptScale: style.subscriptScale, anchor: run.anchor, baseline: "alphabetic" },
+              { fontFamily: run.fontFamily, fontWeight: run.fontWeight, fontSizePx: run.fontSizePx, subscriptScale: style.subscriptScale, anchor: run.anchor, baseline: "alphabetic" },
               BUNDLED_MEASURER,
             );
-            for (const ink of glyphInkRects(box, run.origin, BUNDLED_MEASURER, run.fontFamily)) {
+            for (const ink of glyphInkRects(box, run.origin, BUNDLED_MEASURER, run.fontFamily, run.fontWeight)) {
               for (const part of marks) {
                 const partBox = primitivesBox([part], style);
                 const apart =
@@ -619,10 +619,10 @@ describe("the scheme plus and the coefficient are not charges (decision 204)", (
     const oxygen = byId<TextRunPrimitive>(scene.primitives, `atom:${fixture.oxygen}:label`);
     const runBox = measureTextRun(
       oxygen.spans,
-      { fontFamily: oxygen.fontFamily, fontSizePx: oxygen.fontSizePx, subscriptScale: style.subscriptScale, anchor: oxygen.anchor, baseline: "alphabetic" },
+      { fontFamily: oxygen.fontFamily, fontWeight: oxygen.fontWeight, fontSizePx: oxygen.fontSizePx, subscriptScale: style.subscriptScale, anchor: oxygen.anchor, baseline: "alphabetic" },
       BUNDLED_MEASURER,
     );
-    const ink = textRunInkRect(runBox, oxygen.origin, BUNDLED_MEASURER, oxygen.fontFamily)!;
+    const ink = textRunInkRect(runBox, oxygen.origin, BUNDLED_MEASURER, oxygen.fontFamily, oxygen.fontWeight)!;
     expect(two.origin.x).toBeCloseTo(ink.minX - SCHEME_LAYOUT.coefficientGapEm * style.fontSizePx, 6);
     const plus = schemeAnnotations.plusSigns.find((p) => p.annotationId === "ann_2")!;
     expect(plus.box.maxX).toBeLessThan(schemeAnnotations.coefficients[0]!.box.minX);

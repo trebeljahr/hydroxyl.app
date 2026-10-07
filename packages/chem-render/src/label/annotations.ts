@@ -819,6 +819,7 @@ export function placeAnnotation(
     spans,
     {
       fontFamily: style.fontFamily,
+      fontWeight: style.fontWeight,
       fontSizePx,
       subscriptScale: style.subscriptScale,
       anchor: "middle",
@@ -829,12 +830,13 @@ export function placeAnnotation(
   // The ink box relative to the run centre, measured once. A run with no ink
   // at all (whitespace) falls back to its measured box, which contains it.
   const inkOffset: LabelBox =
-    textRunInkRect(measured, ZERO, measurer, style.fontFamily) ?? textRunRect(measured, ZERO);
+    textRunInkRect(measured, ZERO, measurer, style.fontFamily, style.fontWeight) ?? textRunRect(measured, ZERO);
 
   // Decision 59: every radius from the ATOM LABEL's cap height at this style,
   // so shrinking the annotation cannot shrink the search.
   const labelCapPx = measurer.verticalMetrics({
     family: style.fontFamily,
+    weight: style.fontWeight,
     sizePx: style.fontSizePx,
   }).capHeightPx;
   const step = labelCapPx * ANNOTATION_PLACEMENT.radiusStepCapHeights;

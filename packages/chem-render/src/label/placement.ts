@@ -33,7 +33,7 @@ import type { AtomId, ElementSymbol } from "@starter/chem-core";
 
 import type { ScenePoint, TextSpan } from "../scene/types.js";
 import type { RenderStyle } from "../style.js";
-import { EM_CAP_HEIGHT } from "../text/metrics.js";
+import { faceMetricsFor } from "../text/metrics.js";
 import { glyphInkRects, measureTextRun, measurerFor } from "../text/measurer.js";
 import type { MeasuredSpan } from "../text/measurer.js";
 import { labelSpans, symbolSpanIndex } from "./compose.js";
@@ -534,9 +534,10 @@ function spanBox(
   span: MeasuredSpan,
   origin: ScenePoint,
   paddingPx: number,
+  emCapHeight: number,
 ): LabelBox {
   const baselineY = origin.y + span.dyPx;
-  const capPx = EM_CAP_HEIGHT * span.fontSizePx;
+  const capPx = emCapHeight * span.fontSizePx;
   const minX = origin.x + span.startXPx;
   return pad(
     {
@@ -714,6 +715,7 @@ export function placeAtomLabel(input: AtomLabelInput): AtomLabelPlacement {
     spans,
     {
       fontFamily: style.fontFamily,
+      fontWeight: style.fontWeight,
       fontSizePx: style.fontSizePx,
       subscriptScale: style.subscriptScale,
       // Both fixed, and both load-bearing. `text-anchor: middle` would re-centre
@@ -751,7 +753,12 @@ export function placeAtomLabel(input: AtomLabelInput): AtomLabelPlacement {
   let symbolBox: LabelBox | undefined;
   for (let i = 0; i < box.spans.length; i++) {
     const measured = box.spans[i]!;
-    const rect = spanBox(measured, origin, style.labelPaddingPx);
+    const rect = spanBox(
+      measured,
+      origin,
+      style.labelPaddingPx,
+      faceMetricsFor(style.fontFamily, style.fontWeight).emCapHeight,
+    );
     if (i === symbolIndex) symbolBox = rect;
     // A zero-advance span has no ink to keep clear of; a padded rect around
     // nothing would be pure phantom clearance.
@@ -765,6 +772,7 @@ export function placeAtomLabel(input: AtomLabelInput): AtomLabelPlacement {
     origin,
     measurerFor(style),
     style.fontFamily,
+    style.fontWeight,
   );
 
   // ONE ALLOCATION OF THE EIGHT SLOTS, SHARED. The radical cluster picks
@@ -1028,6 +1036,7 @@ function placeDetachedCharge(
     spans,
     {
       fontFamily: style.fontFamily,
+      fontWeight: style.fontWeight,
       fontSizePx: style.fontSizePx,
       subscriptScale: style.subscriptScale,
       anchor: "start",
@@ -1064,7 +1073,7 @@ function placeDetachedCharge(
     // above is the charge's CLEAR SPACE, a cap band about the anchor, while
     // its ink is the glyphs themselves — for a detached charge, a "+" or a
     // "−" set as a superscript, which is most of an em narrower.
-    ink: glyphInkRects(box, origin, measurerFor(style), style.fontFamily),
+    ink: glyphInkRects(box, origin, measurerFor(style), style.fontFamily, style.fontWeight),
   };
 }
 

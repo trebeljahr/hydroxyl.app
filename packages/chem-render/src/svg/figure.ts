@@ -22,14 +22,16 @@
  * ── TEXT STAYS TEXT ──────────────────────────────────────────────────────
  *
  * Labels are live `<text>`, so an illustrator can edit them. With
- * `embedFont`, the vendored Arimo WOFF is embedded once as an `@font-face`
+ * `embedFont`, the vendored WOFF of the style's face and weight (Arimo or
+ * Tinos, regular or bold; decision 250) is embedded once as an `@font-face`
  * data URI, and its Greek subset as a second one when a figure sets a Greek
- * letter (decision 252): an SVG opened on its own, or loaded into an `<img>` for the PNG
- * export, cannot fetch a font, and the OFL permits embedding. The
- * `font-family` stack still names Arial and Helvetica after Arimo, which are
- * metric-compatible, for the editors that ignore `@font-face` and resolve
- * fonts by installed name. Inkscape is one: it loads a face only from a
- * ttf/otf file beside the document, never a data URI (sp-style-elem.cpp).
+ * letter (decision 252): an SVG opened on its own, or loaded into an `<img>`
+ * for the PNG export, cannot fetch a font, and the OFL permits embedding. The
+ * `font-family` stack still names Arial and Helvetica after Arimo (Times
+ * after Tinos), which are metric-compatible, for the editors that ignore
+ * `@font-face` and resolve fonts by installed name. Inkscape is one: it
+ * loads a face only from a ttf/otf file beside the document, never a data
+ * URI (sp-style-elem.cpp).
  * Nothing placed on the page depends on the face loading, since every
  * run's `y` is an explicit baseline (see `TextRunPrimitive`).
  */
@@ -37,11 +39,13 @@
 import type { Figure, FigureCell, UnavailableViewAvailability } from "../figure/compose.js";
 import { figureCodePoints, inGreekFace } from "../figure/text.js";
 import {
-  ARIMO_GREEK_UNICODE_RANGE,
-  ARIMO_GREEK_WOFF_BASE64,
-  ARIMO_WOFF_BASE64,
-} from "../text/generated/arimo-woff.js";
-import { FONT_VERSION } from "../text/generated/arimo-metrics.js";
+  FONT_FACE_NAME,
+  FONT_WEIGHT_NUMBER,
+  faceMetrics,
+  fontFaceOfFamily,
+} from "../text/metrics.js";
+import type { FontFace } from "../text/metrics.js";
+import { GREEK_UNICODE_RANGE, greekWoffBase64, woffBase64 } from "../text/woff.js";
 import { attr, emitPrimitive, escapeText, formatNumber, num, push } from "./emit.js";
 import type { Emitter } from "./emit.js";
 
@@ -71,7 +75,7 @@ export interface FigureSerializeOptions {
    * at that size rather than scaled.
    */
   readonly dimensions?: FigureDimensions;
-  /** Embed the Arimo WOFF as an `@font-face` data URI. Defaults to false. */
+  /** Embed the style's face (its WOFF) as an `@font-face` data URI. Defaults to false. */
   readonly embedFont?: boolean;
   /**
    * What to do with a panel whose view is unavailable. `"refuse"` (the
@@ -131,10 +135,19 @@ export function panelIdPrefix(panelId: string): string {
  * places no obligation on a document using the font; saying where the face
  * came from is courtesy and keeps the provenance next to the bytes.
  */
-export const EMBEDDED_FONT_NOTICE =
-  `Arimo ${FONT_VERSION.replace(/^Version\s+/i, "")}, Copyright The Arimo Project Authors ` +
-  "(https://github.com/googlefonts/arimo). SIL Open Font License 1.1 " +
-  "(https://openfontlicense.org). Embedded for display; the text remains editable.";
+export function embeddedFontNotice(face: FontFace): string {
+  const name = FONT_FACE_NAME[face];
+  // "Version 1.340; ttfautohint (…)" -> "1.340": the build tool is not the release.
+  const version = faceMetrics(face, "normal").version.replace(/^Version\s+/i, "").replace(/;.*$/, "");
+  return (
+    `${name} ${version}, Copyright The ${name} Project Authors ` +
+    `(https://github.com/googlefonts/${face}). SIL Open Font License 1.1 ` +
+    "(https://openfontlicense.org). Embedded for display; the text remains editable."
+  );
+}
+
+/** The notice for the default face, Arimo. */
+export const EMBEDDED_FONT_NOTICE = embeddedFontNotice("arimo");
 
 export function serializeFigure(
   figure: Figure,
@@ -189,20 +202,26 @@ export function serializeFigure(
   );
 
   if (options.embedFont === true) {
-    push(e, 1, `<!-- ${escapeText(EMBEDDED_FONT_NOTICE)} -->`);
+    // The style's face at the style's weight: every run in a figure is set in
+    // it (decision 250), so one face (and its Greek subset) is all a figure
+    // ever needs embedded.
+    const face = fontFaceOfFamily(style.fontFamily);
+    const name = FONT_FACE_NAME[face];
+    const weight = FONT_WEIGHT_NUMBER[style.fontWeight];
+    push(e, 1, `<!-- ${escapeText(embeddedFontNotice(face))} -->`);
     push(
       e,
       1,
-      `<defs><style>@font-face{font-family:"Arimo";` +
-        `src:url(data:font/woff;base64,${ARIMO_WOFF_BASE64}) format("woff");` +
-        `font-weight:400;font-style:normal}` +
+      `<defs><style>@font-face{font-family:"${name}";` +
+        `src:url(data:font/woff;base64,${woffBase64(face, style.fontWeight)}) format("woff");` +
+        `font-weight:${weight};font-style:normal}` +
         // The Greek face only when a letter needs it (decision 252), declared
         // second: for code points in its unicode-range a browser checks the
         // last-declared face first, and every other code point stays Latin.
         (figureCodePoints(figure).some(inGreekFace)
-          ? `@font-face{font-family:"Arimo";` +
-            `src:url(data:font/woff;base64,${ARIMO_GREEK_WOFF_BASE64}) format("woff");` +
-            `font-weight:400;font-style:normal;unicode-range:${ARIMO_GREEK_UNICODE_RANGE}}`
+          ? `@font-face{font-family:"${name}";` +
+            `src:url(data:font/woff;base64,${greekWoffBase64(face, style.fontWeight)}) format("woff");` +
+            `font-weight:${weight};font-style:normal;unicode-range:${GREEK_UNICODE_RANGE}}`
           : "") +
         `</style></defs>`,
     );

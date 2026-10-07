@@ -95,6 +95,7 @@ function symbolCentreOf(
     run.spans,
     {
       fontFamily: run.fontFamily,
+      fontWeight: run.fontWeight,
       fontSizePx: run.fontSizePx,
       subscriptScale: SCREEN_STYLE.subscriptScale,
       anchor: run.anchor,

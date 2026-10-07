@@ -71,7 +71,7 @@ interface TextBlock {
 }
 
 function font(sizePx: number): FontRequest {
-  return { family: FONT_FAMILY, sizePx };
+  return { family: FONT_FAMILY, weight: "normal", sizePx };
 }
 
 function widthOf(text: string, sizePx: number): number {

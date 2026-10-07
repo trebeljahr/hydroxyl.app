@@ -32,6 +32,7 @@
 import type { RenderScene, SceneSource, ScenePrimitive, TextSpan } from "../scene/types.js";
 import { measurerFor } from "./measurer.js";
 import type { Measurer } from "./measurer.js";
+import type { FontWeight } from "./metrics.js";
 
 /** Which faces beyond the upright Latin subset are vendored. Decision 252: Greek. */
 export const VENDORED_FACES = Object.freeze({
@@ -76,7 +77,12 @@ export function italic(text: string): string {
  * is measured at `.notdef`'s advance, so it sits a little off wherever it is
  * centred, and the social-card rasteriser draws a box for it.
  */
-export function unmeasuredCodePoints(text: string, measurer: Measurer, fontFamily: string): readonly number[] {
+export function unmeasuredCodePoints(
+  text: string,
+  measurer: Measurer,
+  fontFamily: string,
+  fontWeight: FontWeight,
+): readonly number[] {
   const out: number[] = [];
   const seen = new Set<number>();
   for (const character of text) {
@@ -84,7 +90,7 @@ export function unmeasuredCodePoints(text: string, measurer: Measurer, fontFamil
     if (codePoint === undefined || seen.has(codePoint)) continue;
     seen.add(codePoint);
     // A size of 1 px: only the notdef count is read, which no size changes.
-    if (measurer.measureText(character, { family: fontFamily, sizePx: 1 }).notdefCount > 0) {
+    if (measurer.measureText(character, { family: fontFamily, weight: fontWeight, sizePx: 1 }).notdefCount > 0) {
       out.push(codePoint);
     }
   }
@@ -121,7 +127,7 @@ export function unmeasuredTextRuns(scene: RenderScene): readonly UnmeasuredTextR
     }
     if (primitive.type !== "textRun") return;
     const text = primitive.spans.map((span) => span.text).join("");
-    const codePoints = unmeasuredCodePoints(text, measurer, primitive.fontFamily);
+    const codePoints = unmeasuredCodePoints(text, measurer, primitive.fontFamily, primitive.fontWeight);
     if (codePoints.length > 0) {
       out.push({ primitiveId: primitive.id, source: primitive.source, text, codePoints });
     }

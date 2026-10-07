@@ -170,6 +170,9 @@ function textRunMarkup(e: Emitter, p: TextRunPrimitive): string {
     attr("x", num(e, p.origin.x, p.id)) +
     attr("y", num(e, p.origin.y, p.id)) +
     attr("font-family", p.fontFamily) +
+    // Only when bold: every preset is regular, and an unedited figure must
+    // serialise byte for byte as it did before the weight existed.
+    (p.fontWeight === "normal" ? "" : attr("font-weight", p.fontWeight)) +
     attr("font-size", num(e, p.fontSizePx, p.id)) +
     attr("fill", p.fill.color) +
     attr("text-anchor", p.anchor) +

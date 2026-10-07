@@ -9,10 +9,10 @@
 
 import type { Figure } from "../figure/compose.js";
 import { figureCodePoints } from "../figure/text.js";
-import { hasGlyph } from "../text/metrics.js";
+import { faceMetricsFor } from "../text/metrics.js";
 
 /**
- * Code points the standard Symbol font has and neither embedded Arimo face
+ * Code points the standard Symbol font has and no embedded face file
  * does, with their byte in Symbol's built-in encoding: arrows and relations a
  * conditions line may carry as the author typed them. Greek is not here — the
  * Greek face is embedded (decision 252) — and ↑ ↓ are in the Latin face, so
@@ -34,9 +34,10 @@ export const SYMBOL_CODES: ReadonlyMap<number, number> = new Map([
 
 /**
  * The code points of `figure` the PDF sets in the reader's Symbol font rather
- * than an embedded Arimo face, each once, in draw order. What the export
+ * than an embedded face, each once, in draw order. What the export
  * dialog reports: those glyphs are not embedded.
  */
 export function pdfFallbackCodePoints(figure: Figure): readonly number[] {
-  return figureCodePoints(figure).filter((cp) => !hasGlyph(cp) && SYMBOL_CODES.has(cp));
+  const face = faceMetricsFor(figure.style.fontFamily, figure.style.fontWeight);
+  return figureCodePoints(figure).filter((cp) => !face.hasGlyph(cp) && SYMBOL_CODES.has(cp));
 }

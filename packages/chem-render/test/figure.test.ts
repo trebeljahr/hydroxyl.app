@@ -349,6 +349,7 @@ describe("serializeFigure — the exported file", () => {
           run.spans,
           {
             fontFamily: run.fontFamily,
+            fontWeight: run.fontWeight,
             fontSizePx: run.fontSizePx,
             subscriptScale: PUBLICATION_STYLE.subscriptScale,
             anchor: run.anchor,
@@ -531,7 +532,7 @@ describe("layout", () => {
   it("wraps captions against the font table, keeping an over-long word whole", () => {
     const metrics = {
       measure: (value: string) => ({
-        width: BUNDLED_MEASURER.measureText(value, { family: "Arimo", sizePx: 10 }).advanceWidthPx,
+        width: BUNDLED_MEASURER.measureText(value, { family: "Arimo", weight: "normal", sizePx: 10 }).advanceWidthPx,
       }),
     };
     expect(wrapText("one two three", 1000, metrics)).toEqual(["one two three"]);

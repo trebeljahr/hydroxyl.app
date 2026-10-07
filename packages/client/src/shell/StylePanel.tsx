@@ -15,12 +15,17 @@
  * A value outside the range is shown as an error and not written. Typing the
  * preset's own value back removes that field's edit, so "edited" always means
  * "differs from the preset".
+ *
+ * THE FONT IS A CHOICE OF VENDORED FACES (decision 250), not a family name:
+ * Arimo or Tinos, regular or bold. Those are the faces chem-render can
+ * measure and embed, so the list is the whole of what can be offered.
  */
 
 import { useEffect, useId, useRef, useState } from "react";
 import type { KeyboardEvent, ReactElement } from "react";
 import { SlidersHorizontalIcon } from "lucide-react";
 import {
+  FONT_STYLE_PARAM_VALUES,
   NO_BACKGROUND,
   RENDER_STYLES,
   STYLE_PARAM_RANGES,
@@ -30,6 +35,9 @@ import type {
   ColorStyleParam,
   FigureStyleOverrides,
   FigureStyleParams,
+  FontFace,
+  FontStyleParam,
+  FontWeight,
   NumericStyleParam,
 } from "@starter/chem-render";
 
@@ -57,6 +65,20 @@ const BOND_FIELDS: readonly NumericField[] = [
 const LABEL_FIELDS: readonly NumericField[] = [
   { param: "fontSizePt", label: "Label size", unit: "pt" },
   { param: "marginMm", label: "Figure margin", unit: "mm" },
+];
+
+/** What each vendored face and weight is called in the panel. */
+export const FONT_OPTION_LABELS: {
+  readonly fontFace: Readonly<Record<FontFace, string>>;
+  readonly fontWeight: Readonly<Record<FontWeight, string>>;
+} = {
+  fontFace: { arimo: "Arimo (Arial metrics)", tinos: "Tinos (Times metrics)" },
+  fontWeight: { normal: "Regular", bold: "Bold" },
+};
+
+const FONT_FIELDS: readonly { readonly param: FontStyleParam; readonly label: string }[] = [
+  { param: "fontFace", label: "Label font" },
+  { param: "fontWeight", label: "Label weight" },
 ];
 
 const COLOR_FIELDS: readonly { readonly param: ColorStyleParam; readonly label: string }[] = [
@@ -195,6 +217,49 @@ function NumberRow({
   );
 }
 
+function FontRow({
+  param,
+  label,
+  value,
+  edited,
+  onCommit,
+}: {
+  readonly param: FontStyleParam;
+  readonly label: string;
+  readonly value: string;
+  readonly edited: boolean;
+  readonly onCommit: (value: string) => void;
+}): ReactElement {
+  const id = useId();
+  const labels: Readonly<Record<string, string>> = FONT_OPTION_LABELS[param];
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <label htmlFor={id} className="flex items-center gap-1 text-xs">
+        {label}
+        {edited && (
+          <span className="bg-primary size-1.5 rounded-full" title="Edited" aria-label="edited" />
+        )}
+      </label>
+      <select
+        id={id}
+        data-style-param={param}
+        value={value}
+        onChange={(event) => onCommit(event.target.value)}
+        className={cn(
+          "h-7 w-36 rounded-md border bg-transparent px-1 text-xs",
+          "focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-2",
+        )}
+      >
+        {FONT_STYLE_PARAM_VALUES[param].map((option) => (
+          <option key={option} value={option}>
+            {labels[option]}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 function ColorRow({
   param,
   label,
@@ -303,10 +368,16 @@ function StylePanelBody(): ReactElement {
           Labels and margin
         </h3>
         {numberRows(LABEL_FIELDS)}
-        <p className="text-muted-foreground text-xs" data-style-param="font">
-          Font: Arimo (metrics of Arial and Helvetica), regular. The only face whose widths the
-          label layout can measure.
-        </p>
+        {FONT_FIELDS.map(({ param, label }) => (
+          <FontRow
+            key={param}
+            param={param}
+            label={label}
+            value={current[param]}
+            edited={isEdited(param)}
+            onCommit={(value) => set(param, value as FigureStyleParams[typeof param])}
+          />
+        ))}
       </section>
 
       <section aria-label="Colours" className="flex flex-col gap-1.5">

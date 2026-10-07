@@ -229,6 +229,8 @@ function textRunElement(
       x={num(f, p.origin.x, p.id)}
       y={num(f, p.origin.y, p.id)}
       fontFamily={p.fontFamily}
+      // As the exporter: absent when regular, so the canvas and the SVG agree.
+      {...(p.fontWeight === "normal" ? {} : { fontWeight: p.fontWeight })}
       fontSize={num(f, p.fontSizePx, p.id)}
       fill={p.fill.color}
       textAnchor={p.anchor}

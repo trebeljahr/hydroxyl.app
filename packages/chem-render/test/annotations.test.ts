@@ -107,6 +107,7 @@ function inkCentre(
     [{ text: placed.text }],
     {
       fontFamily: style.fontFamily,
+      fontWeight: style.fontWeight,
       fontSizePx: placed.fontSizePx,
       subscriptScale: style.subscriptScale,
       anchor: "middle",
@@ -114,7 +115,7 @@ function inkCentre(
     },
     BUNDLED_MEASURER,
   );
-  const ink = textRunInkRect(run, placed.origin, BUNDLED_MEASURER, style.fontFamily)!;
+  const ink = textRunInkRect(run, placed.origin, BUNDLED_MEASURER, style.fontFamily, style.fontWeight)!;
   return { x: (ink.minX + ink.maxX) / 2, y: (ink.minY + ink.maxY) / 2 };
 }
 
@@ -828,6 +829,7 @@ describe("decision 58: a reported annotation that would print on text is not dra
           run.spans,
           {
             fontFamily: run.fontFamily,
+            fontWeight: run.fontWeight,
             fontSizePx: run.fontSizePx,
             subscriptScale: style.subscriptScale,
             anchor: run.anchor,
@@ -838,6 +840,7 @@ describe("decision 58: a reported annotation that would print on text is not dra
         run.origin,
         BUNDLED_MEASURER,
         run.fontFamily,
+        run.fontWeight,
       );
     const numbered = (m: Molecule): Record<AtomId, string> =>
       Object.fromEntries(m.atomIds.map((id, index) => [id, `${index + 1}`]));
@@ -1299,7 +1302,7 @@ describe("decision 61: which dots are glyph ink", () => {
 
 describe("decision 59: the ladder is sized from the atom label", () => {
   const labelCap = (style: RenderStyle): number =>
-    BUNDLED_MEASURER.verticalMetrics({ family: style.fontFamily, sizePx: style.fontSizePx }).capHeightPx;
+    BUNDLED_MEASURER.verticalMetrics({ family: style.fontFamily, weight: "normal", sizePx: style.fontSizePx }).capHeightPx;
 
   it("keeps the coarse rungs label-sized, a step apart, whatever the annotation's size", () => {
     // The near ladder answers first (decision 67), so the coarse rungs are
@@ -1311,6 +1314,7 @@ describe("decision 59: the ladder is sized from the atom label", () => {
         [{ text: "XY" }],
         {
           fontFamily: style.fontFamily,
+          fontWeight: style.fontWeight,
           fontSizePx: style.fontSizePx * style.stereoDescriptorScale,
           subscriptScale: style.subscriptScale,
           anchor: "middle",
@@ -1413,6 +1417,7 @@ describe("decision 57: proximity is judged at the ink centre", () => {
           [{ text: placed.text }],
           {
             fontFamily: style.fontFamily,
+            fontWeight: style.fontWeight,
             fontSizePx: placed.fontSizePx,
             subscriptScale: style.subscriptScale,
             anchor: "middle",
@@ -1423,7 +1428,7 @@ describe("decision 57: proximity is judged at the ink centre", () => {
         const rect = textRunRect(run, placed.origin);
         expect(rect.minY - 1, placed.id).toBeCloseTo(placed.box.minY, 9);
         expect(rect.maxY + 1, placed.id).toBeCloseTo(placed.box.maxY, 9);
-        const ink = textRunInkRect(run, placed.origin, BUNDLED_MEASURER, style.fontFamily)!;
+        const ink = textRunInkRect(run, placed.origin, BUNDLED_MEASURER, style.fontFamily, style.fontWeight)!;
         expect(ink.minY, placed.id).toBeCloseTo(placed.inkBox.minY, 9);
         expect(ink.maxY, placed.id).toBeCloseTo(placed.inkBox.maxY, 9);
         // The ink stays inside the measured band.
@@ -2153,6 +2158,7 @@ describe("decision 34: descriptors search the full obstacle set", () => {
           h.spans,
           {
             fontFamily: h.fontFamily,
+            fontWeight: h.fontWeight,
             fontSizePx: h.fontSizePx,
             subscriptScale: SCREEN_STYLE.subscriptScale,
             anchor: h.anchor,
@@ -2248,6 +2254,7 @@ describe("clearance on fused rings", () => {
         run.spans,
         {
           fontFamily: run.fontFamily,
+          fontWeight: run.fontWeight,
           fontSizePx: run.fontSizePx,
           subscriptScale: style.subscriptScale,
           anchor: run.anchor,
@@ -2272,6 +2279,7 @@ describe("clearance on fused rings", () => {
   function spanInkBoxes(run: TextRunPrimitive, style: RenderStyle): LabelBox[] {
     const options = {
       fontFamily: run.fontFamily,
+      fontWeight: run.fontWeight,
       fontSizePx: run.fontSizePx,
       subscriptScale: style.subscriptScale,
     };

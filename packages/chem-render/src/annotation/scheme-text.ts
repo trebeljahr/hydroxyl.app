@@ -31,7 +31,7 @@ import type { ScenePoint, TextRunPrimitive } from "../scene/types.js";
 import type { CoefficientAnnotation, TextAnnotation } from "../scheme/annotation.js";
 import { modelToPx } from "../style.js";
 import type { RenderStyle } from "../style.js";
-import { EM_CAP_HEIGHT } from "../text/metrics.js";
+import { faceMetricsFor } from "../text/metrics.js";
 import type { Measurer } from "../text/measurer.js";
 import { unmeasuredCodePoints } from "../text/typography.js";
 import { formatQuantity } from "./conditions.js";
@@ -56,7 +56,7 @@ export interface SchemeTextLayout extends SchemeMarkLayout {
 }
 
 function findingsFor(text: string, measurer: Measurer, style: RenderStyle): SchemeMarkFinding[] {
-  const codePoints = unmeasuredCodePoints(text, measurer, style.fontFamily);
+  const codePoints = unmeasuredCodePoints(text, measurer, style.fontFamily, style.fontWeight);
   return codePoints.length === 0 ? [] : [{ kind: "unmeasured-glyphs", codePoints }];
 }
 
@@ -65,13 +65,17 @@ function findingsFor(text: string, measurer: Measurer, style: RenderStyle): Sche
  * cap band holds the box's vertical centre, the one whose ink starts furthest
  * left, nearest the coefficient; the first in atom order on a tie.
  */
-function labelOnTheLine(labels: readonly AtomLabelPlacement[], box: SchemeBox): AtomLabelPlacement | undefined {
+function labelOnTheLine(
+  labels: readonly AtomLabelPlacement[],
+  box: SchemeBox,
+  capEm: number,
+): AtomLabelPlacement | undefined {
   const middle = boxCentre(box).y;
   let best: AtomLabelPlacement | undefined;
   let bestLeft = Infinity;
   for (const label of labels) {
     const baseline = label.run.origin.y;
-    if (middle > baseline || middle < baseline - EM_CAP_HEIGHT * label.run.fontSizePx) continue;
+    if (middle > baseline || middle < baseline - capEm * label.run.fontSizePx) continue;
     const left = Math.min(label.symbolBox.minX, ...label.inkBoxes.map((ink) => ink.minX));
     if (left < bestLeft) {
       best = label;
@@ -88,10 +92,11 @@ export function layoutCoefficient(annotation: CoefficientAnnotation, site: Schem
   if (box === undefined) return undefined;
   const text = formatQuantity(annotation.value);
   const size = style.fontSizePx;
-  const line = labelOnTheLine(site.boxes.labelsOf(annotation.species), box);
+  const capEm = faceMetricsFor(style.fontFamily, style.fontWeight).emCapHeight;
+  const line = labelOnTheLine(site.boxes.labelsOf(annotation.species), box, capEm);
   const origin = {
     x: box.minX - SCHEME_LAYOUT.coefficientGapEm * size,
-    y: line === undefined ? boxCentre(box).y + (EM_CAP_HEIGHT * size) / 2 : line.run.origin.y,
+    y: line === undefined ? boxCentre(box).y + (capEm * size) / 2 : line.run.origin.y,
   };
   const run: TextRunPrimitive = {
     id: schemeMarkPrimitiveId(annotation.id, "coefficient"),
@@ -100,6 +105,7 @@ export function layoutCoefficient(annotation: CoefficientAnnotation, site: Schem
     origin,
     spans: [{ text }],
     fontFamily: style.fontFamily,
+    fontWeight: style.fontWeight,
     fontSizePx: size,
     fill: { color: style.colors.label },
     anchor: "end",
@@ -121,7 +127,8 @@ export function layoutCoefficient(annotation: CoefficientAnnotation, site: Schem
 export function layoutSchemeText(annotation: TextAnnotation, style: RenderStyle, measurer: Measurer): SchemeTextLayout {
   const size = style.fontSizePx;
   const at = modelToPx(style, annotation.at);
-  const origin = { x: at.x, y: at.y + (EM_CAP_HEIGHT * size) / 2 };
+  const capEm = faceMetricsFor(style.fontFamily, style.fontWeight).emCapHeight;
+  const origin = { x: at.x, y: at.y + (capEm * size) / 2 };
   const run: TextRunPrimitive = {
     id: schemeMarkPrimitiveId(annotation.id, "text"),
     source: annotationSource(annotation.id),
@@ -129,6 +136,7 @@ export function layoutSchemeText(annotation: TextAnnotation, style: RenderStyle,
     origin,
     spans: [{ text: annotation.text }],
     fontFamily: style.fontFamily,
+    fontWeight: style.fontWeight,
     fontSizePx: size,
     fill: { color: style.colors.label },
     anchor: "middle",

@@ -16,8 +16,8 @@ import { describe, expect, it } from "vitest";
 
 import { benzene } from "@starter/chem-core";
 
-import { buildSfnt, extractPdfFontData } from "../scripts/generate-font-metrics.mjs";
-import { cyanideAdditionToAcetone, ethanol } from "../src/fixtures.js";
+import { FACES, buildSfnt, extractPdfFontData, generateFace } from "../scripts/generate-font-metrics.mjs";
+import { acetate, cyanideAdditionToAcetone, ethanol } from "../src/fixtures.js";
 import { composeFigure } from "../src/figure/compose.js";
 import type { Figure, FigurePanelSpec } from "../src/figure/compose.js";
 import { physicalFigureSize } from "../src/figure/physical.js";
@@ -27,8 +27,11 @@ import { pathOperators } from "../src/pdf/path.js";
 import { representation } from "../src/representation.js";
 import type { TextRunPrimitive } from "../src/scene/types.js";
 import { PUBLICATION_STYLE } from "../src/style.js";
+import { applyStyleOverrides } from "../src/style-params.js";
 import { FigureUnavailableError, serializeFigure } from "../src/svg/figure.js";
-import { PDF_FACES } from "../src/text/generated/arimo-sfnt.js";
+import { PDF_FACES } from "../src/text/generated/arimo-400-sfnt.js";
+import * as TINOS_700 from "../src/text/generated/tinos-700-sfnt.js";
+import { faceMetrics } from "../src/text/metrics.js";
 import { BUNDLED_MEASURER, measureTextRun } from "../src/text/measurer.js";
 
 const OUTPUT = new URL("./output/", import.meta.url);
@@ -43,6 +46,10 @@ function writeOutput(name: string, bytes: Uint8Array | string): void {
 }
 
 const latin1 = (bytes: Uint8Array): string => Buffer.from(bytes).toString("latin1");
+
+/** A PDF text string as the writer spells it: UTF-16BE hex with a BOM. */
+const textStringOf = (text: string): string =>
+  `<FEFF${[...text].map((c) => c.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")).join("")}`;
 
 const PANELS: readonly FigurePanelSpec[] = [
   { id: "s", representation: representation("skeletal"), caption: "Skeletal" },
@@ -108,6 +115,15 @@ describe("the generated TrueType faces", () => {
   });
 });
 
+describe.each(FACES.map((face: { readonly id: string }) => [face.id, face] as const))(
+  "the generated %s TrueType module (decision 250)",
+  (_id, face) => {
+    it("regenerates byte for byte from its two WOFFs", () => {
+      expect(generateFace(face).sfntTs).toBe(readFileSync(face.sfntOutPath, "utf8"));
+    });
+  },
+);
+
 describe("serializeFigurePdf", () => {
   const figure = composeFigure(ethanol(), PUBLICATION_STYLE, PANELS);
   const size = physicalFigureSize(figure, 8.25);
@@ -142,6 +158,33 @@ describe("serializeFigurePdf", () => {
     expect([...objs.values()].some((o) => o.includes("/BaseFont /Arimo-Greek"))).toBe(false);
   });
 
+  it("names the regular face with no /FontWeight, as before weights existed", () => {
+    const descriptor = find(objs, "/Type /FontDescriptor");
+    expect(descriptor).toContain("/FontName /Arimo /Flags 32 ");
+    expect(descriptor).not.toContain("/FontWeight");
+  });
+
+  it("embeds the style's face and weight when they are edited (decision 250)", () => {
+    const style = applyStyleOverrides(PUBLICATION_STYLE, { fontFace: "tinos", fontWeight: "bold" });
+    const bold = serializeFigurePdf(composeFigure(acetate(), style, PANELS), { dimensions });
+    const boldObjs = objects(bold);
+    const [tinosBold] = TINOS_700.PDF_FACES;
+    if (tinosBold === undefined) throw new Error("a Latin face");
+    const descriptor = find(boldObjs, "/Type /FontDescriptor");
+    expect(descriptor).toContain("/FontName /Tinos-Bold /Flags 34 ");
+    expect(descriptor).toContain("/FontWeight 700");
+    const file = find(boldObjs, "/Length1");
+    expect(file).toContain(`/Length1 ${tinosBold.length}`);
+    const woff = readFileSync(new URL("../assets/tinos-latin-700-normal.woff", import.meta.url));
+    expect(Buffer.compare(inflateSync(streamBytes(bold, file)), Buffer.from(buildSfnt(woff)))).toBe(0);
+    // The widths are Tinos Bold's: its "H" is not Arimo's.
+    const glyphH = tinosBold.glyphIds.find(([cp]) => cp === 0x48)?.[1] ?? -1;
+    const hWidth = (faceMetrics("tinos", "bold").advanceWidthUnits(0x48) * 1000) / 2048;
+    expect(hWidth).not.toBe((faceMetrics("arimo", "normal").advanceWidthUnits(0x48) * 1000) / 2048);
+    expect(find(boldObjs, "/Subtype /CIDFontType2")).toContain(`${glyphH} [${Number(hWidth.toFixed(4))}]`);
+    expect(latin1(bold)).toContain(textStringOf("Tinos 1.340"));
+  });
+
   it("maps every glyph it draws back to Unicode, so the text copies", () => {
     const cmap = latin1(streamBytes(pdf, find(objs, "beginbfchar")));
     const glyphO = LATIN_FACE.glyphIds.find(([cp]) => cp === 0x4f)?.[1] ?? -1;
@@ -161,6 +204,7 @@ describe("serializeFigurePdf", () => {
       label.spans,
       {
         fontFamily: label.fontFamily,
+        fontWeight: label.fontWeight,
         fontSizePx: label.fontSizePx,
         subscriptScale: PUBLICATION_STYLE.subscriptScale,
         anchor: label.anchor,
@@ -213,6 +257,7 @@ describe("Greek, from the vendored Greek face (decision 252)", () => {
     origin: { x: base.bounds.minX + 4, y: base.bounds.minY + y },
     spans: [{ text }],
     fontFamily: PUBLICATION_STYLE.fontFamily,
+    fontWeight: PUBLICATION_STYLE.fontWeight,
     fontSizePx: 10,
     fill: { color: "#000000" },
     anchor: "start",
@@ -245,7 +290,7 @@ describe("Greek, from the vendored Greek face (decision 252)", () => {
     expect(content).toContain(`/F2 10 Tf 1 0 0 -1 ${x} `);
     expect(content).toContain(`<${hex}> Tj`);
     // δ now measures at its own advance, not .notdef's.
-    const deltaPx = BUNDLED_MEASURER.measureText("δ", { family: "", sizePx: 10 }).advanceWidthPx;
+    const deltaPx = BUNDLED_MEASURER.measureText("δ", { family: "", weight: "normal", sizePx: 10 }).advanceWidthPx;
     expect(deltaPx).not.toBe(7.5);
     expect(content).toContain(`/F1 10 Tf 1 0 0 -1 ${Number((delta.origin.x + deltaPx).toFixed(4))} `);
     const cmaps = [...objs.values()].filter((o) => o.includes("beginbfchar"));

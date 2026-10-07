@@ -73,4 +73,35 @@ describe("the style panel", () => {
     expect(editorStore.getState().document.styleOverrides).toBeUndefined();
     expect(input("lineWidthPt").value).toBe("0.6");
   });
+
+  it("offers only the vendored faces and weights, and writes a choice as one edit", () => {
+    render(
+      <TooltipProvider>
+        <StylePanelButton />
+      </TooltipProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Figure style" }));
+    const face = input("fontFace") as unknown as HTMLSelectElement;
+    const weight = input("fontWeight") as unknown as HTMLSelectElement;
+    expect([...face.options].map((o) => o.value)).toEqual(["arimo", "tinos"]);
+    expect([...weight.options].map((o) => o.value)).toEqual(["normal", "bold"]);
+    expect(face.value).toBe("arimo");
+    expect(weight.value).toBe("normal");
+    expect(document.querySelector('[data-style-param="font"]')).toBeNull();
+
+    fireEvent.change(face, { target: { value: "tinos" } });
+    fireEvent.change(weight, { target: { value: "bold" } });
+    expect(editorStore.getState().document.styleOverrides).toEqual({
+      publication: { fontFace: "tinos", fontWeight: "bold" },
+    });
+    expect(face.value).toBe("tinos");
+
+    // Choosing the preset's own face again is not an edit.
+    fireEvent.change(face, { target: { value: "arimo" } });
+    expect(editorStore.getState().document.styleOverrides).toEqual({
+      publication: { fontWeight: "bold" },
+    });
+    act(() => editorStore.getState().undo());
+    expect(editorStore.getState().document.styleOverrides?.publication?.fontFace).toBe("tinos");
+  });
 });

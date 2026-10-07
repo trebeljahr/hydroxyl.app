@@ -374,6 +374,7 @@ function textMetrics(style: RenderStyle): TextMetrics {
       [{ text: value }],
       {
         fontFamily: style.fontFamily,
+        fontWeight: style.fontWeight,
         fontSizePx: style.fontSizePx,
         subscriptScale: style.subscriptScale,
         anchor: "start",
@@ -437,6 +438,7 @@ function textRun(
     origin,
     spans: [{ text: value }],
     fontFamily: style.fontFamily,
+    fontWeight: style.fontWeight,
     fontSizePx: style.fontSizePx,
     fill: { color: style.colors.label },
     anchor,

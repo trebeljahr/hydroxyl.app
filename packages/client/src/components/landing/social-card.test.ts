@@ -9,7 +9,7 @@ import { landingSocialMetadata } from "./metadata";
 import { SOCIAL_CARD, socialCardSvg, wrap } from "./social-card";
 
 function widthAt(text: string, sizePx: number): number {
-  return BUNDLED_MEASURER.measureText(text, { family: "Arimo", sizePx }).advanceWidthPx;
+  return BUNDLED_MEASURER.measureText(text, { family: "Arimo", weight: "normal", sizePx }).advanceWidthPx;
 }
 
 describe("the social card", () => {

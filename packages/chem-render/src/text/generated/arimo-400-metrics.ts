@@ -19,6 +19,9 @@ export const FONT_FAMILY = "Arimo";
 /** `name` ID 5, so a bug report can name the exact release. */
 export const FONT_VERSION = "Version 1.341";
 
+/** OS/2 usWeightClass: 400 regular, 700 bold. */
+export const FONT_WEIGHT = 400;
+
 /** SHA-256 of the Latin WOFF these numbers came from. */
 export const FONT_SHA256 = "b3cd5096879840530d808e80bc4dd091dce4f6c8519df01dfa941a67d5237e0d";
 
