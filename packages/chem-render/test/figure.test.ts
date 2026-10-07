@@ -48,7 +48,13 @@ import type { Representation } from "../src/representation.js";
 import { sceneBounds } from "../src/scene/bounds.js";
 import { buildScene } from "../src/scene/build.js";
 import type { LinePrimitive, ScenePrimitive } from "../src/scene/types.js";
-import { PUBLICATION_STYLE, SCREEN_STYLE, withStyle } from "../src/style.js";
+import {
+  ACS_PRINT,
+  NATURE_STYLE,
+  PUBLICATION_STYLE,
+  SCREEN_STYLE,
+  withStyle,
+} from "../src/style.js";
 import {
   FigureUnavailableError,
   panelIdPrefix,
@@ -619,6 +625,47 @@ describe("physical size", () => {
     expect(PUBLICATION_STYLE.bondLineWidthPx * ptPerPx).toBeCloseTo(0.6, 9);
     // 14.4 pt bond, so the font-to-bond ratio the ruling names.
     expect(PUBLICATION_STYLE.fontSizePx / PUBLICATION_STYLE.bondLengthPx).toBeCloseTo(0.694, 3);
+  });
+
+  it("prints the Nature preset at the Nature Portfolio structure guide's settings (decision 234)", () => {
+    // The guide's ChemDraw settings, in cm: Fixed Length 0.381, Line Width
+    // 0.021, Bold Width 0.055, Margin Width 0.042, Hash Spacing 0.06, Bond
+    // Spacing 18 % of length; labels 6 pt, never below 5 pt.
+    const figure = composeFigure(ethanol(), NATURE_STYLE, [THREE_VIEWS[0]!]);
+    const size = physicalFigureSize(figure, NATURE_STYLE.print.columnWidthsCm.single, 300);
+    expect(size.scaled).toBe(false);
+    expect(size.bondLengthMm).toBeCloseTo(3.81, 9);
+    expect(size.fontSizePt).toBeCloseTo(6, 9);
+    expect(size.labelsBelowMinimum).toBe(false);
+    const cmPerPx = printedCmPerPx(NATURE_STYLE);
+    expect(NATURE_STYLE.bondLineWidthPx * cmPerPx).toBeCloseTo(0.021, 12);
+    expect(NATURE_STYLE.stereoWedgeWidthPx * cmPerPx).toBeCloseTo(0.055, 12);
+    expect(NATURE_STYLE.labelPaddingPx * cmPerPx).toBeCloseTo(0.042, 12);
+    expect(NATURE_STYLE.stereoHashPeriodPx * cmPerPx).toBeCloseTo(0.06, 12);
+    expect(NATURE_STYLE.doubleBondGapPx / NATURE_STYLE.bondLengthPx).toBeCloseTo(0.18, 12);
+    // Annotations sit exactly on the guide's 5 pt floor.
+    expect(6 * NATURE_STYLE.stereoDescriptorScale).toBeCloseTo(5, 12);
+    expect(NATURE_STYLE.print).toEqual({
+      bondLengthCm: 0.381,
+      minTextPt: 5,
+      authority: "Nature",
+      columnWidthsCm: { single: 8.8, double: 18 },
+    });
+    // Publication and Screen still print ACS.
+    expect(PUBLICATION_STYLE.print).toBe(ACS_PRINT);
+    expect(SCREEN_STYLE.print).toBe(ACS_PRINT);
+  });
+
+  it("warns at the Nature floor of 5 pt, not ACS's 8 pt, for a Nature figure", () => {
+    const figure = composeFigure(linearChain(40), NATURE_STYLE, THREE_VIEWS.slice(0, 1));
+    const natural = physicalFigureSize(figure, NATURE_STYLE.print.columnWidthsCm.double);
+    expect(natural.scaled).toBe(false);
+    expect(natural.labelsBelowMinimum).toBe(false);
+    // 6 pt labels reach 5 pt at 5/6 of the natural width.
+    expect(natural.minWidthCmForMinLabel).toBeCloseTo((natural.naturalWidthCm * 5) / 6, 9);
+    const shrunk = physicalFigureSize(figure, natural.naturalWidthCm * 0.8);
+    expect(shrunk.fontSizePt).toBeCloseTo(4.8, 9);
+    expect(shrunk.labelsBelowMinimum).toBe(true);
   });
 
   it("reports the bond as drawn, not the model unit, for a structure at another tool's bond length", () => {

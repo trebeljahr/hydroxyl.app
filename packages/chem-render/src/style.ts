@@ -27,8 +27,63 @@ export interface RenderColors {
   readonly background?: string;
 }
 
+/**
+ * How a style meets paper: the journal numbers that are lengths on the page
+ * rather than proportions of the drawing (decisions 20, 51 and 234).
+ *
+ * ON THE STYLE BECAUSE THEY BELONG TO A HOUSE STYLE. Decision 20 made the
+ * printed bond one constant for every preset, which was right while every
+ * preset was ACS: Screen and Publication differ in px per bond, and dividing
+ * by that is what makes both print the same 0.508 cm. Nature prints a
+ * 0.381 cm bond and allows 5 pt text, so a single constant would print a
+ * Nature figure at ACS size and warn about its labels at ACS's floor.
+ *
+ * Read-outs and limits only: `figure/physical.ts` reads these to size the
+ * file and to warn. Nothing here scales geometry; `modelToPx` stays the one
+ * function that does.
+ */
+export interface PrintSetting {
+  /** Printed length of one standard bond, cm. */
+  readonly bondLengthCm: number;
+  /** Smallest printed text the export accepts without a warning, pt. */
+  readonly minTextPt: number;
+  /** Whose floor `minTextPt` is, as the warning names it: "ACS", "Nature". */
+  readonly authority: string;
+  /** The journal's column widths, cm. Maximums, never targets (decision 20). */
+  readonly columnWidthsCm: { readonly single: number; readonly double: number };
+}
+
+/**
+ * ACS: the 0.508 cm (14.4 pt) bond of the ACS 1996 document setting, the
+ * 8 pt artwork floor of the ACS author guidelines (decision 51), and ACS's
+ * 3.25 in and 7 in columns. Publication and Screen both print with it.
+ */
+export const ACS_PRINT: PrintSetting = Object.freeze({
+  bondLengthCm: 0.508,
+  minTextPt: 8,
+  authority: "ACS",
+  columnWidthsCm: Object.freeze({ single: 8.25, double: 17.8 }),
+});
+
+/**
+ * Nature Portfolio (decision 234). The bond and the 5 pt floor are from the
+ * "Style guide for chemical structures"
+ * (nature.com/documents/nr-chemical-structures-guide.pdf): Fixed Length
+ * 0.381 cm, and atom labels "may ultimately be scaled down to an absolute
+ * minimum of 5 pt". The 88 mm and 180 mm columns are from the Nature research
+ * journals' "Guide to preparing final artwork".
+ */
+export const NATURE_PRINT: PrintSetting = Object.freeze({
+  bondLengthCm: 0.381,
+  minTextPt: 5,
+  authority: "Nature",
+  columnWidthsCm: Object.freeze({ single: 8.8, double: 18 }),
+});
+
 export interface RenderStyle {
   readonly name: string;
+  /** How the style prints: bond length, text floor, columns. */
+  readonly print: PrintSetting;
   /** px per 1.0 chem-core model unit (one standard bond). Sole model->px scale. */
   readonly bondLengthPx: number;
   readonly bondLineWidthPx: number;
@@ -202,13 +257,13 @@ export interface RenderStyle {
    *
    * CAVEAT: a style carrying a measurer is no longer JSON-round-trippable,
    * because a function does not survive serialisation. That is acceptable
-   * precisely because it is optional and unset on both presets, so any style
+   * precisely because it is optional and unset on every preset, so any style
    * that is actually persisted is unaffected.
    */
   readonly measurer?: Measurer;
 }
 
-export type RenderStyleName = "publication" | "screen";
+export type RenderStyleName = "publication" | "nature" | "screen";
 
 /**
  * ACS 1996 figure style: black, no background, with the document setting's
@@ -230,6 +285,7 @@ export type RenderStyleName = "publication" | "screen";
  */
 export const PUBLICATION_STYLE: RenderStyle = Object.freeze({
   name: "publication",
+  print: ACS_PRINT,
   bondLengthPx: 24,
   bondLineWidthPx: 1,
   doubleBondGapPx: 4.2,
@@ -363,6 +419,67 @@ export const PUBLICATION_STYLE: RenderStyle = Object.freeze({
   coordinatePrecision: 3,
 });
 
+/** Style px per printed cm at Nature's 24 px, 0.381 cm bond. */
+const NATURE_PX_PER_CM = 24 / NATURE_PRINT.bondLengthCm;
+
+/**
+ * Nature Portfolio figure style (decision 234): Nature, the Nature research
+ * journals, Nature Communications and the Nature Reviews journals.
+ *
+ * EVERY RULED NUMBER IS THE GUIDE'S, CONVERTED, NOT CHOSEN. The Nature
+ * Portfolio "Style guide for chemical structures" lists its ChemDraw
+ * settings in cm: Fixed Length 0.381, Bond Spacing 18 % of length, Line Width
+ * 0.021, Bold Width 0.055, Margin Width 0.042, Hash Spacing 0.06, and atom
+ * labels in Arial or Helvetica at 6 pt. The bond keeps Publication's 24 px,
+ * so the px-tuned search geometry of the label and annotation passes sees
+ * the same bond, and every cm value below is that value times 24 / 0.381.
+ * The 6 pt label is 6 / 10.8 of the 10.8 pt bond: 40/3 px.
+ *
+ * The older Nature Chemistry and Nature Chemical Biology guides (14.4 pt
+ * bond, 8 pt Arial) are the superseded journal-by-journal versions; the
+ * portfolio guide replaced them for all Nature titles.
+ *
+ * Numbers the guide does not rule (subscript scale, figure margin, the bare
+ * vertex dot, the aromatic circle, the wavy period, the explicit-hydrogen
+ * ratios) keep Publication's values. The guide asks for discrete bonds
+ * rather than circles; that is the document's panel default
+ * (`AROMATIC_CIRCLES_BY_PRESET` in shared), not a style number.
+ */
+export const NATURE_STYLE: RenderStyle = Object.freeze({
+  name: "nature",
+  print: NATURE_PRINT,
+  bondLengthPx: 24,
+  bondLineWidthPx: 0.021 * NATURE_PX_PER_CM,
+  // ChemDraw's bond spacing is centre to centre, as a fraction of the bond.
+  doubleBondGapPx: 0.18 * 24,
+  fontFamily: "Arimo, Arial, Helvetica, sans-serif",
+  fontSizePx: 40 / 3,
+  subscriptScale: 0.72,
+  // ChemDraw's margin width: the clear space between a label and its bonds.
+  labelPaddingPx: 0.042 * NATURE_PX_PER_CM,
+  marginPx: 8,
+  atomDotRadiusPx: 0.9,
+  aromaticCircleRatio: 0.75,
+  // ChemDraw's bold width is the wide end of a wedge.
+  stereoWedgeWidthPx: 0.055 * NATURE_PX_PER_CM,
+  stereoHashPeriodPx: 0.06 * NATURE_PX_PER_CM,
+  // The guide: "the narrow end of the wedge indicates the atom 'in the plane
+  // of the paper'", which is decision 177's "centre".
+  hashedWedgeNarrowEnd: "centre",
+  stereoWavyPeriodPx: 8,
+  explicitHydrogenLengthRatio: 0.66,
+  explicitHydrogenMinStemRatio: 0.2,
+  // 5/6 of the 6 pt label is exactly 5 pt, the guide's absolute minimum for
+  // any text. Decision 54's 8 pt annotation cannot apply under a 6 pt label,
+  // and anything smaller than 5 pt would fail the export's own floor check at
+  // full size. The group tag takes the same 5 pt for the same reason:
+  // decision 123's smaller tag would sit under the floor at every width.
+  stereoDescriptorScale: 5 / 6,
+  stereoGroupTagScale: 5 / 6,
+  colors: Object.freeze({ bond: "#000000", label: "#000000" }),
+  coordinatePrecision: 3,
+});
+
 /**
  * On-screen editing style: larger, heavier, and opaque.
  *
@@ -372,6 +489,9 @@ export const PUBLICATION_STYLE: RenderStyle = Object.freeze({
  */
 export const SCREEN_STYLE: RenderStyle = Object.freeze({
   name: "screen",
+  // Printed as ACS: Screen exists for editing, and an export from it should
+  // print the same bond a Publication export does (decision 20).
+  print: ACS_PRINT,
   bondLengthPx: 44,
   bondLineWidthPx: 2,
   doubleBondGapPx: 7,
@@ -410,6 +530,7 @@ export const SCREEN_STYLE: RenderStyle = Object.freeze({
 export const RENDER_STYLES: Readonly<Record<RenderStyleName, RenderStyle>> =
   Object.freeze({
     publication: PUBLICATION_STYLE,
+    nature: NATURE_STYLE,
     screen: SCREEN_STYLE,
   });
 

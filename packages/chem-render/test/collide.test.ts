@@ -24,7 +24,7 @@ import { representation } from "../src/representation.js";
 import { buildScene } from "../src/scene/build.js";
 import { detectCollisions } from "../src/scene/collide.js";
 import type { CollisionKind } from "../src/scene/collide.js";
-import { PUBLICATION_STYLE, SCREEN_STYLE } from "../src/style.js";
+import { NATURE_STYLE, PUBLICATION_STYLE, SCREEN_STYLE } from "../src/style.js";
 
 // Skeletal now DEFAULTS to the aromatic circle — the forced consequence of
 // decision 11, which stripped Kekulé's carbon labels and left the circle as
@@ -47,6 +47,9 @@ function kindsFor(mol: Molecule): CollisionKind[] {
 const VIEWS = ["skeletal", "kekule", "explicitH", "lewis"] as const;
 const PRESETS = [
   ["publication", PUBLICATION_STYLE],
+  // Decision 234: Nature's wider label margin and smaller labels trim bonds
+  // differently from Publication's, so the sweep covers it too.
+  ["nature", NATURE_STYLE],
   ["screen", SCREEN_STYLE],
 ] as const;
 

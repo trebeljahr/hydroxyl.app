@@ -680,6 +680,17 @@ describe("factories", () => {
         ),
       ).toBe(true);
     }
+    // Nature (decision 234) is that preset: its guide asks for discrete bonds
+    // rather than circles, so even a skeletal panel starts Kekule.
+    expect(defaultRepresentation("skeletal", "nature").display.aromaticCircles).toBe(false);
+    expect(
+      defaultPanelsFor("nature").every(
+        (panel) => panel.representation.display.aromaticCircles === false,
+      ),
+    ).toBe(true);
+    const nature = createDocument({ now: NOW, stylePreset: "nature" });
+    const reread = JSON.parse(JSON.stringify(encodeDocument(nature))) as unknown;
+    expect(decodeDocument(reread).stylePreset).toBe("nature");
     // A document created under a preset gets panels seeded from it, rather
     // than from a constant frozen before any preset was chosen. Screen, so
     // this is the branch that does not reuse `DEFAULT_PANELS`.

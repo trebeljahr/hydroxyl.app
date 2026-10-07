@@ -31,7 +31,7 @@
  *
  * ── HOW BIG IT PRINTS (decision 20) ──────────────────────────────────────
  *
- * One bond prints at `PRINTED_BOND_LENGTH_CM`, and the chosen width is a
+ * One bond prints at the style's `print.bondLengthCm`, and the chosen width is a
  * MAXIMUM: `physicalFigureSize` prints a small figure at its natural size and
  * scales a wide one down to the column, reporting the factor. `scaleNotice`
  * is the sentence the dialog shows for it.
@@ -39,7 +39,7 @@
  * ── LABELS BELOW 8 PT WARN, AND STILL EXPORT (decision 51) ───────────────
  *
  * Scaling shrinks the labels with everything else. When they print under
- * `MIN_PRINTED_LABEL_PT`, `labelSizeNotice` says so with the printed size and
+ * the style's `print.minTextPt` (8 pt ACS, 5 pt Nature), `labelSizeNotice` says so with the printed size and
  * what would bring them back — never a refusal, since a small figure can be
  * exactly what was wanted.
  *
@@ -60,9 +60,6 @@
 import { BOND_LENGTH_NORMALIZE_TOLERANCE, isEmpty } from "@starter/chem-core";
 import {
   ANNOTATION_PRIORITY,
-  JOURNAL_WIDTHS_CM,
-  MIN_PRINTED_LABEL_PT,
-  PRINTED_BOND_LENGTH_CM,
   PUBLICATION_STYLE,
   composeFigure,
   physicalFigureSize,
@@ -167,9 +164,18 @@ export type WidthResult =
   | { readonly ok: true; readonly widthCm: number }
   | { readonly ok: false; readonly message: string };
 
-export function exportWidthCm(settings: FigureExportSettings): WidthResult {
-  if (settings.width === "single") return { ok: true, widthCm: JOURNAL_WIDTHS_CM.single };
-  if (settings.width === "double") return { ok: true, widthCm: JOURNAL_WIDTHS_CM.double };
+/**
+ * The maximum width the settings name. "Single" and "double" are the export
+ * style's own journal columns (decision 234): ACS's 8.25 and 17.8 cm for
+ * Publication and Screen, Nature's 8.8 and 18 cm for Nature.
+ */
+export function exportWidthCm(
+  settings: FigureExportSettings,
+  style: RenderStyle = PUBLICATION_STYLE,
+): WidthResult {
+  const columns = style.print.columnWidthsCm;
+  if (settings.width === "single") return { ok: true, widthCm: columns.single };
+  if (settings.width === "double") return { ok: true, widthCm: columns.double };
   const { customWidthCm } = settings;
   if (
     !Number.isFinite(customWidthCm) ||
@@ -228,7 +234,7 @@ export interface LabelSizeNotice {
 }
 
 /**
- * The warning for labels that print below `MIN_PRINTED_LABEL_PT`, or null.
+ * The warning for labels that print below the style's `print.minTextPt`, or null.
  * Suggests only what would actually help this figure: a double column only
  * when the figure's labels reach the minimum at that width, fewer panels per
  * row only when there is more than one, fewer panels only when there are
@@ -240,12 +246,13 @@ export function labelSizeNotice(
 ): LabelSizeNotice | null {
   const { size } = prepared;
   if (!size.labelsBelowMinimum) return null;
-  const summary = `Labels print at ${formatPt(size.fontSizePt)} pt, below the ${MIN_PRINTED_LABEL_PT} pt minimum ACS asks for in figures.`;
+  const { minTextPt, authority } = prepared.figure.style.print;
+  const summary = `Labels print at ${formatPt(size.fontSizePt)} pt, below the ${minTextPt} pt minimum ${authority} asks for in figures.`;
   const needed = size.minWidthCmForMinLabel;
   if (needed === null) {
     return {
       summary,
-      advice: `This style's labels are under ${MIN_PRINTED_LABEL_PT} pt even at full size, so no width fixes it. Choose a style with larger labels, such as Publication.`,
+      advice: `This style's labels are under ${minTextPt} pt even at full size, so no width fixes it. Choose a style with larger labels, such as Publication.`,
     };
   }
   return { summary, advice: widthAdvice(prepared, settings, needed) };
@@ -258,15 +265,16 @@ function widthAdvice(
   needed: number,
 ): string {
   const { figure } = prepared;
+  const { minTextPt, columnWidthsCm } = figure.style.print;
   const remedies: string[] = [];
-  if (settings.width !== "double" && needed <= JOURNAL_WIDTHS_CM.double * (1 + 1e-9)) {
+  if (settings.width !== "double" && needed <= columnWidthsCm.double * (1 + 1e-9)) {
     remedies.push("a double column");
   }
   if (figure.columns > 1) remedies.push("fewer panels per row");
   if (figure.cells.length > 1) remedies.push("fewer panels");
   // Up, so the width it names really does reach the minimum.
   const neededCm = String(Math.ceil(needed * 100 - 1e-6) / 100);
-  const reach = `They reach ${MIN_PRINTED_LABEL_PT} pt at a maximum width of ${neededCm} cm.`;
+  const reach = `They reach ${minTextPt} pt at a maximum width of ${neededCm} cm.`;
   return remedies.length === 0 ? reach : `${reach} Try ${joinOr(remedies)}.`;
 }
 
@@ -389,7 +397,8 @@ export function annotationSizeNotice(
   // its share of the label's px size.
   const printed = (px: number): number => (size.fontSizePt * px) / figure.style.fontSizePx;
   const natural = (px: number): number => (size.naturalFontSizePt * px) / figure.style.fontSizePx;
-  const minimum = MIN_PRINTED_LABEL_PT * (1 - 1e-9);
+  const { minTextPt, authority } = figure.style.print;
+  const minimum = minTextPt * (1 - 1e-9);
   const small = [...drawnAnnotationSizesPx(prepared)]
     .filter(([, px]) => printed(px) < minimum)
     .sort(([a], [b]) => CHECKED_ANNOTATION_KINDS.indexOf(a) - CHECKED_ANNOTATION_KINDS.indexOf(b));
@@ -400,18 +409,18 @@ export function annotationSizeNotice(
   const names = kinds.map((kind, index) =>
     index === 0 ? ANNOTATION_NAMES[kind] : ANNOTATION_NAMES[kind].toLowerCase(),
   );
-  const summary = `${names.join(" and ")} print at ${formatPt(fontSizePt)} pt, below the ${MIN_PRINTED_LABEL_PT} pt minimum ACS asks for in figures.`;
+  const summary = `${names.join(" and ")} print at ${formatPt(fontSizePt)} pt, below the ${minTextPt} pt minimum ${authority} asks for in figures.`;
   const naturalPt = natural(smallestPx);
   if (naturalPt < minimum) {
     return {
       kinds,
       fontSizePt,
       summary,
-      advice: `This style sets them under ${MIN_PRINTED_LABEL_PT} pt even at full size, so no width fixes it. Choose a style with larger annotations, such as Publication.`,
+      advice: `This style sets them under ${minTextPt} pt even at full size, so no width fixes it. Choose a style with larger annotations, such as Publication.`,
     };
   }
   // Linear in the width, as for the labels; never past the natural width.
-  const needed = Math.min(size.naturalWidthCm, (size.naturalWidthCm * MIN_PRINTED_LABEL_PT) / naturalPt);
+  const needed = Math.min(size.naturalWidthCm, (size.naturalWidthCm * minTextPt) / naturalPt);
   return { kinds, fontSizePt, summary, advice: widthAdvice(prepared, settings, needed) };
 }
 
@@ -435,7 +444,7 @@ export function bondLengthNotice(prepared: PreparedFigure): string | null {
   const ratio = prepared.figure.drawnBondLength;
   if (Math.abs(ratio - 1) <= BOND_LENGTH_NORMALIZE_TOLERANCE) return null;
   const percent = Math.round(ratio * 100);
-  const standardMm = (PRINTED_BOND_LENGTH_CM * 10).toFixed(2);
+  const standardMm = (prepared.figure.style.print.bondLengthCm * 10).toFixed(2);
   return `This drawing's bonds are ${percent}% of the standard bond, so they do not print at ${standardMm} mm.`;
 }
 
@@ -464,7 +473,7 @@ export function prepareFigure(
   if (doc.panels.length === 0) {
     return { ok: false, message: "The figure has no panels. Add one in the Figure panels list." };
   }
-  const width = exportWidthCm(settings);
+  const width = exportWidthCm(settings, figureStyle(doc, settings.style));
   if (!width.ok) return width;
 
   const figure = documentFigure(doc, settings.style);

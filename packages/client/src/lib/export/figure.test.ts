@@ -37,6 +37,7 @@ import {
   figurePreviewSvg,
   figureSvgForFile,
   figureSvgForRaster,
+  figureStyle,
   figureStyleNotice,
   formatPt,
   labelSizeNotice,
@@ -72,7 +73,10 @@ function methaneSquare(side: number): Molecule {
   });
 }
 
-function onePanelDoc(molecule: Molecule, stylePreset: "screen" | "publication" = "screen"): SketchDocument {
+function onePanelDoc(
+  molecule: Molecule,
+  stylePreset: "screen" | "publication" | "nature" = "screen",
+): SketchDocument {
   return createDocument({
     molecule,
     stylePreset,
@@ -354,6 +358,31 @@ describe("the figure a document exports", () => {
       advice:
         "This style's labels are under 8 pt even at full size, so no width fixes it. Choose a style with larger labels, such as Publication.",
     });
+  });
+
+  it("prints a Nature canvas at Nature's bond, columns and 5 pt floor (decision 234)", () => {
+    const doc = onePanelDoc(linearChain(40), "nature");
+    const canvas = { ...SINGLE_300, style: "canvas" } as const;
+    // Single and double are Nature's 8.8 and 18 cm, not ACS's.
+    expect(exportWidthCm(canvas, figureStyle(doc, "canvas"))).toEqual({ ok: true, widthCm: 8.8 });
+    expect(exportWidthCm({ ...canvas, width: "double" }, figureStyle(doc, "canvas"))).toEqual({
+      ok: true,
+      widthCm: 18,
+    });
+    const natural = prepared(doc, { ...canvas, width: "double" });
+    expect(natural.size.scaled).toBe(false);
+    expect(natural.size.bondLengthMm).toBeCloseTo(3.81, 9);
+    expect(formatPt(natural.size.fontSizePt)).toBe("6.0");
+    // 6 pt is under ACS's 8 pt but at or over Nature's 5 pt: no warning.
+    expect(labelSizeNotice(natural, { ...canvas, width: "double" })).toBeNull();
+    // Squeezed into a single column the labels go under 5 pt, and the
+    // sentence names Nature's floor rather than ACS's.
+    const single = prepared(doc, canvas);
+    expect(single.size.scaled).toBe(true);
+    expect(labelSizeNotice(single, canvas)?.summary).toMatch(
+      /^Labels print at [\d.]+ pt, below the 5 pt minimum Nature asks for in figures\.$/,
+    );
+    expect(bondLengthNotice(single)).toBeNull();
   });
 
   it("rounds a printed point size down, so a size under the minimum never displays as 8.0", () => {

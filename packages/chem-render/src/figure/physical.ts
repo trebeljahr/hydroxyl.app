@@ -3,7 +3,8 @@
  *
  * ── A FIXED BOND LENGTH; THE COLUMN WIDTH IS A MAXIMUM (decision 20) ─────
  *
- * One bond prints at `PRINTED_BOND_LENGTH_CM` whatever the figure holds, so
+ * One bond prints at the style's `print.bondLengthCm` (0.508 cm for the ACS
+ * presets, decision 234's 0.381 cm for Nature) whatever the figure holds, so
  * a one-panel benzene and a six-panel scheme in the same paper draw their
  * bonds and labels at the same size. The figure is therefore only as wide as
  * its content: its NATURAL width is its viewBox width in style px times
@@ -36,6 +37,7 @@
  * text — but the size reports when its printed labels fall below
  * `MIN_PRINTED_LABEL_PT`, and the narrowest column that would bring them back
  * up to it, so the export dialog can warn with something to act on.
+ * The minimum is the style's `print.minTextPt`: ACS's 8 pt, Nature's 5 pt.
  *
  * The bond read-out measures the DRAWING (`figure.drawnBondLength`), not the
  * model unit: the house length is guaranteed for one model unit, and a
@@ -44,7 +46,7 @@
  * 5.08 mm for any drawing at all.
  */
 
-import { pxPerModelUnit } from "../style.js";
+import { ACS_PRINT, pxPerModelUnit } from "../style.js";
 import type { RenderStyle } from "../style.js";
 import type { Figure } from "./compose.js";
 
@@ -52,25 +54,24 @@ export const CM_PER_INCH = 2.54;
 const POINTS_PER_INCH = 72;
 
 /**
- * The printed length of one standard bond: 0.508 cm, i.e. 0.2 in or 14.4 pt.
+ * The printed length of one standard bond at the ACS house style: 0.508 cm,
+ * i.e. 0.2 in or 14.4 pt.
  *
  * Source: the ACS 1996 document setting shipped with ChemDraw ("ACS
  * Document 1996"), which ACS journals ask authors to draw structures with.
- * It is the one number every figure in a manuscript should share, which is
- * why it is a constant here and not a property of a preset: the screen and
- * publication styles differ in px per bond, and dividing by that is what
- * makes both print the same bond.
+ * Since decision 234 the bond a figure prints at is its style's
+ * `print.bondLengthCm`; this is `ACS_PRINT`'s, kept as a name for the pages
+ * that explain the ACS sizes (the journal figure-size guide, the landing
+ * page). Screen and Publication both print it: they differ in px per bond,
+ * and dividing by that is what makes both print the same bond.
  */
-export const PRINTED_BOND_LENGTH_CM = 0.508;
+export const PRINTED_BOND_LENGTH_CM = ACS_PRINT.bondLengthCm;
 
 /**
  * The two widths nearly every chemistry journal specifies (ACS: 3.25 in and
  * 7 in, i.e. 8.25 cm and 17.8 cm). Maximums, not targets — see above.
  */
-export const JOURNAL_WIDTHS_CM = Object.freeze({
-  single: 8.25,
-  double: 17.8,
-});
+export const JOURNAL_WIDTHS_CM = ACS_PRINT.columnWidthsCm;
 
 /**
  * The smallest printed atom-label size the export dialog accepts without a
@@ -79,20 +80,24 @@ export const JOURNAL_WIDTHS_CM = Object.freeze({
  * The same page's Appendix 2 allows 4.5 pt in the final published format and
  * Elsevier asks 7 pt; the house style is ACS (decisions 20 and 26), so its
  * stricter number is the one warned at. A warning, never a refusal.
+ *
+ * ACS's floor: since decision 234 the export warns at the figure style's own
+ * `print.minTextPt`, which is this for Publication and Screen and 5 pt for
+ * Nature.
  */
-export const MIN_PRINTED_LABEL_PT = 8;
+export const MIN_PRINTED_LABEL_PT = ACS_PRINT.minTextPt;
 
 export const RASTER_DPI_CHOICES = Object.freeze([300, 600] as const);
 
 /**
  * Centimetres per style px at the house bond length: one bond, which is
- * `pxPerModelUnit(style)` px in the scene, prints at `PRINTED_BOND_LENGTH_CM`.
- * Derived from the style ACTUALLY used for the export, so a screen-preset
- * figure (44 px bonds) and a publication-preset one (24 px) both print a
- * 0.508 cm bond.
+ * `pxPerModelUnit(style)` px in the scene, prints at the style's
+ * `print.bondLengthCm`. Derived from the style ACTUALLY used for the export,
+ * so a screen-preset figure (44 px bonds) and a publication-preset one (24 px)
+ * both print a 0.508 cm bond, and a Nature one 0.381 cm.
  */
 export function printedCmPerPx(style: RenderStyle): number {
-  return PRINTED_BOND_LENGTH_CM / pxPerModelUnit(style);
+  return style.print.bondLengthCm / pxPerModelUnit(style);
 }
 
 /**
@@ -139,11 +144,11 @@ export interface PhysicalFigureSize {
   readonly fontSizePt: number;
   /** The label font at the house bond length, before any scaling. */
   readonly naturalFontSizePt: number;
-  /** `fontSizePt` is below `MIN_PRINTED_LABEL_PT` (decision 51). */
+  /** `fontSizePt` is below the style's `print.minTextPt` (decisions 51, 234). */
   readonly labelsBelowMinimum: boolean;
   /**
    * The narrowest maximum width at which the labels still print at
-   * `MIN_PRINTED_LABEL_PT`: below it, scaling to fit takes them under. Null
+   * the style's `print.minTextPt`: below it, scaling to fit takes them under. Null
    * when the style's labels are under the minimum even unscaled, since no
    * column width can fix that — only a style with larger labels can.
    */
@@ -189,7 +194,8 @@ export function physicalFigureSize(
   const fontSizePt = ptFromCm(figure.style.fontSizePx * cmPerPx);
   // Same slack as the fit test, the other way round: a figure scaled to
   // exactly the minimum must not warn over the last bit of a product.
-  const naturalReachesMinimum = naturalFontSizePt >= MIN_PRINTED_LABEL_PT * (1 - FIT_TOLERANCE);
+  const minimumPt = figure.style.print.minTextPt;
+  const naturalReachesMinimum = naturalFontSizePt >= minimumPt * (1 - FIT_TOLERANCE);
 
   const base = {
     widthCm,
@@ -202,13 +208,13 @@ export function physicalFigureSize(
     bondLengthMm: pxPerModelUnit(figure.style) * figure.drawnBondLength * cmPerPx * 10,
     fontSizePt,
     naturalFontSizePt,
-    labelsBelowMinimum: fontSizePt < MIN_PRINTED_LABEL_PT * (1 - FIT_TOLERANCE),
+    labelsBelowMinimum: fontSizePt < minimumPt * (1 - FIT_TOLERANCE),
     // Labels scale linearly with the width, so the width that prints them at
     // the minimum is the natural width times minimum over natural size. The
     // natural size is at or above the minimum here, so this never exceeds the
     // natural width.
     minWidthCmForMinLabel: naturalReachesMinimum
-      ? Math.min(naturalWidthCm, (naturalWidthCm * MIN_PRINTED_LABEL_PT) / naturalFontSizePt)
+      ? Math.min(naturalWidthCm, (naturalWidthCm * minimumPt) / naturalFontSizePt)
       : null,
   };
   if (dpi === undefined) return base;

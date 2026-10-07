@@ -118,8 +118,11 @@ export const SCHEMA_VERSION = 2;
 // Model
 // ---------------------------------------------------------------------------
 
-/** `publication` is ACS-like (thin bonds, serif labels); `screen` is the editor. */
-export type StylePresetId = "publication" | "screen";
+/**
+ * `publication` is the ACS 1996 setting; `nature` is the Nature Portfolio
+ * structure guide (decision 234); `screen` is the editor.
+ */
+export type StylePresetId = "publication" | "nature" | "screen";
 
 /**
  * The preset a document CREATED here opens in: blank, the editor's startup
@@ -457,19 +460,22 @@ export function defaultRepresentation(
  * preset-wide setting cannot express. The preset only seeds it, and a saved
  * document keeps whatever it stored.
  *
- * BOTH SHIPPED PRESETS NOW DEFER TO THE VIEW KIND (`"kind"`), which after
+ * PUBLICATION AND SCREEN DEFER TO THE VIEW KIND (`"kind"`), which after
  * decision 11 is what actually distinguishes skeletal from Kekulé: with
  * Kekulé's carbon labels gone, the circle is the only thing left that tells
  * the two views apart, so a preset-wide "circles off" would collapse them
  * back into the same picture. The table survives because it is still the
  * declared home of a house style that prints one or the other regardless of
  * view — a third preset adds a row here with a plain boolean and changes
- * nothing else.
+ * nothing else. Nature (decision 234) is that preset.
  */
 const AROMATIC_CIRCLES_BY_PRESET: Readonly<
   Record<StylePresetId, boolean | "kind">
 > = Object.freeze({
   publication: "kind",
+  // Decision 234: the Nature Portfolio guide asks for "discrete bonds ...
+  // rather than rings", so a panel created under Nature starts Kekule.
+  nature: false,
   screen: "kind",
 });
 
@@ -2130,7 +2136,7 @@ export const sketchDocumentSchema = z
     molecule: moleculeSchema,
     annotations: z.array(annotationSchema),
     nextAnnotationId: z.number().int().positive(),
-    stylePreset: z.enum(["publication", "screen"]),
+    stylePreset: z.enum(["publication", "nature", "screen"]),
     panels: z.array(panelSchema),
     // Optional and additive: a file from before the field existed has no key,
     // and still decodes at SCHEMA_VERSION 1. See `FigureLayout`.

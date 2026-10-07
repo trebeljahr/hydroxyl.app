@@ -59,7 +59,7 @@ import { keysRetained, weakCache } from "@/lib/weak-cache";
  * and currently keep in agreement by hand.
  *
  * `StylePresetId` (shared) and `RenderStyleName` (chem-render) are both
- * "publication" | "screen"; `RepresentationKind` (shared) and `ViewKind`
+ * "publication" | "nature" | "screen"; `RepresentationKind` (shared) and `ViewKind`
  * (chem-render) are both the same six view names. Neither package imports the
  * other's, and both are right not to — a file format that could not name a
  * style the current renderer has not got is a worse format.
@@ -99,12 +99,28 @@ export function renderStyleFor(doc: SketchDocument): RenderStyle {
 }
 
 /** Every preset, in the order the UI offers them. */
-export const STYLE_PRESETS: readonly StylePresetId[] = Object.freeze(["screen", "publication"]);
+export const STYLE_PRESETS: readonly StylePresetId[] = Object.freeze([
+  "screen",
+  "publication",
+  "nature",
+]);
 
 /** How the top bar, the palette and the export dialog name a preset. */
 export const STYLE_PRESET_TITLES: Readonly<Record<StylePresetId, string>> = Object.freeze({
   screen: "Screen",
   publication: "Publication",
+  nature: "Nature",
+});
+
+/**
+ * How a sentence names a preset: "the publication style", but "the Nature
+ * style", since Nature is a proper noun and lower-casing the title would
+ * misspell it.
+ */
+export const STYLE_PRESET_IN_SENTENCE: Readonly<Record<StylePresetId, string>> = Object.freeze({
+  screen: "screen",
+  publication: "publication",
+  nature: "Nature",
 });
 
 /**

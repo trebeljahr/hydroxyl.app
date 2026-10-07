@@ -49,7 +49,6 @@
 import { useMemo } from "react";
 import type { CSSProperties, ReactElement } from "react";
 
-import { JOURNAL_WIDTHS_CM } from "@starter/chem-render";
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { STYLE_PRESET_TITLES } from "@/canvas/scene-bridge";
@@ -60,6 +59,7 @@ import {
   annotationSizeNotice,
   bondLengthNotice,
   figurePreviewSvg,
+  figureStyle,
   figureStyleNotice,
   formatPt,
   labelSizeNotice,
@@ -146,6 +146,9 @@ export function ExportDialog(): ReactElement {
   // mean to the next program rather than about how the figure looks.
   const wedgelessNotice = wedgelessStereoGroupNotice(doc.molecule);
   const exportPreset = settings.style === "canvas" ? doc.stylePreset : "publication";
+  // The journal columns of the style being exported (decision 234): a Nature
+  // figure offers Nature's 8.8 and 18 cm, not ACS's.
+  const columns = figureStyle(doc, settings.style).print.columnWidthsCm;
 
   return (
     <Dialog open={open} onOpenChange={(next) => editorStore.getState().setExportDialogOpen(next)}>
@@ -225,14 +228,14 @@ export function ExportDialog(): ReactElement {
               name="figure-width"
               value="single"
               checked={settings.width === "single"}
-              label={`Single column (up to ${JOURNAL_WIDTHS_CM.single} cm)`}
+              label={`Single column (up to ${columns.single} cm)`}
               onSelect={() => set({ width: "single" })}
             />
             <Choice
               name="figure-width"
               value="double"
               checked={settings.width === "double"}
-              label={`Double column (up to ${JOURNAL_WIDTHS_CM.double} cm)`}
+              label={`Double column (up to ${columns.double} cm)`}
               onSelect={() => set({ width: "double" })}
             />
             <div className="flex items-center gap-1.5">

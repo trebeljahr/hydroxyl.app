@@ -38,7 +38,11 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { STYLE_PRESETS, STYLE_PRESET_TITLES } from "@/canvas/scene-bridge";
+import {
+  STYLE_PRESETS,
+  STYLE_PRESET_IN_SENTENCE,
+  STYLE_PRESET_TITLES,
+} from "@/canvas/scene-bridge";
 import { commandById, formatShortcut } from "@/editor/commands/registry";
 import { recentsHref } from "@/lib/deployment";
 import { cn } from "@/lib/utils";
@@ -100,9 +104,9 @@ function CommandButton({
 }
 
 /**
- * Screen / Publication: the document's style preset, which the canvas draws
+ * Screen / Publication / Nature: the document's style preset, which the canvas draws
  * with, and every export writes when its style choice is "As shown on the canvas"
- * (decisions 21 and 50; exports default to Publication). Two registry commands, so the
+ * (decisions 21, 50 and 234; exports default to Publication). One registry command per preset, so the
  * palette offers the same switch and a click is the same undoable
  * `setStylePreset` the command runs. The active preset is `aria-pressed`
  * rather than disabled, so it stays focusable and announced.
@@ -141,7 +145,7 @@ function StylePresetSwitch(): ReactElement {
             </TooltipTrigger>
             <TooltipContent side="bottom">
               {active
-                ? `The canvas and exports use the ${STYLE_PRESET_TITLES[id].toLowerCase()} style`
+                ? `The canvas and exports use the ${STYLE_PRESET_IN_SENTENCE[id]} style`
                 : command.title}
             </TooltipContent>
           </Tooltip>

@@ -70,7 +70,7 @@ import type { DisplayFlagKey, SketchDocument } from "@starter/shared";
 import { fitBounds } from "@/canvas/metrics";
 import {
   STYLE_PRESETS,
-  STYLE_PRESET_TITLES,
+  STYLE_PRESET_IN_SENTENCE,
   buildCanvasScene,
   canvasPanelFor,
   documentNumbersAtoms,
@@ -1637,7 +1637,7 @@ const VIEW_COMMANDS: readonly Command[] = [
   ...STYLE_PRESETS.map(
     (preset): Command => ({
       id: `view.style-${preset}`,
-      title: `Use ${STYLE_PRESET_TITLES[preset].toLowerCase()} style`,
+      title: `Use ${STYLE_PRESET_IN_SENTENCE[preset]} style`,
       keywords: ["style", "preset", preset, "line", "weight", "figure"],
       group: "view",
       enabled: (state) => state.document.stylePreset !== preset,
@@ -1645,7 +1645,7 @@ const VIEW_COMMANDS: readonly Command[] = [
         const state = store.getState();
         if (state.document.stylePreset === preset) return;
         state.setStylePreset(preset);
-        state.setStatusMessage(`Switched to the ${STYLE_PRESET_TITLES[preset].toLowerCase()} style`);
+        state.setStatusMessage(`Switched to the ${STYLE_PRESET_IN_SENTENCE[preset]} style`);
       },
     }),
   ),
