@@ -346,6 +346,14 @@ const RADICAL_ELECTRONS_BY_CODE: ReadonlyMap<number, number> = new Map([
   [3, 2],
 ]);
 
+/**
+ * The molfile "coordination" bond type, read as a dative bond with the row's
+ * first atom the donor (decision 226). V3000 is where it is specified and
+ * where RDKit writes it; a V2000 row carrying it is read the same way rather
+ * than demoted to a single bond, which would move the donor's hydrogens.
+ */
+const DATIVE_BOND_TYPE = 9;
+
 function bondStereoFromCode(code: number): BondStereo | undefined {
   switch (code) {
     case 0:
@@ -1089,6 +1097,7 @@ function assembleMolecule(
   // programming error, which is right for the editor and wrong for an import.
   const seenPairs = new Set<string>();
   const aromaticBondIds: BondId[] = [];
+  const dativeBondIds: BondId[] = [];
 
   for (const bond of bondRows) {
     const endpointFor = (index: number): AtomId | undefined =>
@@ -1133,10 +1142,13 @@ function assembleMolecule(
 
     let order: BondOrder = 1;
     let aromatic = false;
+    let dative = false;
     if (bond.type === 1 || bond.type === 2 || bond.type === 3) {
       order = bond.type;
     } else if (bond.type === 4) {
       aromatic = true;
+    } else if (bond.type === DATIVE_BOND_TYPE) {
+      dative = true;
     } else {
       warnings.push({
         kind: "unsupported-bond-type",
@@ -1155,9 +1167,20 @@ function assembleMolecule(
     // every stereocentre in the structure.
     const bondId = builder.bond(from, to, order, bond.stereo);
     if (aromatic) aromaticBondIds.push(bondId);
+    if (dative) dativeBondIds.push(bondId);
   }
 
   let molecule = builder.build();
+
+  // Dative flags the same way, one post-pass (decision 226). Before the
+  // hydrogen pass below, because a dative bond gives its donor no valence.
+  if (dativeBondIds.length > 0) {
+    const bonds: Record<BondId, Bond> = { ...molecule.bonds };
+    for (const bondId of dativeBondIds) {
+      bonds[bondId] = { ...requireBond(molecule, bondId), dative: true };
+    }
+    molecule = { ...molecule, bonds };
+  }
 
   // Aromatic flags in one post-pass: `MoleculeBuilder.bond` has no aromatic
   // parameter, and setting them through `updateBond` would be O(n) per bond.

@@ -78,6 +78,7 @@ describe("no RDKit at module scope", () => {
     // someone happened to name `*.node.test.ts`.
     expect(hits.filter((f) => !f.endsWith(".node.test.ts"))).toEqual([]);
     expect(hits.map((f) => path.basename(f)).toSorted()).toEqual([
+      "dative.node.test.ts",
       "fidelity.node.test.ts",
       "inchi.node.test.ts",
       "insert-fidelity.node.test.ts",

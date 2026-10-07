@@ -569,6 +569,62 @@ function bondSideCommands(): Command[] {
   });
 }
 
+const selectedBondRecords = (state: EditorState) => {
+  const mol = state.document.molecule;
+  return state.selection.bondIds.filter((id) => Object.hasOwn(mol.bonds, id)).map((id) => mol.bonds[id]!);
+};
+
+/**
+ * Bold and dative (decision 226), each a toggle over the selected bonds: on
+ * for all of them unless every one already has it, which is how a checked
+ * menu row reads.
+ *
+ * Bold is display only and goes on any bond. Dative goes only on single
+ * bonds — chem-core refuses a dative double — and points from each bond's
+ * `from` atom; "Flip direction" turns the arrow round.
+ */
+function bondFlagCommands(): Command[] {
+  const anyBond = (state: EditorState): boolean => selectedBondRecords(state).length > 0;
+  const singles = (state: EditorState) => selectedBondRecords(state).filter((bond) => bond.order === 1);
+  const anySingle = (state: EditorState): boolean => singles(state).length > 0;
+  return [
+    {
+      id: "bond.style.bold",
+      title: "Bold bond",
+      keywords: ["bond", "bold", "wide", "thick", "haworth", "front", "style"],
+      group: "bond" as const,
+      enabled: anyBond,
+      disabledReason: whenOff(anyBond, REASONS.noBondSelected),
+      run: (store: EditorStore) => {
+        const state = store.getState();
+        const bonds = selectedBondRecords(state);
+        if (bonds.length === 0) return;
+        const bold = !bonds.every((bond) => bond.bold === true);
+        state.applyMoleculeEdit(bold ? "Make bond bold" : "Make bond plain", (mol) =>
+          bonds.reduce((m, bond) => guardedOps.setBondBold(m, bond.id, bold), mol),
+        );
+      },
+    },
+    {
+      id: "bond.dative",
+      title: "Dative bond (→)",
+      keywords: ["bond", "dative", "coordinate", "coordination", "arrow", "donor", "acceptor", "ligand"],
+      group: "bond" as const,
+      enabled: anySingle,
+      disabledReason: whenOff(anySingle, "Select a single bond first"),
+      run: (store: EditorStore) => {
+        const state = store.getState();
+        const bonds = singles(state);
+        if (bonds.length === 0) return;
+        const dative = !bonds.every((bond) => bond.dative === true);
+        state.applyMoleculeEdit(dative ? "Make bond dative" : "Make bond covalent", (mol) =>
+          bonds.reduce((m, bond) => guardedOps.setBondDative(m, bond.id, dative), mol),
+        );
+      },
+    },
+  ];
+}
+
 /**
  * Fuse a template ring onto the ONE selected bond — the ring tool's
  * click-a-bond gesture, reachable without changing tools.
@@ -1973,6 +2029,7 @@ export const COMMANDS: readonly Command[] = Object.freeze([
   ...bondOrderCommands(),
   ...bondStereoCommands(),
   ...bondSideCommands(),
+  ...bondFlagCommands(),
   ...ringTemplateCommands(),
   ...ringFuseCommands(),
   ...chainLengthCommands(),

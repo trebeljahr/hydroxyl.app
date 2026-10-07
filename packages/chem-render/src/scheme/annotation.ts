@@ -83,7 +83,7 @@ export function schemeAnnotationId(n: number): SchemeAnnotationId {
  * here rather than a saved sketch the codec cannot open — the `either` bug.
  * `retrosynthesisArrow`, `resonanceArrow`, `partialBond`, `partialCharge` and
  * `coefficient` arrived additively on v2 with the reaction-arrows task
- * (decision 201).
+ * (decision 201); `hydrogenBond` the same way with decision 226.
  */
 export const SCHEME_ANNOTATION_KINDS = [
   "curlyArrow",
@@ -96,6 +96,7 @@ export const SCHEME_ANNOTATION_KINDS = [
   "partialBond",
   "partialCharge",
   "coefficient",
+  "hydrogenBond",
 ] as const;
 export type SchemeAnnotationKind = (typeof SCHEME_ANNOTATION_KINDS)[number];
 
@@ -344,6 +345,21 @@ export interface PartialBondAnnotation {
   readonly atoms: readonly [AtomId, AtomId];
 }
 
+/**
+ * A hydrogen bond, drawn DOTTED between two atoms (decision 226): the donor
+ * side first — the heteroatom carrying the hydrogen — then the acceptor.
+ *
+ * NOT A BOND, by ruling. It never enters chem-core, so it never touches the
+ * formula, a valence, a hydrogen count or the species a scheme counts: the
+ * base pair of a DNA figure stays two molecules. It sits beside the partial
+ * bond, which is drawn the same way with dashes instead of dots.
+ */
+export interface HydrogenBondAnnotation {
+  readonly id: SchemeAnnotationId;
+  readonly kind: "hydrogenBond";
+  readonly atoms: readonly [AtomId, AtomId];
+}
+
 export const PARTIAL_CHARGE_SIGNS = ["+", "-"] as const;
 export type PartialChargeSign = (typeof PARTIAL_CHARGE_SIGNS)[number];
 
@@ -379,7 +395,8 @@ export type SchemeAnnotation =
   | TextAnnotation
   | PartialBondAnnotation
   | PartialChargeAnnotation
-  | CoefficientAnnotation;
+  | CoefficientAnnotation
+  | HydrogenBondAnnotation;
 
 type KindListIsTotal = SchemeAnnotation["kind"] extends SchemeAnnotationKind
   ? SchemeAnnotationKind extends SchemeAnnotation["kind"]
@@ -449,6 +466,7 @@ export function materialFlow(annotation: SchemeAnnotation): MaterialFlow | undef
     case "partialBond":
     case "partialCharge":
     case "coefficient":
+    case "hydrogenBond":
       return undefined;
     default: {
       const unreachable: never = annotation;
@@ -475,6 +493,7 @@ export type SchemeAnnotationInput =
   | PartialBondAnnotation
   | PartialChargeAnnotation
   | CoefficientAnnotation
+  | HydrogenBondAnnotation
   | (Omit<ReactionArrowAnnotation, "row" | "equilibrium" | "conditions"> & {
       readonly row?: number | undefined;
       readonly equilibrium?: EquilibriumArrowInput | undefined;
@@ -617,6 +636,8 @@ export function assembleSchemeAnnotation(input: SchemeAnnotationInput): SchemeAn
       return { id: input.id, kind: "text", text: input.text, at: { x: input.at.x, y: input.at.y } };
     case "partialBond":
       return { id: input.id, kind: "partialBond", atoms: [input.atoms[0], input.atoms[1]] };
+    case "hydrogenBond":
+      return { id: input.id, kind: "hydrogenBond", atoms: [input.atoms[0], input.atoms[1]] };
     case "partialCharge":
       return { id: input.id, kind: "partialCharge", atomId: input.atomId, sign: input.sign };
     case "coefficient":
@@ -656,10 +677,12 @@ export function schemeSpeciesRefs(annotation: SchemeAnnotation): readonly AtomId
       return annotation.species;
     case "coefficient":
       return [annotation.species];
-    // These name ATOMS, not species: an arrow's electrons, a partial bond's
-    // two ends and a delta's atom are dropped with their atom, not re-pointed.
+    // These name ATOMS, not species: an arrow's electrons, a partial or
+    // hydrogen bond's two ends and a delta's atom are dropped with their atom,
+    // not re-pointed.
     case "curlyArrow":
     case "partialBond":
+    case "hydrogenBond":
     case "partialCharge":
     case "text":
       return [];
@@ -689,6 +712,7 @@ export function schemeAnnotationAnchors(annotation: SchemeAnnotation): readonly 
     case "text":
       return [{ kind: "frame" }];
     case "partialBond":
+    case "hydrogenBond":
       return annotation.atoms.map((atomId) => ({ kind: "atom", atomId }));
     case "partialCharge":
       return [{ kind: "atom", atomId: annotation.atomId }];
@@ -929,6 +953,7 @@ export function pruneSchemeAnnotations(
         return assembleSchemeAnnotation({ ...annotation, species });
       }
       case "partialBond":
+      case "hydrogenBond":
         return annotation.atoms.every(hasAtom) ? annotation : undefined;
       case "partialCharge":
         return hasAtom(annotation.atomId) ? annotation : undefined;

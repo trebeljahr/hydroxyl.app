@@ -25,7 +25,7 @@
 
 import { elementByZ, requireElement } from "./elements.js";
 import { bondsAt, degree, getAtom, requireAtom } from "./molecule.js";
-import type { AtomId, BondId, Molecule } from "./types.js";
+import type { AtomId, Bond, BondId, Molecule } from "./types.js";
 
 /** An aromatic bond contributes 1.5, so a benzene carbon totals 3. */
 const AROMATIC_BOND_ORDER = 1.5;
@@ -56,11 +56,26 @@ const MAX_AROMATIC_SLACK = 1.5;
 export function bondOrderSum(mol: Molecule, atomId: AtomId): number {
   let sum = 0;
   for (const bond of bondsAt(mol, atomId)) {
-    sum += bond.aromatic ? AROMATIC_BOND_ORDER : bond.order;
+    sum += bond.aromatic ? AROMATIC_BOND_ORDER : valenceContribution(bond, atomId);
   }
   // Aromatic rings give half-integers that should land on a whole number once
   // the whole ring is accounted for; rounding absorbs float error.
   return Math.round(sum * 2) / 2;
+}
+
+/**
+ * What one non-aromatic bond adds to the valence of the atom at `atomId`.
+ *
+ * Its order, except a dative bond's DONOR end, which gets 0 (decision 226):
+ * the pair it shares was the donor's own lone pair, so the donor keeps the
+ * hydrogens it had — ammonia in H3N->BH3 is still NH3. The acceptor end
+ * counts 1. That is RDKit's `Bond::getValenceContrib` for DATIVE exactly, and
+ * the asymmetry has a visible consequence worth knowing: boron's only valence
+ * is 3, so a drawn N->B leaves the boron BH2, as RDKit reads `N->B`.
+ */
+export function valenceContribution(bond: Bond, atomId: AtomId): number {
+  if (bond.dative && bond.from === atomId) return 0;
+  return bond.order;
 }
 
 /**

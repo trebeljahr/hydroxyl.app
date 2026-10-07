@@ -171,6 +171,32 @@ export interface Bond {
   readonly doubleBondSide: DoubleBondSide;
   /** Set by aromaticity perception, never by the user directly. */
   readonly aromatic: boolean;
+  /**
+   * A dative (coordinate) bond, donor `from` -> acceptor `to` (decision 226):
+   * the H3N->BH3 of an adduct, the N->Pt of a metal complex. Drawn as an arrow
+   * toward the acceptor.
+   *
+   * A REAL BOND, NOT AN ANNOTATION, because it joins the two pieces into one
+   * species and has to survive a molfile round trip as V3000 bond type 9.
+   * It contributes NOTHING to the donor's valence and 1 to the acceptor's,
+   * which is exactly RDKit's `Bond::getValenceContrib` for DATIVE — measured:
+   * RDKit reads `N->B` as NH3 and BH2, and refuses `[NH3]->[BH3]` outright.
+   * Diverging would make hydrogens appear or vanish across the round trip.
+   *
+   * Always a single, non-aromatic bond: `updateBond` clears the flag when the
+   * order changes and refuses to set it on a double or triple bond.
+   *
+   * THE KEY IS OMITTED when false, never present holding `false`, so a
+   * document saved before the field existed and one saved after compare equal.
+   */
+  readonly dative?: true;
+  /**
+   * Drawn as a wide line (decision 226): the front edge of a Haworth ring or a
+   * chair, or emphasis in a figure. PURELY DISPLAY, like `doubleBondSide`:
+   * valence, formula and stereo never read it, and the molfile has no field
+   * for it, so `writeMolblock` drops it. Omitted when false, as `dative`.
+   */
+  readonly bold?: true;
 }
 
 /**
@@ -255,4 +281,6 @@ export interface BondInit {
   readonly stereo?: BondStereo | undefined;
   readonly doubleBondSide?: DoubleBondSide | undefined;
   readonly aromatic?: boolean | undefined;
+  readonly dative?: boolean | undefined;
+  readonly bold?: boolean | undefined;
 }

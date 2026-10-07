@@ -36,11 +36,13 @@ import type { ElementSymbol } from "./elements.js";
 import {
   atomsEqual,
   bondBetween,
+  bondFlags,
   cloneAtomWith,
   otherEnd,
   requireAtom,
   requireBond,
   adjacency,
+  withBondFlags,
 } from "./molecule.js";
 import type {
   Atom,
@@ -179,6 +181,8 @@ export type BondPatch = {
   readonly stereo?: BondStereo;
   readonly doubleBondSide?: DoubleBondSide;
   readonly aromatic?: boolean;
+  readonly dative?: boolean;
+  readonly bold?: boolean;
 };
 
 /**
@@ -214,7 +218,21 @@ export function updateBond(mol: Molecule, id: BondId, patch: BondPatch): Molecul
   const order = patch.order ?? bond.order;
   const stereo = patch.stereo ?? bond.stereo;
   const doubleBondSide = patch.doubleBondSide ?? bond.doubleBondSide;
-  const aromatic = patch.aromatic ?? bond.aromatic;
+  const flags = bondFlags(bond);
+  // A dative bond is single and non-aromatic (decision 226). Asking for one on
+  // a multiple bond is a caller error; changing a dative bond's order is an
+  // ordinary edit that turns it back into a plain bond. Perception asking to
+  // flag it aromatic is ignored rather than allowed to erase the dative.
+  if (patch.dative === true && patch.order !== undefined && patch.order !== 1) {
+    throw new Error(`A dative bond is a single bond, not order ${patch.order}`);
+  }
+  if (patch.dative === true && patch.order === undefined && bond.order !== 1) {
+    throw new Error(`Bond ${id} is order ${bond.order}; a dative bond is single`);
+  }
+  const orderChanged = patch.order !== undefined && patch.order !== bond.order;
+  const dative = patch.dative ?? (flags.dative && !orderChanged);
+  const bold = patch.bold ?? flags.bold;
+  const aromatic = dative ? false : (patch.aromatic ?? bond.aromatic);
 
   if (from !== bond.from || to !== bond.to) {
     if (from === to) throw new Error(`Cannot bond atom ${from} to itself`);
@@ -234,10 +252,15 @@ export function updateBond(mol: Molecule, id: BondId, patch: BondPatch): Molecul
     order === bond.order &&
     stereo === bond.stereo &&
     doubleBondSide === bond.doubleBondSide &&
-    aromatic === bond.aromatic;
+    aromatic === bond.aromatic &&
+    dative === flags.dative &&
+    bold === flags.bold;
   if (unchanged) return mol;
 
-  const next: Bond = { id: bond.id, from, to, order, stereo, doubleBondSide, aromatic };
+  const next = withBondFlags(
+    { id: bond.id, from, to, order, stereo, doubleBondSide, aromatic },
+    { dative, bold },
+  );
   return { ...mol, bonds: { ...mol.bonds, [id]: next } };
 }
 
@@ -344,6 +367,20 @@ export function setDoubleBondSide(
 }
 
 /**
+ * Makes a single bond dative, donor `from` -> acceptor `to`, or plain again
+ * (decision 226). Throws on a double or triple bond: there is no dative
+ * double bond to draw. Use `flipBond` to point the arrow the other way.
+ */
+export function setBondDative(mol: Molecule, id: BondId, dative: boolean): Molecule {
+  return updateBond(mol, id, { dative });
+}
+
+/** Draws a bond wide, or ordinary again (decision 226). Display only. */
+export function setBondBold(mol: Molecule, id: BondId, bold: boolean): Molecule {
+  return updateBond(mol, id, { bold });
+}
+
+/**
  * Swaps `from` and `to`.
  *
  * The stereo string is deliberately untouched. Per the convention in types.ts
@@ -361,6 +398,8 @@ export function setDoubleBondSide(
  * image, not for a change of annotation, so both the stereo string and the
  * side have to be swapped to keep the picture saying what it said.
  */
+// On a dative bond the swap reverses the arrow, which is the gesture for
+// "the other atom is the donor".
 export function flipBond(mol: Molecule, id: BondId): Molecule {
   const bond = requireBond(mol, id);
   return updateBond(mol, id, { from: bond.to, to: bond.from });

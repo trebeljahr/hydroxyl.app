@@ -16,9 +16,10 @@
  * WHAT THIS DELIBERATELY DOES NOT DO: multi-record SDF (`$$$$` and the tagged
  * data block) and query features. Those belong in their own modules.
  *
- * `doubleBondSide` is dropped, and comes back from the reader as `auto`. V2000
- * has no field for it and never will: it is a rendering hint saying which side
- * of the bond axis a double bond's second line sits on, so unlike `label` —
+ * `doubleBondSide` and `bold` are dropped, and come back from the reader as
+ * `auto` and absent. Neither format has a field for them and never will: one
+ * says which side of the bond axis a double bond's second line sits on, the
+ * other draws a bond wide (decision 226), so unlike `label` —
  * the other purely cosmetic field, which changes WHICH MOLECULE the file
  * describes and therefore refuses to export — losing it changes only how the
  * same molecule is drawn. Silently dropping it is right; leaving it
@@ -35,7 +36,7 @@ import { hasAromaticFlags, kekulize } from "./aromatic.js";
 import { requireAtom, requireBond } from "./molecule.js";
 import type { StereoConfig } from "./stereo-config.js";
 import { stereoGroupTag, stereoGroupsOf } from "./stereo-groups.js";
-import type { AtomId, BondStereo, Molecule, StereoGroup } from "./types.js";
+import type { AtomId, BondId, BondStereo, Molecule, StereoGroup } from "./types.js";
 import { bondOrderSum, implicitHydrogenCount } from "./valence.js";
 
 /**
@@ -208,6 +209,28 @@ export class MolblockStereoGroupError extends Error {
     this.stereoGroups = stereoGroups;
   }
 }
+
+/**
+ * Thrown when V2000 was asked for and the molecule carries a dative bond.
+ *
+ * V2000 has no bond type for a coordinate bond; V3000's type 9 is the one
+ * spelling, and RDKit writes a DATIVE bond only that way (measured: `N->B`
+ * comes out of `get_molblock()` as a V3000 file). Writing it as a single bond
+ * would move a hydrogen — the donor's — onto the file's reading of the
+ * structure, so as with stereo groups the app picks V3000 (decision 49) and a
+ * direct V2000 request refuses, handing over the bond ids.
+ */
+export class MolblockDativeBondError extends Error {
+  readonly bondIds: readonly BondId[];
+  constructor(message: string, bondIds: readonly BondId[]) {
+    super(message);
+    this.name = "MolblockDativeBondError";
+    this.bondIds = bondIds;
+  }
+}
+
+/** V3000's "coordination" bond type, RDKit's DATIVE (decision 226). */
+const V3000_DATIVE_BOND_TYPE = 9;
 
 /**
  * Bond stereo as V2000 codes.
@@ -505,6 +528,17 @@ export function writeMolblock(mol: Molecule, options: MolblockWriteOptions = {})
         `— a different compound, in a file that looks perfectly valid. Write ` +
         `V3000 instead, or clear the groups first.`,
       groups,
+    );
+  }
+
+  const dative = mol.bondIds.filter((id) => requireBond(mol, id).dative === true);
+  if (version === "V2000" && dative.length > 0) {
+    throw new MolblockDativeBondError(
+      `Cannot write a V2000 molblock for a molecule carrying dative bonds: ` +
+        `${dative.join(", ")}. V2000 has no coordinate bond type, and writing a ` +
+        `single bond would give the donor a hydrogen it does not have. Write ` +
+        `V3000 instead, where a dative bond is type 9.`,
+      dative,
     );
   }
 
@@ -889,7 +923,9 @@ function writeV3000(
       if (from === undefined || to === undefined) {
         throw new Error(`Bond ${bondId} references an atom that is not in the molecule`);
       }
-      const type = bond.aromatic ? 4 : bond.order;
+      // Type 9 is "coordination" (decision 226), and RDKit reads it as DATIVE
+      // with the first atom the donor — which is why `from` is the donor.
+      const type = bond.dative ? V3000_DATIVE_BOND_TYPE : bond.aromatic ? 4 : bond.order;
       // index type atom1 atom2. `from` FIRST, for the same reason as V2000: the
       // narrow end of a wedge is at the first atom, so swapping the endpoints
       // would invert every stereocentre in the file.

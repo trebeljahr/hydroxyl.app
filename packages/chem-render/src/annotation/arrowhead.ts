@@ -48,6 +48,17 @@ export const CURLY_ARROWHEAD: ArrowheadProportions = Object.freeze({
   halfWidth: 2,
 });
 
+/**
+ * A dative bond's head (decision 226): smaller than a curly arrow's, since it
+ * sits on a bond a few heads long rather than on a free-standing shaft. At
+ * Publication's 1 px line it is 6 px long and 4 px across.
+ */
+export const DATIVE_ARROWHEAD: ArrowheadProportions = Object.freeze({
+  length: 6,
+  notch: 5,
+  halfWidth: 2,
+});
+
 export type ArrowheadShape = "full" | "half";
 /** Which side of the direction of travel a half head's one barb is on. */
 export type ArrowheadSide = "left" | "right";

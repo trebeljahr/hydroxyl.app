@@ -19,10 +19,12 @@
  */
 
 import {
+  bondFlags,
   cloneAtomWith,
   emptyMolecule,
   requireAtom,
   requireBond,
+  withBondFlags,
 } from "./molecule.js";
 import type { Atom, AtomId, Bond, BondId, Molecule } from "./types.js";
 import { assembleMolecule } from "./builders.js";
@@ -69,15 +71,18 @@ function copyAtom(source: Atom, id: AtomId, pos: Vec2): Atom {
 }
 
 function copyBond(source: Bond, id: BondId, from: AtomId, to: AtomId): Bond {
-  return {
-    id,
-    from,
-    to,
-    order: source.order,
-    stereo: source.stereo,
-    doubleBondSide: source.doubleBondSide,
-    aromatic: source.aromatic,
-  };
+  return withBondFlags(
+    {
+      id,
+      from,
+      to,
+      order: source.order,
+      stereo: source.stereo,
+      doubleBondSide: source.doubleBondSide,
+      aromatic: source.aromatic,
+    },
+    bondFlags(source),
+  );
 }
 
 /**

@@ -101,6 +101,7 @@ import { isStructural } from "../representation.js";
 import { anchorPlacementOf } from "../scheme/annotation.js";
 import type { SchemeAnnotation, SchemeAnnotationId } from "../scheme/annotation.js";
 import { partialBondSegment, partialChargeText } from "../annotation/transition-state.js";
+import { arrowhead, DATIVE_ARROWHEAD } from "../annotation/arrowhead.js";
 import type {
   Representation,
   StructuralRepresentation,
@@ -128,6 +129,7 @@ import type {
   ScenePoint,
   ScenePrimitive,
   SceneSource,
+  SceneStroke,
   TextRunPrimitive,
   TextSpan,
 } from "./types.js";
@@ -968,13 +970,17 @@ function transitionStateMarks(
   readonly owners: ReadonlyMap<AtomId, SchemeAnnotationId>;
 } {
   const owners = new Map<AtomId, SchemeAnnotationId>();
-  const marks = (annotations ?? []).filter((a) => a.kind === "partialCharge" || a.kind === "partialBond");
+  const marks = (annotations ?? []).filter(
+    (a) => a.kind === "partialCharge" || a.kind === "partialBond" || a.kind === "hydrogenBond",
+  );
   if (marks.length === 0) return { requests: [], segments: [], owners };
   const placed = placement();
   const partners = new Map<AtomId, AtomId[]>();
   const segments: AnnotationSegment[] = [];
   for (const mark of marks) {
-    if (mark.kind !== "partialBond") continue;
+    // A hydrogen bond is an obstacle for the label pass exactly as a partial
+    // bond is, and a delta beside its atom leans away from it too.
+    if (mark.kind !== "partialBond" && mark.kind !== "hydrogenBond") continue;
     const [a, b] = mark.atoms;
     if (!placed.hasAtom(a) || !placed.hasAtom(b)) continue;
     partners.set(a, [...(partners.get(a) ?? []), b]);
@@ -1701,11 +1707,18 @@ function pushBondPrimitives(
   );
   if (axis === undefined) return;
   // Every segment below is inked at the bond stroke, except a wedge's
-  // outline, which is a filled edge with no stroke of its own.
-  const halfWidth = style.bondLineWidthPx / 2;
+  // outline, which is a filled edge with no stroke of its own, and a bold
+  // bond's main line.
+  //
+  // BOLD IS AS WIDE AS A WEDGE'S BROAD END (decision 226), so a Haworth ring's
+  // front edge meets its wedged substituents at one width. Round caps, so two
+  // bold edges meeting at a ring corner join without a notch.
+  const boldWidth = Math.max(style.stereoWedgeWidthPx, style.bondLineWidthPx);
+  const halfWidth = (bond.bold ? boldWidth : style.bondLineWidthPx) / 2;
   corridors.set(bondId, { a: axis.a, b: axis.b, halfWidth });
 
-  const stroke = { color: style.colors.bond, width: style.bondLineWidthPx };
+  const plainStroke = { color: style.colors.bond, width: style.bondLineWidthPx };
+  const boldStroke: SceneStroke = { color: style.colors.bond, width: boldWidth, cap: "round" };
   const line = (
     suffix: string,
     ends: { a: ScenePoint; b: ScenePoint } | undefined,
@@ -1717,17 +1730,43 @@ function pushBondPrimitives(
     // double bond at least matches what a reader can see is crowded. The bond
     // losing EVERY line is reported as `bond-swallowed-by-labels`.
     if (ends === undefined) return;
-    drawn.push({ a: ends.a, b: ends.b, halfWidth });
+    // Only the main line is bold: the second line of a bold double bond stays
+    // a hairline, as ChemDraw draws it.
+    const bold = bond.bold === true && suffix === "line";
+    drawn.push({ a: ends.a, b: ends.b, halfWidth: bold ? boldWidth / 2 : plainStroke.width / 2 });
     const primitive: LinePrimitive = {
       id: `bond:${bondId}:${suffix}`,
       source: { kind: "bond", bondId },
       type: "line",
       a: ends.a,
       b: ends.b,
-      stroke,
+      stroke: bold ? boldStroke : plainStroke,
     };
     primitives.push(primitive);
   };
+
+  // A DATIVE BOND IS AN ARROW, donor to acceptor (decision 226), and it takes
+  // precedence over any stereo mark: the arrow is the statement the bond
+  // makes. The shaft stops at the head's notch, inside it, as every arrow in
+  // a scheme does, and the tip lands on the trimmed axis end — clear of the
+  // acceptor's label.
+  if (bond.dative) {
+    const head = arrowhead(axis.b, axis.unit, style.bondLineWidthPx, DATIVE_ARROWHEAD, "full");
+    // Too crowded for a shaft, the head alone still says which way.
+    if (axis.length - head.notchLength >= style.bondLineWidthPx) {
+      line("line", { a: axis.a, b: head.notch });
+    }
+    const polygon: PolygonPrimitive = {
+      id: `bond:${bondId}:dative-head`,
+      source: { kind: "bond", bondId },
+      type: "polygon",
+      points: head.points,
+      fill: { color: style.colors.bond },
+    };
+    primitives.push(polygon);
+    pushOutline(drawn, head.points);
+    return;
+  }
 
   const gap = style.doubleBondGapPx;
   // The same floor the axis was held to: below its own stroke width a line is

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   benzene,
   buildMolecule,
+  setBondDative,
   elementCounts,
   MolblockStereoGroupError,
   netCharge,
@@ -214,6 +215,20 @@ describe("molblockVersionFor and its notice (decision 49)", () => {
     // sentence and the drawing need no translating between them.
     expect(notice).toContain("(and1)");
     expect(notice).toContain("V3000");
+  });
+
+  it("picks V3000 for a dative bond and says why (decision 226)", () => {
+    const adduct = setBondDative(
+      buildMolecule((b) => {
+        b.bond(b.atom("N", vec(0, 0)), b.atom("B", vec(1, 0)));
+      }),
+      "b3",
+      true,
+    );
+    expect(molblockVersionFor(adduct)).toBe("V3000");
+    expect(molblockVersionNotice(adduct)).toMatch(/V3000 molfile: a dative bond needs V3000 bond type 9/);
+    const written = moleculeToMolblock(adduct);
+    expect(written.ok && written.value).toContain("M  V30 1 9 1 2");
   });
 
   it("measures the three-character counts fields only against V2000", () => {

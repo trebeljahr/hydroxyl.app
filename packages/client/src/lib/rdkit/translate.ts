@@ -96,7 +96,15 @@ const MAX_V2000_COUNT = 999;
  * never been given a V3000 file.
  */
 export function molblockVersionFor(mol: Molecule): MolblockVersion {
-  return stereoGroupsOf(mol).length > 0 ? "V3000" : "V2000";
+  return stereoGroupsOf(mol).length > 0 || dativeBondCount(mol) > 0 ? "V3000" : "V2000";
+}
+
+/** Dative bonds, which V2000 has no type for (decision 226, writing V3000 as
+ *  decision 49 does for stereo groups). */
+function dativeBondCount(mol: Molecule): number {
+  let count = 0;
+  for (const id of mol.bondIds) if (mol.bonds[id]?.dative) count++;
+  return count;
 }
 
 /**
@@ -114,13 +122,24 @@ export function molblockVersionFor(mol: Molecule): MolblockVersion {
  */
 export function molblockVersionNotice(mol: Molecule): string | null {
   const groups = stereoGroupsOf(mol);
-  if (groups.length === 0) return null;
-  const tags = groups.map(stereoGroupTag).join(", ");
-  return (
-    `Written as a V3000 molfile: this structure states stereo groups ` +
-    `(${tags}), and V2000 has no field for them — written as V2000 it would ` +
-    `name a single enantiomer.`
-  );
+  const dative = dativeBondCount(mol);
+  if (groups.length === 0 && dative === 0) return null;
+  const reasons: string[] = [];
+  if (groups.length > 0) {
+    const tags = groups.map(stereoGroupTag).join(", ");
+    reasons.push(
+      `this structure states stereo groups (${tags}), and V2000 has no field ` +
+        `for them — written as V2000 it would name a single enantiomer`,
+    );
+  }
+  if (dative > 0) {
+    reasons.push(
+      `${dative === 1 ? "a dative bond needs" : `${dative} dative bonds need`} V3000 ` +
+        `bond type 9 — V2000 would write a single bond and give the donor an ` +
+        `extra hydrogen`,
+    );
+  }
+  return `Written as a V3000 molfile: ${reasons.join("; and ")}.`;
 }
 
 /**
@@ -271,7 +290,7 @@ export function moleculeToMolblock(mol: Molecule, title = ""): ChemIoResult<stri
         `A V2000 molblock cannot express ${mol.atomIds.length} atoms / ` +
         `${mol.bondIds.length} bonds; the counts fields are three characters wide. ` +
         `V3000 has no such limit, but this app writes V3000 only for a structure ` +
-        `that states a stereo group.`,
+        `that states a stereo group or a dative bond.`,
     });
   }
   const kekulised = kekulizeWithReport(mol);

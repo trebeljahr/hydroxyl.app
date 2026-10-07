@@ -2344,7 +2344,7 @@ function firstHeavyAtom(mol: Molecule, end: EndCandidate): AtomId | undefined {
 const SEP = String.fromCharCode(0);
 
 /** Bumped if the fingerprint contents change, so an old entry never matches. */
-const FINGERPRINT_VERSION = "C1";
+const FINGERPRINT_VERSION = "C2";
 
 /**
  * Everything unit perception reads and nothing it does not: rings.ts's key
@@ -2372,7 +2372,8 @@ export function cipTopologyFingerprint(mol: Molecule): string {
   for (const id of mol.bondIds) {
     const bond = mol.bonds[id];
     if (!bond) continue;
-    parts.push(id, bond.from, bond.to, String(bond.order), bond.aromatic ? "1" : "0");
+    // `dative` moves a hydrogen, so it can move a ranking (decision 226).
+    parts.push(id, bond.from, bond.to, String(bond.order), bond.aromatic ? "1" : "0", bond.dative ? "d" : "");
   }
   return parts.join(SEP);
 }

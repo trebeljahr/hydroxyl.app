@@ -66,6 +66,12 @@ export const SCHEME_LAYOUT = Object.freeze({
   coefficientGapEm: 0.25,
   /** A partial bond's dash and gap, bond lengths. */
   partialBondDashBonds: Object.freeze([0.1, 0.075] as const),
+  /**
+   * A hydrogen bond's dot pitch, bond lengths (decision 226): the dots are
+   * one line width long, so the line reads as dotted, not as a partial
+   * bond's dashes.
+   */
+  hydrogenBondDotPitchBonds: 0.08,
 });
 
 /** What a laid-out scheme mark noticed. Reported; nothing is moved. */
@@ -88,7 +94,7 @@ export type SchemeMarkFinding =
    * whose fragments carry formal charges, their sum (decision 212).
    */
   | { readonly kind: "charge-mismatch"; readonly atomId: AtomId; readonly netCharge: number }
-  /** A partial bond drawn over a bond the molecule already has. */
+  /** A partial or hydrogen bond drawn over a bond the molecule already has. */
   | { readonly kind: "on-drawn-bond" }
   /** A partial bond with nothing left to draw: its atoms coincide, or their labels meet. */
   | { readonly kind: "no-shaft" }

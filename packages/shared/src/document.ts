@@ -46,6 +46,7 @@ import {
   makeAtom,
   emptyMolecule,
   withSpeciesJoins,
+  withBondFlags,
   type Atom,
   type AtomId,
   type Bond,
@@ -965,6 +966,7 @@ function danglingReferences(molecule: Molecule, annotation: SchemeAnnotation): s
       for (const id of annotation.species) atom(id);
       break;
     case "partialBond":
+    case "hydrogenBond":
       for (const id of annotation.atoms) atom(id);
       break;
     case "partialCharge":
@@ -1170,6 +1172,14 @@ const bondSchema = z.strictObject({
   stereo: z.enum(BOND_STEREO_VALUES),
   doubleBondSide: z.enum(DOUBLE_BOND_SIDE_VALUES),
   aromatic: z.boolean(),
+  /**
+   * OPTIONAL AND ADDITIVE (decision 226), like `stereoGroups`: written only
+   * when true, so a document saved before the fields existed still decodes
+   * and a plain bond encodes byte-for-byte as it always did. `true` only —
+   * `false` is the absent key, never a second spelling of it.
+   */
+  dative: z.literal(true).optional(),
+  bold: z.literal(true).optional(),
 });
 
 /**
@@ -1354,6 +1364,14 @@ function checkMoleculeIntegrity(mol: MoleculeShape, ctx: z.RefinementCtx): void 
           path: ["bonds", bondId, end],
         });
       }
+    }
+    // `updateBond` refuses a dative double bond, so a file may not carry one.
+    if (bond.dative === true && (bond.order !== 1 || bond.aromatic)) {
+      ctx.addIssue({
+        code: "custom",
+        message: `bond ${bondId} is dative, which is a single non-aromatic bond`,
+        path: ["bonds", bondId, "dative"],
+      });
     }
     const pair =
       bond.from < bond.to
@@ -1590,15 +1608,18 @@ function rebuildMolecule(mol: MoleculeShape): Molecule {
   const bonds: Record<BondId, Bond> = {};
   for (const id of mol.bondIds) {
     const parsed = mol.bonds[id]!;
-    bonds[id] = {
-      id,
-      from: parsed.from,
-      to: parsed.to,
-      order: parsed.order,
-      stereo: parsed.stereo,
-      doubleBondSide: parsed.doubleBondSide,
-      aromatic: parsed.aromatic,
-    };
+    bonds[id] = withBondFlags(
+      {
+        id,
+        from: parsed.from,
+        to: parsed.to,
+        order: parsed.order,
+        stereo: parsed.stereo,
+        doubleBondSide: parsed.doubleBondSide,
+        aromatic: parsed.aromatic,
+      },
+      { dative: parsed.dative === true, bold: parsed.bold === true },
+    );
   }
   const rebuilt: {
     -readonly [K in keyof Molecule]: Molecule[K];
@@ -2077,6 +2098,14 @@ const annotationSchema = z.discriminatedUnion("kind", [
     species: nonEmptyString,
     value: z.number().positive().finite(),
   }),
+  // Decision 226: additive on v2, like the reaction-arrow kinds.
+  z.strictObject({
+    id: nonEmptyString,
+    kind: z.literal("hydrogenBond"),
+    atoms: z
+      .tuple([nonEmptyString, nonEmptyString])
+      .refine(([a, b]) => a !== b, "a hydrogen bond runs between two different atoms"),
+  }),
 ]);
 
 /** A curly-arrow endpoint kind in chem-render's lists with no arm here, or an
@@ -2292,6 +2321,8 @@ function encodeBond(bond: Bond): JsonObject {
     stereo: bond.stereo,
     doubleBondSide: bond.doubleBondSide,
     aromatic: bond.aromatic,
+    ...(bond.dative ? { dative: true } : {}),
+    ...(bond.bold ? { bold: true } : {}),
   };
 }
 

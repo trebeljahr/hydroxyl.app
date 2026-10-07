@@ -244,15 +244,53 @@ export function atomsEqual(a: Atom, b: Atom): boolean {
 }
 
 function makeBond(id: BondId, init: BondInit): Bond {
+  const order = init.order ?? 1;
+  if (init.dative && order !== 1) {
+    throw new Error(`A dative bond is a single bond, not order ${order}`);
+  }
+  return withBondFlags(
+    {
+      id,
+      from: init.from,
+      to: init.to,
+      order,
+      stereo: init.stereo ?? "none",
+      doubleBondSide: init.doubleBondSide ?? "auto",
+      aromatic: init.dative ? false : (init.aromatic ?? false),
+    },
+    { dative: init.dative ?? false, bold: init.bold ?? false },
+  );
+}
+
+/** A bond's optional flags, as booleans. */
+export interface BondFlags {
+  readonly dative: boolean;
+  readonly bold: boolean;
+}
+
+/**
+ * `base` with the optional flag keys written only when true (decision 226).
+ * The one place those keys are written, so `{}` and `{ dative: false }` can
+ * never both appear — two spellings of one bond that no `toEqual` would match.
+ */
+export function withBondFlags(
+  base: Omit<Bond, "dative" | "bold">,
+  flags: BondFlags,
+): Bond {
+  const { dative: _d, bold: _b, ...rest } = base as Bond;
+  void _d;
+  void _b;
+  if (!flags.dative && !flags.bold) return rest;
   return {
-    id,
-    from: init.from,
-    to: init.to,
-    order: init.order ?? 1,
-    stereo: init.stereo ?? "none",
-    doubleBondSide: init.doubleBondSide ?? "auto",
-    aromatic: init.aromatic ?? false,
+    ...rest,
+    ...(flags.dative ? { dative: true as const } : {}),
+    ...(flags.bold ? { bold: true as const } : {}),
   };
+}
+
+/** The flags a bond carries. */
+export function bondFlags(bond: Bond): BondFlags {
+  return { dative: bond.dative === true, bold: bond.bold === true };
 }
 
 export interface AddAtomResult {

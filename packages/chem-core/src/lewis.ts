@@ -20,7 +20,7 @@
  */
 
 import { requireElement } from "./elements.js";
-import { requireAtom } from "./molecule.js";
+import { bondsAt, requireAtom } from "./molecule.js";
 import type { AtomId, Molecule } from "./types.js";
 import { outerElectronCount, totalValence } from "./valence.js";
 
@@ -97,7 +97,7 @@ export function lonePairCount(mol: Molecule, atomId: AtomId): LonePairCount {
 
   const charge = Number.isFinite(atom.charge) ? Math.round(atom.charge) : 0;
   const unpaired = Math.max(0, Math.round(atom.radicalElectrons));
-  const spare = outer - charge - totalValence(mol, atomId);
+  const spare = outer - charge - totalValence(mol, atomId) + dativeElectronShift(mol, atomId);
   if (spare < 0) return { kind: "unknown", reason: "over-subscribed" };
 
   // An ODD remainder is real and is left as an unpaired electron rather than
@@ -111,6 +111,25 @@ export function lonePairCount(mol: Molecule, atomId: AtomId): LonePairCount {
     pairs: Math.floor(spare / 2),
     unpaired: unpaired + (spare % 2),
   };
+}
+
+/**
+ * How a dative bond's electrons move the arithmetic above (decision 226).
+ *
+ * Both of its electrons are the donor's. `totalValence` charges the donor 0
+ * for it and the acceptor 1, RDKit's valence rule, which is right for
+ * hydrogens and wrong for electrons: the donor spends a whole pair and the
+ * acceptor spends none. So the donor gives back 2 and the acceptor gets its
+ * 1 back. Ammonia in H3N->BH3 reads 5 − 3 − 2 = 0 pairs, its pair being the
+ * arrow; the boron, pinned to three hydrogens, reads 3 − 4 + 1 = 0.
+ */
+function dativeElectronShift(mol: Molecule, atomId: AtomId): number {
+  let shift = 0;
+  for (const bond of bondsAt(mol, atomId)) {
+    if (!bond.dative) continue;
+    shift += bond.from === atomId ? -2 : 1;
+  }
+  return shift;
 }
 
 /**

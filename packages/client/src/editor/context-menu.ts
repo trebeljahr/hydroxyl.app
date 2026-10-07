@@ -30,7 +30,8 @@
  *   atom       element (recent, organic set, the full table), charge,
  *              isotope, hydrogens, lone pairs, stereo, select connected,
  *              delete
- *   bond       order, stereo, flip direction, double-bond side, fuse ring,
+ *   bond       order, stereo, flip direction, double-bond side, bold,
+ *              dative, fuse ring,
  *              select connected, delete
  *   selection  cut / copy / duplicate, copy as SMILES, InChI or molfile, flip,
  *              rotate, align, clean up, element, charge, bond order, stereo,
@@ -607,6 +608,16 @@ function bondMenu(state: EditorState, bondId: BondId): ContextMenuModel {
       bondStereoSection(state),
       command(state, "structure.flip-bond", { label: "Flip direction" }),
       bondSideSection(state),
+      command(state, "bond.style.bold", {
+        label: "Bold",
+        checked: every(selectedBonds(state), (bond) => bond.bold === true),
+        role: "checkbox",
+      }),
+      command(state, "bond.dative", {
+        label: "Dative (→)",
+        checked: every(selectedBonds(state), (bond) => bond.dative === true),
+        role: "checkbox",
+      }),
       fuseRingSection(state),
       SEPARATOR,
       command(state, "select.connected"),

@@ -13,11 +13,15 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   atomsCentroid,
   benzene,
+  buildMolecule,
   cipDescriptor,
+  implicitHydrogenCount,
   insertFragment,
   linearChain,
+  molecularFormula,
   requireAtom,
   requireBond,
+  vec,
 } from "@starter/chem-core";
 import type { AtomId, Molecule, Vec2 } from "@starter/chem-core";
 import { butan2olWedged } from "@starter/chem-render";
@@ -236,6 +240,49 @@ describe("double-bond position", () => {
     store.getState().selectBonds([store.getState().document.molecule.bondIds[0]!]);
     expect(enabled(store, "bond.side.centered")).toBe(false);
     expect(reason(store, "bond.side.centered")).toMatch(/double bond/);
+  });
+});
+
+describe("bold and dative bonds (decision 226)", () => {
+  /** H3N->BH3 drawn with a plain N-B bond, about to be made dative. */
+  function ammoniaBorane(): Molecule {
+    return buildMolecule((m) => {
+      m.bond(m.atom("N", vec(0, 0)), m.atom("B", vec(1, 0)));
+    });
+  }
+
+  it("makes the selected bonds bold, and plain again when all already are", () => {
+    const store = storeWith(benzene());
+    const mol = store.getState().document.molecule;
+    store.getState().selectBonds([mol.bondIds[0]!, mol.bondIds[1]!]);
+    runCommand(store, "bond.style.bold");
+    let after = store.getState().document.molecule;
+    expect(requireBond(after, mol.bondIds[0]!).bold).toBe(true);
+    expect(requireBond(after, mol.bondIds[1]!).bold).toBe(true);
+    expect(molecularFormula(after)).toBe("C6H6");
+    runCommand(store, "bond.style.bold");
+    after = store.getState().document.molecule;
+    expect(requireBond(after, mol.bondIds[0]!).bold).toBeUndefined();
+  });
+
+  it("makes N-B dative, keeping ammonia's three hydrogens", () => {
+    const store = storeWith(ammoniaBorane());
+    const mol = store.getState().document.molecule;
+    const [n, bond] = [mol.atomIds[0]!, mol.bondIds[0]!];
+    expect(implicitHydrogenCount(mol, n)).toBe(2);
+    store.getState().selectBonds([bond]);
+    runCommand(store, "bond.dative");
+    const after = store.getState().document.molecule;
+    expect(requireBond(after, bond).dative).toBe(true);
+    expect(implicitHydrogenCount(after, n)).toBe(3);
+  });
+
+  it("refuses a selection with no single bond, and says why", () => {
+    const store = storeWith(benzene());
+    const mol = store.getState().document.molecule;
+    store.getState().selectBonds([mol.bondIds.find((id) => requireBond(mol, id).order === 2)!]);
+    expect(enabled(store, "bond.dative")).toBe(false);
+    expect(reason(store, "bond.dative")).toMatch(/single bond/);
   });
 });
 

@@ -110,6 +110,12 @@ Invariants to preserve when editing it:
   RDKit's `calcExplicitValence` does. Measured on drawn bonds alone, an
   uncharged N pinned to NH3 with a carbon on it read as clean while RDKit
   refused it.
+- **A dative bond is a real bond; bold and hydrogen bonds are not chemistry**
+  (decision 226). `Bond.dative` (donor `from` → acceptor `to`) adds 0 to the
+  donor's valence and 1 to the acceptor's — RDKit's DATIVE rule, so a drawn
+  N→B leaves BH2 exactly as RDKit reads `N->B` — and only V3000 (type 9) can
+  write it. `Bond.bold` is display only. A hydrogen bond is chem-render's
+  `hydrogenBond` annotation and never reaches chem-core.
 - **Issues and their fixes are chem-core's.** `chemistryIssues` returns every
   issue located (anchor `atomId`, all `atomIds`/`bondIds`, a canvas `label`);
   `issueFixes`/`applyIssueFix` decide which one-click repair is obvious. The

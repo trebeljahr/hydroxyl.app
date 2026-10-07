@@ -12,6 +12,8 @@ import {
   locantOf,
   readMolblock,
   removeAtoms,
+  setBondBold,
+  setBondDative,
   TEST_ONLY_MOLECULE,
   withStereoGroups,
   project,
@@ -435,6 +437,30 @@ describe("no undefined-valued keys", () => {
     expect(decoded.molecule.bonds.b6?.stereo).toBe("hash");
     expect(decoded.molecule.bonds.b7?.stereo).toBe("wavy");
     expect(decoded.molecule.bonds.b9?.stereo).toBe("either");
+  });
+});
+
+describe("dative and bold bonds (decision 226)", () => {
+  it("round-trips both flags and writes no key for a plain bond", () => {
+    const plain = ethanol();
+    const flagged = setBondBold(setBondDative(plain, "b5", true), "b4", true);
+    const decoded = roundTrip(documentOf(flagged, "flags")).molecule;
+    expect(decoded.bonds.b5?.dative).toBe(true);
+    expect(decoded.bonds.b4?.bold).toBe(true);
+    expect(decoded).toEqual(flagged);
+    const encoded = encodedFixture();
+    expect(Object.keys(encoded.molecule.bonds.b4)).not.toContain("dative");
+    expect(Object.keys(encoded.molecule.bonds.b4)).not.toContain("bold");
+  });
+
+  it("refuses a dative double bond and a false flag", () => {
+    const double = encodedFixture();
+    double.molecule.bonds.b4.order = 2;
+    double.molecule.bonds.b4.dative = true;
+    expect(messagesFor(double)).toContain("bond b4 is dative, which is a single non-aromatic bond");
+    const spelledFalse = encodedFixture();
+    spelledFalse.molecule.bonds.b4.bold = false;
+    expect(safeDecodeDocument(spelledFalse).ok).toBe(false);
   });
 });
 

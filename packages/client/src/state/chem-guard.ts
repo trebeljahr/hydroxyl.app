@@ -52,6 +52,8 @@ import {
   setBondStereo as coreSetBondStereo,
   setCharge as coreSetCharge,
   setDoubleBondSide as coreSetDoubleBondSide,
+  setBondBold as coreSetBondBold,
+  setBondDative as coreSetBondDative,
   setElement as coreSetElement,
   setExplicitHydrogenCount as coreSetExplicitHydrogenCount,
   setIsotope as coreSetIsotope,
@@ -154,6 +156,9 @@ export const guardedOps = {
   cycleBondOrder: guard("cycleBondOrder", coreCycleBondOrder),
   setBondStereo: guard("setBondStereo", coreSetBondStereo),
   setDoubleBondSide: guard("setDoubleBondSide", coreSetDoubleBondSide),
+  /** Decision 226's two bond flags, from `bond.style.bold` and `bond.dative`. */
+  setBondBold: guard("setBondBold", coreSetBondBold),
+  setBondDative: guard("setBondDative", coreSetBondDative),
   /** Swaps `from`/`to`, which INVERTS a wedge — the narrow end is at `from`,
    *  never at whichever id sorts first. */
   flipBond: guard("flipBond", coreFlipBond),

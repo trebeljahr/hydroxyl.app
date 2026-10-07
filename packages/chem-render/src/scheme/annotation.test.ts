@@ -51,6 +51,7 @@ const SAMPLES: { readonly [K in SchemeAnnotationKind]: Extract<SchemeAnnotation,
   bracket: { id: "ann_6", kind: "bracket", species: ["a1"], charge: 1 },
   text: { id: "ann_7", kind: "text", text: "rt", at: { x: 0, y: 0 } },
   partialBond: { id: "ann_8", kind: "partialBond", atoms: ["a1", "a2"] },
+  hydrogenBond: { id: "ann_11", kind: "hydrogenBond", atoms: ["a1", "a2"] },
   partialCharge: { id: "ann_9", kind: "partialCharge", atomId: "a1", sign: "+" },
   coefficient: { id: "ann_10", kind: "coefficient", species: "a1", value: 2 },
 };
@@ -104,7 +105,7 @@ describe("scheme annotation records", () => {
     expect(built).toEqual({ id: "ann_2", kind: "bracket", species: [ethanol[0]] });
   });
 
-  it("lists ten kinds, the reaction-arrows task's five among them, and names ids from a counter", () => {
+  it("lists eleven kinds, the reaction-arrows task's five and decision 226's hydrogen bond among them, and names ids from a counter", () => {
     expect(SCHEME_ANNOTATION_KINDS).toEqual([
       "curlyArrow",
       "reactionArrow",
@@ -116,6 +117,7 @@ describe("scheme annotation records", () => {
       "partialBond",
       "partialCharge",
       "coefficient",
+      "hydrogenBond",
     ]);
     expect(schemeAnnotationId(7)).toBe("ann_7");
   });

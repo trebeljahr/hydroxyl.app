@@ -68,6 +68,7 @@ import type {
 } from "./types.js";
 import {
   bondOrderSum,
+  valenceContribution,
   chargeAdjustedValences,
   implicitHydrogenCount,
   maxValence,
@@ -105,7 +106,7 @@ const SEP = "\u0000";
 
 /** Bumped if the fingerprint contents ever change, so an entry cached under
  *  the old shape can never be mistaken for a match. */
-const AROMATIC_FINGERPRINT_VERSION = "A1";
+const AROMATIC_FINGERPRINT_VERSION = "A2";
 
 /**
  * Identifies everything aromaticity perception reads.
@@ -145,7 +146,8 @@ function aromaticFingerprint(mol: Molecule): string {
   for (const id of mol.bondIds) {
     const bond = mol.bonds[id];
     if (!bond) continue;
-    parts.push(id, bond.from, bond.to, String(bond.order), bond.aromatic ? "1" : "0");
+    // `dative` is in because it moves a hydrogen (decision 226); `bold` is out.
+    parts.push(id, bond.from, bond.to, String(bond.order), bond.aromatic ? "1" : "0", bond.dative ? "d" : "");
   }
   return parts.join(SEP);
 }
@@ -349,6 +351,12 @@ function countPiElectrons(
   atomIds: readonly AtomId[],
   ringBonds: ReadonlySet<BondId>,
 ): number {
+  // A ring closed by a dative bond (a chelate) is never aromatic (decision
+  // 226): RDKit leaves dative bonds out of the rings it perceives aromaticity
+  // on, so counting one here would flag a ring RDKit reads as plain.
+  for (const bondId of ringBonds) {
+    if (mol.bonds[bondId]?.dative) return -1;
+  }
   let total = 0;
   for (const id of atomIds) {
     const contribution = piContribution(mol, id, ringBonds);
@@ -806,7 +814,7 @@ function needsRingDouble(mol: Molecule, atomId: AtomId): boolean {
   }
   const atom = requireAtom(mol, atomId);
   let sigma = atom.radicalElectrons + (atom.explicitHydrogenCount ?? 0);
-  for (const bond of bondsAt(mol, atomId)) sigma += bond.aromatic ? 1 : bond.order;
+  for (const bond of bondsAt(mol, atomId)) sigma += bond.aromatic ? 1 : valenceContribution(bond, atomId);
 
   for (const valence of chargeAdjustedValences(mol, atomId)) {
     if (valence >= sigma) return valence > sigma;

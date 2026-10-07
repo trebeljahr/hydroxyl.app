@@ -66,7 +66,7 @@ import { layoutCoefficient, layoutSchemeText } from "./scheme-text.js";
 import type { CoefficientLayout, SchemeTextLayout } from "./scheme-text.js";
 import { SpeciesBoxes } from "./species-box.js";
 import type { AtomInk, SchemeBox } from "./species-box.js";
-import { layoutPartialBond, partialChargeLayout } from "./transition-state.js";
+import { layoutHydrogenBond, layoutPartialBond, partialChargeLayout } from "./transition-state.js";
 import type { PartialBondLayout, PartialChargeLayout } from "./transition-state.js";
 
 /** What a scene's annotation layer drew, and what it could not. */
@@ -81,6 +81,8 @@ export interface SchemeAnnotationLayout {
   /** In the order they were laid out: smallest first. */
   readonly brackets: readonly BracketLayout[];
   readonly partialBonds: readonly PartialBondLayout[];
+  /** Dotted, laid out exactly as a partial bond is (decision 226). */
+  readonly hydrogenBonds: readonly PartialBondLayout[];
   /** What the label pass made of each stored delta (decision 205). */
   readonly partialCharges: readonly PartialChargeLayout[];
   readonly texts: readonly SchemeTextLayout[];
@@ -100,6 +102,7 @@ export const EMPTY_SCHEME_ANNOTATION_LAYOUT: SchemeAnnotationLayout = Object.fre
   coefficients: Object.freeze([]),
   brackets: Object.freeze([]),
   partialBonds: Object.freeze([]),
+  hydrogenBonds: Object.freeze([]),
   partialCharges: Object.freeze([]),
   texts: Object.freeze([]),
   unresolved: Object.freeze([]),
@@ -280,6 +283,16 @@ export function drawSchemeAnnotations(
     if (layout.primitives.length > 0) enclosable.push({ species: speciesSet(annotation.atoms), box: layout.box });
   }
 
+  // 1b. Hydrogen bonds, the same way (decision 226).
+  const hydrogenBonds: PartialBondLayout[] = [];
+  for (const annotation of annotations) {
+    if (annotation.kind !== "hydrogenBond" || !resolves(annotation)) continue;
+    const layout = layoutHydrogenBond(annotation, panel.source, panel.site, style);
+    hydrogenBonds.push(layout);
+    primitives.push(...layout.primitives);
+    if (layout.primitives.length > 0) enclosable.push({ species: speciesSet(annotation.atoms), box: layout.box });
+  }
+
   // 2. Coefficients: one per species, the first in document order.
   const coefficients: CoefficientLayout[] = [];
   const coefficientFor = new Set<number>();
@@ -423,6 +436,7 @@ export function drawSchemeAnnotations(
     coefficients,
     brackets,
     partialBonds,
+    hydrogenBonds,
     partialCharges,
     texts,
     unresolved: annotations.filter((a) => unresolvedIds.has(a.id)).map((a) => a.id),

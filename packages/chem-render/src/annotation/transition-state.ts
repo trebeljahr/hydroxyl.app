@@ -1,6 +1,8 @@
 /**
  * A transition state's own marks: the dashed PARTIAL BOND between two atoms,
- * and the δ+/δ− beside an atom (decisions 201, 205 and 214).
+ * and the δ+/δ− beside an atom (decisions 201, 205 and 214). The dotted
+ * HYDROGEN BOND (decision 226) is laid out here too: the same segment
+ * between two atoms, with dots for dashes.
  *
  * A partial bond is an annotation, not a bond order: chem-core's valence
  * knows nothing of it, so a transition state is drawn as fragments with no
@@ -26,7 +28,12 @@ import { bondAxis } from "../bond/geometry.js";
 import type { AnnotationLayout, AnnotationPlacement, AnnotationSegment } from "../label/annotations.js";
 import type { AtomLabelPlacement } from "../label/placement.js";
 import type { LinePrimitive, ScenePoint } from "../scene/types.js";
-import type { PartialBondAnnotation, PartialChargeAnnotation, PartialChargeSign } from "../scheme/annotation.js";
+import type {
+  HydrogenBondAnnotation,
+  PartialBondAnnotation,
+  PartialChargeAnnotation,
+  PartialChargeSign,
+} from "../scheme/annotation.js";
 import { pxPerModelUnit } from "../style.js";
 import type { RenderStyle } from "../style.js";
 import type { Measurer } from "../text/measurer.js";
@@ -76,6 +83,35 @@ export function layoutPartialBond(
   site: PartialBondSite,
   style: RenderStyle,
 ): PartialBondLayout {
+  const bond = pxPerModelUnit(style);
+  const [dash, gap] = SCHEME_LAYOUT.partialBondDashBonds;
+  return layoutBetweenAtoms(annotation, source, site, style, "partial-bond", [dash * bond, gap * bond]);
+}
+
+/**
+ * A hydrogen bond laid out (decision 226): the partial bond's segment, dotted.
+ * Dots one line width long at `hydrogenBondDotPitchBonds`, butt-capped so a
+ * rasteriser draws exactly what the SVG says.
+ */
+export function layoutHydrogenBond(
+  annotation: HydrogenBondAnnotation,
+  source: Molecule,
+  site: PartialBondSite,
+  style: RenderStyle,
+): PartialBondLayout {
+  const dot = style.bondLineWidthPx;
+  const pitch = Math.max(SCHEME_LAYOUT.hydrogenBondDotPitchBonds * pxPerModelUnit(style), 2 * dot);
+  return layoutBetweenAtoms(annotation, source, site, style, "hydrogen-bond", [dot, pitch - dot]);
+}
+
+function layoutBetweenAtoms(
+  annotation: PartialBondAnnotation | HydrogenBondAnnotation,
+  source: Molecule,
+  site: PartialBondSite,
+  style: RenderStyle,
+  part: string,
+  dash: readonly number[],
+): PartialBondLayout {
   const findings: SchemeMarkFinding[] = [];
   if (bondBetween(source, annotation.atoms[0], annotation.atoms[1]) !== undefined) {
     findings.push({ kind: "on-drawn-bond" });
@@ -92,15 +128,13 @@ export function layoutPartialBond(
       atoms: annotation.atoms,
     };
   }
-  const bond = pxPerModelUnit(style);
-  const [dash, gap] = SCHEME_LAYOUT.partialBondDashBonds;
   const line: LinePrimitive = {
-    id: schemeMarkPrimitiveId(annotation.id, "partial-bond"),
+    id: schemeMarkPrimitiveId(annotation.id, part),
     source: annotationSource(annotation.id),
     type: "line",
     a: segment.a,
     b: segment.b,
-    stroke: { color: style.colors.bond, width: style.bondLineWidthPx, dash: [dash * bond, gap * bond] },
+    stroke: { color: style.colors.bond, width: style.bondLineWidthPx, dash },
   };
   const primitives = [line];
   return {

@@ -9,8 +9,8 @@
  * text label, and every `<b>` bond its order and its wedge.
  *
  * WHAT IS WRITTEN. Atoms, bonds, charges, isotopes, radicals, pinned and
- * derived hydrogen counts, wedges, hashes and wavy bonds, a fixed double-bond
- * side, display labels, and enhanced-stereo groups (`EnhancedStereoType`,
+ * derived hydrogen counts, wedges, hashes and wavy bonds, dative and bold
+ * bonds (decision 226), a fixed double-bond side, display labels, and enhanced-stereo groups (`EnhancedStereoType`,
  * which ChemDraw and RDKit both read). One `<fragment>` per connected
  * component, because ChemDraw treats a fragment as one connected piece.
  *
@@ -177,8 +177,13 @@ export function writeCdxml(mol: Molecule, options: CdxmlWriteOptions = {}): Cdxm
         `E="${nodeId.get(bond.to) ?? 0}"`,
       ];
       const order = requireBond(kekule, id).order;
-      if (order !== 1) attrs.push(`Order="${order}"`);
-      const display = order === 1 ? STEREO_DISPLAY[bond.stereo] : undefined;
+      // ChemDraw's dative order draws the arrow from `B` to `E`, which is
+      // chem-core's donor-to-acceptor direction (decision 226).
+      if (bond.dative) attrs.push(`Order="dative"`);
+      else if (order !== 1) attrs.push(`Order="${order}"`);
+      const stereoDisplay = order === 1 && !bond.dative ? STEREO_DISPLAY[bond.stereo] : undefined;
+      // A wedge already says more than bold would, so it wins.
+      const display = stereoDisplay ?? (bond.bold ? "Bold" : undefined);
       if (display !== undefined) attrs.push(`Display="${display}"`);
       if (order === 2) {
         // Left and right are as seen walking from `B` to `E` on the page, the
