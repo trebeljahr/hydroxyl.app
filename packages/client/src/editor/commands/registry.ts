@@ -92,6 +92,18 @@ import { MAX_ZOOM, MIN_ZOOM } from "@/state/viewport";
 import type { EditorState, EditorStore, Selection } from "@/state";
 
 import { cleanUpStructure } from "./cleanup";
+import {
+  ADD_EXPLICIT_H_KEYWORDS,
+  ADD_EXPLICIT_H_TITLE,
+  NO_EXPLICIT_H_REASON,
+  NO_IMPLICIT_H_REASON,
+  REMOVE_EXPLICIT_H_KEYWORDS,
+  REMOVE_EXPLICIT_H_TITLE,
+  addExplicitHydrogensToSelection,
+  canAddExplicitHydrogens,
+  canRemoveExplicitHydrogens,
+  removeExplicitHydrogensFromSelection,
+} from "./explicit-hydrogens";
 import { clearOfDrawingOffset, revealAtoms } from "./insert";
 import {
   copyElementalAnalysis,
@@ -1262,6 +1274,41 @@ const STRUCTURE_COMMANDS: readonly Command[] = [
       state.applyMoleculeEdit("Flip bond", (mol) =>
         bondIds.reduce((m, id) => guardedOps.flipBond(m, id), mol),
       );
+    },
+  },
+  // Drawing or folding the selection's hydrogens. Palette and context menu
+  // only, for decision 89's reason: a free letter is worth more to a tool.
+  // The behaviour and its messages live in `./explicit-hydrogens`.
+  {
+    id: "structure.add-explicit-hydrogens",
+    title: ADD_EXPLICIT_H_TITLE,
+    keywords: [...ADD_EXPLICIT_H_KEYWORDS],
+    group: "structure",
+    enabled: canAddExplicitHydrogens,
+    disabledReason: (state) =>
+      !hasAtoms(state)
+        ? REASONS.noAtomSelected
+        : canAddExplicitHydrogens(state)
+          ? undefined
+          : NO_IMPLICIT_H_REASON,
+    run: (store) => {
+      addExplicitHydrogensToSelection(store);
+    },
+  },
+  {
+    id: "structure.remove-explicit-hydrogens",
+    title: REMOVE_EXPLICIT_H_TITLE,
+    keywords: [...REMOVE_EXPLICIT_H_KEYWORDS],
+    group: "structure",
+    enabled: canRemoveExplicitHydrogens,
+    disabledReason: (state) =>
+      !hasAtoms(state)
+        ? REASONS.noAtomSelected
+        : canRemoveExplicitHydrogens(state)
+          ? undefined
+          : NO_EXPLICIT_H_REASON,
+    run: (store) => {
+      removeExplicitHydrogensFromSelection(store);
     },
   },
   // Enhanced stereochemistry, decision 89: one minimal set, three marks and a

@@ -34,7 +34,7 @@
  *              select connected, delete
  *   selection  cut / copy / duplicate, copy as SMILES, InChI or molfile, flip,
  *              rotate, align, clean up, element, charge, bond order, stereo,
- *              select connected / invert / clear, delete
+ *              explicit hydrogens, select connected / invert / clear, delete
  *   canvas     paste, select all, undo, redo, fit, reset view, clean up,
  *              all commands
  */
@@ -445,7 +445,7 @@ function countSection(
 }
 
 function hydrogenSection(state: EditorState): MenuSubmenu {
-  return countSection(state, {
+  const counts = countSection(state, {
     id: "hydrogens",
     label: "Hydrogens",
     unit: "H",
@@ -454,6 +454,16 @@ function hydrogenSection(state: EditorState): MenuSubmenu {
     flag: "showImplicitHydrogens",
     flagLabel: "Show hydrogens",
   });
+  // Drawing them as atoms sits beside the count and the switch: all three
+  // answer "how do this atom's hydrogens appear", at three different depths.
+  return { ...counts, entries: [...counts.entries, SEPARATOR, ...explicitHydrogenEntries(state)] };
+}
+
+function explicitHydrogenEntries(state: EditorState): MenuItem[] {
+  return [
+    command(state, "structure.add-explicit-hydrogens", { label: "Add explicit H" }),
+    command(state, "structure.remove-explicit-hydrogens", { label: "Remove explicit H" }),
+  ];
 }
 
 function lonePairSection(state: EditorState): MenuSubmenu {
@@ -651,6 +661,7 @@ function selectionMenu(state: EditorState): ContextMenuModel {
       ...chargeEntries(state),
       submenu("bond-order", "Bond order", bondOrderEntries(state)),
       stereoSection(state),
+      submenu("explicit-hydrogens", "Hydrogens", explicitHydrogenEntries(state)),
       SEPARATOR,
       command(state, "select.connected"),
       command(state, "select.invert"),

@@ -78,6 +78,9 @@ export * from "./numbering.js";
 // One implicit hydrogen drawn as a real atom for an arrow to reach (decision
 // 131). Reads stereo-config to keep a centre's configuration, so it sits last.
 export * from "./promote-hydrogen.js";
+// Every implicit hydrogen on a selection drawn, or drawn protium folded back
+// into the count, configurations kept (decision 242). Built on promote-hydrogen.
+export * from "./explicit-hydrogens.js";
 // Retained ring skeletons as data: embedding, acceptance, and the alpha/beta
 // face against one reference plane (decision 165). Reads stereo-config; the
 // planar templates read it. Nothing here imports sugar.ts: steroid and
