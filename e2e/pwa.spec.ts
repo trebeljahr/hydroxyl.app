@@ -21,6 +21,7 @@ const expect = baseExpect.configure({ timeout: 20_000 });
 
 const SCENE = '[data-canvas-root] [data-layer="scene"]';
 const FORMULA = '[data-status="formula"]';
+const SCOPE = '[data-status="scope"]';
 const MESSAGE = '[data-status="message"]';
 const INPUT = '[data-shell="insert-input"]';
 const OPTIONS = '[data-shell="insert-candidates"] [role="option"]';
@@ -48,6 +49,12 @@ async function importSmiles(page: Page, smiles: string, formula: string, total: 
   await expect(page.locator(OPTIONS).first()).toContainText("Read as SMILES");
   await page.keyboard.press("Enter");
   await expect(page.locator(MESSAGE)).toHaveText(`Inserted ${smiles} (${formula})`, { timeout: 30_000 });
+  // The insert stays selected, so the bar measures it (decision 235) ...
+  await expect(page.locator(SCOPE)).toHaveText("Selection");
+  await expect(page.locator(FORMULA)).toHaveText(formula);
+  // ... and the whole drawing once nothing is.
+  await page.keyboard.press("ControlOrMeta+Shift+a");
+  await expect(page.locator(SCOPE)).toBeHidden();
   await expect(page.locator(FORMULA)).toHaveText(total);
 }
 
