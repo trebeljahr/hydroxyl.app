@@ -12,6 +12,10 @@ export default defineConfig({
     // corpus lives in test/. Both are collected, and neither picks up the
     // Playwright *.spec.ts files at the repo root.
     include: ["src/**/*.test.ts", "test/**/*.test.ts"],
+    // The exhaustive layout sweeps (every view x preset x angle) run in 1-3 s
+    // here but 5-6 s on a GitHub runner, past vitest's 5 s default, and which
+    // one crosses it changes run to run. Match client and mcp.
+    testTimeout: 30_000,
     environment: "node",
     benchmark: {
       include: ["test/**/*.bench.ts"],

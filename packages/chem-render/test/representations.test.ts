@@ -310,7 +310,7 @@ describe("the fully-explicit view", () => {
         }
       }
     }
-  }, 30_000);
+  });
 
   it("keeps a hydrogen beside a stereo bond inside the gap it was fanned into", () => {
     // At a centre with a wedge or a hash the cyclic order of the substituents
