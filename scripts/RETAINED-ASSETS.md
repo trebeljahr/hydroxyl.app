@@ -18,6 +18,11 @@ permission. Initialize it for runtime UID/GID 1000 (`node`) with this
 {"schema":1,"app":"trebeljahr/chemistry-sketcher","volume":"chemistry-sketcher-releases","purpose":"immutable-next-assets"}
 ```
 
+The marker and the volume keep the old `chemistry-sketcher` name after the
+repository became `trebeljahr/hydroxyl.app`. They identify the volume, not the
+repository; changing either orphans the retained assets and makes every
+container refuse to start against the existing store.
+
 `release-entrypoint.sh` refuses to start without a real writable mount and that
 exact marker. Under one exclusive publication lock it copies this image's
 `_next/static` snapshot into `releases/<SHA>`, links every retained hashed file

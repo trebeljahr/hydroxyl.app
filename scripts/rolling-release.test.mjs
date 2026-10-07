@@ -393,9 +393,9 @@ test("an already verified image is a read-only no-op", async () => {
 // Source repositories and deployed image packages intentionally differ for some apps.
 test("source hook and registry package are independently fixed", () => {
   assert.equal(APP.uuid, "zs9m5lti6vevcu7tanvsenl8");
-  assert.equal(APP.repository, "trebeljahr/chemistry-sketcher");
-  assert.equal(APP.image, "ghcr.io/trebeljahr/chemistry-sketcher-client");
-  assert.equal(APP.registryRepository, "trebeljahr/chemistry-sketcher-client");
+  assert.equal(APP.repository, "trebeljahr/hydroxyl.app");
+  assert.equal(APP.image, "ghcr.io/trebeljahr/hydroxyl.app-client");
+  assert.equal(APP.registryRepository, "trebeljahr/hydroxyl.app-client");
 });
 
 test("untrusted failure details never enter release artifacts or user-facing errors", async () => {

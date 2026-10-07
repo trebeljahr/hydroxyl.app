@@ -3,11 +3,11 @@ import { verifyRelease } from "../verify-release.mjs";
 
 export const APP = Object.freeze({
   uuid: "zs9m5lti6vevcu7tanvsenl8",
-  repository: "trebeljahr/chemistry-sketcher",
+  repository: "trebeljahr/hydroxyl.app",
   branch: "main",
   coolify: "https://coolify.trebeljahr.com",
-  image: "ghcr.io/trebeljahr/chemistry-sketcher-client",
-  registryRepository: "trebeljahr/chemistry-sketcher-client",
+  image: "ghcr.io/trebeljahr/hydroxyl.app-client",
+  registryRepository: "trebeljahr/hydroxyl.app-client",
 });
 // Only errors authored here may enter release artifacts or workflow logs.
 // Transport, parsing and provider failures may contain response bodies or URLs.

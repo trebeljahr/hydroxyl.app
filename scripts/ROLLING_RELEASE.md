@@ -1,12 +1,12 @@
 # Rolling image release contract
 
-This controller manages only `zs9m5lti6vevcu7tanvsenl8` (Chemistry Sketcher), source `trebeljahr/chemistry-sketcher` on `main`, image `ghcr.io/trebeljahr/chemistry-sketcher-client`. Builds publish full-SHA candidate tags and a `release-<sha>-<run>-<attempt>` digest artifact. Building does not move `latest`.
+This controller manages only `zs9m5lti6vevcu7tanvsenl8` (Hydroxyl), source `trebeljahr/hydroxyl.app` on `main`, image `ghcr.io/trebeljahr/hydroxyl.app-client`. Builds publish full-SHA candidate tags and a `release-<sha>-<run>-<attempt>` digest artifact. Building does not move `latest`.
 
 `CHEMISTRY_SKETCHER_ROLLOUT_MODE` defaults to unset/off. `manual` permits an explicit **Build & Release** dispatch with operation `deploy`, `target_sha`, `image_digest`, and `expected_current_digest`. `automatic` also releases successful future pushes. Repository/ref guards and a single workflow concurrency group serialize this controller. Keep the gate off until the operator completes first adoption and reviews the exact app settings below.
 
 The controller requires the app's generic hook bundle: `COOLIFY_BASE_URL`, `COOLIFY_RESOURCE_UUID`, `COOLIFY_DEPLOY_REPOSITORY`, `COOLIFY_DEPLOY_BRANCH`, and `COOLIFY_DEPLOY_SECRET`. Each value must name this fixed app and source repository; the secret must uniquely select it. It uses the built-in GitHub package token and never receives a Coolify API token.
 
-The deployed GHCR package is `trebeljahr/chemistry-sketcher-client`, while the source repository is `trebeljahr/chemistry-sketcher`. This app previously used an API-token deploy path; the operator must explicitly create and verify this app's generic scoped hook bundle before activation. Existing client/server secrets from another app must not be reused.
+The deployed GHCR package is `trebeljahr/hydroxyl.app-client`, while the source repository is `trebeljahr/hydroxyl.app`. This app previously used an API-token deploy path; the operator must explicitly create and verify this app's generic scoped hook bundle before activation. Existing client/server secrets from another app must not be reused.
 
 ## First adoption
 
@@ -14,7 +14,7 @@ The existing image cannot acquire a drain period or public identity retroactivel
 
 Before that deployment, verify image repository, port `6337`, no fixed host port bindings, and container names that permit overlap. The only allowed mount is the shared browser-asset volume in `RETAINED-ASSETS.md` (exact name `chemistry-sketcher-releases`, type volume, destination `/var/lib/chemistry-sketcher-releases`, read-write, owned by uid/gid 1000, seeded with its identity marker). Images built from this source refuse to start without it. Configure loopback HTTP GET `/` on port `6337`, response 200, interval 2s, timeout 5s, retries 5, start period 15s. The new image drains 20s; Docker's effective stop timeout must be at least 30s. Verify the generated/running container settings, not only the saved API settings.
 
-Set the provider's `git_repository` and the bundle's `COOLIFY_DEPLOY_REPOSITORY` to `trebeljahr/chemistry-sketcher`, both branch values to `main`, and watch path to `.hatchkit/deploy-webhook`. Existing Docker Image apps may still use Coolify's placeholder repository; image publication does not repair this binding. Confirm no active deployment or other mutable-tag writer before activation.
+Set the provider's `git_repository` and the bundle's `COOLIFY_DEPLOY_REPOSITORY` to `trebeljahr/hydroxyl.app`, both branch values to `main`, and watch path to `.hatchkit/deploy-webhook`. Existing Docker Image apps may still use Coolify's placeholder repository; image publication does not repair this binding. Confirm no active deployment or other mutable-tag writer before activation.
 
 After successful first adoption, align `latest` with the same verified digest and configure this app to pull `latest`. Enable `manual`, then deploy a distinct reviewed second candidate through the controller. This exercises the first image's outgoing drain and initializes the journal. An already-serving no-op deliberately does not initialize it. Enable `automatic` only after this replacement is proven, including operator inspection of the exact provider deployment and old-container retirement.
 

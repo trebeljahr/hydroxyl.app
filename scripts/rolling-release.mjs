@@ -4,7 +4,7 @@ import { ReleaseError, rollingRelease, safeFailure } from "./lib/rolling-release
 const env = (name) => (process.env[name] ?? "").trim();
 try {
   if (
-    env("GITHUB_REPOSITORY") !== "trebeljahr/chemistry-sketcher" ||
+    env("GITHUB_REPOSITORY") !== "trebeljahr/hydroxyl.app" ||
     env("GITHUB_REF") !== "refs/heads/main"
   ) {
     throw new ReleaseError("Rolling deployment only runs from this repository's main workflow.");

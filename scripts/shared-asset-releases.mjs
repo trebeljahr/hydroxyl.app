@@ -8,6 +8,9 @@ import { fileURLToPath } from "node:url";
 // release. See scripts/RETAINED-ASSETS.md for the volume contract.
 export const STORE = "/var/lib/chemistry-sketcher-releases";
 export const SOURCE = "/app/release-assets";
+// The store keeps the pre-rename repository slug on purpose: it is the
+// identity marker written into the live volume, and a container whose marker
+// differs refuses to start. It names the volume, not the GitHub repository.
 export const STORE_ID = Object.freeze({
   schema: 1,
   app: "trebeljahr/chemistry-sketcher",
