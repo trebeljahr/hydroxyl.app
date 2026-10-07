@@ -11,13 +11,15 @@
     "build": "pnpm run build:deps && pnpm --filter @starter/client run build",
     "build:deps": "pnpm --filter @starter/chem-core run build && pnpm --filter @starter/chem-render run build && pnpm --filter @starter/shared run build",
     "build:client": "pnpm run build:deps && pnpm --filter @starter/client run build",
-    "test": "pnpm run build:deps && pnpm run test:core && pnpm run test:render && pnpm run test:shared && pnpm run test:client",
+    "test": "pnpm run build:deps && pnpm run test:core && pnpm run test:render && pnpm run test:shared && pnpm run test:client && pnpm run test:mcp",
     "test:core": "pnpm --filter @starter/chem-core run test",
     "test:render": "pnpm --filter @starter/chem-render run test",
     "test:shared": "pnpm --filter @starter/shared run test",
     "test:client": "pnpm --filter @starter/client run test",
+    "test:mcp": "pnpm --filter @starter/mcp run test",
     "test:e2e": "playwright test",
-    "typecheck": "pnpm run build:deps && pnpm -r run typecheck && tsc --noEmit -p tsconfig.json"
+    "typecheck": "pnpm run build:deps && pnpm -r run typecheck && tsc --noEmit -p tsconfig.json",
+    "build:mcp": "pnpm run build:deps && pnpm --filter @starter/mcp run build"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

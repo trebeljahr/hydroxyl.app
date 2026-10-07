@@ -33,6 +33,7 @@ packages/
   chem-core/   pure TypeScript chemistry model — graph, valence, formula.
                No React, no DOM, no dependencies. Fully unit-tested.
   client/      Next.js app (App Router, Tailwind v4, shadcn/ui).
+  mcp/         Local MCP server for AI assistants (not published yet).
   shared/      zod schemas shared across packages.
 ```
 
@@ -76,7 +77,7 @@ Anything drawn from 2D coordinates alone would be a picture of a guess.
 ```bash
 pnpm install
 pnpm dev          # client at http://localhost:6337
-pnpm test         # chem-core + client unit tests
+pnpm test         # chem-core, chem-render, shared, client and mcp unit tests
 pnpm typecheck
 pnpm build
 
@@ -86,6 +87,60 @@ pnpm build
 pnpm exec playwright install chromium
 pnpm test:e2e
 ```
+
+## MCP server for AI assistants
+
+`packages/mcp` is a local [Model Context Protocol](https://modelcontextprotocol.io)
+server. An assistant such as Claude Desktop can use it to draw a structure as a
+journal figure, check it, and convert it. It runs on your machine over stdio
+and makes no network calls. Structures you send go to your assistant's
+provider, never to us.
+
+It has five tools:
+
+| Tool | Input | Output |
+|---|---|---|
+| `render_figure` | a structure; views; width (`single`, `double` or cm); `png` or `svg` | the figure, its printed size, its label size, and a warning for text under 8 pt |
+| `check_structure` | a structure | the valence and drawing issues the editor flags, each with its one-click fixes |
+| `describe` | a structure | formula, molecular weight, exact mass, net charge, CIP labels |
+| `convert` | a structure | a molfile or a canonical SMILES |
+| `editor_link` | a structure | a link that opens the structure in the editor |
+
+A structure is one of `smiles`, `molfile`, or `name` (a compound from the
+editor's insert box, such as `caffeine`).
+
+The package is not on npm yet. Build it from this repository:
+
+```bash
+pnpm install
+pnpm build:mcp    # writes packages/mcp/dist/server.js
+```
+
+Then add it to your MCP client. For Claude Desktop, edit
+`claude_desktop_config.json` (Settings → Developer → Edit Config) and restart
+the app:
+
+```json
+{
+  "mcpServers": {
+    "hydroxyl": {
+      "command": "node",
+      "args": ["/absolute/path/to/chemistry-sketcher/packages/mcp/dist/server.js"]
+    }
+  }
+}
+```
+
+Other clients that start stdio servers take the same command and argument. For
+Claude Code:
+
+```bash
+claude mcp add hydroxyl -- node /absolute/path/to/chemistry-sketcher/packages/mcp/dist/server.js
+```
+
+`editor_link` points at `https://hydroxyl.app/editor/`. Set
+`HYDROXYL_EDITOR_URL` in the server's environment to link to a local or
+self-hosted editor instead.
 
 ## Deployment
 

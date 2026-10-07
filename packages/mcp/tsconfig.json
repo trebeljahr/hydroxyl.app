@@ -1,0 +1,22 @@
+{
+  // Typecheck only; scripts/build.mjs bundles with esbuild. Bundler
+  // resolution and the client's `@/` alias, because the server imports the
+  // editor's export and import modules from packages/client/src (decision
+  // 246). Those files are checked here under the client's own strictness,
+  // and DOM is in `lib` because some of them name DOM types.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "paths": {
+      "@/*": ["../client/src/*"]
+    }
+  },
+  "include": ["src", "test", "scripts", "vitest.config.ts"]
+}

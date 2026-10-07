@@ -65,8 +65,16 @@ the likely trigger), add it with `hatchkit update` rather than by hand.
 packages/
   chem-core/   pure chemistry model — graph, valence, formula, geometry
   client/      Next.js app
+  mcp/         local stdio MCP server (private, unpublished; decision 246)
   shared/      zod schemas
 ```
+
+`packages/mcp` reuses the editor's export and import code from
+`packages/client/src` through the `@/` alias and is bundled with esbuild, so
+a change to `lib/export/figure.ts`, `lib/rdkit/ops.ts`, `lib/rdkit/translate.ts`
+or `lib/io/fragment.ts` reaches the MCP tools too — run `pnpm test:mcp`. Those
+modules must stay free of React and the DOM at module scope for that to work.
+Do not publish the package: that waits on the licence and is Rico's step.
 
 ### chem-core is the important one
 

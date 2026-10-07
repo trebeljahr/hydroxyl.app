@@ -37,6 +37,9 @@ COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY packages/chem-core/package.json packages/chem-core/
 COPY packages/chem-render/package.json packages/chem-render/
 COPY packages/client/package.json packages/client/
+# The MCP server is not built into the image, but its manifest must be here
+# for the frozen install to match the lockfile's importers.
+COPY packages/mcp/package.json packages/mcp/
 COPY packages/shared/package.json packages/shared/
 RUN pnpm install --frozen-lockfile
 
