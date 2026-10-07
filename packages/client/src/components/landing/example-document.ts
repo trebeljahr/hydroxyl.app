@@ -38,6 +38,10 @@ import {
   fixedDocument,
   mistakeDocument,
 } from "@/components/guides/formal-charges-examples";
+import {
+  multiPanelAutomaticDocument,
+  multiPanelDocument,
+} from "@/components/guides/multi-panel-examples";
 
 /** The views the example lays side by side, in panel order. */
 export const EXAMPLE_VIEWS: readonly RepresentationKind[] = [
@@ -191,6 +195,8 @@ const EXAMPLES: Readonly<Record<string, () => SketchDocument>> = {
   "formal-charges-mistake": mistakeDocument,
   "formal-charges-fixed": fixedDocument,
   "formal-charges-acetate": acetateDocument,
+  "multi-panel-figure": multiPanelDocument,
+  "multi-panel-figure-automatic-columns": multiPanelAutomaticDocument,
 };
 
 /**

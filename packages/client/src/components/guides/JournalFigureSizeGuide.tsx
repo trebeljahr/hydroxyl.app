@@ -23,90 +23,18 @@
  * Whether the page is linked from anywhere is that entry's `released`.
  */
 
-import type { ReactElement, ReactNode } from "react";
+import type { ReactElement } from "react";
 
-import { editorExampleHref, editorHref } from "@/lib/deployment";
+import { editorHref } from "@/lib/deployment";
 import { SITE_NAME } from "@/lib/site";
 
+import { N, Section, WorkedExample, fetchedOn } from "./guide-parts";
 import { guideBySlug } from "./guides";
 import type { GuideFigure } from "./guides";
 import { ACS_GUIDELINE, cmFromPt, decimal, guideNumbers } from "./journal-figure-size";
-import type { WorkedFigure } from "./journal-figure-size";
-
-/** A product number, tagged so the e2e spec can hold it to chem-render. */
-function N({ k, children }: { readonly k: string; readonly children: ReactNode }): ReactElement {
-  return <span data-guide-number={k}>{children}</span>;
-}
-
-function Section({
-  id,
-  heading,
-  children,
-}: {
-  readonly id: string;
-  readonly heading: string;
-  readonly children: ReactNode;
-}): ReactElement {
-  return (
-    <section aria-labelledby={`${id}-heading`} data-guide-section={id} className="border-t py-8">
-      <h2 id={`${id}-heading`} className="text-foreground mb-4 text-xl font-semibold tracking-tight">
-        {heading}
-      </h2>
-      <div className="space-y-4 leading-relaxed">{children}</div>
-    </section>
-  );
-}
 
 const GUIDE = guideBySlug("journal-figure-size");
 const [TWO_PER_ROW, ONE_ROW] = GUIDE.figures as readonly [GuideFigure, GuideFigure];
-
-function WorkedExample({
-  id,
-  figure,
-  label,
-  opens,
-}: {
-  readonly id: string;
-  readonly figure: WorkedFigure;
-  readonly label: string;
-  /** The guide figure this is, for its editor link. */
-  readonly opens: GuideFigure;
-}): ReactElement {
-  return (
-    <figure className="space-y-2">
-      <div className="inline-block max-w-full rounded-lg border bg-white p-3 shadow-sm">
-        <div
-          data-guide-figure={id}
-          role="img"
-          aria-label={label}
-          // CSS centimetres, so the two examples keep their printed widths
-          // relative to each other. Markup this app generated at build time
-          // from its own document, never from anyone's file.
-          style={{ width: `${figure.widthCm}cm` }}
-          className="max-w-full [&>svg]:h-auto [&>svg]:w-full"
-          dangerouslySetInnerHTML={{ __html: figure.svg }}
-        />
-      </div>
-      {/* A copy under a fresh id, stored only once edited (decision 127). */}
-      <a
-        href={editorExampleHref(opens.example)}
-        data-guide-open-example={opens.example}
-        className="text-foreground focus-visible:ring-ring block w-fit rounded-sm text-sm font-medium underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2"
-      >
-        Open this figure in the editor
-      </a>
-    </figure>
-  );
-}
-
-function fetchedOn(isoDate: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(`${isoDate}T00:00:00Z`));
-}
 
 export function JournalFigureSizeGuide(): ReactElement {
   const n = guideNumbers();

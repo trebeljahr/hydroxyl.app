@@ -290,3 +290,140 @@ test("the formal-charges guide's mistake opens with the error it quotes, and its
   await page.locator('a[data-guide-open-example="formal-charges-acetate"]').click();
   await expect(page.locator('[data-status="formula"]')).toHaveText(ion);
 });
+
+/**
+ * The multi-panel guide (manual notes 3, "Content and guides", P1.2).
+ *
+ * Its sizes are unit-tested against the export path; what only a browser can
+ * prove is that the nine steps, read off the page and clicked in that order,
+ * build the figure the page shows.
+ */
+
+const MULTI_PANEL = "/guides/multi-panel-figure";
+const PANELS = '[data-shell="figure-panels"]';
+
+test("the multi-panel guide prerenders, with chem-render's column and label numbers", async ({
+  page,
+}) => {
+  const response = await page.goto(MULTI_PANEL);
+  expect(response?.status()).toBe(200);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+    guideBySlug("multi-panel-figure").title,
+  );
+  expect([...new Set(await page.locator('[data-guide-number="single-cm"]').allTextContents())]).toEqual([
+    String(JOURNAL_WIDTHS_CM.single),
+  ]);
+  await expect(page.locator('[data-guide-number="min-label-pt"]')).toHaveText(
+    String(MIN_PRINTED_LABEL_PT),
+  );
+  const width = Number(await page.locator('[data-guide-number="finished-width-cm"]').first().textContent());
+  expect(width).toBeLessThan(JOURNAL_WIDTHS_CM.single);
+  await expect(page.locator('[data-guide-figure="finished"] [data-panel-label]')).toHaveCount(4);
+  await expect(page.locator('[data-guide-figure="automatic"] [data-panel-label]')).toHaveCount(4);
+});
+
+test("each multi-panel figure opens in the editor with its captions and columns", async ({
+  page,
+}) => {
+  const [finished, automatic] = guideBySlug("multi-panel-figure").figures;
+  for (const [figure, columns] of [
+    [finished, "2"],
+    [automatic, "3"],
+  ] as const) {
+    await page.goto(MULTI_PANEL);
+    const captions = await page.locator('[data-guide="caption-text"]').allTextContents();
+    await page.locator(`a[data-guide-open-example="${figure!.example}"]`).click();
+    await expect(page).toHaveURL(new RegExp(`\\?example=${figure!.example}$`));
+    await expect(page.locator('[data-status="formula"]')).toHaveText("C₉H₈O₄");
+    await expect(page.locator(`${PANELS} [data-panel-id]`)).toHaveCount(4);
+    await expect
+      .poll(() => page.locator(`${PANELS} [data-panel-caption]`).evaluateAll((inputs) =>
+        inputs.map((i) => (i as HTMLInputElement).value),
+      ))
+      .toEqual(captions);
+    const input = page.locator("[data-figure-columns]");
+    await expect
+      .poll(async () => (await input.inputValue()) || (await input.getAttribute("placeholder")))
+      .toBe(columns);
+  }
+});
+
+test("the multi-panel guide's steps, clicked in order, build the figure it shows", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    delete (window as unknown as { showSaveFilePicker?: unknown }).showSaveFilePicker;
+  });
+  await page.goto(MULTI_PANEL);
+  const control = async (k: string): Promise<string> =>
+    (await page.locator(`[data-guide-control="${k}"]`).first().textContent()) ?? "";
+  const views = { b: await control("view-b"), c: await control("view-c") };
+  const captions = await page.locator('[data-guide="caption-text"]').allTextContents();
+  const columns = (await page.locator('[data-guide-number="columns"]').first().textContent()) ?? "";
+  const singleColumn = await control("single-column");
+  const insertText = (await page.locator('[data-guide="insert-text"]').textContent()) ?? "";
+  const size = (await page.locator('[data-guide-number="finished-size"]').first().textContent()) ?? "";
+  const newSketch = await page.locator('[data-guide="new-sketch-view"]').allTextContents();
+  const insert = await control("insert");
+  const addPanel = await control("add-panel");
+  const captionLabel = await control("caption");
+  const columnsLabel = await control("columns");
+
+  // 1. Open the editor and clear the benzene it opens on.
+  await page.locator('[data-guide="open-editor"]').click();
+  await expect(page.locator('[data-status="formula"]')).toHaveText("C₆H₆");
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.press("Delete");
+  await expect(page.locator('[data-canvas-root] [data-layer="scene"] [data-atom-id]')).toHaveCount(0);
+
+  // 2. Insert aspirin by name.
+  await page.getByRole("button", { name: insert }).click();
+  await page.locator('[data-shell="insert-input"]').fill(insertText);
+  await expect(page.locator('[data-shell="insert-candidates"] [role="option"]').first()).toContainText(
+    insertText,
+  );
+  await page.keyboard.press("Enter");
+  await expect(page.locator('[data-shell="insert-dialog"]')).toBeHidden();
+
+  // 3. The two panels a new sketch has.
+  const rows = page.locator(`${PANELS} [data-panel-id]`);
+  await expect(rows).toHaveCount(2);
+  expect(
+    await rows.evaluateAll((r) => r.map((row) => row.getAttribute("aria-label") ?? "")),
+  ).toEqual(newSketch.map((view, i) => `Panel (${"ab"[i]}), ${view}. Alt+Up and Alt+Down reorder.`));
+
+  // 4 and 5. Add (c) and (d) from the menu under the list.
+  for (const view of [views.b, views.c]) {
+    await page.getByLabel("View for the new panel").click();
+    await page.getByRole("option", { name: view, exact: true }).click();
+    await page.getByRole("button", { name: addPanel }).click();
+  }
+  await expect(rows).toHaveCount(4);
+
+  // 6. The second panel moves down twice, to (d).
+  await page.getByRole("button", { name: "Move panel (b) down" }).click();
+  await page.getByRole("button", { name: "Move panel (c) down" }).click();
+  await expect
+    .poll(() => rows.evaluateAll((r) => r.map((row) => row.getAttribute("data-panel-kind"))))
+    .toEqual(["skeletal", "explicitH", "lewis", "sumFormula"]);
+
+  // 7. Captions.
+  const fields = page.getByLabel(captionLabel, { exact: true });
+  for (const [i, caption] of captions.entries()) {
+    await fields.nth(i).fill(caption);
+    await fields.nth(i).press("Enter");
+  }
+
+  // 8. Columns.
+  const columnsField = page.getByLabel(columnsLabel, { exact: true });
+  await columnsField.fill(columns);
+  await columnsField.press("Enter");
+
+  // 9. Export at a single column: the size the guide prints.
+  await page.keyboard.press("ControlOrMeta+Shift+E");
+  const dialog = page.locator(DIALOG);
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel(singleColumn).check();
+  await expect(dialog.locator('[data-shell="figure-size"]')).toContainText(`Prints ${size}`);
+  await expect(dialog.locator('[data-shell="figure-fit"]')).toHaveText("Printed at its natural size.");
+});

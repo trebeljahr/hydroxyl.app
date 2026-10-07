@@ -111,6 +111,26 @@ export const GUIDES: readonly Guide[] = [
       },
     ],
   },
+  {
+    slug: "multi-panel-figure",
+    title: "How do I make a lettered multi-panel figure of one molecule?",
+    description:
+      "Draw a molecule once and show it in four lettered panels, (a) to (d), with a caption " +
+      "under each and two panels to a row, at the width of a single journal column.",
+    released: null,
+    figures: [
+      {
+        example: "multi-panel-figure",
+        alt:
+          "Aspirin in four panels, two to a row: (a) skeletal formula, (b) explicit hydrogens, " +
+          "(c) Lewis structure and (d) sum formula, each captioned.",
+      },
+      {
+        example: "multi-panel-figure-automatic-columns",
+        alt: "The same four panels with the column count left empty: three in the first row and (d) alone in the second.",
+      },
+    ],
+  },
 ];
 
 /** The guide with this slug. Throws, because every caller names a guide that

@@ -41,13 +41,14 @@ import {
   PUBLICATION_STYLE,
   RASTER_DPI_CHOICES,
   printedCmPerPx,
-  serializeFigure,
 } from "@starter/chem-render";
-import type { SketchDocument } from "@starter/shared";
 
 import { exampleDocument, exampleOneRowDocument } from "@/components/landing/example-document";
-import { formatPt, labelSizeNotice, prepareFigure, scaleNotice } from "@/lib/export/figure";
-import type { FigureExportSettings } from "@/state/types";
+
+import { singleColumnFigure } from "./guide-figure";
+import type { WorkedFigure } from "./guide-figure";
+
+export type { WorkedFigure } from "./guide-figure";
 
 const POINTS_PER_INCH = 72;
 
@@ -96,54 +97,6 @@ export function decimal(value: number, digits: number): string {
   return String(Number(value.toFixed(digits)));
 }
 
-export interface WorkedFigure {
-  /** Inline SVG with no XML declaration, for the page to size in CSS cm. */
-  readonly svg: string;
-  readonly columns: number;
-  readonly naturalWidthCm: number;
-  readonly widthCm: number;
-  readonly heightCm: number;
-  readonly fontSizePt: string;
-  /** "Scaled to 67% to fit a single column.", or null at full size. */
-  readonly scaleNotice: string | null;
-  /** The dialog's own label warning, summary and advice, or null. */
-  readonly labelNotice: string | null;
-}
-
-const SINGLE_COLUMN: FigureExportSettings = {
-  width: "single",
-  customWidthCm: 12,
-  dpi: 600,
-  style: "publication",
-  pngBackground: "white",
-};
-
-function worked(doc: SketchDocument): WorkedFigure {
-  const prepared = prepareFigure(doc, SINGLE_COLUMN);
-  if (!prepared.ok) {
-    // Same stance as the landing page: a guide whose example cannot be
-    // exported would be describing an export that does not happen.
-    throw new Error(`The figure-size guide's example cannot be exported: ${prepared.message}`);
-  }
-  const { figure, size } = prepared.value;
-  const label = labelSizeNotice(prepared.value, SINGLE_COLUMN);
-  return {
-    svg: serializeFigure(figure, {
-      standalone: false,
-      indent: false,
-      embedFont: false,
-      background: null,
-    }),
-    columns: figure.columns,
-    naturalWidthCm: size.naturalWidthCm,
-    widthCm: size.widthCm,
-    heightCm: size.heightCm,
-    fontSizePt: formatPt(size.fontSizePt),
-    scaleNotice: scaleNotice(size, SINGLE_COLUMN),
-    labelNotice: label === null ? null : `${label.summary} ${label.advice}`,
-  };
-}
-
 export interface GuideNumbers {
   readonly bondCm: string;
   readonly bondMm: string;
@@ -187,7 +140,7 @@ export function guideNumbers(): GuideNumbers {
     acsSingleCm: cmFromPt(ACS_GUIDELINE.singleColumnMaxPt).toFixed(2),
     acsDoubleMinCm: cmFromPt(ACS_GUIDELINE.doubleColumnMinPt).toFixed(2),
     acsDoubleMaxCm: cmFromPt(ACS_GUIDELINE.doubleColumnMaxPt).toFixed(2),
-    twoPerRow: worked(exampleDocument()),
-    oneRow: worked(exampleOneRowDocument()),
+    twoPerRow: singleColumnFigure(exampleDocument()),
+    oneRow: singleColumnFigure(exampleOneRowDocument()),
   };
 }

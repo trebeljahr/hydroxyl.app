@@ -83,6 +83,7 @@ for (const page of [
   "guides-journal-figure-size.html",
   "guides-glycine-zwitterion.html",
   "guides-formal-charges-and-lone-pairs.html",
+  "guides-multi-panel-figure.html",
 ]) {
   try {
     statSync(path.join(out, page));
