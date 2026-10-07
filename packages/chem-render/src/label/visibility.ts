@@ -20,6 +20,7 @@
 import {
   bondsAt,
   degree,
+  atomQueryLabel,
   getAtom,
   implicitHydrogenCount,
   isCarbon,
@@ -63,8 +64,13 @@ export type LabelReason =
  */
 export function labelOverride(atom: Atom): string | undefined {
   const label = atom.label;
-  if (label === undefined) return undefined;
-  return label.trim() === "" ? undefined : label;
+  if (label !== undefined && label.trim() !== "") return label;
+  // A query or generic atom (decision 238) is ALWAYS labelled, and its label
+  // is chem-core's compact spelling of the query: "R1", "[Cl,Br,I]", "A".
+  // Through the override path because that is exactly the behaviour wanted —
+  // one plain span in place of the symbol, no hydrogens, no isotope.
+  if (atom.query !== undefined) return atomQueryLabel(atom.query);
+  return undefined;
 }
 
 /**

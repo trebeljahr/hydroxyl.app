@@ -8,18 +8,23 @@
  * molecule produced different strings depending on which atom you drew first.
  */
 
-import { requireElement } from "./elements.js";
+import { QUERY_ELEMENT, requireElement } from "./elements.js";
 import type { ElementSymbol } from "./elements.js";
 import { requireAtom } from "./molecule.js";
 import { nuclideMass } from "./nuclides.js";
 import { species } from "./species.js";
 import type { Molecule } from "./types.js";
+import { atomQueryLabel, isGenericStructure } from "./query.js";
 import { implicitHydrogenCount } from "./valence.js";
 
 export type ElementCounts = Readonly<Record<ElementSymbol, number>>;
 
 /**
  * Atom counts per element, implicit hydrogens folded into H.
+ *
+ * Query and generic atoms (decision 238) are NOT elements and are not
+ * counted here; `genericAtomCounts` lists them. Keeping them out is what lets
+ * every consumer of this map go on treating its keys as element symbols.
  */
 export function elementCounts(mol: Molecule): ElementCounts {
   const counts: Record<ElementSymbol, number> = {};
@@ -28,10 +33,34 @@ export function elementCounts(mol: Molecule): ElementCounts {
     counts[symbol] = (counts[symbol] ?? 0) + n;
   };
   for (const atomId of mol.atomIds) {
-    bump(requireAtom(mol, atomId).element, 1);
+    const atom = requireAtom(mol, atomId);
+    if (atom.query === undefined) bump(atom.element, 1);
     bump("H", implicitHydrogenCount(mol, atomId));
   }
   return counts;
+}
+
+/**
+ * The placeholders of a generic structure, by the label the canvas draws —
+ * `[["R1", 1], ["[Cl,Br,I]", 1]]` — R-groups first, then label order, with
+ * numbers compared numerically so R2 precedes R10. Empty for an ordinary
+ * compound.
+ */
+export function genericAtomCounts(mol: Molecule): readonly (readonly [string, number])[] {
+  const counts = new Map<string, number>();
+  const rgroups = new Set<string>();
+  for (const atomId of mol.atomIds) {
+    const query = requireAtom(mol, atomId).query;
+    if (query === undefined) continue;
+    const label = atomQueryLabel(query);
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+    if (query.kind === "rgroup") rgroups.add(label);
+  }
+  // R-groups first, as a Markush formula writes them, then everything else.
+  return [...counts.entries()].sort(([a], [b]) => {
+    const rank = Number(!rgroups.has(a)) - Number(!rgroups.has(b));
+    return rank !== 0 ? rank : a.localeCompare(b, "en", { numeric: true });
+  });
 }
 
 /** Net formal charge across the structure. */
@@ -62,12 +91,22 @@ export type FormulaPart =
   | { readonly kind: "count"; readonly text: string }
   | { readonly kind: "charge"; readonly text: string };
 
+/**
+ * A generic structure's placeholders follow the Hill-ordered elements as
+ * their own symbols — C6H4ClR1 — which is how ChemDraw and the patent
+ * literature write a Markush core's formula: what is drawn, then what is
+ * not. They are never folded into an element.
+ */
 export function formulaParts(mol: Molecule): FormulaPart[] {
   const counts = elementCounts(mol);
   const parts: FormulaPart[] = [];
   for (const symbol of hillOrder(counts)) {
     const n = counts[symbol] ?? 0;
     parts.push({ kind: "symbol", text: symbol });
+    if (n > 1) parts.push({ kind: "count", text: String(n) });
+  }
+  for (const [label, n] of genericAtomCounts(mol)) {
+    parts.push({ kind: "symbol", text: label });
     if (n > 1) parts.push({ kind: "count", text: String(n) });
   }
   const charge = netCharge(mol);
@@ -134,6 +173,8 @@ interface MissingMass {
   readonly symbol: ElementSymbol;
   /** The labelled mass number, or undefined for an unlabelled atom. */
   readonly massNumber: number | undefined;
+  /** True when the structure is generic and has no one mass at all. */
+  readonly generic?: true;
 }
 
 /**
@@ -154,6 +195,13 @@ interface MissingMass {
  * sit on, so deuterium is always a drawn H with `isotope: 2`.
  */
 function sumMasses(mol: Molecule, basis: MassBasis): number | MissingMass {
+  // A generic structure is a family of compounds (decision 238). Weighing the
+  // drawn scaffold would print the mass of a fragment as the compound's, so
+  // there is no mass — under either basis, and including a query BOND, whose
+  // order decides how many hydrogens the scaffold carries.
+  if (isGenericStructure(mol)) {
+    return { symbol: QUERY_ELEMENT, massNumber: undefined, generic: true };
+  }
   const hydrogen = requireElement("H");
   const hydrogenMass = basis === "average" ? hydrogen.weight : hydrogen.monoisotopic;
   let total = 0;
@@ -200,8 +248,26 @@ export class MissingIsotopeDataError extends Error {
   }
 }
 
+/**
+ * Thrown by `molecularWeight` and `exactMass` for a generic structure — one
+ * carrying an R-group, a query atom or a query bond (decision 238). A Markush
+ * drawing names a family of compounds and has no single mass; a number here
+ * would be the scaffold's, printed as if it were a compound's.
+ */
+export class GenericStructureError extends Error {
+  constructor() {
+    super(
+      "This is a generic structure: it carries R-groups, query atoms or query " +
+        "bonds, so it names a family of compounds and has no single mass. " +
+        "Replace the placeholders with real atoms to compute one.",
+    );
+    this.name = "GenericStructureError";
+  }
+}
+
 function massOrThrow(result: number | MissingMass): number {
   if (typeof result === "number") return result;
+  if (result.generic) throw new GenericStructureError();
   throw new MissingIsotopeDataError(result.symbol, result.massNumber);
 }
 
@@ -251,6 +317,12 @@ export interface MassSummary {
   readonly exactMass: number | undefined;
   readonly netCharge: number;
   readonly heavyAtomCount: number;
+  /**
+   * True for an R-group, query-atom or query-bond structure (decision 238):
+   * the formula lists the placeholders as drawn and both masses are
+   * undefined, and a panel should say why rather than show a blank.
+   */
+  readonly generic: boolean;
 }
 
 /** Everything the identifiers panel shows, in one pass. */
@@ -268,6 +340,7 @@ export function massSummary(mol: Molecule): MassSummary {
     exactMass: typeof exact === "number" ? exact : undefined,
     netCharge: netCharge(mol),
     heavyAtomCount: heavy,
+    generic: isGenericStructure(mol),
   };
 }
 

@@ -64,6 +64,7 @@ import {
   formatShortcut,
 } from "@/editor/commands/registry";
 import { TOOLS, toolDef } from "@/editor/tools";
+import { RGROUP_ENTRY, isRGroupEntry } from "@/editor/rgroup-entry";
 import type { ToolDef } from "@/editor/tools";
 import { cn } from "@/lib/utils";
 import { editorStore, useEditorStore } from "@/state";
@@ -454,6 +455,10 @@ function ElementOptions(): ReactElement {
         {COMMON_ORGANIC_ELEMENTS.map((element: ElementSymbol) => (
           <ElementEntry key={element} symbol={element} current={current} />
         ))}
+        {/* Decision 238: the R-group entry, auto-numbered on placement. It
+            fills the grid's last row beside selenium rather than a row of
+            its own. */}
+        <ElementEntry symbol={RGROUP_ENTRY} current={current} />
       </div>
       {recent.length === 0 ? null : (
         <div data-element-recent="">
@@ -497,7 +502,11 @@ function ElementEntry({
       testId={`element-${symbol}`}
       // "Carbon (C)", not "C". The symbol stays on screen; the name is for
       // the tooltip and for anything reading the accessible name.
-      label={`${elementBySymbol(symbol)?.name ?? symbol} (${symbol})`}
+      label={
+        isRGroupEntry(symbol)
+          ? "R-group, numbered R1, R2… (R)"
+          : `${elementBySymbol(symbol)?.name ?? symbol} (${symbol})`
+      }
       onSelect={() => {
         void commandById(`element.${symbol}`).run(editorStore);
       }}

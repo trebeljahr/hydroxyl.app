@@ -10,6 +10,7 @@ import {
   isTestOnlyMolecule,
   joinSpecies,
   locantOf,
+  setBondQuery,
   readMolblock,
   removeAtoms,
   setBondBold,
@@ -209,6 +210,34 @@ describe("round trip", () => {
       expect(decoded).toEqual(original);
     });
   }
+
+  it("round-trips query atoms and query bonds through JSON (decision 238)", () => {
+    const mol = setBondQuery(
+      buildMolecule((b) => {
+        const c = b.atom("C");
+        b.bond(c, b.atom("*", undefined, { query: { kind: "rgroup", index: 2 } }));
+        b.bond(c, b.atom("*", undefined, { query: { kind: "list", elements: ["Cl", "Br"], negated: true } }));
+        b.bond(c, b.atom("*", undefined, { query: { kind: "generic", label: "Ar" } }));
+      }),
+      "b3",
+      "single-or-double",
+    );
+    const original = documentOf(mol, "markush");
+    const decoded = decodeDocument(JSON.parse(JSON.stringify(encodeDocument(original))));
+    expect(decoded).toEqual(original);
+    expect(decoded.molecule.atoms.a2?.query).toEqual({ kind: "rgroup", index: 2 });
+    expect(decoded.molecule.bonds.b3?.query).toBe("single-or-double");
+  });
+
+  it("refuses a file whose element list names a non-element", () => {
+    const encoded = encodedFixture();
+    encoded.molecule.atoms.a1 = {
+      ...(encoded.molecule.atoms.a1 as object),
+      element: "*",
+      query: { kind: "list", elements: ["Cl", "R1"], negated: false },
+    };
+    expect(safeDecodeDocument(encoded).ok).toBe(false);
+  });
 
   it("keeps atom insertion order even when the JSON object order differs", () => {
     // Object key order in a file is not something we control — a reserialising

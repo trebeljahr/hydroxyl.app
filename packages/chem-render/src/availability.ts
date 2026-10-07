@@ -24,6 +24,7 @@
 import {
   atomsWithUncountableLonePairs,
   canCondense,
+  atomQueryLabel,
   isKnownElement,
   lonePairCount,
   project,
@@ -149,7 +150,10 @@ export function representationAvailability(
   }
 
   if (isTextViewKind(kind)) {
-    const abbreviated = atomsDrawnAsAbbreviations(mol);
+    // The sum formula lists a generic structure's placeholders as drawn
+    // (decision 238), so only a display label refuses it; a condensed formula
+    // has nowhere to put "R1" in its run and still refuses one.
+    const abbreviated = atomsDrawnAsAbbreviations(mol, kind !== "sumFormula");
     if (abbreviated.length > 0) {
       return {
         available: false,
@@ -306,6 +310,10 @@ function atomsWithUnknownElements(mol: Molecule): AtomId[] {
   for (const atomId of mol.atomIds) {
     const atom = mol.atoms[atomId];
     if (atom === undefined) continue;
+    // A query atom (decision 238) is not an unknown element: its "*" is the
+    // placeholder chem-core gives every R-group and list, and it derives no
+    // hydrogens on purpose.
+    if (atom.query !== undefined) continue;
     if (!isKnownElement(atom.element)) out.push(atomId);
   }
   return out;
@@ -340,11 +348,12 @@ function byLonePairReason(mol: Molecule): Map<LonePairReason, AtomId[]> {
  * "is there an override" — a label of one space is not one, and a second test
  * here would be a second answer.
  */
-function atomsDrawnAsAbbreviations(mol: Molecule): AtomId[] {
+function atomsDrawnAsAbbreviations(mol: Molecule, includeQueries: boolean): AtomId[] {
   const out: AtomId[] = [];
   for (const atomId of mol.atomIds) {
     const atom = mol.atoms[atomId];
     if (atom === undefined) continue;
+    if (!includeQueries && atom.query !== undefined && atom.label === undefined) continue;
     if (labelOverride(atom) !== undefined) out.push(atomId);
   }
   return out;
@@ -397,7 +406,13 @@ function describe(
 ): string {
   const plural = verb === "is" ? "are" : "have";
   const symbols = [
-    ...new Set(atomIds.map((id) => mol.atoms[id]?.element ?? "?")),
+    ...new Set(
+      atomIds.map((id) => {
+        const atom = mol.atoms[id];
+        if (atom === undefined) return "?";
+        return atom.query === undefined ? atom.element : atomQueryLabel(atom.query);
+      }),
+    ),
   ];
   if (symbols.length === 0) return `no atoms ${plural}`;
   if (symbols.length <= 3) {

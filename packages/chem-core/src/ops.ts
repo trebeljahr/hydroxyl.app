@@ -47,14 +47,18 @@ import {
 import type {
   Atom,
   AtomId,
+  AtomQuery,
   Bond,
   BondId,
   BondOrder,
+  BondQuery,
   BondStereo,
   DoubleBondSide,
   Molecule,
 } from "./types.js";
 import { assembleMolecule } from "./builders.js";
+import { QUERY_ELEMENT } from "./elements.js";
+import { BOND_QUERY_ORDER, nextRGroupIndex, normalizeAtomQuery } from "./query.js";
 import { prunedStereoGroups, stereoGroupsOf } from "./stereo-groups.js";
 import { prunedSpeciesJoins, renamedSpeciesJoins, speciesJoinsOf } from "./species.js";
 import type { Vec2 } from "./vec.js";
@@ -172,6 +176,7 @@ export type AtomPatch = {
   readonly explicitHydrogenCount?: number | undefined;
   readonly lonePairs?: number | undefined;
   readonly label?: string | undefined;
+  readonly query?: AtomQuery | undefined;
 };
 
 export type BondPatch = {
@@ -183,6 +188,8 @@ export type BondPatch = {
   readonly aromatic?: boolean;
   readonly dative?: boolean;
   readonly bold?: boolean;
+  /** `undefined` makes it an ordinary bond again. */
+  readonly query?: BondQuery | undefined;
 };
 
 /**
@@ -233,6 +240,14 @@ export function updateBond(mol: Molecule, id: BondId, patch: BondPatch): Molecul
   const dative = patch.dative ?? (flags.dative && !orderChanged);
   const bold = patch.bold ?? flags.bold;
   const aromatic = dative ? false : (patch.aromatic ?? bond.aromatic);
+  // Present-with-undefined clears the query; absent keeps it. Restating an
+  // order on its own also clears it: choosing "double" from the bond menu on
+  // an S/D bond is a statement that it is a double bond.
+  const query = Object.hasOwn(patch, "query")
+    ? patch.query
+    : orderChanged
+      ? undefined
+      : bond.query;
 
   if (from !== bond.from || to !== bond.to) {
     if (from === to) throw new Error(`Cannot bond atom ${from} to itself`);
@@ -254,11 +269,21 @@ export function updateBond(mol: Molecule, id: BondId, patch: BondPatch): Molecul
     doubleBondSide === bond.doubleBondSide &&
     aromatic === bond.aromatic &&
     dative === flags.dative &&
-    bold === flags.bold;
+    bold === flags.bold &&
+    query === bond.query;
   if (unchanged) return mol;
 
   const next = withBondFlags(
-    { id: bond.id, from, to, order, stereo, doubleBondSide, aromatic },
+    {
+      id: bond.id,
+      from,
+      to,
+      order,
+      stereo,
+      doubleBondSide,
+      aromatic,
+      ...(query === undefined ? {} : { query }),
+    },
     { dative, bold },
   );
   return { ...mol, bonds: { ...mol.bonds, [id]: next } };
@@ -332,7 +357,73 @@ export function setBondOrder(
   id: BondId,
   order: BondOrder,
 ): Molecule {
-  return updateBond(mol, id, { order });
+  return updateBond(mol, id, { order, query: undefined });
+}
+
+/**
+ * Makes the atom a query or generic atom (decision 238), or with `undefined`
+ * a carbon again. The query is normalised first and an invalid one throws:
+ * an element list naming "R1" is a programming error at this layer.
+ *
+ * Becoming a placeholder drops what only an element can carry — an isotope,
+ * a pinned hydrogen or lone-pair count, a display label — because "¹³R1" and
+ * "R1 with three pinned hydrogens" state things about atoms that are not
+ * drawn. Charge and radicals stay: RDKit carries both on an R-group and so
+ * does a molfile.
+ */
+export function setAtomQuery(
+  mol: Molecule,
+  id: AtomId,
+  query: AtomQuery | undefined,
+): Molecule {
+  if (query === undefined) {
+    if (requireAtom(mol, id).query === undefined) return mol;
+    return updateAtom(mol, id, { element: "C", query: undefined });
+  }
+  const normalized = normalizeAtomQuery(query);
+  if (normalized instanceof Error) throw normalized;
+  return updateAtom(mol, id, {
+    element: QUERY_ELEMENT,
+    query: normalized,
+    isotope: undefined,
+    explicitHydrogenCount: undefined,
+    lonePairs: undefined,
+    label: undefined,
+  });
+}
+
+/**
+ * The element tool's "R" entry (decision 238): makes the atom the next
+ * numbered R-group, R1 then R2, or leaves an atom that already is a numbered
+ * R-group alone — clicking R1 again must not renumber it to R3.
+ */
+export function makeRGroup(mol: Molecule, id: AtomId): Molecule {
+  const query = requireAtom(mol, id).query;
+  if (query?.kind === "rgroup" && query.index !== undefined) return mol;
+  return setAtomQuery(mol, id, { kind: "rgroup", index: nextRGroupIndex(mol) });
+}
+
+/**
+ * Makes the bond a query bond (decision 238), storing the lowest order the
+ * query admits, or with `undefined` an ordinary bond of its current order.
+ * Stereo is cleared: a wedge states a configuration at a bond whose very
+ * order the drawing leaves open.
+ */
+export function setBondQuery(
+  mol: Molecule,
+  id: BondId,
+  query: BondQuery | undefined,
+): Molecule {
+  if (query === undefined) return updateBond(mol, id, { query: undefined });
+  return updateBond(mol, id, {
+    query,
+    order: BOND_QUERY_ORDER[query],
+    stereo: "none",
+    aromatic: false,
+    // A dative bond is a definite single bond (decision 226); a query bond
+    // leaves the order open, so the two statements cannot share one bond.
+    dative: false,
+  });
 }
 
 const NEXT_ORDER: Record<BondOrder, BondOrder> = { 1: 2, 2: 3, 3: 1 };

@@ -120,6 +120,12 @@ Invariants to preserve when editing it:
   issue located (anchor `atomId`, all `atomIds`/`bondIds`, a canvas `label`);
   `issueFixes`/`applyIssueFix` decide which one-click repair is obvious. The
   client only routes a click into the store.
+- **Query atoms are atoms with `query`, and their element is `"*"`**
+  (decisions 228, 238). R-groups, element lists, "any atom" and generic labels
+  ride every traversal as ordinary atoms; `QUERY_ELEMENT` has no valence list
+  and no mass, so they take no hydrogens and a generic structure has no mass
+  (`GenericStructureError`). A query bond keeps the lowest order it admits in
+  `order`. Never give a placeholder a real element "for now".
 - **`exactMass()` throws** rather than substituting an average atomic weight
   when an element has no verified monoisotopic value. Do not "fix" this by
   falling back — a plausible wrong mass is worse than an error.

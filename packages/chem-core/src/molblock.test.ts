@@ -664,7 +664,7 @@ describe("reader tolerance", () => {
     expect(warning?.message).toContain("9");
   });
 
-  it("warns and skips an unknown element symbol, dropping its bonds", () => {
+  it("reads an R# atom as an R-group and keeps its bonds (decision 238)", () => {
     const text = molblock(
       "",
       "  chemcore          2D",
@@ -678,13 +678,34 @@ describe("reader tolerance", () => {
       "M  END",
     );
     const result = readMolblock(text);
+    expect(result.molecule.atomIds).toHaveLength(3);
+    expect(result.molecule.bondIds).toHaveLength(2);
+    expect(result.warnings).toEqual([]);
+    const rgroup = result.molecule.atoms[result.molecule.atomIds[1] ?? ""];
+    // No `M  RGP` line, so the R-group has no number: a bare "R".
+    expect(rgroup?.query).toEqual({ kind: "rgroup" });
+    // The file pins CH3 (hhh 4) and OH (hhh 2), which the R-group leaves alone.
+    expect(molecularFormula(result.molecule)).toBe("CH4OR");
+  });
+
+  it("reads an unknown symbol as a generic pseudo atom, with a note", () => {
+    const text = molblock(
+      "",
+      "  chemcore          2D",
+      "",
+      "  2  1  0  0  0  0  0  0  0  0999 V2000",
+      "    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0",
+      "    1.5000    0.0000    0.0000 Pol 0  0  0  0  0  0  0  0  0  0  0  0",
+      "  1  2  1  0  0  0  0",
+      "M  END",
+    );
+    const result = readMolblock(text);
     expect(result.molecule.atomIds).toHaveLength(2);
-    expect(result.molecule.bondIds).toHaveLength(0);
-    expect(result.warnings.map((w) => w.kind)).toEqual([
-      "unknown-element",
-      "bad-bond-endpoint",
-      "bad-bond-endpoint",
-    ]);
+    expect(result.warnings.map((w) => w.kind)).toEqual(["pseudo-atom"]);
+    expect(result.molecule.atoms[result.molecule.atomIds[1] ?? ""]?.query).toEqual({
+      kind: "generic",
+      label: "Pol",
+    });
   });
 
   it("warns on a garbage numeric field and reads the row anyway", () => {
@@ -703,12 +724,22 @@ describe("reader tolerance", () => {
     expect(elementCounts(result.molecule)).toEqual({ C: 1, H: 4, O: 1 });
   });
 
-  it("warns on an unsupported query bond type and reads it as single", () => {
+  it("reads bond type 6 as a single-or-aromatic query bond (decision 238)", () => {
     const result = readMolblock(
       withBonds(2, "  1  2  1  0  0  0  0", "  2  3  6  0  0  0  0"),
     );
+    expect(result.warnings).toEqual([]);
+    expect(bondList(result.molecule)[1]?.order).toBe(1);
+    expect(bondList(result.molecule)[1]?.query).toBe("single-or-aromatic");
+  });
+
+  it("warns on a bond type it does not model and reads it as single", () => {
+    const result = readMolblock(
+      withBonds(2, "  1  2  1  0  0  0  0", "  2  3 10  0  0  0  0"),
+    );
     expect(result.warnings.map((w) => w.kind)).toEqual(["unsupported-bond-type"]);
     expect(bondList(result.molecule)[1]?.order).toBe(1);
+    expect(bondList(result.molecule)[1]?.query).toBeUndefined();
   });
 
   it("parses CRLF line endings", () => {
@@ -2190,7 +2221,7 @@ describe("V3000 reader tolerance", () => {
     expect(result.molecule.bonds[bondId]?.stereo).toBe("none");
   });
 
-  it("reads a query atom as a skipped atom, not as the end of the block", () => {
+  it("reads an R# atom with RGROUPS= as R1, not as the end of the block", () => {
     const result = readMolblock(
       molblock(
         "query",
@@ -2212,13 +2243,10 @@ describe("V3000 reader tolerance", () => {
         "M  END",
       ),
     );
-    // The R-group atom goes, and so does its bond; the O survives, which it
+    // The R-group keeps its number and its bond; the O survives, which it
     // would not if the parenthesised `RGROUPS=(1 1)` had split into fields.
-    expect(molecularFormula(result.molecule)).toBe("CH4O");
-    expect(result.warnings.map((w) => w.kind)).toEqual([
-      "unknown-element",
-      "bad-bond-endpoint",
-    ]);
+    expect(molecularFormula(result.molecule)).toBe("CH3OR1");
+    expect(result.warnings).toEqual([]);
   });
 
   it("notices a 3D conformer and keeps the flat projection", () => {

@@ -41,6 +41,7 @@
  */
 
 import {
+  atomQueryLabel,
   elementBySymbol,
   labellingIsotopes,
   requireAtom,
@@ -50,6 +51,7 @@ import {
 import type {
   AtomId,
   BondId,
+  BondQuery,
   BondStereo,
   DoubleBondSide,
   ElementSymbol,
@@ -66,6 +68,7 @@ import {
   commandById,
   displayFlagCommandId,
 } from "@/editor/commands/registry";
+import { RGROUP_ENTRY } from "@/editor/rgroup-entry";
 import { describeAtom } from "@/editor/traversal";
 import type { EditorState, EditorStore, Selection } from "@/state";
 
@@ -332,6 +335,13 @@ function elementSection(state: EditorState): MenuSubmenu {
     ...(recent.length > 0 ? [{ kind: "heading", label: "Recent" } as const, ...recent, SEPARATOR] : []),
     ...organic,
     SEPARATOR,
+    // Decision 238: the next numbered R-group. Checked when every selected
+    // atom already is one, which is the only state "R" can be said to hold.
+    command(state, `element.${RGROUP_ENTRY}`, {
+      label: "R-group (next number)",
+      checked: every(atoms, (atom) => atom.query?.kind === "rgroup"),
+      role: "radio",
+    }),
     command(state, "element.table", { label: "Other element…" }),
   ]);
 }
@@ -534,6 +544,33 @@ const SIDE_LABELS = {
   right: "Right",
 } as const satisfies Record<DoubleBondSide, string>;
 
+const QUERY_LABELS = {
+  any: "Any bond",
+  "single-or-double": "Single or double (S/D)",
+  "single-or-aromatic": "Single or aromatic (S/A)",
+  "double-or-aromatic": "Double or aromatic (D/A)",
+} as const satisfies Record<BondQuery, string>;
+
+/** Decision 238's query bonds, and the way back to an ordinary one. */
+function bondQuerySection(state: EditorState): MenuSubmenu {
+  const bonds = selectedBonds(state);
+  return submenu("bond-query", "Query bond", [
+    ...(Object.keys(QUERY_LABELS) as BondQuery[]).map((query) =>
+      command(state, `bond.query.${query}`, {
+        label: QUERY_LABELS[query],
+        checked: every(bonds, (bond) => bond.query === query),
+        role: "radio",
+      }),
+    ),
+    SEPARATOR,
+    command(state, "bond.query.none", {
+      label: "None (ordinary bond)",
+      checked: every(bonds, (bond) => bond.query === undefined),
+      role: "radio",
+    }),
+  ]);
+}
+
 function bondSideSection(state: EditorState): MenuSubmenu {
   const doubles = selectedBonds(state).filter((bond) => bond.order === 2);
   return submenu(
@@ -595,9 +632,13 @@ function bondTitle(state: EditorState, bondId: BondId): string {
   const mol = state.document.molecule;
   if (!Object.hasOwn(mol.bonds, bondId)) return "No bond";
   const bond = requireBond(mol, bondId);
-  const order = ORDER_LABELS[bond.order];
-  const ends = `${requireAtom(mol, bond.from).element}–${requireAtom(mol, bond.to).element}`;
-  return `${order} bond, ${ends}`;
+  const end = (id: AtomId): string => {
+    const atom = requireAtom(mol, id);
+    return atom.query === undefined ? atom.element : atomQueryLabel(atom.query);
+  };
+  const ends = `${end(bond.from)}–${end(bond.to)}`;
+  if (bond.query !== undefined) return `${QUERY_LABELS[bond.query]} (query), ${ends}`;
+  return `${ORDER_LABELS[bond.order]} bond, ${ends}`;
 }
 
 function bondMenu(state: EditorState, bondId: BondId): ContextMenuModel {
@@ -606,6 +647,7 @@ function bondMenu(state: EditorState, bondId: BondId): ContextMenuModel {
     entries: [
       ...bondOrderEntries(state),
       bondStereoSection(state),
+      bondQuerySection(state),
       command(state, "structure.flip-bond", { label: "Flip direction" }),
       bondSideSection(state),
       command(state, "bond.style.bold", {

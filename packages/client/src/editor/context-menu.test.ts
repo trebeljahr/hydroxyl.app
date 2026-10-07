@@ -205,6 +205,30 @@ describe("every menu, on every target", () => {
     expect(requireBond(store.getState().document.molecule, "b7").order).toBe(2);
   });
 
+  it("bond: offers query bonds, titles a query bond by its query, and clears it (decision 238)", () => {
+    const store = world();
+    let menu = open(store, { kind: "bond", bondId: "b7" });
+    expect(item(menu.entries, "bond.query.none").checked).toBe(true);
+    item(menu.entries, "bond.query.single-or-double").run(store);
+    expect(requireBond(store.getState().document.molecule, "b7").query).toBe("single-or-double");
+
+    menu = open(store, { kind: "bond", bondId: "b7" });
+    expect(menu.title).toBe("Single or double (S/D) (query), C–O");
+    expect(item(menu.entries, "bond.query.single-or-double").checked).toBe(true);
+    item(menu.entries, "bond.query.none").run(store);
+    expect(requireBond(store.getState().document.molecule, "b7").query).toBeUndefined();
+  });
+
+  it("atom: the R-group entry numbers each atom it is applied to (decision 238)", () => {
+    const store = world();
+    let menu = open(store, { kind: "atom", atomId: "a2" });
+    item(menu.entries, "element.R").run(store);
+    expect(store.getState().document.molecule.atoms["a2"]!.query).toEqual({ kind: "rgroup", index: 1 });
+    menu = open(store, { kind: "atom", atomId: "a2" });
+    expect(menu.title).toMatch(/^R1, 3 bonds/);
+    expect(item(menu.entries, "element.R").checked).toBe(true);
+  });
+
   it("selection: arranges, aligns across structures, and copies the selection as text", () => {
     const store = world();
     store.getState().selectAll();

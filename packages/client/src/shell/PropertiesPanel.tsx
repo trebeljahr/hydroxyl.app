@@ -35,8 +35,15 @@
 import { useState } from "react";
 import type { ReactElement, ReactNode } from "react";
 
-import { atomNumbering, locantOf, normalizeElementInput } from "@starter/chem-core";
-import type { Atom, Bond } from "@starter/chem-core";
+import {
+  atomNumbering,
+  atomQueryLabel,
+  BOND_QUERY_VALUES,
+  locantOf,
+  normalizeElementInput,
+  parseAtomQuery,
+} from "@starter/chem-core";
+import type { Atom, Bond, BondQuery } from "@starter/chem-core";
 import {
   BOND_ORDER_VALUES,
   BOND_STEREO_VALUES,
@@ -159,8 +166,11 @@ function AtomProperties({ atom }: { readonly atom: Atom }): ReactElement {
         <input
           type="text"
           className={cn(inputClass, "font-mono")}
-          defaultValue={atom.element}
-          key={`${atom.id}:${atom.element}`}
+          // A query atom's element is the placeholder "*", which is not
+          // something to show or edit; its query field below is.
+          defaultValue={atom.query === undefined ? atom.element : ""}
+          placeholder={atom.query === undefined ? undefined : "Type an element to replace the query"}
+          key={`${atom.id}:${atom.element}:${atom.query === undefined ? "" : atomQueryLabel(atom.query)}`}
           onBlur={(event) => {
             // NORMALISED, not taken as typed. `setElement` writes whatever
             // string it is handed — the model deliberately types
@@ -190,6 +200,8 @@ function AtomProperties({ atom }: { readonly atom: Atom }): ReactElement {
           }}
         />
       </Field>
+
+      <QueryField atom={atom} />
 
       <div className="grid grid-cols-2 gap-2">
         <NumberField
@@ -273,6 +285,66 @@ function AtomProperties({ atom }: { readonly atom: Atom }): ReactElement {
     </div>
   );
 }
+
+/**
+ * Decision 238's query and generic atoms, typed as the canvas draws them:
+ * "R1", "X", "Ar", "A", "[Cl,Br,I]", "![N,O]". chem-core's `parseAtomQuery`
+ * reads the text, so the field and the canvas label are one spelling. Emptying
+ * the field makes the atom a carbon again; text chem-core refuses (a list
+ * naming a non-element) reverts and says why.
+ */
+function QueryField({ atom }: { readonly atom: Atom }): ReactElement {
+  const current = atom.query === undefined ? "" : atomQueryLabel(atom.query);
+  return (
+    <Field
+      label="Query / R-group"
+      hint="R1, X, Ar, A (any atom), [Cl,Br,I] or ![N,O]. Formula lists it as drawn; mass is undefined."
+    >
+      <input
+        type="text"
+        className={cn(inputClass, "font-mono")}
+        key={`${atom.id}:query:${current}`}
+        defaultValue={current}
+        placeholder="None"
+        data-atom-query=""
+        onBlur={(event) => {
+          const raw = event.target.value.trim();
+          if (raw === current) return;
+          if (raw === "") {
+            editorStore
+              .getState()
+              .applyMoleculeEdit("Clear query atom", (mol) =>
+                guardedOps.setAtomQuery(mol, atom.id, undefined),
+              );
+            return;
+          }
+          const query = parseAtomQuery(raw);
+          if (query instanceof Error) {
+            event.target.value = current;
+            editorStore.getState().setStatusMessage(query.message);
+            return;
+          }
+          editorStore
+            .getState()
+            .applyMoleculeEdit(`Set query atom ${atomQueryLabel(query)}`, (mol) =>
+              guardedOps.setAtomQuery(mol, atom.id, query),
+            );
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+        }}
+      />
+    </Field>
+  );
+}
+
+const QUERY_BOND_LABELS: Readonly<Record<BondQuery | "none", string>> = {
+  none: "None (ordinary bond)",
+  any: "Any bond",
+  "single-or-double": "Single or double (S/D)",
+  "single-or-aromatic": "Single or aromatic (S/A)",
+  "double-or-aromatic": "Double or aromatic (D/A)",
+};
 
 /**
  * The atom's explicit locant (decisions 142 and 169), kept on the DOCUMENT so
@@ -375,6 +447,31 @@ function BondProperties({ bond }: { readonly bond: Bond }): ReactElement {
             {BOND_ORDER_VALUES.map((value) => (
               <SelectItem key={value} value={String(value)}>
                 {value === 1 ? "Single" : value === 2 ? "Double" : "Triple"}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+
+      <Field label="Query" hint="A Markush bond: one of several orders, drawing left open.">
+        <Select
+          value={bond.query ?? "none"}
+          onValueChange={(value) => {
+            const query = value === "none" ? undefined : (value as BondQuery);
+            editorStore
+              .getState()
+              .applyMoleculeEdit("Set query bond", (mol) =>
+                guardedOps.setBondQuery(mol, bond.id, query),
+              );
+          }}
+        >
+          <SelectTrigger data-bond-query="">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {(["none", ...BOND_QUERY_VALUES] as const).map((value) => (
+              <SelectItem key={value} value={value}>
+                {QUERY_BOND_LABELS[value]}
               </SelectItem>
             ))}
           </SelectContent>

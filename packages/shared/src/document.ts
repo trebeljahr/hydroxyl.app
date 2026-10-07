@@ -45,13 +45,16 @@ import {
   isTestOnlyMolecule,
   makeAtom,
   emptyMolecule,
+  normalizeAtomQuery,
   withSpeciesJoins,
   withBondFlags,
   type Atom,
   type AtomId,
+  type AtomQuery,
   type Bond,
   type BondId,
   type BondOrder,
+  type BondQuery,
   type BondStereo,
   type ChainParams,
   type DoubleBondSide,
@@ -1137,6 +1140,21 @@ const isoTimestampSchema = nonEmptyString.refine(
   { message: "expected an ISO-8601 timestamp" },
 );
 
+const atomQuerySchema = z
+  .discriminatedUnion("kind", [
+    z.strictObject({ kind: z.literal("rgroup"), index: z.number().int().positive().optional() }),
+    z.strictObject({ kind: z.literal("any"), symbol: z.enum(["A", "*"]) }),
+    z.strictObject({
+      kind: z.literal("list"),
+      elements: z.array(nonEmptyString).min(1),
+      negated: z.boolean(),
+    }),
+    z.strictObject({ kind: z.literal("generic"), label: nonEmptyString }),
+  ])
+  .refine((query) => !(normalizeAtomQuery(query) instanceof Error), {
+    message: "not a valid query atom",
+  });
+
 const atomSchema = z.strictObject({
   id: nonEmptyString,
   // Element symbols are validated by chem-core's periodic table, not here:
@@ -1157,6 +1175,11 @@ const atomSchema = z.strictObject({
   // chemist who pinned the second meant it.
   lonePairs: z.number().int().min(0).optional(),
   label: z.string().optional(),
+  // Decision 238: a query or generic atom. Shapes here, chemistry in
+  // chem-core — an element list naming a non-element is refused by the same
+  // `normalizeAtomQuery` every edit goes through, so a file cannot hold a
+  // query the editor could not have made.
+  query: atomQuerySchema.optional(),
 });
 
 /**
@@ -1256,6 +1279,19 @@ const speciesJoinSchema = z.strictObject({
   atomIds: z.array(nonEmptyString),
 });
 
+/** Decision 238's query bonds, with the same two-way guard. */
+export const BOND_QUERY_SCHEMA_VALUES = [
+  "any",
+  "single-or-double",
+  "single-or-aromatic",
+  "double-or-aromatic",
+] as const satisfies readonly BondQuery[];
+
+type BondQueryListIsTotal =
+  BondQuery extends (typeof BOND_QUERY_SCHEMA_VALUES)[number] ? true : never;
+const BOND_QUERY_LIST_IS_TOTAL: BondQueryListIsTotal = true;
+void BOND_QUERY_LIST_IS_TOTAL;
+
 const bondSchema = z.strictObject({
   id: nonEmptyString,
   from: nonEmptyString,
@@ -1272,6 +1308,7 @@ const bondSchema = z.strictObject({
    */
   dative: z.literal(true).optional(),
   bold: z.literal(true).optional(),
+  query: z.enum(BOND_QUERY_SCHEMA_VALUES).optional(),
 });
 
 /**
@@ -1678,6 +1715,13 @@ function checkStereoGroups(mol: MoleculeShape, ctx: z.RefinementCtx): void {
  * that re-derived it from `Object.keys` would reorder a structure the moment
  * a JSON parser felt like it.
  */
+/** The schema's refine has already proved the query normalises. */
+function normalizedQuery(query: AtomQuery): AtomQuery {
+  const normalized = normalizeAtomQuery(query);
+  if (normalized instanceof Error) throw normalized;
+  return normalized;
+}
+
 function rebuildMolecule(mol: MoleculeShape): Molecule {
   const atoms: Record<AtomId, Atom> = {};
   for (const id of mol.atomIds) {
@@ -1695,6 +1739,7 @@ function rebuildMolecule(mol: MoleculeShape): Molecule {
       explicitHydrogenCount: parsed.explicitHydrogenCount,
       lonePairs: parsed.lonePairs,
       label: parsed.label,
+      query: parsed.query === undefined ? undefined : normalizedQuery(parsed.query),
     });
   }
   const bonds: Record<BondId, Bond> = {};
@@ -1709,6 +1754,7 @@ function rebuildMolecule(mol: MoleculeShape): Molecule {
         stereo: parsed.stereo,
         doubleBondSide: parsed.doubleBondSide,
         aromatic: parsed.aromatic,
+        ...(parsed.query === undefined ? {} : { query: parsed.query }),
       },
       { dative: parsed.dative === true, bold: parsed.bold === true },
     );
@@ -2411,6 +2457,7 @@ const OPTIONAL_ATOM_KEYS = [
   "explicitHydrogenCount",
   "lonePairs",
   "label",
+  "query",
 ] as const;
 type EncoderCoversOptionalAtomKeys = OptionalKeys<Atom> extends
   (typeof OPTIONAL_ATOM_KEYS)[number]
@@ -2452,6 +2499,7 @@ function encodeBond(bond: Bond): JsonObject {
     aromatic: bond.aromatic,
     ...(bond.dative ? { dative: true } : {}),
     ...(bond.bold ? { bold: true } : {}),
+    ...(bond.query === undefined ? {} : { query: bond.query }),
   };
 }
 

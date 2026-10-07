@@ -13,8 +13,15 @@
  * chooses and says so in its export dialog, so the policy lives where the
  * dialog can report it and this codec stays free of it.
  *
+ * QUERY FEATURES ARE WRITTEN (decision 238): an R-group as `R#` with `M  RGP`
+ * (`RGROUPS=` in V3000), an atom list as `L` with `M  ALS` (a bracketed type in
+ * V3000), "any atom" as `A` or `*`, a generic label as its MDL letter or as `*`
+ * with an `A  ` alias, and query bonds as types 5-8 — the spellings RDKit reads
+ * and writes back unchanged, measured against the pinned wasm.
+ *
  * WHAT THIS DELIBERATELY DOES NOT DO: multi-record SDF (`$$$$` and the tagged
- * data block) and query features. Those belong in their own modules.
+ * data block) and R-group definitions (`$RGP` blocks). Those belong in their
+ * own modules.
  *
  * `doubleBondSide` and `bold` are dropped, and come back from the reader as
  * `auto` and absent. Neither format has a field for them and never will: one
@@ -36,7 +43,7 @@ import { hasAromaticFlags, kekulize } from "./aromatic.js";
 import { requireAtom, requireBond } from "./molecule.js";
 import type { StereoConfig } from "./stereo-config.js";
 import { stereoGroupTag, stereoGroupsOf } from "./stereo-groups.js";
-import type { AtomId, BondId, BondStereo, Molecule, StereoGroup } from "./types.js";
+import type { Atom, AtomId, AtomQuery, Bond, BondId, BondQuery, BondStereo, Molecule, StereoGroup } from "./types.js";
 import { bondOrderSum, implicitHydrogenCount } from "./valence.js";
 
 /**
@@ -408,6 +415,93 @@ function propertyLines(tag: string, pairs: readonly (readonly [number, number])[
 }
 
 /**
+ * The MDL letters a generic label can be written as directly (decision 238).
+ * Every other label — "Ar", "Hal", "Pol" — goes out as `*` with an alias,
+ * because written as its own symbol "Ar" is argon.
+ */
+const MDL_GENERIC_LABELS: ReadonlySet<string> = new Set([
+  "Q", "QH", "X", "XH", "M", "MH", "AH", "L",
+]);
+
+/** Query bonds as molfile bond types, the same in both generations. */
+const BOND_TYPE_BY_QUERY: Readonly<Record<BondQuery, number>> = {
+  "single-or-double": 5,
+  "single-or-aromatic": 6,
+  "double-or-aromatic": 7,
+  any: 8,
+};
+
+/** The molfile bond type: a query's own type, else 4 for a flagged aromatic
+ *  bond, else the order. */
+function bondType(bond: Bond): number {
+  if (bond.query !== undefined) return BOND_TYPE_BY_QUERY[bond.query];
+  // Type 4 is "aromatic". Emitted only for a bond the model has actually
+  // flagged; a Kekule structure stays Kekule, which is what most journals
+  // print and what every reader agrees about.
+  return bond.aromatic ? 4 : bond.order;
+}
+
+/** The V2000 atom symbol for a query atom, and what else it needs. */
+function v2000QuerySymbol(query: AtomQuery): {
+  readonly symbol: string;
+  readonly alias?: string;
+} {
+  switch (query.kind) {
+    case "rgroup":
+      return { symbol: query.index === undefined ? "R" : "R#" };
+    case "any":
+      return { symbol: query.symbol };
+    case "list":
+      return { symbol: "L" };
+    case "generic":
+      return MDL_GENERIC_LABELS.has(query.label)
+        ? { symbol: query.label }
+        : { symbol: "*", alias: query.label };
+  }
+}
+
+/**
+ * `M  ALS aaannn e 11112222…`, column for column as RDKit writes it: the
+ * atom in four columns, the count in three, T for a NOT-list, then each
+ * member left-justified in four.
+ */
+function atomListLine(row: number, query: Extract<AtomQuery, { kind: "list" }>): string {
+  const members = query.elements.map((symbol) => symbol.padEnd(4, " ")).join("");
+  return `M  ALS${int(row, 4)}${int(query.elements.length, 3)} ${query.negated ? "T" : "F"} ${members}`;
+}
+
+/**
+ * The V3000 atom type for a query atom, plus any keyword it needs. A generic
+ * label with no MDL letter has no V3000 spelling at all — V3000 has no alias
+ * line — so it comes back undefined and `writeMolblock` refuses.
+ */
+function v3000QueryType(query: AtomQuery): { readonly type: string; readonly keyword?: string } | undefined {
+  switch (query.kind) {
+    case "rgroup":
+      return query.index === undefined
+        ? { type: "R" }
+        : { type: "R#", keyword: `RGROUPS=(1 ${query.index})` };
+    case "any":
+      return { type: query.symbol };
+    case "list": {
+      const bracket = `[${query.elements.join(",")}]`;
+      return { type: query.negated ? `"NOT ${bracket}"` : bracket };
+    }
+    case "generic":
+      return MDL_GENERIC_LABELS.has(query.label) && query.label !== "L"
+        ? { type: query.label }
+        : undefined;
+  }
+}
+
+/** Generic atoms a V3000 file cannot carry. */
+function v3000Unwritable(mol: Molecule): Atom[] {
+  return mol.atomIds
+    .map((id) => requireAtom(mol, id))
+    .filter((atom) => atom.query !== undefined && v3000QueryType(atom.query) === undefined);
+}
+
+/**
  * Model radical electrons as an `M  RAD` spin-multiplicity code.
  *
  * The file field is a multiplicity, not a count: 1 singlet, 2 doublet,
@@ -514,6 +608,22 @@ export function writeMolblock(mol: Molecule, options: MolblockWriteOptions = {})
         `screen. Expand the abbreviation into atoms or clear the label first.`,
       labelled,
     );
+  }
+
+  if (version === "V3000") {
+    const unwritable = v3000Unwritable(mol);
+    if (unwritable.length > 0) {
+      const described = unwritable
+        .map((atom) => `${atom.id} ("${atom.query?.kind === "generic" ? atom.query.label : ""}")`)
+        .join(", ");
+      throw new MolblockLabelError(
+        `Cannot write a V3000 molblock for generic atoms labelled ${described}. ` +
+          `V3000 has no alias field, and written as its own symbol a label such ` +
+          `as "Ar" names an element. Use an R-group or an MDL generic letter ` +
+          `(Q, X, M), or write V2000.`,
+        unwritable.map((atom) => atom.id),
+      );
+    }
   }
 
   const groups = stereoGroupsOf(mol);
@@ -647,6 +757,9 @@ function writeV2000(
   const charges: [number, number][] = [];
   const isotopes: [number, number][] = [];
   const radicals: [number, number][] = [];
+  const rgroups: [number, number][] = [];
+  const atomLists: string[] = [];
+  const aliases: string[] = [];
   const lines: string[] = [];
 
   lines.push(
@@ -714,10 +827,23 @@ function writeV2000(
       valenceField = facts.totalValence;
     }
 
+    // A query atom's symbol is its MDL spelling, and the rest of the query
+    // goes out in the properties block (decision 238).
+    let symbol = atom.element;
+    if (atom.query !== undefined) {
+      const written = v2000QuerySymbol(atom.query);
+      symbol = written.symbol;
+      if (atom.query.kind === "rgroup" && atom.query.index !== undefined) {
+        rgroups.push([row, atom.query.index]);
+      }
+      if (atom.query.kind === "list") atomLists.push(atomListLine(row, atom.query));
+      if (written.alias !== undefined) aliases.push(`A  ${int(row, 3)}`, written.alias);
+    }
+
     lines.push(
       `${x}${y}${ZERO_COORD} ` +
         // Symbol left-justified in three columns, unlike every numeric field.
-        `${atom.element.slice(0, 3).padEnd(3, " ")}` +
+        `${symbol.slice(0, 3).padEnd(3, " ")}` +
         // dd, the RELATIVE mass difference. Always 0: isotopes go out as
         // `M  ISO`, which carries the absolute mass number and needs no
         // agreement about which isotope counts as the reference.
@@ -749,10 +875,7 @@ function writeV2000(
     if (from === undefined || to === undefined) {
       throw new Error(`Bond ${bondId} references an atom that is not in the molecule`);
     }
-    // Type 4 is "aromatic". Emitted only for a bond the model has actually
-    // flagged; a Kekule structure stays Kekule, which is what most journals
-    // print and what every reader agrees about.
-    const type = bond.aromatic ? 4 : bond.order;
+    const type = bondType(bond);
     // `from` FIRST, always. The narrow end of a wedge is at the first atom of
     // the row, so writing `to` first would silently invert every stereocentre
     // in the file — and the file would still be perfectly valid.
@@ -766,6 +889,9 @@ function writeV2000(
   lines.push(...propertyLines("CHG", charges));
   lines.push(...propertyLines("ISO", isotopes));
   lines.push(...propertyLines("RAD", radicals));
+  lines.push(...propertyLines("RGP", rgroups));
+  lines.push(...atomLists);
+  lines.push(...aliases);
   lines.push("M  END");
   return lines;
 }
@@ -864,7 +990,10 @@ function writeV3000(
 
     // index type x y z aamap, then keywords. `aamap` is a reaction atom-atom
     // mapping and is 0 for a plain structure.
-    let content = `${row} ${atom.element} ${x.trim()} ${y.trim()} ${ZERO_COORD.trim()} 0`;
+    // `v3000Unwritable` has already refused a query with no V3000 spelling.
+    const queryType = atom.query === undefined ? undefined : v3000QueryType(atom.query);
+    let content = `${row} ${queryType?.type ?? atom.element} ${x.trim()} ${y.trim()} ${ZERO_COORD.trim()} 0`;
+    if (queryType?.keyword !== undefined) content += ` ${queryType.keyword}`;
 
     const charge = Math.trunc(atom.charge);
     // `CHG=` is the ABSOLUTE charge, so there is no legacy column to supersede
@@ -925,7 +1054,7 @@ function writeV3000(
       }
       // Type 9 is "coordination" (decision 226), and RDKit reads it as DATIVE
       // with the first atom the donor — which is why `from` is the donor.
-      const type = bond.dative ? V3000_DATIVE_BOND_TYPE : bond.aromatic ? 4 : bond.order;
+      const type = bond.dative ? V3000_DATIVE_BOND_TYPE : bondType(bond);
       // index type atom1 atom2. `from` FIRST, for the same reason as V2000: the
       // narrow end of a wedge is at the first atom, so swapping the endpoints
       // would invert every stereocentre in the file.

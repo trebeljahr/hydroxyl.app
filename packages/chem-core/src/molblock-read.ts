@@ -24,13 +24,27 @@
  * block and an unsupported collection are each a structured warning and are
  * skipped. Only text that is not a molblock at all throws.
  *
+ * QUERY FEATURES ARE READ (decision 238): `R#` with `M  RGP`, `R`, `A`, `*`,
+ * `L` with `M  ALS`, V3000's bracketed and `NOT` lists and `RGROUPS=`, the MDL
+ * generic symbols (`Q`, `X`, `M`, `AH`…), an `A  ` alias on a pseudo atom, and
+ * query bond types 5-8. They arrive as atoms and bonds carrying a `query`, so
+ * a Markush core no longer loses its R-groups on the way in. A symbol that is
+ * neither an element nor one of those is a pseudo atom ("Pol", "D") and is
+ * kept as a generic atom bearing that label, with a `pseudo-atom` note.
+ *
  * WHAT THIS DELIBERATELY DOES NOT DO: multi-record SDF iteration (it stops at
- * the first `$$$$`), the SDF data block, and query features (atom lists,
- * R-groups, bond topology, Sgroups, templates).
+ * the first `$$$$`), the SDF data block, R-group DEFINITIONS (`$RGP` blocks;
+ * the legend is a later item), bond topology, Sgroups and templates.
  */
 
 import type { StatedAtomParity } from "./atom-parity.js";
-import { elementBySymbol, normalizeElementInput, requireElement } from "./elements.js";
+import {
+  elementBySymbol,
+  normalizeElementInput,
+  QUERY_ELEMENT,
+  requireElement,
+} from "./elements.js";
+import { BOND_QUERY_ORDER, normalizeAtomQuery } from "./query.js";
 import { kekulizeWithReport, type KekulizeResult } from "./aromatic.js";
 import { MoleculeBuilder } from "./builders.js";
 import { bondsAt, cloneAtomWith, degree, requireAtom, requireBond } from "./molecule.js";
@@ -40,9 +54,11 @@ import { withStereoGroups } from "./stereo-groups.js";
 import type {
   Atom,
   AtomId,
+  AtomQuery,
   Bond,
   BondId,
   BondOrder,
+  BondQuery,
   BondStereo,
   Molecule,
   StereoGroup,
@@ -76,6 +92,19 @@ export type MolblockWarning =
     }
   | {
       readonly kind: "unknown-element";
+      readonly message: string;
+      readonly line: number;
+      readonly row: number;
+      readonly symbol: string;
+    }
+  | {
+      /**
+       * A symbol that is neither an element nor an MDL query symbol — "Pol",
+       * "D", a vendor's placeholder — read as a generic atom bearing it as
+       * its label (decision 238). Nothing was dropped; the note says the atom
+       * is a placeholder and not an element the reader failed to recognise.
+       */
+      readonly kind: "pseudo-atom";
       readonly message: string;
       readonly line: number;
       readonly row: number;
@@ -503,6 +532,15 @@ interface ParsedAtom {
   readonly valenceField: number;
   /** The stated atom parity (decision 207), or 0; never applied to the atom. */
   readonly parity: number;
+  /**
+   * What a query or generic atom stands for, resolved per generation from
+   * the symbol and the generation's own query fields (decision 238), or
+   * undefined for an element.
+   */
+  readonly query: AtomQuery | undefined;
+  /** True when the symbol was neither an element nor a query spelling, so
+   *  the generic atom deserves a `pseudo-atom` note. */
+  readonly pseudo: boolean;
 }
 
 /**
@@ -560,15 +598,93 @@ function readSymbol(line: string): string {
  * carries decimal coordinates in its first thirty columns; a bond row, an
  * `M  ` line and `$$$$` carry no decimal point at all. A sloppy writer that
  * emits integer coordinates is still recognised, because its symbol column
- * resolves to an element — which is also what keeps a query atom (`A`, `R#`,
- * `*`) from ending the block, since those must be skipped with a warning
- * rather than treated as the end of the atoms.
+ * resolves to an element or an MDL query symbol — which is also what keeps a
+ * query atom (`A`, `R#`, `*`) from ending the block (decision 238).
  */
 function looksLikeAtomRow(line: string): boolean {
   if (line.trim() === "") return false;
   if (/\d\.\d/.test(line.slice(0, 31))) return true;
-  return resolveElement(readSymbol(line)) !== undefined;
+  const symbol = readSymbol(line);
+  return resolveElement(symbol) !== undefined || MDL_QUERY_SYMBOLS.has(symbol);
 }
+
+/**
+ * The MDL symbols that name a query rather than an element, and what each one
+ * becomes (decision 238). `R#` is an R-group whose number comes from
+ * `M  RGP` / `RGROUPS=`; `L` is an atom list whose members come from
+ * `M  ALS`. The generic letters stay labels: X is "a halogen" to MDL and
+ * whatever the figure's legend says to the author, and the label carries
+ * both readings without this reader choosing one.
+ */
+const MDL_GENERIC_SYMBOLS: ReadonlySet<string> = new Set([
+  "Q", "QH", "X", "XH", "M", "MH", "AH",
+]);
+const MDL_QUERY_SYMBOLS: ReadonlySet<string> = new Set([
+  "R#", "R", "A", "*", "L", ...MDL_GENERIC_SYMBOLS,
+]);
+
+/**
+ * The query a symbol states on its own, before any `M  RGP`, `M  ALS` or alias
+ * refines it, or undefined for an element. A non-empty symbol that is neither
+ * comes back as a generic atom labelled with it, flagged `pseudo`.
+ */
+function symbolQuery(symbol: string): { readonly query: AtomQuery; readonly pseudo: boolean } | undefined {
+  if (symbol === "R#" || symbol === "R") return { query: { kind: "rgroup" }, pseudo: false };
+  if (symbol === "A" || symbol === "*") return { query: { kind: "any", symbol }, pseudo: false };
+  // `L` with no `M  ALS` behind it is a list nobody filled in. A generic "L"
+  // keeps the atom and draws what the file wrote.
+  if (symbol === "L" || MDL_GENERIC_SYMBOLS.has(symbol)) {
+    return { query: { kind: "generic", label: symbol }, pseudo: false };
+  }
+  if (symbol === "" || resolveElement(symbol) !== undefined) return undefined;
+  return { query: { kind: "generic", label: symbol }, pseudo: true };
+}
+
+/** The element list behind an `M  ALS` line or a V3000 bracket, normalised;
+ *  undefined when no member is an element. */
+function listQuery(symbols: readonly string[], negated: boolean): AtomQuery | undefined {
+  const elements = symbols
+    .map((symbol) => resolveElement(symbol))
+    .filter((symbol): symbol is string => symbol !== undefined);
+  const query = normalizeAtomQuery({ kind: "list", elements, negated });
+  return query instanceof Error ? undefined : query;
+}
+
+/**
+ * The query a V2000 atom row states once its property lines are in: the
+ * symbol's own reading, then the R-group number, the element list or the
+ * alias the properties block attached to that row.
+ *
+ * An ALIAS only relabels a pseudo or generic atom. On a real element it is
+ * ChemDraw's abbreviation ("Ph" on a carbon) and the reader has always kept
+ * the element, so it still does; on an R-group the number is the statement.
+ */
+function v2000Query(
+  symbol: string,
+  rgroup: number | undefined,
+  list: AtomQuery | undefined,
+  alias: string | undefined,
+): AtomQuery | undefined {
+  const own = symbolQuery(symbol);
+  if (own === undefined) return undefined;
+  if (own.query.kind === "rgroup") {
+    return symbol === "R#" && rgroup !== undefined && rgroup >= 1
+      ? { kind: "rgroup", index: rgroup }
+      : own.query;
+  }
+  if (symbol === "L" && list !== undefined) return list;
+  if (alias !== undefined && alias.trim() !== "") return { kind: "generic", label: alias.trim() };
+  return own.query;
+}
+
+/** V2000 bond types 5-8, the query bonds (decision 238). */
+const BOND_QUERY_BY_TYPE: ReadonlyMap<number, BondQuery> = new Map([
+  [5, "single-or-double"],
+  [6, "single-or-aromatic"],
+  [7, "double-or-aromatic"],
+  [8, "any"],
+]);
+
 
 /**
  * Canonical symbol, or undefined.
@@ -929,6 +1045,11 @@ export function readMolblock(
   let sawChargeProperty = false;
   let sawIsotopeProperty = false;
   let sawRadicalProperty = false;
+  // Decision 238's query properties: an R-group number per `R#` row, an
+  // element list per `L` row, an alias label per pseudo-atom row.
+  const rgroupByRow = new Map<number, number>();
+  const listByRow = new Map<number, AtomQuery>();
+  const aliasByRow = new Map<number, string>();
 
   for (let i = bondBlockStart + readBondLines; i < lines.length; i++) {
     const line = lines[i] ?? "";
@@ -937,10 +1058,52 @@ export function readMolblock(
     // A `$$$$` separator means an SDF; stop before the next record's data
     // leaks into this one. Multi-record iteration is a separate job.
     if (trimmed === "$$$$") break;
+
+    // `A  aaa` then the alias text on the NEXT line: the one V2000 property
+    // that is not an `M  ` line and spans two.
+    if (line.startsWith("A  ")) {
+      const index = Number.parseInt(line.slice(3).trim(), 10);
+      const text = lines[i + 1];
+      if (Number.isFinite(index) && index >= 1 && index <= atomRows.length && text !== undefined) {
+        aliasByRow.set(index, text);
+      }
+      i++;
+      continue;
+    }
     if (!line.startsWith("M  ")) continue;
 
     const tag = line.slice(3, 6);
-    if (tag !== "CHG" && tag !== "ISO" && tag !== "RAD") continue;
+    if (tag === "ALS") {
+      // `M  ALS aaannn e 11112222…`: the atom, the member count, T for a
+      // NOT-list, then four-column element symbols. Read by whitespace like
+      // the pair properties, with the count bounding the members.
+      const tokens = line.slice(6).trim().split(/\s+/);
+      const index = Number.parseInt(tokens[0] ?? "", 10);
+      const declared = Number.parseInt(tokens[1] ?? "", 10);
+      const exclusion = tokens[2];
+      const list =
+        Number.isFinite(declared) && (exclusion === "T" || exclusion === "F")
+          ? listQuery(tokens.slice(3, 3 + Math.max(0, declared)), exclusion === "T")
+          : undefined;
+      if (!Number.isFinite(index) || list === undefined) {
+        warnings.push({
+          kind: "bad-property-line",
+          message: `Unreadable "M  ALS" atom list; the atom keeps its own symbol.`,
+          line: i + 1,
+        });
+      } else if (index < 1 || index > atomRows.length) {
+        warnings.push({
+          kind: "property-index-out-of-range",
+          message: `"M  ALS" names atom ${index}, which does not exist; ignored.`,
+          line: i + 1,
+          index,
+        });
+      } else {
+        listByRow.set(index, list);
+      }
+      continue;
+    }
+    if (tag !== "CHG" && tag !== "ISO" && tag !== "RAD" && tag !== "RGP") continue;
 
     const pairs = parsePropertyPairs(line);
     if (!pairs) {
@@ -971,6 +1134,7 @@ export function readMolblock(
       }
       if (tag === "CHG") chargeByRow.set(index, value);
       else if (tag === "ISO") isotopeByRow.set(index, value);
+      else if (tag === "RGP") rgroupByRow.set(index, value);
       else radicalByRow.set(index, value);
     }
   }
@@ -1032,6 +1196,13 @@ export function readMolblock(
       hydrogenField: atom.hydrogenField,
       valenceField: atom.valenceField,
       parity: atom.parity,
+      query: v2000Query(
+        atom.symbol,
+        rgroupByRow.get(atom.row),
+        listByRow.get(atom.row),
+        aliasByRow.get(atom.row),
+      ),
+      pseudo: symbolQuery(atom.symbol)?.pseudo === true,
     };
   });
 
@@ -1065,13 +1236,35 @@ function assembleMolecule(
   const assertionByAtomId = new Map<AtomId, { hydrogenField: number; valenceField: number }>();
 
   for (const atom of atomRows) {
+    if (atom.query !== undefined) {
+      // A query or generic atom (decision 238). No hydrogen assertion is
+      // recorded: a placeholder carries no hydrogens to pin, and the file's
+      // valence field on one says nothing about the atoms around it.
+      const query = normalizeAtomQuery(atom.query);
+      const id = builder.atom(QUERY_ELEMENT, vec(atom.x / scale, atom.y / scale), {
+        charge: atom.charge,
+        radicalElectrons: atom.radicalElectrons,
+        query: query instanceof Error ? { kind: "generic", label: "*" } : query,
+      });
+      rowToAtomId[atom.row] = id;
+      if (atom.pseudo) {
+        warnings.push({
+          kind: "pseudo-atom",
+          message:
+            `Atom ${atom.row} has symbol "${atom.symbol}", which is not an element; ` +
+            `it was read as a generic atom labelled "${atom.symbol}".`,
+          line: atom.line,
+          row: atom.row,
+          symbol: atom.symbol,
+        });
+      }
+      continue;
+    }
     const element = resolveElement(atom.symbol);
     if (element === undefined) {
       warnings.push({
         kind: "unknown-element",
-        message:
-          `Atom ${atom.row} has symbol "${atom.symbol}", which is not an element ` +
-          `(query atoms and R-groups are not supported); the atom was skipped.`,
+        message: `Atom ${atom.row} has no element symbol; the atom was skipped.`,
         line: atom.line,
         row: atom.row,
         symbol: atom.symbol,
@@ -1143,18 +1336,23 @@ function assembleMolecule(
     let order: BondOrder = 1;
     let aromatic = false;
     let dative = false;
+    const query = BOND_QUERY_BY_TYPE.get(bond.type);
     if (bond.type === 1 || bond.type === 2 || bond.type === 3) {
       order = bond.type;
     } else if (bond.type === 4) {
       aromatic = true;
     } else if (bond.type === DATIVE_BOND_TYPE) {
       dative = true;
+    } else if (query !== undefined) {
+      // Types 5-8 are query bonds (decision 238), stored at the lowest order
+      // the query admits.
+      order = BOND_QUERY_ORDER[query];
     } else {
       warnings.push({
         kind: "unsupported-bond-type",
         message:
-          `Bond ${bond.row} has type ${bond.type} (a query bond type); read as ` +
-          `a single bond.`,
+          `Bond ${bond.row} has type ${bond.type}, which this reader does not ` +
+          `model; read as a single bond.`,
         line: bond.line,
         row: bond.row,
         type: bond.type,
@@ -1165,7 +1363,7 @@ function assembleMolecule(
     // `from` first, matching the row order: the narrow end of a wedge is at
     // the file's first atom, and swapping the endpoints here would invert
     // every stereocentre in the structure.
-    const bondId = builder.bond(from, to, order, bond.stereo);
+    const bondId = builder.bond(from, to, order, bond.stereo, query);
     if (aromatic) aromaticBondIds.push(bondId);
     if (dative) dativeBondIds.push(bondId);
   }
@@ -1945,6 +2143,27 @@ function readV3000Atom(
         ? VALENCE_ZERO_CODE
         : val;
 
+  // The atom type names a query in V3000's own spelling (decision 238):
+  // `R#` takes its number from `RGROUPS=(1 n)`, and a list is the type itself,
+  // `[Cl,Br,I]` or — quoted, because of the space — `"NOT [N,O]"`.
+  const type = symbol.startsWith('"') && symbol.endsWith('"') ? symbol.slice(1, -1) : symbol;
+  const bracket = /^(NOT\s+)?\[([^\]]*)\]$/.exec(type);
+  let query: AtomQuery | undefined;
+  let pseudo = false;
+  if (bracket !== null) {
+    query = listQuery((bracket[2] ?? "").split(","), bracket[1] !== undefined) ?? {
+      kind: "generic",
+      label: type,
+    };
+  } else if (type === "R#") {
+    const first = keywordList(keywords, "RGROUPS")?.values[0];
+    query = first !== undefined && first >= 1 ? { kind: "rgroup", index: first } : { kind: "rgroup" };
+  } else {
+    const own = symbolQuery(type);
+    query = own?.query;
+    pseudo = own?.pseudo === true;
+  }
+
   return {
     z: coords[2] ?? 0,
     parsed: {
@@ -1965,6 +2184,8 @@ function readV3000Atom(
       valenceField,
       // `CFG=` on an atom is V3000's parity; not read yet (decision 207).
       parity: 0,
+      query,
+      pseudo,
     },
   };
 }

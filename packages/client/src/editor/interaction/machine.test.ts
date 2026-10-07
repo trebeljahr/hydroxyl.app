@@ -1041,6 +1041,35 @@ describe("the tools that were not wired to the reducer", () => {
     expect(driver.molecule.atoms[driver.molecule.atomIds[6]!]!.element).toBe("N");
   });
 
+  it("numbers R-groups as the element tool's R entry places them (decision 238)", () => {
+    const driver = new Driver(benzene());
+    driver.tool = "element";
+    driver.toolOptions = { ...DEFAULT_TOOL_OPTIONS, element: "R" };
+    driver.send({ kind: "click", sample: sample(pos(driver.molecule, "a1"), atomHit("a1")) });
+    driver.send({ kind: "click", sample: sample(pos(driver.molecule, "a4"), atomHit("a4")) });
+    expect(driver.molecule.atoms["a1"]!.query).toEqual({ kind: "rgroup", index: 1 });
+    expect(driver.molecule.atoms["a4"]!.query).toEqual({ kind: "rgroup", index: 2 });
+    // Clicking R1 again keeps its number.
+    driver.send({ kind: "click", sample: sample(pos(driver.molecule, "a1"), atomHit("a1")) });
+    expect(driver.molecule.atoms["a1"]!.query).toEqual({ kind: "rgroup", index: 1 });
+
+    // On empty canvas: a lone R3, never an atom whose element is "R".
+    driver.send({ kind: "click", sample: sample({ x: 8, y: 8 }) });
+    const placed = driver.molecule.atoms[driver.molecule.atomIds[6]!]!;
+    expect(placed.query).toEqual({ kind: "rgroup", index: 3 });
+    expect(placed.element).toBe("*");
+  });
+
+  it("sprouts the next R-group when R is armed", () => {
+    const driver = new Driver(benzene());
+    driver.tool = "bond";
+    driver.toolOptions = { ...DEFAULT_TOOL_OPTIONS, element: "R" };
+    driver.send({ kind: "click", sample: sample(pos(driver.molecule, "a1"), atomHit("a1")) });
+    const grown = driver.molecule.atoms[driver.molecule.atomIds[6]!]!;
+    expect(grown.query).toEqual({ kind: "rgroup", index: 1 });
+    expect(molecularFormula(driver.molecule)).toBe("C6H5R1");
+  });
+
   it("grows a chain of the length the tool is set to", () => {
     const driver = new Driver(singleAtom("C", { x: 0, y: 0 }));
     driver.tool = "chain";

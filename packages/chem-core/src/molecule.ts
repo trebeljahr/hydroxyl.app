@@ -13,11 +13,13 @@
  * Use `MoleculeBuilder` for anything bulk — importers, templates, tests.
  */
 
-import type { ElementSymbol } from "./elements.js";
+import { QUERY_ELEMENT, type ElementSymbol } from "./elements.js";
+import { atomQueriesEqual } from "./query.js";
 import type {
   Atom,
   AtomId,
   AtomInit,
+  AtomQuery,
   Bond,
   BondId,
   BondInit,
@@ -116,6 +118,7 @@ interface AtomFields {
   readonly explicitHydrogenCount?: number | undefined;
   readonly lonePairs?: number | undefined;
   readonly label?: string | undefined;
+  readonly query?: AtomQuery | undefined;
 }
 
 /**
@@ -139,7 +142,10 @@ function assembleAtom(id: AtomId, fields: AtomFields): Atom {
     -readonly [K in keyof Atom]: Atom[K];
   } = {
     id,
-    element: fields.element,
+    // A query atom is never an element (decision 238): the invariant is held
+    // here, at the one assembly point, so no caller can build an "R1" whose
+    // element still says carbon and have formula count it as one.
+    element: fields.query === undefined ? fields.element : QUERY_ELEMENT,
     pos: fields.pos,
     charge: fields.charge,
     radicalElectrons: fields.radicalElectrons,
@@ -151,6 +157,7 @@ function assembleAtom(id: AtomId, fields: AtomFields): Atom {
   }
   if (fields.lonePairs !== undefined) atom.lonePairs = fields.lonePairs;
   if (fields.label !== undefined) atom.label = fields.label;
+  if (fields.query !== undefined) atom.query = fields.query;
   return atom;
 }
 
@@ -166,6 +173,7 @@ export function makeAtom(id: AtomId, init: AtomInit): Atom {
     explicitHydrogenCount: init.explicitHydrogenCount,
     lonePairs: init.lonePairs,
     label: init.label,
+    query: init.query,
   });
 }
 
@@ -189,6 +197,7 @@ export interface AtomOverrides {
   readonly explicitHydrogenCount?: number | undefined;
   readonly lonePairs?: number | undefined;
   readonly label?: string | undefined;
+  readonly query?: AtomQuery | undefined;
 }
 
 /**
@@ -217,6 +226,13 @@ export function cloneAtomWith(source: Atom, overrides: AtomOverrides): Atom {
       ? overrides.lonePairs
       : source.lonePairs,
     label: Object.hasOwn(overrides, "label") ? overrides.label : source.label,
+    // Setting a real element on a placeholder turns it into that element, so
+    // the query goes with it unless the same patch restates one.
+    query: Object.hasOwn(overrides, "query")
+      ? overrides.query
+      : overrides.element !== undefined && overrides.element !== QUERY_ELEMENT
+        ? undefined
+        : source.query,
   });
 }
 
@@ -238,6 +254,10 @@ export function atomsEqual(a: Atom, b: Atom): boolean {
       if (a.pos.x !== b.pos.x || a.pos.y !== b.pos.y) return false;
       continue;
     }
+    if (key === "query") {
+      if (!atomQueriesEqual(a.query, b.query)) return false;
+      continue;
+    }
     if (a[key] !== b[key]) return false;
   }
   return true;
@@ -257,6 +277,7 @@ function makeBond(id: BondId, init: BondInit): Bond {
       stereo: init.stereo ?? "none",
       doubleBondSide: init.doubleBondSide ?? "auto",
       aromatic: init.dative ? false : (init.aromatic ?? false),
+      ...(init.query === undefined ? {} : { query: init.query }),
     },
     { dative: init.dative ?? false, bold: init.bold ?? false },
   );

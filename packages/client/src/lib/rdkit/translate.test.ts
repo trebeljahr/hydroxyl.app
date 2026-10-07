@@ -263,10 +263,9 @@ describe("molblockVersionFor and its notice (decision 49)", () => {
 });
 
 describe("molblockToMolecule", () => {
-  it("refuses an import that dropped an atom rather than warning about it", () => {
-    // A '*' dummy is not an element chem-core has; the atom vanishes and its
-    // bond goes with it. Left as a warning, a scaffold silently becomes a
-    // different compound.
+  it("keeps a '*' dummy atom as a query atom instead of dropping it (decision 238)", () => {
+    // Before decision 238 the dummy vanished with its bond and the import was
+    // refused as lossy; now it is an "any atom" placeholder and nothing is lost.
     const withDummy = [
       "dummy",
       "  chemcore          2D",
@@ -279,10 +278,12 @@ describe("molblockToMolecule", () => {
       "",
     ].join("\n");
     const read = molblockToMolecule(withDummy);
-    expect(read.ok).toBe(false);
-    if (read.ok) return;
-    expect(read.error.kind).toBe("lossy-import");
-    expect(read.error.warnings?.map((w) => w.kind)).toContain("unknown-element");
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    const mol = read.value.molecule;
+    expect(mol.atomIds).toHaveLength(2);
+    expect(mol.bondIds).toHaveLength(1);
+    expect(mol.atoms[mol.atomIds[1]!]?.query).toEqual({ kind: "any", symbol: "*" });
   });
 
   it("refuses a file whose aromatic flags survive the reader's own kekulisation", () => {
@@ -431,9 +432,9 @@ const WARNING_TIERS: Readonly<Record<MolblockWarning["kind"], WarningCase>> = {
     because: "the surplus rows were skipped to keep the bond block aligned",
   },
   "unknown-element": {
-    warning: { kind: "unknown-element", message: "", line: 5, row: 2, symbol: "*" },
+    warning: { kind: "unknown-element", message: "", line: 5, row: 2, symbol: "" },
     severity: "lossy",
-    because: "a dummy atom or an R-group vanishing turns a scaffold into another compound",
+    because: "an atom row with no symbol at all is dropped, and its bonds with it",
   },
   "bad-bond-endpoint": {
     warning: { kind: "bad-bond-endpoint", message: "", line: 9, row: 1, index: 7 },
@@ -500,6 +501,11 @@ const WARNING_TIERS: Readonly<Record<MolblockWarning["kind"], WarningCase>> = {
     because: "measured on an 18-centre racemate: coverage fell from rac- to per-centre tags",
   },
   // ── info: the file said something this app does not model ──────────────
+  "pseudo-atom": {
+    warning: { kind: "pseudo-atom", message: "", line: 5, row: 2, symbol: "Pol" },
+    severity: "info",
+    because: "the atom is kept as a generic atom bearing the file's own label (decision 238)",
+  },
   "bad-property-line": {
     warning: { kind: "bad-property-line", message: "", line: 12 },
     severity: "info",

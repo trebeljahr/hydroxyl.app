@@ -84,6 +84,7 @@ import type {
 // QUERIES above (`sproutDrag`, `atomsInRect`, `areBonded`, ...) need no guard
 // because they mint nothing and return no molecule.
 import { guardedOps } from "@/state/chem-guard";
+import { elementForNewAtom, isRGroupEntry } from "../rgroup-entry";
 import type { Selection } from "@/state";
 
 import type {
@@ -401,8 +402,15 @@ function drawFrame(
         // gesture said.
         const grown = guardedOps.sproutTo(base, from, sproutTarget, {
           order: bond.order,
-          ...(sproutTarget.kind === "new-atom" ? { element: bond.element } : {}),
+          ...(sproutTarget.kind === "new-atom"
+            ? { element: elementForNewAtom(bond.element) }
+            : {}),
         });
+        // Decision 238: with "R" armed the new end is the next R-group.
+        const drawn =
+          isRGroupEntry(bond.element) && grown.createdAtom
+            ? guardedOps.makeRGroup(grown.molecule, grown.atomId)
+            : grown.molecule;
         // STEREO IS CHAINED RATHER THAN PASSED. chem-core's
         // `SproutBondOptions` is `{ element?, order? }` and has no stereo
         // member; widening it would put a drawing-tool concern into the
@@ -410,8 +418,8 @@ function drawFrame(
         // minted. `sproutTo` reuses no bond, so this never re-types an
         // existing one — the narrow end lands at `from`, which is the atom
         // the drag started from, exactly as types.ts specifies.
-        if (bond.stereo === "none") return grown.molecule;
-        return guardedOps.setBondStereo(grown.molecule, grown.bondId, bond.stereo);
+        if (bond.stereo === "none") return drawn;
+        return guardedOps.setBondStereo(drawn, grown.bondId, bond.stereo);
       },
     },
     { kind: "status", message: null },
@@ -1245,12 +1253,17 @@ function elementClick(
 ): readonly InteractionCommand[] {
   const element = ctx.toolOptions.element;
   const hit = sample.hit;
+  // Decision 238: "R" makes the clicked or placed atom the next R-group.
+  const rgroup = isRGroupEntry(element);
   if (hit.kind === "atom") {
     return [
       {
         kind: "edit",
         label: LABEL_SET_ELEMENT,
-        edit: (m) => guardedOps.setElement(m, hit.atomId, element),
+        edit: (m) =>
+          rgroup
+            ? guardedOps.makeRGroup(m, hit.atomId)
+            : guardedOps.setElement(m, hit.atomId, element),
       },
       { kind: "status", message: null },
     ];
@@ -1261,7 +1274,10 @@ function elementClick(
     {
       kind: "edit",
       label: LABEL_ADD_ATOM,
-      edit: (m) => guardedOps.addAtom(m, { element, pos }).molecule,
+      edit: (m) => {
+        const added = guardedOps.addAtom(m, { element: elementForNewAtom(element), pos });
+        return rgroup ? guardedOps.makeRGroup(added.molecule, added.id) : added.molecule;
+      },
     },
     { kind: "status", message: null },
   ];
@@ -1280,7 +1296,7 @@ function chainClick(
 ): readonly InteractionCommand[] {
   const mol = ctx.molecule;
   const count = ctx.toolOptions.chainLength;
-  const element = ctx.toolOptions.element;
+  const element = elementForNewAtom(ctx.toolOptions.element);
   const bondLength = documentBondLength(mol);
   const hit = sample.hit;
   if (hit.kind === "atom") {
@@ -1426,11 +1442,15 @@ function onClick(
               const grown = guardedOps.sprout(m, atomId, {
                 bondLength,
                 order: bond.order,
-                element: bond.element,
+                element: elementForNewAtom(bond.element),
               });
-              if (bond.stereo === "none") return grown.molecule;
+              const drawn =
+                isRGroupEntry(bond.element) && grown.createdAtom
+                  ? guardedOps.makeRGroup(grown.molecule, grown.atomId)
+                  : grown.molecule;
+              if (bond.stereo === "none") return drawn;
               return guardedOps.setBondStereo(
-                grown.molecule,
+                drawn,
                 grown.bondId,
                 bond.stereo,
               );

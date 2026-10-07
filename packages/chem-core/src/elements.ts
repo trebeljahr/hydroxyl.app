@@ -259,8 +259,39 @@ export function elementByName(name: string): ElementInfo | undefined {
   return BY_LOWER_NAME.get(name.toLowerCase());
 }
 
+/**
+ * The `element` of every query and generic atom (decision 238): R1, X, Ar,
+ * "any atom", an element list. Not an element, and deliberately NOT in
+ * `ELEMENTS` or any lookup a user's typing reaches, so the periodic table
+ * never offers it and "*" never normalises to an element.
+ *
+ * `requireElement` still answers for it, because every chemistry query walks
+ * every atom through that function, and a placeholder has an honest answer
+ * to each of them: no valence list (so no implicit hydrogens and never
+ * over-valent), atomic number 0 (RDKit's dummy atom), and NO MASS — `weight`
+ * is NaN rather than 0, so a sum that forgot to check for a placeholder
+ * prints NaN instead of a plausible wrong number, and `monoisotopic` is
+ * undefined so `exactMass()` refuses exactly as it does for an element with
+ * no verified value.
+ */
+export const QUERY_ELEMENT: ElementSymbol = "*";
+
+const QUERY_ELEMENT_INFO: ElementInfo = Object.freeze({
+  z: 0,
+  symbol: QUERY_ELEMENT,
+  name: "Generic atom",
+  group: 0,
+  period: 0,
+  category: "nonmetal",
+  weight: Number.NaN,
+  monoisotopic: undefined,
+  valences: Object.freeze([]) as readonly number[],
+  color: "#909090",
+});
+
 /** Throwing variant, for call sites where an unknown symbol is a bug. */
 export function requireElement(symbol: string): ElementInfo {
+  if (symbol === QUERY_ELEMENT) return QUERY_ELEMENT_INFO;
   const el = BY_SYMBOL.get(symbol);
   if (!el) throw new Error(`Unknown element symbol: "${symbol}"`);
   return el;

@@ -286,14 +286,19 @@ export function StatusBar(): ReactElement {
       ) : null}
       <PropertiesPopover scope={scope}>
         {mass.formulaUnicode === "" ? "Empty sketch" : mass.formulaUnicode}
+        {/* Decision 238: a Markush drawing says so, rather than leave two
+            em dashes for the reader to puzzle over. */}
+        {mass.generic ? <span data-status="generic"> (generic)</span> : null}
       </PropertiesPopover>
 
       <span
         data-status="weight"
         title={[
-          mass.molecularWeight === undefined
-            ? "No verified mass for one of these isotope labels"
-            : "Average molecular weight",
+          mass.generic
+            ? "A generic structure has no single mass"
+            : mass.molecularWeight === undefined
+              ? "No verified mass for one of these isotope labels"
+              : "Average molecular weight",
           // The exact mass again, for the widths where its own readout is
           // hidden (decision 139).
           `Exact mass ${exactMass}`,
@@ -306,9 +311,11 @@ export function StatusBar(): ReactElement {
         data-status="exact-mass"
         className="max-[900px]:hidden"
         title={
-          mass.exactMass === undefined
-            ? "No verified exact mass for one of these elements or isotope labels"
-            : "Monoisotopic exact mass"
+          mass.generic
+            ? "A generic structure has no single mass"
+            : mass.exactMass === undefined
+              ? "No verified exact mass for one of these elements or isotope labels"
+              : "Monoisotopic exact mass"
         }
       >
         {/* The em dash. See the header — never an average weight in disguise. */}

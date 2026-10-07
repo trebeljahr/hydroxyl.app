@@ -58,6 +58,9 @@ import {
   setExplicitHydrogenCount as coreSetExplicitHydrogenCount,
   setIsotope as coreSetIsotope,
   setLabel as coreSetLabel,
+  setAtomQuery as coreSetAtomQuery,
+  setBondQuery as coreSetBondQuery,
+  makeRGroup as coreMakeRGroup,
   setLonePairs as coreSetLonePairs,
   spiroRingAtAtom as coreSpiroRingAtAtom,
   sprout as coreSprout,
@@ -159,6 +162,11 @@ export const guardedOps = {
   /** Decision 226's two bond flags, from `bond.style.bold` and `bond.dative`. */
   setBondBold: guard("setBondBold", coreSetBondBold),
   setBondDative: guard("setBondDative", coreSetBondDative),
+  /** Decision 238's placeholders: the element tool's "R" entry, the
+   *  properties panel's query field and the bond menu's query submenu. */
+  setAtomQuery: guard("setAtomQuery", coreSetAtomQuery),
+  makeRGroup: guard("makeRGroup", coreMakeRGroup),
+  setBondQuery: guard("setBondQuery", coreSetBondQuery),
   /** Swaps `from`/`to`, which INVERTS a wedge — the narrow end is at `from`,
    *  never at whichever id sorts first. */
   flipBond: guard("flipBond", coreFlipBond),

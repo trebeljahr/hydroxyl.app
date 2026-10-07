@@ -41,7 +41,7 @@
  * on the zoom would change its answer when the user scrolled.
  */
 
-import { neighborIds } from "@starter/chem-core";
+import { atomQueryLabel, neighborIds } from "@starter/chem-core";
 import type { AtomId, Molecule, Vec2 } from "@starter/chem-core";
 
 export type ArrowDirection = "up" | "down" | "left" | "right";
@@ -197,5 +197,8 @@ export function describeAtom(mol: Molecule, id: AtomId): string {
     index < 0
       ? ""
       : `, atom ${String(index + 1)} of ${String(mol.atomIds.length)}`;
-  return `${atom.element}${charge}${label}, ${String(bonds)} ${bonds === 1 ? "bond" : "bonds"}${place}`;
+  // A query atom (decision 238) is announced by what the canvas draws: "R1",
+  // "[Cl,Br,I]" — never by the placeholder element "*".
+  const symbol = atom.query === undefined ? atom.element : atomQueryLabel(atom.query);
+  return `${symbol}${charge}${label}, ${String(bonds)} ${bonds === 1 ? "bond" : "bonds"}${place}`;
 }

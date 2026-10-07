@@ -32,6 +32,7 @@ import type { ElementInfo } from "@starter/chem-core";
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { commandById } from "@/editor/commands/registry";
+import { RGROUP_ENTRY } from "@/editor/rgroup-entry";
 import {
   F_BLOCK_MARKERS,
   LANTHANIDE_ROW,
@@ -191,6 +192,22 @@ function PeriodicTableBody({ lookup }: { readonly lookup: Lookup | undefined }):
               ? "1 element matches"
               : `${String(matchCount)} elements match`}
         </p>
+        {/* Decision 238: the R-group entry sits beside the table rather than in
+            it — R is not an element and has no cell — but it is picked the
+            same way, through `element.R`, and numbers itself on placement. */}
+        <button
+          type="button"
+          data-periodic-rgroup=""
+          aria-label="R-group, numbered R1, R2…"
+          title="R-group, numbered R1, R2…"
+          onClick={() => {
+            editorStore.getState().setPeriodicTableOpen(false);
+            void commandById(`element.${RGROUP_ENTRY}`).run(editorStore);
+          }}
+          className="border-input text-foreground hover:bg-accent focus:ring-ring ml-auto h-8 rounded-md border px-3 font-mono text-xs focus:outline-none focus:ring-2"
+        >
+          {RGROUP_ENTRY}
+        </button>
       </div>
 
       <ElementDetail cell={detail} />

@@ -23,6 +23,7 @@ import {
   rotateAtoms,
   singleAtom,
   vec,
+  setBondQuery,
 } from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
 
@@ -678,6 +679,43 @@ describe("representationAvailability", () => {
     expect(() =>
       buildScene(placeholder, PUBLICATION_STYLE, representation("skeletal")),
     ).toThrow();
+  });
+
+  it("draws a Markush core in every structural view but Lewis, and in the sum formula (decision 238)", () => {
+    const markush = buildMolecule((b) => {
+      const c = b.atom("C", vec(0, 0));
+      b.bond(c, b.atom("*", vec(1, 0), { query: { kind: "rgroup", index: 1 } }));
+      // Far enough out that the bond clears the list's wide label.
+      b.bond(c, b.atom("*", vec(-3, 0), { query: { kind: "list", elements: ["Cl", "Br"], negated: false } }));
+    });
+    const verdicts = new Map(availabilityByKind(markush));
+    expect(verdicts.get("skeletal")?.available).toBe(true);
+    expect(verdicts.get("sumFormula")?.available).toBe(true);
+    const lewis = verdicts.get("lewis");
+    expect(lewis?.available).toBe(false);
+    if (lewis === undefined || lewis.available) throw new Error("unreachable");
+    // Named by what the canvas draws, never by the placeholder element "*".
+    expect(lewis.message).toMatch(/^R1, \[Cl,Br\] have no default valences/);
+    expect(verdicts.get("condensed")?.available).toBe(false);
+
+    const scene = buildScene(markush, PUBLICATION_STYLE, representation("skeletal"));
+    const texts = scene.primitives.flatMap((p) =>
+      p.type === "group"
+        ? p.children.flatMap((c) => (c.type === "textRun" ? c.spans.map((s) => s.text) : []))
+        : p.type === "textRun"
+          ? p.spans.map((s) => s.text)
+          : [],
+    );
+    expect(texts).toEqual(expect.arrayContaining(["R1", "[Cl,Br]"]));
+
+    // Query bonds: "any" dashed, the two-way queries labelled at the midpoint.
+    const queried = setBondQuery(setBondQuery(markush, "b3", "any"), "b5", "single-or-double");
+    const bondScene = buildScene(queried, PUBLICATION_STYLE, representation("skeletal"));
+    const flat = bondScene.primitives.flatMap((p) => (p.type === "group" ? [p, ...p.children] : [p]));
+    const any = flat.find((p) => p.id === "bond:b3:line");
+    expect(any?.type === "line" ? any.stroke.dash?.length : 0).toBe(2);
+    const label = flat.find((p) => p.id === "bond:b5:query");
+    expect(label?.type === "textRun" ? label.spans[0]?.text : undefined).toBe("S/D");
   });
 
   it("refuses every view for an empty molecule, with the general reason", () => {

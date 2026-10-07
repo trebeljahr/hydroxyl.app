@@ -212,8 +212,12 @@ describe("the element picker's way to every other element", () => {
       node.getAttribute("data-element"),
     );
     expect(pinned).toEqual(["Pt", "Pd"]);
-    // The organic grid is untouched by it.
-    expect(document.querySelectorAll("[data-element]")).toHaveLength(13 + 2);
+    // The organic grid is untouched by it: thirteen elements plus decision
+    // 238's R-group entry, then the two pinned.
+    expect(document.querySelectorAll("[data-element]")).toHaveLength(13 + 1 + 2);
+    expect(document.querySelector('[data-element="R"]')).toHaveAccessibleName(
+      "R-group, numbered R1, R2… (R)",
+    );
 
     const platinum = row!.querySelector<HTMLElement>('[data-element="Pt"]')!;
     expect(platinum).toHaveAccessibleName("Platinum (Pt)");

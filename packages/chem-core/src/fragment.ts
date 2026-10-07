@@ -81,6 +81,7 @@ function copyBond(source: Bond, id: BondId, from: AtomId, to: AtomId): Bond {
       stereo: source.stereo,
       doubleBondSide: source.doubleBondSide,
       aromatic: source.aromatic,
+      ...(source.query === undefined ? {} : { query: source.query }),
     },
     bondFlags(source),
   );

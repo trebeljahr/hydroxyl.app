@@ -36,6 +36,51 @@ export type BondStereo = "none" | "wedge" | "hash" | "wavy" | "either";
 export type DoubleBondSide = "auto" | "left" | "right" | "centered";
 
 /**
+ * What a query or generic atom stands for (decisions 228 and 238). An atom
+ * carrying one is NOT an element: its `element` is always `QUERY_ELEMENT`
+ * ("*"), which has no valence list, no weight and no monoisotopic mass, so
+ * hydrogens, formula and mass treat it as a placeholder rather than guess.
+ *
+ *   `rgroup`   R, R1, R2… — a Markush substituent. `index` undefined is the
+ *              bare "R"; a number is the R-group the molfile's `M  RGP`
+ *              names. Indices are 1-based.
+ *   `any`      MDL's "A" (any atom but hydrogen) or "*" (any atom at all).
+ *   `list`     an element list, `[Cl,Br,I]`, or with `negated` a NOT-list:
+ *              any atom except these. MDL's `M  ALS` / V3000's bracket list.
+ *   `generic`  a named generic group drawn as a label: X, Ar, Q, Hal… The
+ *              label is the whole statement; nothing is inferred from it.
+ *
+ * Frozen data, compared by value through `atomQueriesEqual`, never by
+ * reference: two separately built `{ kind: "any", symbol: "A" }` are the same
+ * query, and an edit that rebuilt one must not look like a change.
+ */
+export type AtomQuery =
+  | { readonly kind: "rgroup"; readonly index?: number | undefined }
+  | { readonly kind: "any"; readonly symbol: "A" | "*" }
+  | {
+      readonly kind: "list";
+      readonly elements: readonly ElementSymbol[];
+      readonly negated: boolean;
+    }
+  | { readonly kind: "generic"; readonly label: string };
+
+/**
+ * A query bond (decisions 228 and 238): the bond is ONE of several orders and
+ * the drawing does not say which. Molfile bond types 8, 5, 6 and 7.
+ *
+ * The bond still carries an `order`, and it is the LOWEST integer order the
+ * query admits — 1 for `any`, `single-or-double` and `single-or-aromatic`,
+ * 2 for `double-or-aromatic`. Hydrogen counting, over-valence and layout read
+ * that order, so a query bond never invents capacity the structure may not
+ * have; the issue message says when a query bond was counted that way.
+ */
+export type BondQuery =
+  | "any"
+  | "single-or-double"
+  | "single-or-aromatic"
+  | "double-or-aromatic";
+
+/**
  * Enhanced stereochemistry: what a SET of stereocentres asserts about its own
  * configuration (decision 24).
  *
@@ -159,6 +204,11 @@ export interface Atom {
    * concern — valence and formula still use `element`.
    */
   readonly label?: string;
+  /**
+   * Set exactly when the atom is a query or generic atom, and then `element`
+   * is `QUERY_ELEMENT`. See `AtomQuery`.
+   */
+  readonly query?: AtomQuery;
 }
 
 export interface Bond {
@@ -197,6 +247,8 @@ export interface Bond {
    * for it, so `writeMolblock` drops it. Omitted when false, as `dative`.
    */
   readonly bold?: true;
+  /** A query bond; `order` is then its lowest admitted order. See `BondQuery`. */
+  readonly query?: BondQuery;
 }
 
 /**
@@ -271,6 +323,7 @@ export interface AtomInit {
   readonly aromatic?: boolean | undefined;
   readonly lonePairs?: number | undefined;
   readonly label?: string | undefined;
+  readonly query?: AtomQuery | undefined;
 }
 
 /** Input for creating a bond. Optionals are widened as in `AtomInit`. */
@@ -283,4 +336,5 @@ export interface BondInit {
   readonly aromatic?: boolean | undefined;
   readonly dative?: boolean | undefined;
   readonly bold?: boolean | undefined;
+  readonly query?: BondQuery | undefined;
 }

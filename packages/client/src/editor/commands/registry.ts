@@ -50,6 +50,7 @@ import type {
   AlignEdge,
   AtomId,
   BondOrder,
+  BondQuery,
   BondStereo,
   DoubleBondSide,
   ElementSymbol,
@@ -57,7 +58,8 @@ import type {
   RingTemplateName,
   Vec2,
 } from "@starter/chem-core";
-import { ELEMENTS } from "@starter/chem-core";
+import { BOND_QUERY_VALUES, ELEMENTS } from "@starter/chem-core";
+import { RGROUP_ENTRY, isRGroupEntry } from "@/editor/rgroup-entry";
 import {
   DISPLAY_FLAG_KEYS,
   DOUBLE_BOND_SIDE_VALUES,
@@ -494,6 +496,41 @@ function bondOrderCommands(): Command[] {
   }));
 }
 
+const QUERY_TITLES: Readonly<Record<BondQuery, string>> = {
+  any: "any bond",
+  "single-or-double": "single or double (S/D)",
+  "single-or-aromatic": "single or aromatic (S/A)",
+  "double-or-aromatic": "double or aromatic (D/A)",
+};
+
+/**
+ * Decision 238's query bonds, plus `bond.query.none` to make one an ordinary
+ * bond again. They act on the selection only: a query bond is a statement
+ * about one bond of a Markush core, never something to draw a run of.
+ */
+function bondQueryCommands(): Command[] {
+  const set = (query: BondQuery | undefined, title: string, id: string): Command => ({
+    id: `bond.query.${id}`,
+    title: `Query bond: ${title}`,
+    keywords: ["bond", "query", "markush", "generic", title],
+    group: "bond" as const,
+    enabled: (state) => selectedBondIds(state).length > 0,
+    disabledReason: whenOff((state) => selectedBondIds(state).length > 0, "Select a bond first"),
+    run: (store: EditorStore) => {
+      const state = store.getState();
+      const bondIds = selectedBondIds(state);
+      if (bondIds.length === 0) return;
+      state.applyMoleculeEdit(`Set ${title} bond`, (mol) =>
+        bondIds.reduce((m, bondId) => guardedOps.setBondQuery(m, bondId, query), mol),
+      );
+    },
+  });
+  return [
+    ...BOND_QUERY_VALUES.map((query) => set(query, QUERY_TITLES[query], query)),
+    set(undefined, "none (ordinary bond)", "none"),
+  ];
+}
+
 const STEREO_TITLES: Readonly<Record<BondStereo, string>> = {
   none: "plain",
   wedge: "wedge",
@@ -757,16 +794,30 @@ function functionalGroupCommands(): Command[] {
  * nobody searches for a metal by its symbol when its symbol is a tool letter.
  */
 function elementCommands(): Command[] {
-  return ELEMENTS.map(({ symbol, name }) => ({
-    id: `element.${symbol}`,
-    title: `Element: ${symbol}`,
-    keywords: ["element", "atom", symbol, name],
-    group: "element" as const,
-    enabled: always,
-    run: (store: EditorStore) => {
-      applyElement(store, symbol);
+  return [
+    ...ELEMENTS.map(({ symbol, name }) => ({
+      id: `element.${symbol}`,
+      title: `Element: ${symbol}`,
+      keywords: ["element", "atom", symbol, name],
+      group: "element" as const,
+      enabled: always,
+      run: (store: EditorStore) => {
+        applyElement(store, symbol);
+      },
+    })),
+    // Decision 238's "R" entry. Not an element, so not in ELEMENTS; `R` is
+    // free as an id because no element symbol is a bare R.
+    {
+      id: `element.${RGROUP_ENTRY}`,
+      title: "R-group (numbered R1, R2…)",
+      keywords: ["r-group", "rgroup", "markush", "substituent", "placeholder", "generic", RGROUP_ENTRY],
+      group: "element" as const,
+      enabled: always,
+      run: (store: EditorStore) => {
+        applyElement(store, RGROUP_ENTRY);
+      },
     },
-  }));
+  ];
 }
 
 /**
@@ -944,6 +995,14 @@ export function applyElement(store: EditorStore, element: ElementSymbol): void {
   const atomIds = state.selection.atomIds;
   if (atomIds.length === 0) {
     state.setTool("element");
+    return;
+  }
+  if (isRGroupEntry(element)) {
+    // Decision 238: each selected atom becomes the next R-group, numbered in
+    // selection order by chem-core.
+    state.applyMoleculeEdit("Make R-group", (mol) =>
+      atomIds.reduce((m, id) => guardedOps.makeRGroup(m, id), mol),
+    );
     return;
   }
   state.applyMoleculeEdit(`Set element to ${element}`, (mol) =>
@@ -2053,6 +2112,7 @@ export const COMMANDS: readonly Command[] = Object.freeze([
   ...toolCommands(),
   ...bondOrderCommands(),
   ...bondStereoCommands(),
+  ...bondQueryCommands(),
   ...bondSideCommands(),
   ...bondFlagCommands(),
   ...ringTemplateCommands(),

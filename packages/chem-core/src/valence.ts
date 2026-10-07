@@ -501,6 +501,13 @@ export function valenceIssues(mol: Molecule): ValenceIssue[] {
       // for a cause that is not there.
       const hydrogens =
         pinned === 0 ? "" : ` and ${pinned} pinned ${pinned === 1 ? "hydrogen" : "hydrogens"}`;
+      // A query bond is counted at the lowest order it admits (decision 238),
+      // so an atom over-valent with one is over-valent under EVERY reading of
+      // the query — but the reader is owed the rule, since an "any" bond
+      // drawn as a dashed line does not look like a single bond.
+      const counted = bondsAt(mol, atomId).some((bond) => bond.query !== undefined)
+        ? " (query bonds counted at their lowest order)"
+        : "";
       issues.push({
         kind: "over-valent",
         atomId,
@@ -509,7 +516,7 @@ export function valenceIssues(mol: Molecule): ValenceIssue[] {
         // and `issueFixes` offers to lower one only when there is no choice.
         bondIds: bondsAt(mol, atomId).map((bond) => bond.id),
         severity: "error",
-        message: `${atom.element} has ${bonds}${hydrogens} but allows at most ${max}`,
+        message: `${atom.element} has ${bonds}${hydrogens} but allows at most ${max}${counted}`,
         label:
           pinned === 0
             ? `${atom.element} has ${bonds}; max ${max}`

@@ -17,6 +17,7 @@ import type {
   Bond,
   BondId,
   BondOrder,
+  BondQuery,
   BondStereo,
   Molecule,
   SpeciesJoin,
@@ -160,6 +161,7 @@ export class MoleculeBuilder {
     to: AtomId,
     order: BondOrder = 1,
     stereo: BondStereo = "none",
+    query?: BondQuery,
   ): BondId {
     if (from === to) throw new Error(`Cannot bond atom ${from} to itself`);
     if (!this.atomRecords[from]) throw new Error(`No such atom: ${from}`);
@@ -178,6 +180,7 @@ export class MoleculeBuilder {
       stereo,
       doubleBondSide: "auto",
       aromatic: false,
+      ...(query === undefined ? {} : { query }),
     };
     this.bondIds.push(id);
     return id;

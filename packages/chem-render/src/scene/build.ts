@@ -10,6 +10,7 @@
  */
 
 import {
+  BOND_QUERY_LABEL,
   aromaticRings,
   canCondense,
   cipDescriptor,
@@ -1803,6 +1804,48 @@ function pushBondPrimitives(
       }
       return;
     }
+  }
+
+  // A QUERY BOND (decision 238) is not drawn at its stored order: that order
+  // is only the lowest the query admits. "Any" is the ISIS dashed line; the
+  // three two-way queries are a plain line with their name set small beside
+  // its midpoint, which is how Marvin and the patent literature mark them and
+  // what a reader can decode without a legend.
+  if (bond.query !== undefined) {
+    if (bond.query === "any") {
+      const dash = [style.bondLineWidthPx * 4, style.bondLineWidthPx * 3];
+      drawn.push({ a: axis.a, b: axis.b, halfWidth });
+      primitives.push({
+        id: `bond:${bondId}:line`,
+        source: { kind: "bond", bondId },
+        type: "line",
+        a: axis.a,
+        b: axis.b,
+        stroke: { ...(bond.bold === true ? boldStroke : plainStroke), dash },
+      });
+      return;
+    }
+    line("line", { a: axis.a, b: axis.b });
+    const normal = leftNormal(axis.unit);
+    const fontSizePx = style.fontSizePx * 0.6;
+    const offset = gap + fontSizePx * 0.6;
+    primitives.push({
+      id: `bond:${bondId}:query`,
+      source: { kind: "bond", bondId },
+      type: "textRun",
+      origin: {
+        x: (axis.a.x + axis.b.x) / 2 + normal.x * offset,
+        // `origin` is the alphabetic baseline; dropping it by a third of the
+        // size centres the cap height on the offset point.
+        y: (axis.a.y + axis.b.y) / 2 + normal.y * offset + fontSizePx / 3,
+      },
+      spans: [{ text: BOND_QUERY_LABEL[bond.query] }],
+      fontFamily: style.fontFamily,
+      fontSizePx,
+      fill: { color: style.colors.label },
+      anchor: "middle",
+    });
+    return;
   }
 
   // A TRIPLE BOND IS ALWAYS CENTRED, and its outer pair sits a FULL gap out,
