@@ -124,6 +124,12 @@ Invariants to preserve when editing it:
   N→B leaves BH2 exactly as RDKit reads `N->B` — and only V3000 (type 9) can
   write it. `Bond.bold` is display only. A hydrogen bond is chem-render's
   `hydrogenBond` annotation and never reaches chem-core.
+- **An abbreviation is a label over real atoms.** `Molecule.abbreviations`
+  (decision 225) groups atoms that stay in the graph, so formula, mass,
+  valence and SMILES never read it. Only drawing (`contractedView`) and the
+  molfile `SUP` S-group do. The attachment bond is derived, never stored; a
+  group with two bonds out draws expanded (decision 240). A bare `Atom.label`
+  with no atoms behind it is still refused at export (decision 8).
 - **Issues and their fixes are chem-core's.** `chemistryIssues` returns every
   issue located (anchor `atomId`, all `atomIds`/`bondIds`, a canvas `label`);
   `issueFixes`/`applyIssueFix` decide which one-click repair is obvious. The

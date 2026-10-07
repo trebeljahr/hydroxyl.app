@@ -11,6 +11,7 @@
 
 import { emptyMolecule, makeAtom } from "./molecule.js";
 import type {
+  Abbreviation,
   Atom,
   AtomId,
   AtomInit,
@@ -67,6 +68,7 @@ interface MoleculeFields {
   readonly nextId: number;
   readonly stereoGroups: readonly StereoGroup[] | undefined;
   readonly speciesJoins: readonly SpeciesJoin[] | undefined;
+  readonly abbreviations: readonly Abbreviation[] | undefined;
 }
 
 /**
@@ -117,6 +119,10 @@ export function assembleMolecule(fields: MoleculeFields): Molecule {
   // species are joined", so the key is dropped rather than stored as `[]`.
   if (fields.speciesJoins !== undefined && fields.speciesJoins.length > 0) {
     mol.speciesJoins = fields.speciesJoins;
+  }
+  // And for contracted abbreviations (decision 225).
+  if (fields.abbreviations !== undefined && fields.abbreviations.length > 0) {
+    mol.abbreviations = fields.abbreviations;
   }
   return mol;
 }
@@ -204,6 +210,9 @@ export class MoleculeBuilder {
       // No gesture joins species mid-build either; `withSpeciesJoins` does it
       // once the structure exists, for the same reason as the groups.
       speciesJoins: undefined,
+      // A superatom is a grouping over atoms that already exist;
+      // `withAbbreviations` adds one afterwards.
+      abbreviations: undefined,
     });
   }
 }

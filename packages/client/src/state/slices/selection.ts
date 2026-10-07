@@ -15,6 +15,7 @@
  * step.
  */
 
+import { abbreviationAt, closeOverAbbreviations } from "@starter/chem-core";
 import type { AtomId, BondId, Molecule } from "@starter/chem-core";
 import type { SchemeAnnotation, SchemeAnnotationId } from "@starter/chem-render";
 import { castDraft } from "immer";
@@ -123,7 +124,12 @@ export function createSelectionSlice(): EditorSliceCreator<SelectionSlice> {
       annotationIds: readonly SchemeAnnotationId[] = [],
     ): void => {
       const current = get().selection;
-      const next = nextSelection(current, atomIds, bondIds, annotationIds);
+      // A contracted abbreviation is selected whole or not at all (decision
+      // 225): its label IS those atoms, so a click on "Boc" or a band over
+      // part of it holds every one of them — and moving, copying or deleting
+      // the selection takes the group intact.
+      const closed = closeOverAbbreviations(get().document.molecule, atomIds);
+      const next = nextSelection(current, closed, bondIds, annotationIds);
       if (next === current) return;
       // Computed outside the recipe and assigned wholesale, like every other
       // value in this store — see slices/document.ts for the full reason.
@@ -164,9 +170,12 @@ export function createSelectionSlice(): EditorSliceCreator<SelectionSlice> {
         const current = get().selection;
         // Bonds are left alone: ctrl-clicking an atom in a mixed selection
         // must not silently drop the bonds the user also picked.
+        // Toggling a label off drops its whole group, or the closure in
+        // `apply` would put the host straight back.
+        const group = abbreviationAt(get().document.molecule, id)?.atomIds ?? [id];
         apply(
           current.atomIds.includes(id)
-            ? current.atomIds.filter((other) => other !== id)
+            ? current.atomIds.filter((other) => !group.includes(other))
             : [...current.atomIds, id],
           current.bondIds,
           current.annotationIds,

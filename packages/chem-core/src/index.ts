@@ -30,6 +30,11 @@ export * from "./stereo-groups.js";
 // record layer for those joins beside them. Below ops and fragment for the
 // same reason as the stereo groups.
 export * from "./species.js";
+// Contracted abbreviations (decision 225): the superatom record layer, below
+// ops and fragment like the two above, and the label table that names a
+// stamped group when it is contracted.
+export * from "./abbreviations.js";
+export * from "./abbreviation-labels.js";
 export * from "./sprout.js";
 export * from "./rings.js";
 export * from "./aromatic.js";

@@ -521,6 +521,16 @@ const WARNING_TIERS: Readonly<Record<MolblockWarning["kind"], WarningCase>> = {
     severity: "info",
     because: "a HILITE or a user collection carries no chemistry",
   },
+  "unsupported-sgroup": {
+    warning: { kind: "unsupported-sgroup", message: "", line: 12, type: "DAT" },
+    severity: "info",
+    because: "a data, polymer or multiple S-group annotates the graph and is not the graph",
+  },
+  "dropped-superatom": {
+    warning: { kind: "dropped-superatom", message: "", line: 12, label: "Boc" },
+    severity: "info",
+    because: "the atoms are read whole; only the label is lost and the group draws expanded",
+  },
   "bad-v3000-row": {
     warning: {
       kind: "bad-v3000-row",

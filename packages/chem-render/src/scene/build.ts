@@ -12,6 +12,7 @@
 import {
   BOND_QUERY_LABEL,
   aromaticRings,
+  contractedView,
   canCondense,
   cipDescriptor,
   derivedBondId,
@@ -564,7 +565,14 @@ function buildMolecularLayers(
   // hydrogen counts, descriptors — is still `source`'s. Without a layout the
   // two are one molecule and nothing below changes.
   const drawing = options?.layout === undefined ? undefined : layoutDrawing(source, options.layout);
-  const mol = drawing?.geometry ?? source;
+  // Contracted abbreviations (decision 225) draw as their label: the view
+  // drops each group's other atoms and puts the label on the atom it is
+  // attached by, so every pass below sees one atom with one bond, as on the
+  // page. Chemistry — descriptors, locants — still reads `source`, whose
+  // hidden atoms simply have no centre here. A projection lays out every
+  // atom itself and is drawn expanded (decision 240).
+  const contracted = drawing === undefined ? contractedView(source) : undefined;
+  const mol = drawing?.geometry ?? contracted?.molecule ?? source;
 
   const centres = new Map<AtomId, ScenePoint>();
   for (const atomId of mol.atomIds) {
@@ -573,6 +581,12 @@ function buildMolecularLayers(
     centres.set(atomId, modelToPx(style, atom.pos));
   }
   const placements = atomLabelPlacements(mol, style, representation);
+  if (contracted !== undefined) {
+    for (const [hostId, host] of contracted.hosts) {
+      const node = abbreviationNode(hostId, host.abbreviation.label, host.outsideAtomId, mol, centres);
+      placements.set(hostId, condensedPlacement(mol, hostId, node, centres, style));
+    }
+  }
   if (drawing !== undefined) {
     for (const atomId of drawing.hidden) placements.delete(atomId);
     for (const [atomId, node] of drawing.condensedAt) {
@@ -740,7 +754,10 @@ function buildMolecularLayers(
     placements,
     bondInk,
     drawing === undefined
-      ? undefined
+      ? // A label stands in for its atoms' hydrogens too: no fan off "Boc".
+        contracted === undefined || contracted.hosts.size === 0
+        ? undefined
+        : new Set(contracted.hosts.keys())
       : new Set([...drawing.hidden, ...drawing.condensedAt.keys(), ...drawing.hydrogenHosts]),
   );
   pushHydrogenPrimitives(primitives, style, hydrogens, centres, placements, drawn);
@@ -1244,6 +1261,60 @@ function condensedPlacement(
   });
   const { label, side } = derivedNodeLabel(node, getAtom(mol, atomId)?.element ?? "C");
   return placeAtomLabel({ atomId, centre, neighbourCentres, label, style, side });
+}
+
+/**
+ * A contracted abbreviation's label as the derived node a projection's
+ * condensed group would be (decision 225), so it is placed by the same rule:
+ * ONE glyph sits on the atom the label is attached by, and the rest of the
+ * word trails away from the bond. Centred on the atom, "Boc" beside an "HN"
+ * swallowed the bond between them whole.
+ *
+ * A label that begins with the host's own element ("OTBS", "NHBoc") puts
+ * that element on the atom and, attached from the east, is spelled back to
+ * front the way a scheme writes it: "TBSO", "BocHN". A bare abbreviation
+ * puts its first letter on the atom, or its last when attached from the
+ * east, so the bond meets the word's near end.
+ */
+function abbreviationNode(
+  hostId: AtomId,
+  label: string,
+  outsideAtomId: AtomId | undefined,
+  mol: Molecule,
+  centres: ReadonlyMap<AtomId, ScenePoint>,
+): DerivedNode {
+  const element = getAtom(mol, hostId)?.element ?? "";
+  const centre = centres.get(hostId);
+  const outside = outsideAtomId === undefined ? undefined : centres.get(outsideAtomId);
+  // West when the bond arrives from the right; a vertical bond reads east.
+  const west = centre !== undefined && outside !== undefined && outside.x - centre.x > 1e-6;
+
+  const prefix = new RegExp(`^${element}(?![a-z])(H([0-9\u2080-\u2089]*))?`).exec(label);
+  type Part = DerivedNode["label"][number];
+  const sym = (text: string): Part => ({ kind: "symbol", text });
+  let parts: Part[];
+  let anchor: number;
+  if (element !== "" && prefix !== null && prefix[0].length < label.length) {
+    const rest = label.slice(prefix[0].length);
+    const hydrogens: Part[] =
+      prefix[1] === undefined
+        ? []
+        : [sym("H"), ...(prefix[2] ? [{ kind: "count", text: asciiDigits(prefix[2]) } as Part] : [])];
+    parts = west ? [sym(rest), ...hydrogens, sym(element)] : [sym(element), ...hydrogens, sym(rest)];
+    anchor = west ? parts.length - 1 : 0;
+  } else {
+    const glyphs = [...label];
+    parts = west
+      ? [sym(glyphs.slice(0, -1).join("")), sym(glyphs.at(-1) ?? "")]
+      : [sym(glyphs[0] ?? ""), sym(glyphs.slice(1).join(""))];
+    parts = parts.filter((part) => part.text !== "");
+    anchor = west ? parts.length - 1 : 0;
+  }
+  return { id: `abbreviation:${hostId}`, kind: "condensed", host: hostId, label: parts, anchor };
+}
+
+function asciiDigits(text: string): string {
+  return text.replace(/[\u2080-\u2089]/g, (d) => String(d.charCodeAt(0) - 0x2080));
 }
 
 /**

@@ -780,9 +780,16 @@ describe("reader tolerance", () => {
   });
 
   it("ignores unknown M property lines", () => {
-    const text = writeMolblock(ethanol()).replace("M  END", "M  STY  1   1 DAT\nM  END");
+    const text = writeMolblock(ethanol()).replace("M  END", "M  ZZZ  1   1 DAT\nM  END");
     const result = readMolblock(text);
     expect(result.warnings).toEqual([]);
+    expect(elementCounts(result.molecule)).toEqual({ C: 2, H: 6, O: 1 });
+  });
+
+  it("reports a non-superatom S-group and still reads the structure (decision 225)", () => {
+    const text = writeMolblock(ethanol()).replace("M  END", "M  STY  1   1 DAT\nM  END");
+    const result = readMolblock(text);
+    expect(result.warnings.map((w) => w.kind)).toEqual(["unsupported-sgroup"]);
     expect(elementCounts(result.molecule)).toEqual({ C: 2, H: 6, O: 1 });
   });
 
@@ -1948,10 +1955,10 @@ describe("V3000 reader tolerance", () => {
   it("skips an unsupported block whole rather than reading its rows as atoms", () => {
     const result = readMolblock(
       v3000(
-        "M  V30 BEGIN SGROUP",
-        "M  V30 1 SUP 0 ATOMS=(1 1) XBONDS=(1 1) LABEL=Boc",
+        "M  V30 BEGIN OBJ3D",
+        "M  V30 1 POINT 0 POSITION=(1 1)",
         "M  V30 2 C 99.000000 99.000000 0.000000 0",
-        "M  V30 END SGROUP",
+        "M  V30 END OBJ3D",
       ),
     );
     expect(molecularFormula(result.molecule)).toBe("CH4O");

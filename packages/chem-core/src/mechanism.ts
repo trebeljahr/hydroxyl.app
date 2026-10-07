@@ -1046,6 +1046,7 @@ function computeStep(mol: Molecule, arrows: readonly ElectronMove[]): Step {
     // Groups and joins name atoms, and a step creates and deletes none.
     stereoGroups: mol.stereoGroups,
     speciesJoins: mol.speciesJoins,
+    abbreviations: mol.abbreviations,
   });
   return { product, admitted, refusals, paired, bondAt: bondAtProduct, touched };
 }

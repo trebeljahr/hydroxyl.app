@@ -329,6 +329,17 @@ export const FUNCTIONAL_GROUPS = Object.freeze({
     at("C", 0, 90),
     at("C", 0, -90),
   ]),
+  // The silyl ether protecting group a scheme writes as OTBS. Added with
+  // decision 225, so the commonest contracted label has a stamp to make it.
+  TBS: group("TBS", "tert-Butyldimethylsilyl", ["silyl", "TBDMS", "protecting group"], [
+    { element: "Si" },
+    at("C", 0, 90),
+    at("C", 0, -90),
+    at("C", 0, 0),
+    at("C", 3, 0),
+    at("C", 3, 90),
+    at("C", 3, -90),
+  ]),
 } satisfies Record<string, FunctionalGroup>);
 
 export type FunctionalGroupName = keyof typeof FUNCTIONAL_GROUPS;

@@ -24,7 +24,7 @@
  * reading `.pos` off a function.
  */
 
-import { getAtom, getBond, DEFAULT_LABEL_RADIUS } from "@starter/chem-core";
+import { contractedView, getAtom, getBond, DEFAULT_LABEL_RADIUS } from "@starter/chem-core";
 import type { AtomId, BondId, BondSpan, Molecule } from "@starter/chem-core";
 import {
   atomLabelPlacement,
@@ -84,8 +84,12 @@ function circumscribedRadius(
 /** Sole entry point: one walk of the scene, then constant-time lookups. */
 export function createSceneIndex(
   scene: RenderScene,
-  molecule: Molecule,
+  document: Molecule,
 ): SceneIndex {
+  // The molecule AS DRAWN (decision 225): an atom folded into a contracted
+  // abbreviation has no centre, so no halo, hover ring or pick target sits
+  // where nothing is drawn. The label's host keeps its id and its centre.
+  const molecule = contractedView(document).molecule;
   const atomPrimitives = new Map<AtomId, ScenePrimitive[]>();
   const bondPrimitives = new Map<BondId, ScenePrimitive[]>();
   for (const primitive of scene.primitives) {

@@ -89,6 +89,7 @@ describe("no RDKit at module scope", () => {
       "projection-oracle.node.test.ts",
       "stereo-centres.node.test.ts",
       "stereo-groups.node.test.ts",
+      "superatom-fidelity.node.test.ts",
       "valence-table.node.test.ts",
     ]);
   });

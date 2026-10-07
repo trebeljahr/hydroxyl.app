@@ -27,6 +27,7 @@
  * a panel saying why it is empty.
  */
 
+import { contractedView } from "./abbreviations.js";
 import { requireElement } from "./elements.js";
 import type { FormulaPart } from "./formula.js";
 import {
@@ -59,9 +60,14 @@ const BOND_MARKERS: Readonly<Record<1 | 2 | 3, string>> = Object.freeze({
   3: "≡",
 });
 
+/** The contracted view's label hosts, by view, for `atomParts`. */
+const LABEL_HOSTS = new WeakMap<Molecule, ReadonlyMap<AtomId, unknown>>();
+
 /** Whether a condensed formula exists for this molecule at all. */
 export function canCondense(mol: Molecule): boolean {
-  return ringCount(mol) === 0;
+  // Asked of the drawing: a contracted "Ph" is one label, not a ring
+  // (decision 225), so PhCH2OH condenses where benzyl alcohol does not.
+  return ringCount(contractedView(mol).molecule) === 0;
 }
 
 /**
@@ -75,12 +81,18 @@ export function condensedParts(mol: Molecule): FormulaPart[] {
   if (!canCondense(mol)) {
     throw new Error("A cyclic molecule has no condensed formula");
   }
+  // Walked over the contracted view: a contracted abbreviation is one block
+  // spelled as its label, and every other atom keeps its hydrogens, since the
+  // view keeps the bond each label is attached by.
+  const contracted = contractedView(mol);
+  const view = contracted.molecule;
+  LABEL_HOSTS.set(view, contracted.hosts);
   const parts: FormulaPart[] = [];
-  for (const component of connectedComponents(mol)) {
+  for (const component of connectedComponents(view)) {
     if (parts.length > 0) {
       parts.push({ kind: "symbol", text: COMPONENT_SEPARATOR });
     }
-    parts.push(...walkComponent(mol, component));
+    parts.push(...walkComponent(view, component));
   }
   return parts;
 }
@@ -188,6 +200,13 @@ function subtreeParts(
  */
 function atomParts(mol: Molecule, atomId: AtomId): FormulaPart[] {
   const atom = requireAtom(mol, atomId);
+  // `mol` is the contracted view, where only a superatom's host carries a
+  // label. A plain `Atom.label` cannot reach here as anything else: the view
+  // copies atoms unchanged, and decision 8's cosmetic label still reads as
+  // its element, which is what the check below keeps.
+  if (atom.label !== undefined && LABEL_HOSTS.get(mol)?.has(atomId) === true) {
+    return [{ kind: "symbol", text: atom.label }];
+  }
   // Throws on a symbol the table has not heard of, the same call
   // `implicitHydrogenCount` makes below. The availability check catches it
   // first for anything that reaches a panel.

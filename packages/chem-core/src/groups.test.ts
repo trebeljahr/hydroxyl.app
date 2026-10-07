@@ -127,6 +127,7 @@ const ON_BENZENE: Readonly<Record<Exclude<FunctionalGroupName, "Boc" | "Cbz">, r
   Ph: ["biphenyl", "C12H10"],
   Bn: ["diphenylmethane", "C13H12"],
   TMS: ["trimethylsilylbenzene", "C9H14Si"],
+  TBS: ["tert-butyldimethylphenylsilane", "C12H20Si"],
 };
 
 describe("attachGroupToAtom on benzene", () => {

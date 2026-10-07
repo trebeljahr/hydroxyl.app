@@ -120,6 +120,7 @@ export function moleculeFromLayout(mol: Molecule, layout: ProjectedLayout): Rebu
     nextId: next,
     stereoGroups: mol.stereoGroups,
     speciesJoins: mol.speciesJoins,
+    abbreviations: mol.abbreviations,
   });
   // Non-enumerable, so it never reaches JSON; every chem-core edit returns a
   // fresh object, so an edited copy is no longer branded.

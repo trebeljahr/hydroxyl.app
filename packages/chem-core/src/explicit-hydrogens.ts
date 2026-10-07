@@ -194,6 +194,9 @@ export function addExplicitHydrogens(
     nextId,
     stereoGroups: mol.stereoGroups,
     speciesJoins: mol.speciesJoins,
+    // Carried: a hydrogen made real on a contracted atom is a second bond
+    // out of its group, which then draws expanded (decision 240).
+    abbreviations: mol.abbreviations,
   });
   // The bonds moved an atom onto a different valence; pin rather than let a
   // hydrogen appear. Rare enough that one copy each is fine.

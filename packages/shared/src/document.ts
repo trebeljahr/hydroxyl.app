@@ -48,6 +48,7 @@ import {
   normalizeAtomQuery,
   withSpeciesJoins,
   withBondFlags,
+  withAbbreviations,
   type Atom,
   type AtomId,
   type AtomQuery,
@@ -1292,6 +1293,16 @@ type BondQueryListIsTotal =
 const BOND_QUERY_LIST_IS_TOTAL: BondQueryListIsTotal = true;
 void BOND_QUERY_LIST_IS_TOTAL;
 
+/**
+ * One contracted abbreviation (decision 225): a label over real atoms.
+ * `checkAbbreviations` re-checks what `withAbbreviations` keeps on every
+ * write — a non-blank label, at least one atom, each real, none in two.
+ */
+const abbreviationSchema = z.strictObject({
+  label: z.string(),
+  atomIds: z.array(nonEmptyString),
+});
+
 const bondSchema = z.strictObject({
   id: nonEmptyString,
   from: nonEmptyString,
@@ -1363,6 +1374,13 @@ const moleculeShapeSchema = z.strictObject({
    * document outright rather than stripping the key.
    */
   speciesJoins: z.array(speciesJoinSchema).optional(),
+  /**
+   * Contracted abbreviations (decision 225). Optional and omitted when
+   * nothing is contracted. Additive within v2: a build that predates it
+   * refuses the key outright (the shape is strict), so a contracted figure is
+   * never re-saved by an old build with its labels silently stripped.
+   */
+  abbreviations: z.array(abbreviationSchema).optional(),
 });
 
 type MoleculeShape = z.infer<typeof moleculeShapeSchema>;
@@ -1533,6 +1551,63 @@ function checkMoleculeIntegrity(mol: MoleculeShape, ctx: z.RefinementCtx): void 
 
   checkStereoGroups(mol, ctx);
   checkSpeciesJoins(mol, ctx);
+  checkAbbreviations(mol, ctx);
+}
+
+/**
+ * The abbreviation invariants, reported as issues. Whether a group can be
+ * drawn contracted (one bond out) is NOT checked: that is perceived from the
+ * bonds, and a group with a second bond out is valid and drawn expanded
+ * (decision 240).
+ */
+function checkAbbreviations(mol: MoleculeShape, ctx: z.RefinementCtx): void {
+  const list = mol.abbreviations;
+  if (list === undefined) return;
+  if (list.length === 0) {
+    ctx.addIssue({
+      code: "custom",
+      message: "abbreviations is present but empty; a molecule with nothing contracted omits the key entirely",
+      path: ["abbreviations"],
+    });
+    return;
+  }
+  const owner = new Map<string, number>();
+  list.forEach((abbr, position) => {
+    if (abbr.label.trim() === "") {
+      ctx.addIssue({
+        code: "custom",
+        message: `abbreviation ${position} has a blank label`,
+        path: ["abbreviations", position, "label"],
+      });
+    }
+    if (abbr.atomIds.length === 0) {
+      ctx.addIssue({
+        code: "custom",
+        message: `abbreviation ${position} names no atoms; a label with nothing behind it is decision 8's cosmetic label`,
+        path: ["abbreviations", position, "atomIds"],
+      });
+    }
+    abbr.atomIds.forEach((atomId, slot) => {
+      if (!Object.hasOwn(mol.atoms, atomId)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `abbreviation ${position} names ${atomId}, which is not an atom`,
+          path: ["abbreviations", position, "atomIds", slot],
+        });
+        return;
+      }
+      const held = owner.get(atomId);
+      if (held !== undefined && held !== position) {
+        ctx.addIssue({
+          code: "custom",
+          message: `atom ${atomId} is in abbreviations ${held} and ${position}; an atom is under one label at most`,
+          path: ["abbreviations", position, "atomIds", slot],
+        });
+        return;
+      }
+      owner.set(atomId, position);
+    });
+  });
 }
 
 /**
@@ -1787,9 +1862,11 @@ function rebuildMolecule(mol: MoleculeShape): Molecule {
   // the canonical order every in-memory molecule has and a hand-ordered file
   // compares `toEqual` to the molecule it describes. `checkSpeciesJoins` has
   // already rejected everything the writer would throw on.
-  return mol.speciesJoins === undefined
-    ? rebuilt
-    : withSpeciesJoins(rebuilt, mol.speciesJoins);
+  const joined =
+    mol.speciesJoins === undefined ? rebuilt : withSpeciesJoins(rebuilt, mol.speciesJoins);
+  // Same route, same reason: canonical order, and `checkAbbreviations` has
+  // already rejected everything the writer would throw on.
+  return mol.abbreviations === undefined ? joined : withAbbreviations(joined, mol.abbreviations);
 }
 
 export const moleculeSchema = moleculeShapeSchema
@@ -2537,6 +2614,12 @@ function encodeMolecule(mol: Molecule): JsonObject {
   }
   if (mol.speciesJoins !== undefined) {
     encoded.speciesJoins = mol.speciesJoins.map((join) => ({ atomIds: [...join.atomIds] }));
+  }
+  if (mol.abbreviations !== undefined) {
+    encoded.abbreviations = mol.abbreviations.map((abbr) => ({
+      label: abbr.label,
+      atomIds: [...abbr.atomIds],
+    }));
   }
   return encoded;
 }

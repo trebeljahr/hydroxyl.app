@@ -61,6 +61,7 @@ import { QUERY_ELEMENT } from "./elements.js";
 import { BOND_QUERY_ORDER, nextRGroupIndex, normalizeAtomQuery } from "./query.js";
 import { prunedStereoGroups, stereoGroupsOf } from "./stereo-groups.js";
 import { prunedSpeciesJoins, renamedSpeciesJoins, speciesJoinsOf } from "./species.js";
+import { abbreviationsOf, prunedAbbreviations } from "./abbreviations.js";
 import type { Vec2 } from "./vec.js";
 
 // ---------------------------------------------------------------------------
@@ -121,6 +122,9 @@ export function removeAtoms(mol: Molecule, ids: readonly AtomId[]): Molecule {
     // Species joins are pruned the same way and for the same reason; a join
     // left naming a single atom joins nothing and goes (decision 102).
     speciesJoins: prunedSpeciesJoins(speciesJoinsOf(mol), (id) => !doomed.has(id)),
+    // An abbreviation that loses ANY atom goes (decision 240): the atoms left
+    // are no longer what its label says.
+    abbreviations: prunedAbbreviations(abbreviationsOf(mol), (id) => !doomed.has(id)),
   });
 }
 
@@ -739,6 +743,12 @@ export function mergeAtoms(
       // atoms are now one. Dropping it would silently split a salt whose only
       // joined atom was the one the user dragged.
       speciesJoins: renamedSpeciesJoins(speciesJoinsOf(mol), draggedId, targetId),
+      // A merge changes what both atoms are bonded to, so a label over either
+      // one no longer describes its atoms; both groups go (decision 240).
+      abbreviations: prunedAbbreviations(
+        abbreviationsOf(mol),
+        (id) => id !== draggedId && id !== targetId,
+      ),
     }),
     survivingId: targetId,
     removedAtomId: draggedId,

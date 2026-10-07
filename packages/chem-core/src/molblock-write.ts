@@ -23,6 +23,12 @@
  * data block) and R-group definitions (`$RGP` blocks). Those belong in their
  * own modules.
  *
+ * SUPERATOM S-GROUPS ARE WRITTEN (decision 225). A contracted abbreviation is
+ * a `SUP` group over real atoms — V2000 `M  STY`/`SAL`/`SBL`/`SMT`/`SAP`,
+ * V3000 an `SGROUP` block — so the file carries the full structure AND the
+ * label, and a reader that ignores S-groups still gets the right molecule.
+ * Only groups that are contracted right now are written (decision 240).
+ *
  * `doubleBondSide` and `bold` are dropped, and come back from the reader as
  * `auto` and absent. Neither format has a field for them and never will: one
  * says which side of the bond axis a double bond's second line sits on, the
@@ -40,6 +46,8 @@
 
 import { molfileAtomParity, type MolfileAtomParity } from "./atom-parity.js";
 import { hasAromaticFlags, kekulize } from "./aromatic.js";
+import { contractedAbbreviations } from "./abbreviations.js";
+import type { ContractedAbbreviation } from "./abbreviations.js";
 import { requireAtom, requireBond } from "./molecule.js";
 import type { StereoConfig } from "./stereo-config.js";
 import { stereoGroupTag, stereoGroupsOf } from "./stereo-groups.js";
@@ -605,7 +613,8 @@ export function writeMolblock(mol: Molecule, options: MolblockWriteOptions = {})
       `Cannot write a molblock for atoms carrying display labels: ${described}. ` +
         `A label replaces the element symbol only when drawing, so writing the ` +
         `underlying element would export a different molecule than the one on ` +
-        `screen. Expand the abbreviation into atoms or clear the label first.`,
+        `screen. Draw the atoms and contract them to an abbreviation instead ` +
+        `(decision 225), or clear the label.`,
       labelled,
     );
   }
@@ -727,10 +736,11 @@ export function writeMolblock(mol: Molecule, options: MolblockWriteOptions = {})
     headerLine(options.comment),
   ];
 
+  const superatoms = superatomRows(mol, rowOf);
   const body =
     version === "V3000"
-      ? writeV3000(mol, hSource, rowOf, chiral, scale, assertion, groups)
-      : writeV2000(mol, hSource, rowOf, chiral, scale, assertion, parities);
+      ? writeV3000(mol, hSource, rowOf, chiral, scale, assertion, groups, superatoms)
+      : writeV2000(mol, hSource, rowOf, chiral, scale, assertion, parities, superatoms);
 
   return `${[...header, ...body].join("\n")}\n`;
 }
@@ -745,6 +755,7 @@ function writeV2000(
   scale: number,
   assertion: HydrogenAssertion,
   parities: ReadonlyMap<AtomId, MolfileAtomParity>,
+  superatoms: readonly SuperatomRow[],
 ): string[] {
   if (mol.atomIds.length > MAX_V2000_COUNT || mol.bondIds.length > MAX_V2000_COUNT) {
     throw new Error(
@@ -892,6 +903,7 @@ function writeV2000(
   lines.push(...propertyLines("RGP", rgroups));
   lines.push(...atomLists);
   lines.push(...aliases);
+  lines.push(...superatomLinesV2000(superatoms));
   lines.push("M  END");
   return lines;
 }
@@ -966,12 +978,14 @@ function writeV3000(
   scale: number,
   assertion: HydrogenAssertion,
   groups: readonly StereoGroup[],
+  superatoms: readonly SuperatomRow[],
 ): string[] {
   const lines: string[] = [
     `  0  0  0  0  0  0  0  0  0  0999 V3000`,
     `${V30}BEGIN CTAB`,
-    // na nb nsg n3d chiral: no Sgroups and no 3D constraints are ever written.
-    `${V30}COUNTS ${mol.atomIds.length} ${mol.bondIds.length} 0 0 ${chiral}`,
+    // na nb nsg n3d chiral: the S-groups are the contracted abbreviations
+    // (decision 225); no 3D constraints are ever written.
+    `${V30}COUNTS ${mol.atomIds.length} ${mol.bondIds.length} ${superatoms.length} 0 ${chiral}`,
     `${V30}BEGIN ATOM`,
   ];
 
@@ -1093,7 +1107,104 @@ function writeV3000(
     lines.push(`${V30}END COLLECTION`);
   }
 
+  if (superatoms.length > 0) {
+    lines.push(`${V30}BEGIN SGROUP`);
+    superatoms.forEach((sup, index) => {
+      // index type extindex, then keywords. The external index is 0, as
+      // RDKit writes it; nothing refers to a superatom from outside.
+      let content = `${index + 1} SUP 0 ATOMS=(${sup.atomRows.length} ${sup.atomRows.join(" ")})`;
+      if (sup.bondRow !== undefined) content += ` XBONDS=(1 ${sup.bondRow})`;
+      content += ` LABEL=${v30String(sup.label)}`;
+      if (sup.hostRow !== undefined && sup.outsideRow !== undefined) {
+        content += ` SAP=(3 ${sup.hostRow} ${sup.outsideRow} 1)`;
+      }
+      lines.push(...v30Lines(content));
+    });
+    lines.push(`${V30}END SGROUP`);
+  }
+
   lines.push(`${V30}END CTAB`);
   lines.push("M  END");
   return lines;
+}
+
+/** One contracted abbreviation in file terms: rows, not ids. */
+interface SuperatomRow {
+  readonly label: string;
+  /** Ascending. */
+  readonly atomRows: readonly number[];
+  readonly bondRow?: number;
+  readonly hostRow?: number;
+  readonly outsideRow?: number;
+}
+
+/**
+ * Unicode subscript digits as ASCII. A molfile is ASCII, and "CO₂Me" is
+ * what the stamp table spells; every other program writes "CO2Me". The
+ * reader sets digits after a letter back as subscripts.
+ */
+function asciiLabel(label: string): string {
+  return label.replace(/[\u2080-\u2089]/g, (d) => String(d.charCodeAt(0) - 0x2080));
+}
+
+/** The contracted abbreviations as rows, in `contractedAbbreviations` order. */
+function superatomRows(mol: Molecule, rowOf: ReadonlyMap<AtomId, number>): SuperatomRow[] {
+  const bondRowOf = new Map<string, number>();
+  mol.bondIds.forEach((id, index) => bondRowOf.set(id, index + 1));
+  return contractedAbbreviations(mol).map((c: ContractedAbbreviation) => {
+    const atomRows = c.abbreviation.atomIds
+      .map((id) => rowOf.get(id) ?? 0)
+      .sort((a, b) => a - b);
+    const row: {
+      label: string;
+      atomRows: number[];
+      bondRow?: number;
+      hostRow?: number;
+      outsideRow?: number;
+    } = { label: asciiLabel(c.abbreviation.label), atomRows };
+    if (c.bondId !== undefined && c.outsideAtomId !== undefined) {
+      row.bondRow = bondRowOf.get(c.bondId) ?? 0;
+      row.hostRow = rowOf.get(c.hostAtomId) ?? 0;
+      row.outsideRow = rowOf.get(c.outsideAtomId) ?? 0;
+    }
+    return row;
+  });
+}
+
+/** Most entries a V2000 `M  SAL`/`M  SBL` line holds. */
+const SGROUP_LIST_PER_LINE = 15;
+/** Most entries a V2000 `M  STY` line holds. */
+const SGROUP_TYPES_PER_LINE = 8;
+
+/**
+ * The V2000 superatom property lines, in the order and widths RDKit 2025.03
+ * writes them (measured): `STY`, then per group `SAL`, `SBL`, `SMT`, `SAP`.
+ * No `M  SDS EXP`: every group written is contracted.
+ */
+function superatomLinesV2000(superatoms: readonly SuperatomRow[]): string[] {
+  const lines: string[] = [];
+  for (let i = 0; i < superatoms.length; i += SGROUP_TYPES_PER_LINE) {
+    const chunk = superatoms.slice(i, i + SGROUP_TYPES_PER_LINE);
+    lines.push(`M  STY${int(chunk.length, 3)}${chunk.map((_, j) => `${int(i + j + 1, 4)} SUP`).join("")}`);
+  }
+  superatoms.forEach((sup, index) => {
+    const n = index + 1;
+    for (let i = 0; i < sup.atomRows.length; i += SGROUP_LIST_PER_LINE) {
+      const chunk = sup.atomRows.slice(i, i + SGROUP_LIST_PER_LINE);
+      lines.push(`M  SAL${int(n, 4)}${int(chunk.length, 3)}${chunk.map((row) => int(row, 4)).join("")}`);
+    }
+    if (sup.bondRow !== undefined) lines.push(`M  SBL${int(n, 4)}${int(1, 3)}${int(sup.bondRow, 4)}`);
+    lines.push(`M  SMT${int(n, 4)} ${sup.label.replace(/[\r\n]+/g, " ")}`);
+    if (sup.hostRow !== undefined && sup.outsideRow !== undefined) {
+      lines.push(`M  SAP${int(n, 4)}${int(1, 3)}${int(sup.hostRow, 4)}${int(sup.outsideRow, 4)}  1`);
+    }
+  });
+  return lines;
+}
+
+/** A V3000 keyword value: bare when it has no space or quote, else quoted
+ *  with embedded quotes doubled, as the spec says. */
+function v30String(text: string): string {
+  const flat = text.replace(/[\r\n]+/g, " ");
+  return /[\s"]/.test(flat) || flat === "" ? `"${flat.replace(/"/g, '""')}"` : flat;
 }

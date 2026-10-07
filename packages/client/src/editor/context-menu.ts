@@ -61,6 +61,7 @@ import type {
 import type { DisplayFlagKey } from "@starter/shared";
 
 import { canvasPanelFor } from "@/canvas/scene-bridge";
+import { canCollapse, canExpand, collapseMenuLabel } from "@/editor/commands/abbreviations";
 import {
   applyHydrogenCount,
   applyIsotope,
@@ -607,6 +608,21 @@ function fuseRingSection(state: EditorState): MenuSubmenu {
   );
 }
 
+/**
+ * Collapse or Expand, whichever applies (decision 225). A selection holding a
+ * contracted group offers Expand; anything else offers Collapse, named for
+ * the label chem-core recognised when it recognised one. Both rows when a
+ * selection holds a group and more besides.
+ */
+function abbreviationEntries(state: EditorState): MenuEntry[] {
+  const entries: MenuEntry[] = [];
+  if (canExpand(state)) entries.push(command(state, "structure.expand-abbreviation"));
+  if (!canExpand(state) || canCollapse(state)) {
+    entries.push(command(state, "structure.collapse-abbreviation", { label: collapseMenuLabel(state) }));
+  }
+  return entries;
+}
+
 // ---------------------------------------------------------------------------
 // The four menus
 // ---------------------------------------------------------------------------
@@ -622,6 +638,7 @@ function atomMenu(state: EditorState, atomId: AtomId): ContextMenuModel {
       lonePairSection(state),
       stereoSection(state),
       SEPARATOR,
+      ...abbreviationEntries(state),
       command(state, "select.connected"),
       command(state, "edit.delete", { label: "Delete atom" }),
     ],
@@ -718,6 +735,7 @@ function selectionMenu(state: EditorState): ContextMenuModel {
       stereoSection(state),
       submenu("explicit-hydrogens", "Hydrogens", explicitHydrogenEntries(state)),
       SEPARATOR,
+      ...abbreviationEntries(state),
       command(state, "select.connected"),
       command(state, "select.invert"),
       command(state, "select.none"),

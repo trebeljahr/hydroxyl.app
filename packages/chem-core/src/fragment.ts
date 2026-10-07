@@ -33,6 +33,7 @@ import {
   remappedSpeciesJoins,
   speciesJoinsOf,
 } from "./species.js";
+import { abbreviationsOf, graftAbbreviations, remappedAbbreviations } from "./abbreviations.js";
 import {
   graftStereoGroups,
   remappedStereoGroups,
@@ -176,6 +177,8 @@ export function extractFragment(
       // salt copies no join, and copying both copies the statement that they
       // are one species.
       speciesJoins: remappedSpeciesJoins(speciesJoinsOf(mol), atomIdMap),
+      // A label travels only with all of its atoms (decision 240).
+      abbreviations: remappedAbbreviations(abbreviationsOf(mol), atomIdMap),
     }),
     atomIdMap,
     bondIdMap,
@@ -223,6 +226,7 @@ export function extractSelectedPart(
     nextId: fragment.nextId,
     stereoGroups: stereoGroupsOf(fragment),
     speciesJoins: speciesJoinsOf(fragment),
+    abbreviations: abbreviationsOf(fragment),
   });
 }
 
@@ -324,6 +328,11 @@ export function insertFragment(
       speciesJoins: graftSpeciesJoins(
         speciesJoinsOf(target),
         speciesJoinsOf(fragment),
+        atomIdMap,
+      ),
+      abbreviations: graftAbbreviations(
+        abbreviationsOf(target),
+        abbreviationsOf(fragment),
         atomIdMap,
       ),
     }),

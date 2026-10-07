@@ -99,6 +99,18 @@ import { guardedOps } from "@/state/chem-guard";
 import { MAX_ZOOM, MIN_ZOOM, toModel } from "@/state/viewport";
 import type { EditorState, EditorStore, Selection } from "@/state";
 
+import {
+  COLLAPSE_ABBREVIATION_KEYWORDS,
+  COLLAPSE_ABBREVIATION_TITLE,
+  EXPAND_ABBREVIATION_KEYWORDS,
+  EXPAND_ABBREVIATION_TITLE,
+  NOTHING_TO_EXPAND_REASON,
+  canCollapse,
+  canExpand,
+  collapseDisabledReason,
+  collapseSelection,
+  expandSelection,
+} from "./abbreviations";
 import { cleanUpStructure } from "./cleanup";
 import {
   ADD_EXPLICIT_H_KEYWORDS,
@@ -1484,6 +1496,30 @@ const STRUCTURE_COMMANDS: readonly Command[] = [
       },
     }),
   ),
+  // Contracted abbreviations, decision 225. Palette and context menu only,
+  // for decision 89's reason: no free letter is worth spending on them.
+  {
+    id: "structure.collapse-abbreviation",
+    title: COLLAPSE_ABBREVIATION_TITLE,
+    keywords: [...COLLAPSE_ABBREVIATION_KEYWORDS],
+    group: "structure",
+    enabled: canCollapse,
+    disabledReason: collapseDisabledReason,
+    run: (store) => {
+      collapseSelection(store);
+    },
+  },
+  {
+    id: "structure.expand-abbreviation",
+    title: EXPAND_ABBREVIATION_TITLE,
+    keywords: [...EXPAND_ABBREVIATION_KEYWORDS],
+    group: "structure",
+    enabled: canExpand,
+    disabledReason: (state) => (canExpand(state) ? undefined : NOTHING_TO_EXPAND_REASON),
+    run: (store) => {
+      expandSelection(store);
+    },
+  },
   {
     id: "structure.stereo-group-clear",
     title: CLEAR_STEREO_GROUP_TITLE,

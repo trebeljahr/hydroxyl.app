@@ -55,6 +55,7 @@ import {
   atomsCentroid,
   atomsInPolygon,
   atomsInRect,
+  closeOverAbbreviations,
   expandToBonds,
   isDegenerateBond,
   isFusionBond,
@@ -1185,7 +1186,9 @@ function eraseClick(sample: PointerSample): readonly InteractionCommand[] {
       {
         kind: "edit",
         label: LABEL_ERASE,
-        edit: (m) => guardedOps.removeAtoms(m, [hit.atomId]),
+        // A contracted label is its atoms (decision 225): rubbing out "Boc"
+        // takes all seven, not the one the label sits on.
+        edit: (m) => guardedOps.removeAtoms(m, closeOverAbbreviations(m, [hit.atomId])),
       },
       // The erased atom cannot stay selected; `applyMoleculeEdit` prunes it,
       // but the bonds it took with it are pruned in the same pass and the

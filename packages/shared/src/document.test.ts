@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 
 import {
   atomNumbering,
+  attachGroupToAtom,
+  collapseAbbreviation,
   benzene,
   buildMolecule,
   carbohydrates,
@@ -1265,6 +1267,37 @@ describe("the scheme model (schema v2)", () => {
     const reordered = structuredClone(encoded);
     reordered.molecule.speciesJoins = [{ atomIds: ["a13", "a9"] }];
     expect(decodeDocument(reordered)).toEqual(joined);
+  });
+
+  it("round-trips a contracted abbreviation and refuses a malformed one (decision 225)", () => {
+    const ring = benzene();
+    const amine = attachGroupToAtom(ring, ring.atomIds[0]!, "NH2");
+    const boc = attachGroupToAtom(amine.molecule, amine.atomIds[0]!, "Boc");
+    const doc = createDocument({
+      molecule: collapseAbbreviation(boc.molecule, boc.atomIds, "Boc"),
+      now: NOW,
+    });
+    const decoded = roundTrip(doc);
+    expect(decoded).toEqual(doc);
+    expect(decoded.molecule.abbreviations).toEqual([{ label: "Boc", atomIds: [...boc.atomIds] }]);
+
+    const encoded = JSON.parse(JSON.stringify(encodeDocument(doc))) as Record<string, any>;
+    const bad: ((copy: Record<string, any>) => void)[] = [
+      (copy) => (copy.molecule.abbreviations = []),
+      (copy) => (copy.molecule.abbreviations = [{ label: " ", atomIds: [boc.atomIds[0]] }]),
+      (copy) => (copy.molecule.abbreviations = [{ label: "Ph", atomIds: [] }]),
+      (copy) => (copy.molecule.abbreviations = [{ label: "Boc", atomIds: ["constructor"] }]),
+      (copy) =>
+        (copy.molecule.abbreviations = [
+          { label: "A", atomIds: [boc.atomIds[0]] },
+          { label: "B", atomIds: [boc.atomIds[0]] },
+        ]),
+    ];
+    for (const breakIt of bad) {
+      const copy = structuredClone(encoded);
+      breakIt(copy);
+      expect(safeDecodeDocument(copy).ok, String(breakIt)).toBe(false);
+    }
   });
 
   /** `scheme()` plus acetate's O- lone pair to a new O-Na bond: ann_4, index 3. */

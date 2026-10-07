@@ -156,6 +156,36 @@ export interface SpeciesJoin {
   readonly atomIds: readonly AtomId[];
 }
 
+/**
+ * A contracted abbreviation (decision 225): real atoms drawn as one label —
+ * "Boc", "OTBS", "Ph" — with the one bond that joins them to the rest of the
+ * structure left in place.
+ *
+ * A DISPLAY GROUPING OVER ATOMS THAT STAY IN THE GRAPH. Formula, mass,
+ * valence, issues and SMILES read the atoms exactly as if the label were not
+ * there; only drawing (`contractedView` in abbreviations.ts) and the molfile's
+ * `SUP` S-group read this record. That is the line decision 8 draws: an
+ * `Atom.label` with no atoms behind it is still refused at export, because
+ * nothing says what it stands for, while a superatom says exactly that.
+ *
+ * NO ATTACHMENT FIELD. The atom a label sits on and the bond it is joined by
+ * are DERIVED: the one bond with exactly one end inside the group, and its
+ * inside end. Storing them would be a second copy of a fact the bonds already
+ * hold, and every bond edit would have to keep the two in step. A group with
+ * more than one such bond no longer has one place to sit and is drawn
+ * expanded (decision 240) until the extra bond goes.
+ *
+ * NO EXPANDED STATE. Expanding removes the record; the label is cheap to
+ * offer again, and a stored-but-hidden grouping would be a second thing a
+ * user could not see and an export would still write.
+ */
+export interface Abbreviation {
+  /** What is drawn in place of the atoms, as typed. Never blank. */
+  readonly label: string;
+  /** Deduplicated, ascending by `compareIds`; never empty. */
+  readonly atomIds: readonly AtomId[];
+}
+
 export interface Atom {
   readonly id: AtomId;
   readonly element: ElementSymbol;
@@ -200,8 +230,10 @@ export interface Atom {
   readonly lonePairs?: number;
   /**
    * Free-text label that replaces the element symbol when drawing, for
-   * abbreviations and placeholders: "R", "Ph", "Boc", "X". Purely a display
-   * concern — valence and formula still use `element`.
+   * placeholders: "R", "X". Purely a display concern — valence and formula
+   * still use `element`, and molblock export refuses it (decision 8). An
+   * abbreviation with real atoms behind it ("Boc" over seven atoms) is an
+   * `Abbreviation` on the molecule instead (decision 225), which exports.
    */
   readonly label?: string;
   /**
@@ -303,6 +335,15 @@ export interface Molecule {
    * one place the list is validated and put in canonical order.
    */
   readonly speciesJoins?: readonly SpeciesJoin[];
+  /**
+   * Contracted abbreviations (decision 225). See `Abbreviation`.
+   *
+   * ON THE MOLECULE for `speciesJoins`' reason: a copy, a paste, a delete and
+   * an undo have to carry the grouping with its atoms, and a molfile writes it
+   * as an S-group. The key is OMITTED when nothing is contracted, never
+   * `[]`; `withAbbreviations` in abbreviations.ts validates and orders it.
+   */
+  readonly abbreviations?: readonly Abbreviation[];
 }
 
 /**

@@ -38,7 +38,7 @@
  * of the same molecule, not a molecule with bigger labels.
  */
 
-import { NO_HIT, hitTest } from "@starter/chem-core";
+import { NO_HIT, contractedView, hitTest } from "@starter/chem-core";
 import type { Hit, Molecule, Vec2 } from "@starter/chem-core";
 import { pxPerModelUnit, pxToModel } from "@starter/chem-render";
 
@@ -115,7 +115,11 @@ export function pickAt(
     : DEFAULT_PICK_TOLERANCE_PX;
   const tolerance = grabPx / screenPxPerModelUnit;
 
-  return hitTest(ctx.molecule, point, {
+  // Against the molecule AS DRAWN (decision 225): a contracted abbreviation's
+  // hidden atoms are not on the page, so a click where one would sit must not
+  // land on it. The label's host keeps its id, so a hit on "Boc" is a hit on
+  // that atom, and the selection slice widens it to the whole group.
+  return hitTest(contractedView(ctx.molecule).molecule, point, {
     // Wrapped rather than passed as a bare method reference: `labelRadius` is
     // a closure on the index today, but handing a method to a callback slot
     // strips its receiver, and an index that ever becomes a class would fail

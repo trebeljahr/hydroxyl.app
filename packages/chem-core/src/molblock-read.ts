@@ -37,6 +37,7 @@
  * the legend is a later item), bond topology, Sgroups and templates.
  */
 
+import { withAbbreviations } from "./abbreviations.js";
 import type { StatedAtomParity } from "./atom-parity.js";
 import {
   elementBySymbol,
@@ -289,6 +290,31 @@ export type MolblockWarning =
       readonly message: string;
       readonly line: number;
       readonly atomIds: readonly AtomId[];
+    }
+  | {
+      /**
+       * An S-group of a type this reader does not model — a data S-group, a
+       * polymer bracket, a multiple group. Dropped: each is an annotation on
+       * the graph, and the graph itself was read. Only `SUP` is modelled
+       * (decision 225).
+       */
+      readonly kind: "unsupported-sgroup";
+      readonly message: string;
+      readonly line: number;
+      /** The type as the file spells it: `DAT`, `SRU`, `MUL`... */
+      readonly type: string;
+    }
+  | {
+      /**
+       * A `SUP` S-group that could not become a contracted abbreviation: it
+       * names an atom that is not there, shares an atom with an earlier one,
+       * or has no label. The atoms are read regardless, so the structure is
+       * the file's; only the label is lost and the group is drawn expanded.
+       */
+      readonly kind: "dropped-superatom";
+      readonly message: string;
+      readonly line: number;
+      readonly label: string;
     };
 
 export interface MolblockReadResult {
@@ -571,6 +597,14 @@ interface StereoCollectionRow {
   readonly line: number;
 }
 
+/** One `SUP` S-group as the file states it (decision 225). `rows` are atom
+ *  indices as written, resolved the way bond endpoints are. */
+interface SuperatomSgroup {
+  readonly label: string;
+  readonly rows: readonly number[];
+  readonly line: number;
+}
+
 /**
  * The element symbol sits in columns 32-34. A few writers (and every
  * hand-edited file) put it somewhere else on an otherwise well-formed line,
@@ -819,6 +853,7 @@ export function readMolblock(
       body.atoms,
       body.bonds,
       body.collections,
+      body.superatoms,
       scale,
       warnings,
     );
@@ -1050,6 +1085,8 @@ export function readMolblock(
   const rgroupByRow = new Map<number, number>();
   const listByRow = new Map<number, AtomQuery>();
   const aliasByRow = new Map<number, string>();
+  // S-groups by the file's own index; V2000 spreads one over several lines.
+  const sgroups = new Map<number, V2000Sgroup>();
 
   for (let i = bondBlockStart + readBondLines; i < lines.length; i++) {
     const line = lines[i] ?? "";
@@ -1101,6 +1138,10 @@ export function readMolblock(
       } else {
         listByRow.set(index, list);
       }
+      continue;
+    }
+    if (SGROUP_TAGS.has(tag)) {
+      readV2000SgroupLine(tag, line, i + 1, sgroups, warnings);
       continue;
     }
     if (tag !== "CHG" && tag !== "ISO" && tag !== "RAD" && tag !== "RGP") continue;
@@ -1206,7 +1247,8 @@ export function readMolblock(
     };
   });
 
-  const { molecule, atomParities } = assembleMolecule(parsed, bondRows, [], scale, warnings);
+  const superatoms = v2000Superatoms(sgroups, warnings);
+  const { molecule, atomParities } = assembleMolecule(parsed, bondRows, [], superatoms, scale, warnings);
   return { molecule, title, comment, warnings, atomParities };
 }
 
@@ -1220,6 +1262,7 @@ function assembleMolecule(
   atomRows: readonly ParsedAtom[],
   bondRows: readonly ParsedBond[],
   collections: readonly StereoCollectionRow[],
+  superatoms: readonly SuperatomSgroup[],
   scale: number,
   warnings: MolblockWarning[],
 ): { readonly molecule: Molecule; readonly atomParities: Readonly<Record<AtomId, StatedAtomParity>> } {
@@ -1484,6 +1527,35 @@ function assembleMolecule(
     // coalescing several `STEABS` lines first. Every conflict it would throw on
     // has already been turned into a warning above, so it cannot throw here.
     molecule = withStereoGroups(molecule, groups);
+  }
+
+  // Superatoms, after the collections and for the same reason: they name rows.
+  // A group that cannot be honoured whole is dropped with its label and the
+  // atoms stay (decision 240) — a "Boc" over the four carbons that survived
+  // would be a wrong label, which is worse than an expanded drawing.
+  if (superatoms.length > 0) {
+    const kept: { label: string; atomIds: AtomId[] }[] = [];
+    const owned = new Set<AtomId>();
+    for (const sup of superatoms) {
+      const ids = sup.rows.map((row) => (row >= 1 && row <= atomRows.length ? rowToAtomId[row] : undefined));
+      let reason: string | undefined;
+      if (sup.label.trim() === "") reason = "it has no label";
+      else if (ids.length === 0) reason = "it names no atoms";
+      else if (ids.some((id) => id === undefined)) reason = "it names an atom that is not in the file";
+      else if (ids.some((id) => owned.has(id!))) reason = "it shares an atom with an earlier abbreviation";
+      if (reason !== undefined) {
+        warnings.push({
+          kind: "dropped-superatom",
+          message: `The abbreviation "${sup.label}" was drawn expanded: ${reason}. Its atoms were read.`,
+          line: sup.line,
+          label: sup.label,
+        });
+        continue;
+      }
+      for (const id of ids) owned.add(id!);
+      kept.push({ label: sup.label, atomIds: ids as AtomId[] });
+    }
+    molecule = withAbbreviations(molecule, kept);
   }
 
   // The parity column, by the id each row became (decision 207). Keyed on
@@ -1951,6 +2023,7 @@ interface V3000Body {
   readonly atoms: ParsedAtom[];
   readonly bonds: ParsedBond[];
   readonly collections: StereoCollectionRow[];
+  readonly superatoms: SuperatomSgroup[];
 }
 
 /**
@@ -1971,6 +2044,7 @@ function readV3000Body(entries: readonly V30Entry[], warnings: MolblockWarning[]
   const atoms: ParsedAtom[] = [];
   const bonds: ParsedBond[] = [];
   const collections: StereoCollectionRow[] = [];
+  const superatoms: SuperatomSgroup[] = [];
   /** Nonzero z coordinates, by atom row — a 3D conformer, reported once. */
   const spatialRows: number[] = [];
 
@@ -1989,7 +2063,13 @@ function readV3000Body(entries: readonly V30Entry[], warnings: MolblockWarning[]
         continue;
       }
       if (boundary.open) {
-        if (boundary.key === "CTAB" || boundary.key === "ATOM" || boundary.key === "BOND" || boundary.key === "COLLECTION") {
+        if (
+          boundary.key === "CTAB" ||
+          boundary.key === "ATOM" ||
+          boundary.key === "BOND" ||
+          boundary.key === "COLLECTION" ||
+          boundary.key === "SGROUP"
+        ) {
           open.push(boundary.key);
         } else {
           warnings.push({
@@ -2043,6 +2123,12 @@ function readV3000Body(entries: readonly V30Entry[], warnings: MolblockWarning[]
       continue;
     }
 
+    if (block === "SGROUP") {
+      const superatom = readV3000Sgroup(entry, fields, warnings);
+      if (superatom) superatoms.push(superatom);
+      continue;
+    }
+
     // A row directly inside the CTAB that is not a counts line and not a block
     // boundary: a link line, or something this reader has never seen.
     if (block === "CTAB") {
@@ -2067,7 +2153,7 @@ function readV3000Body(entries: readonly V30Entry[], warnings: MolblockWarning[]
     });
   }
 
-  return { atoms, bonds, collections };
+  return { atoms, bonds, collections, superatoms };
 }
 
 /**
@@ -2313,4 +2399,154 @@ function readV3000Collection(
   }
 
   return { kind, index, rows: list.values, line: entry.line };
+}
+
+// ---------------------------------------------------------------------------
+// S-groups (decision 225): SUP is read, every other type is reported
+// ---------------------------------------------------------------------------
+
+/**
+ * Digits after a letter or a closing bracket, set as subscripts: "CO2Me" is
+ * "CO₂Me", the spelling the stamp table and a scheme use. The writer folds
+ * them to ASCII, so this is its inverse for every label the table makes. A
+ * leading digit ("2-Np") is left alone: it is a locant, not a count.
+ */
+function subscriptLabel(label: string): string {
+  return label.replace(/(?<=[A-Za-z)\]])\d+/g, (digits) =>
+    [...digits].map((d) => String.fromCharCode(0x2080 + Number(d))).join(""),
+  );
+}
+
+/** The V2000 property tags that make up an S-group. */
+const SGROUP_TAGS: ReadonlySet<string> = new Set(["STY", "SAL", "SMT", "SDS"]);
+
+/** One V2000 S-group as its property lines accumulate it. */
+interface V2000Sgroup {
+  type: string;
+  line: number;
+  rows: number[];
+  label: string;
+  expanded: boolean;
+}
+
+/**
+ * Fold one `M  STY` / `M  SAL` / `M  SMT` / `M  SDS` line into `sgroups`.
+ * Read by whitespace-separated tokens, not columns: the widths are fixed in
+ * the spec, but writers disagree about the padding and the tokens never
+ * contain spaces. `SBL` and `SAP` are not read; the attachment is derived
+ * from the bonds (see `Abbreviation`).
+ */
+function readV2000SgroupLine(
+  tag: string,
+  line: string,
+  lineNumber: number,
+  sgroups: Map<number, V2000Sgroup>,
+  warnings: MolblockWarning[],
+): void {
+  const body = line.slice(6);
+  const ensure = (index: number): V2000Sgroup => {
+    let group = sgroups.get(index);
+    if (group === undefined) {
+      group = { type: "", line: lineNumber, rows: [], label: "", expanded: false };
+      sgroups.set(index, group);
+    }
+    return group;
+  };
+  const tokens = body.trim().split(/\s+/);
+  if (tag === "STY") {
+    // n, then n pairs of index and type.
+    const count = Number.parseInt(tokens[0] ?? "", 10);
+    for (let i = 0; i < count; i++) {
+      const index = Number.parseInt(tokens[1 + 2 * i] ?? "", 10);
+      const type = tokens[2 + 2 * i];
+      if (!Number.isFinite(index) || type === undefined) break;
+      const group = ensure(index);
+      group.type = type.toUpperCase();
+      group.line = lineNumber;
+    }
+    return;
+  }
+  if (tag === "SAL") {
+    // index, n, then n atom indices; a group over fifteen atoms repeats it.
+    const index = Number.parseInt(tokens[0] ?? "", 10);
+    const count = Number.parseInt(tokens[1] ?? "", 10);
+    if (!Number.isFinite(index) || !Number.isFinite(count)) {
+      warnings.push({ kind: "bad-property-line", message: `Unreadable "M  SAL" line; ignored.`, line: lineNumber });
+      return;
+    }
+    for (const raw of tokens.slice(2, 2 + count)) {
+      const row = Number.parseInt(raw, 10);
+      if (Number.isFinite(row)) ensure(index).rows.push(row);
+    }
+    return;
+  }
+  if (tag === "SMT") {
+    // index, then free text to the end of the line.
+    const match = /^\s*(\d+)\s(.*)$/.exec(body);
+    if (match === null) return;
+    ensure(Number.parseInt(match[1]!, 10)).label = match[2]!.trim();
+    return;
+  }
+  // SDS EXP: n, then the indices of the groups drawn expanded.
+  if (tokens[0]?.toUpperCase() !== "EXP") return;
+  const count = Number.parseInt(tokens[1] ?? "", 10);
+  for (const raw of tokens.slice(2, 2 + count)) {
+    const index = Number.parseInt(raw, 10);
+    if (Number.isFinite(index)) ensure(index).expanded = true;
+  }
+}
+
+/** The V2000 S-groups that become abbreviations, in index order; the rest
+ *  reported. An expanded `SUP` is the file saying "draw the atoms", which is
+ *  what no abbreviation means, so it is dropped without a word. */
+function v2000Superatoms(sgroups: ReadonlyMap<number, V2000Sgroup>, warnings: MolblockWarning[]): SuperatomSgroup[] {
+  const out: SuperatomSgroup[] = [];
+  for (const [, group] of [...sgroups].sort(([a], [b]) => a - b)) {
+    if (group.type !== "SUP") {
+      warnings.push({
+        kind: "unsupported-sgroup",
+        message: `An S-group of type "${group.type || "?"}" is not supported and was dropped; the structure itself was read.`,
+        line: group.line,
+        type: group.type,
+      });
+      continue;
+    }
+    if (group.expanded) continue;
+    out.push({ label: subscriptLabel(group.label), rows: group.rows, line: group.line });
+  }
+  return out;
+}
+
+/** A V3000 keyword string value, unquoted: `"a ""b"""` -> `a "b"`. */
+function v30StringValue(raw: string | undefined): string {
+  if (raw === undefined) return "";
+  if (raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"')) return raw.slice(1, -1).replace(/""/g, '"');
+  return raw;
+}
+
+/** One `index type extindex [KEY=val ...]` S-group row. */
+function readV3000Sgroup(
+  entry: V30Entry,
+  fields: readonly string[],
+  warnings: MolblockWarning[],
+): SuperatomSgroup | undefined {
+  const type = (fields[1] ?? "").toUpperCase();
+  if (type !== "SUP") {
+    warnings.push({
+      kind: "unsupported-sgroup",
+      message: `An S-group of type "${fields[1] ?? "?"}" is not supported and was dropped; the structure itself was read.`,
+      line: entry.line,
+      type,
+    });
+    return undefined;
+  }
+  const keywords = v30Keywords(fields.slice(3));
+  // ESTATE=E is V3000's "drawn expanded" — see `v2000Superatoms`.
+  if ((keywords.get("ESTATE") ?? "").toUpperCase() === "E") return undefined;
+  const list = keywordList(keywords, "ATOMS");
+  return {
+    label: subscriptLabel(v30StringValue(keywords.get("LABEL"))),
+    rows: list?.values ?? [],
+    line: entry.line,
+  };
 }
