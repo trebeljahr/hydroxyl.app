@@ -63,6 +63,7 @@ function oxidation(): SketchDocument {
     // Screen, the preset a new document does NOT open in (decision 135), so a
     // copy that dropped it would come back in Publication and show.
     stylePreset: "screen",
+    styleOverrides: { screen: { lineWidthPt: 1.2, bondColor: "#1d4ed8" } },
     panels: [createPanel("skeletal", "Scheme 1", "screen")],
     figure: { columns: 2 },
     // Explicit locants the user typed: the reacting carbon on each side.
@@ -96,6 +97,7 @@ describe("copyOf", () => {
     annotations: "kept",
     nextAnnotationId: "kept",
     stylePreset: "kept",
+    styleOverrides: "kept",
     panels: "kept",
     figure: "kept",
     locants: "kept",

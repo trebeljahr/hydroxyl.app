@@ -43,6 +43,7 @@ import {
   touchDocument,
   withFigureLayout,
   withLocants,
+  withStyleOverrides,
   type DisplayFlagKey,
   type Panel,
   type Representation,
@@ -441,6 +442,18 @@ export function createDocumentSlice(
           ...before,
           stylePreset: preset,
         });
+      },
+
+      setStyleOverrides(overrides) {
+        const before = get().document;
+        const after = withStyleOverrides(before, before.stylePreset, overrides);
+        if (after === before) return;
+        commitDocument(
+          overrides === null || Object.keys(overrides).length === 0
+            ? "Reset style to preset"
+            : "Edit figure style",
+          after,
+        );
       },
 
       setDocumentTitle(title) {

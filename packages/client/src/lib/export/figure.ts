@@ -15,9 +15,10 @@
  *
  * Every export path — the SVG file, the PNG, Copy figure and the dialog's
  * preview — composes with `figureStyle(doc, choice)`, so the four can never
- * disagree about what the file looks like. The choice defaults to
- * `PUBLICATION_STYLE` whatever the canvas shows, and "canvas" resolves through
- * `renderStyleFor(doc)`, the same function the canvas draws with.
+ * disagree about what the file looks like. The choice defaults to the
+ * document's Publication style — the preset with the document's Publication
+ * edits applied (decision 237) — whatever the canvas shows, and "canvas"
+ * resolves through `renderStyleFor(doc)`, the function the canvas draws with.
  *
  * This partly reverses decision 21 ("export what the canvas shows"). At the
  * fixed printed bond Screen sets 5.2 pt labels where the ACS 1996 setting
@@ -78,6 +79,7 @@ import type { SketchDocument } from "@starter/shared";
 import {
   STYLE_PRESET_TITLES,
   documentNumbering,
+  presetStyleFor,
   renderStyleFor,
   toRenderRepresentation,
 } from "@/canvas/scene-bridge";
@@ -122,7 +124,9 @@ export function rasterBackground(choice: PngBackground): string | null {
  * resolution rather than a copy of it, so it cannot pick a different preset.
  */
 export function figureStyle(doc: SketchDocument, choice: FigureStyleChoice): RenderStyle {
-  return choice === "canvas" ? renderStyleFor(doc) : PUBLICATION_STYLE;
+  // "publication" is THIS DOCUMENT's Publication style: the preset with the
+  // document's Publication edits applied (decision 237).
+  return choice === "canvas" ? renderStyleFor(doc) : presetStyleFor(doc, "publication");
 }
 
 /**

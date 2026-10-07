@@ -104,6 +104,7 @@ export function copyOf(
     author: doc.metadata.author,
     notes: doc.metadata.notes,
     stylePreset: doc.stylePreset,
+    styleOverrides: doc.styleOverrides,
     panels: doc.panels,
     figure: doc.figure,
     // Keyed on atom ids, which a copy keeps: the same molecule, numbered the same.

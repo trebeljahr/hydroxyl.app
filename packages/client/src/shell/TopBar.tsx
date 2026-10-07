@@ -48,6 +48,7 @@ import { recentsHref } from "@/lib/deployment";
 import { cn } from "@/lib/utils";
 import { editorStore, useEditorStore } from "@/state";
 
+import { StylePanelButton } from "./StylePanel";
 import { useTheme } from "./theme";
 
 function isApplePlatform(): boolean {
@@ -242,6 +243,7 @@ export function TopBar(): ReactElement {
 
       <div className="ml-auto flex items-center gap-1">
         <StylePresetSwitch />
+        <StylePanelButton />
         <CommandButton id="structure.insert" label="Insert a structure">
           <>
             <FlaskConicalIcon className="size-4" />

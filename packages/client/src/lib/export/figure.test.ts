@@ -23,9 +23,10 @@ import {
 } from "@starter/chem-core";
 import { dictionaryEntryById } from "@starter/chem-core/dictionary";
 import type { Molecule } from "@starter/chem-core";
-import { createDocument, createPanel, defaultPanelsFor } from "@starter/shared";
+import { createDocument, createPanel, defaultPanelsFor, withStyleOverrides } from "@starter/shared";
 import type { SketchDocument } from "@starter/shared";
 
+import { renderStyleFor } from "@/canvas/scene-bridge";
 import { INITIAL_UI_STATE } from "@/state/slices/ui";
 import type { FigureExportSettings } from "@/state/types";
 
@@ -295,6 +296,35 @@ describe("the figure a document exports", () => {
     expect(figureStyleNotice(screen, asCanvas)).toBeNull();
     expect(labelSizeNotice(p, asCanvas)?.advice).toContain("such as Publication");
     expect(figureStyleNotice(publication, asCanvas)).toBeNull();
+  });
+
+  it("exports the document's edited style, and the canvas draws the same object (decision 237)", () => {
+    const edited = withStyleOverrides(
+      onePanelDoc(benzene(), "publication"),
+      "publication",
+      { lineWidthPt: 1.2, bondLengthMm: 6, bondColor: "#1d4ed8" },
+    );
+    const style = renderStyleFor(edited);
+    expect(style).not.toBe(PUBLICATION_STYLE);
+    // Resolved once per edit set: the canvas and both export choices share it.
+    expect(renderStyleFor({ ...edited })).toBe(style);
+    expect(documentFigure(edited, "publication").style).toBe(style);
+    expect(documentFigure(edited, "canvas").style).toBe(style);
+    expect(figureStyleNotice(edited, SINGLE_300)).toBeNull();
+
+    const p = prepared(edited);
+    expect(p.size.bondLengthMm).toBeCloseTo(6, 6);
+    expect(p.size.fontSizePt).toBeCloseTo(10, 6);
+    expect(bondLengthNotice(p)).toBeNull();
+    const svg = figureSvgForFile(p);
+    expect(svg).toContain("#1d4ed8");
+    expect(svg).not.toBe(figureSvgForFile(prepared(onePanelDoc(benzene(), "publication"))));
+
+    // A Screen edit leaves the Publication export untouched.
+    const screenOnly = withStyleOverrides(onePanelDoc(benzene(), "publication"), "screen", {
+      lineWidthPt: 3,
+    });
+    expect(documentFigure(screenOnly, "publication").style).toBe(PUBLICATION_STYLE);
   });
 
   it("reports the bond as drawn, and says why, for a drawing not at the standard bond", () => {

@@ -32,7 +32,7 @@ import type {
   RingTemplateName,
   Vec2,
 } from "@starter/chem-core";
-import type { SchemeAnnotationId } from "@starter/chem-render";
+import type { FigureStyleOverrides, SchemeAnnotationId } from "@starter/chem-render";
 import type {
   PanelId,
   RepresentationDisplay,
@@ -306,6 +306,13 @@ export interface DocumentSlice {
    */
   removeSchemeAnnotations(label: string, ids: readonly SchemeAnnotationId[]): void;
   setStylePreset(preset: StylePresetId): void;
+  /**
+   * Replaces the CURRENT preset's figure-style edits (decision 237), as one
+   * undo entry; `null` or an empty set is "Reset to preset". A set equal to
+   * the stored one pushes nothing. Throws on a value outside the ranges, so a
+   * caller validates first (the style panel does, per field).
+   */
+  setStyleOverrides(overrides: FigureStyleOverrides | null): void;
   setDocumentTitle(title: string): void;
   /**
    * Take on a title that was set OUTSIDE this editor — renamed in another tab

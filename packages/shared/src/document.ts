@@ -79,7 +79,9 @@ import {
   assembleSchemeAnnotation,
   defaultFlagsFor,
   schemeAnnotationId,
+  styleOverrideIssues,
   type DisplayFlagKey,
+  type FigureStyleOverrides,
   type DisplayFlags,
   type SchemeAnnotation,
   type SchemeAnnotationId,
@@ -139,6 +141,27 @@ export type StylePresetId = "publication" | "nature" | "screen";
  * This is only the answer when nobody has chosen.
  */
 export const NEW_DOCUMENT_PRESET: StylePresetId = "publication";
+
+/** Every preset id, in the order the file schema lists them. */
+export const STYLE_PRESET_IDS: readonly StylePresetId[] = Object.freeze([
+  "publication",
+  "nature",
+  "screen",
+]);
+
+/**
+ * A document's edits to its figure style (decisions 223 and 237), kept PER
+ * PRESET: the Publication edits and the Screen edits are separate sets, each
+ * over its own preset, in print units (chem-render's `FigureStyleParams`).
+ *
+ * Per preset because the top-bar switch is a view toggle people flip while
+ * editing (decision 107); one shared set would either be lost on every flip
+ * or turn Screen into a copy of Publication. A preset with no edits has no
+ * key, and a document with none has no `styleOverrides` key at all.
+ */
+export type DocumentStyleOverrides = Readonly<
+  Partial<Record<StylePresetId, Readonly<FigureStyleOverrides>>>
+>;
 
 /**
  * THE VIEW KINDS AND THE DISPLAY FLAGS ARE CHEM-RENDER'S, IMPORTED (decision
@@ -287,6 +310,13 @@ export interface SketchDocument {
    */
   readonly nextAnnotationId: number;
   readonly stylePreset: StylePresetId;
+  /**
+   * The figure-style edits, per preset (decision 237). The canvas and every
+   * export draw `stylePreset` with its entry applied, so what is edited is
+   * what is exported (decision 107). Omitted when nothing is edited;
+   * `withStyleOverrides` is the one writer.
+   */
+  readonly styleOverrides?: DocumentStyleOverrides;
   readonly panels: readonly Panel[];
   /** Omitted, never `undefined`, when no layout has been chosen. */
   readonly figure?: FigureLayout;
@@ -551,6 +581,8 @@ export interface CreateDocumentInit {
   /** Defaults to one past the highest `ann_<n>` among `annotations`. */
   readonly nextAnnotationId?: number | undefined;
   readonly stylePreset?: StylePresetId | undefined;
+  /** Carried by a copy; nothing else creates a document with edits. */
+  readonly styleOverrides?: DocumentStyleOverrides | undefined;
   /** Stored as `assemblePanel` would write them (a view canonical, no key
    *  holding `undefined`); a panel already in that form is kept by reference. */
   readonly panels?: readonly Panel[] | undefined;
@@ -613,7 +645,67 @@ export function createDocument(init: CreateDocumentInit = {}): SketchDocument {
   };
   // Assigned only when present, so a document with no layout has no key.
   const laid = init.figure === undefined ? doc : withFigureLayout(doc, init.figure);
-  return init.locants === undefined ? laid : withLocants(laid, init.locants);
+  const numbered = init.locants === undefined ? laid : withLocants(laid, init.locants);
+  return init.styleOverrides === undefined
+    ? numbered
+    : withAllStyleOverrides(numbered, init.styleOverrides);
+}
+
+/**
+ * `doc` with one preset's style edits replaced, or removed with `null`. The
+ * one place a `styleOverrides` entry is written: undefined-valued keys are
+ * dropped, an empty set removes the preset's entry, and no entries removes
+ * the key. Returns `doc` itself when nothing changes, so a no-op is not an
+ * undo step. Throws on a value chem-render's `styleOverrideIssues` refuses.
+ */
+export function withStyleOverrides(
+  doc: SketchDocument,
+  preset: StylePresetId,
+  overrides: FigureStyleOverrides | null,
+): SketchDocument {
+  const cleaned =
+    overrides === null
+      ? {}
+      : Object.fromEntries(Object.entries(overrides).filter(([, v]) => v !== undefined));
+  const issues = styleOverrideIssues(cleaned);
+  if (issues.length > 0) {
+    throw new Error(`Invalid figure style: ${issues.map((i) => i.message).join("; ")}.`);
+  }
+  const current = doc.styleOverrides?.[preset];
+  if (sameOverrides(current, cleaned)) return doc;
+  const entries = STYLE_PRESET_IDS.flatMap((id) => {
+    // The untouched presets keep their set BY REFERENCE: the client memoises
+    // a resolved style on that object, and an edit to Screen must not make
+    // the Publication style a new object.
+    const value = id === preset ? Object.freeze({ ...cleaned }) : doc.styleOverrides?.[id];
+    return value === undefined || Object.keys(value).length === 0 ? [] : [[id, value] as const];
+  });
+  const { styleOverrides: _previous, ...rest } = doc;
+  void _previous;
+  if (entries.length === 0) return rest;
+  return { ...rest, styleOverrides: Object.freeze(Object.fromEntries(entries)) };
+}
+
+function withAllStyleOverrides(
+  doc: SketchDocument,
+  overrides: DocumentStyleOverrides,
+): SketchDocument {
+  return STYLE_PRESET_IDS.reduce(
+    (next, id) => withStyleOverrides(next, id, overrides[id] ?? null),
+    doc,
+  );
+}
+
+function sameOverrides(
+  a: Readonly<FigureStyleOverrides> | undefined,
+  b: Readonly<Record<string, unknown>>,
+): boolean {
+  const left: Readonly<Record<string, unknown>> = a ?? {};
+  const keys = Object.keys(left);
+  return (
+    keys.length === Object.keys(b).length &&
+    keys.every((k) => Object.hasOwn(b, k) && left[k] === b[k])
+  );
 }
 
 /**
@@ -2154,6 +2246,38 @@ const locantsSchema = z.preprocess(
   z.record(nonEmptyString, z.string().max(MAX_LOCANT_LENGTH)),
 );
 
+/**
+ * One preset's style edits. Values are checked by chem-render's
+ * `styleOverrideIssues`, the rule `withStyleOverrides` applies, so a file and
+ * an edit cannot disagree; an out-of-range value is refused, not clamped
+ * (decision 110). An empty set is refused as a second spelling of "no edits".
+ */
+const presetStyleOverridesSchema = z
+  .record(z.string(), z.union([z.number(), z.string()]))
+  .superRefine((value, ctx) => {
+    if (Object.hasOwn(value, "__proto__")) {
+      ctx.addIssue({ code: "custom", message: "__proto__ is not a style value", path: ["__proto__"] });
+    }
+    if (Object.keys(value).length === 0) {
+      ctx.addIssue({ code: "custom", message: "an empty style edit is written by omitting the key" });
+    }
+    for (const issue of styleOverrideIssues(value)) {
+      ctx.addIssue({ code: "custom", message: issue.message, path: [issue.key] });
+    }
+  });
+
+const styleOverridesSchema = z
+  .strictObject({
+    publication: presetStyleOverridesSchema.optional(),
+    nature: presetStyleOverridesSchema.optional(),
+    screen: presetStyleOverridesSchema.optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (Object.keys(value).length === 0) {
+      ctx.addIssue({ code: "custom", message: "no style edits is written by omitting the key" });
+    }
+  });
+
 export const sketchDocumentSchema = z
   .strictObject({
     // EXACTLY this version. A newer one is rejected outright; an older one
@@ -2166,6 +2290,8 @@ export const sketchDocumentSchema = z
     annotations: z.array(annotationSchema),
     nextAnnotationId: z.number().int().positive(),
     stylePreset: z.enum(["publication", "nature", "screen"]),
+    // Optional and additive on v2, like `figure` (decision 237).
+    styleOverrides: styleOverridesSchema.optional(),
     panels: z.array(panelSchema),
     // Optional and additive: a file from before the field existed has no key,
     // and still decodes at SCHEMA_VERSION 1. See `FigureLayout`.
@@ -2241,7 +2367,10 @@ export const sketchDocumentSchema = z
       metadata: doc.metadata,
     };
     const laid = doc.figure === undefined ? base : withFigureLayout(base, doc.figure);
-    return doc.locants === undefined ? laid : withLocants(laid, doc.locants);
+    const numbered = doc.locants === undefined ? laid : withLocants(laid, doc.locants);
+    return doc.styleOverrides === undefined
+      ? numbered
+      : withAllStyleOverrides(numbered, doc.styleOverrides as DocumentStyleOverrides);
   });
 
 /** Compile-time guard that the schema really produces a `SketchDocument`;
@@ -2407,8 +2536,13 @@ export function encodeDocument(doc: SketchDocument): unknown {
     annotations: doc.annotations.map(encodeAnnotation),
     nextAnnotationId: doc.nextAnnotationId,
     stylePreset: doc.stylePreset,
-    panels: doc.panels.map(encodePanel),
   };
+  if (doc.styleOverrides !== undefined) {
+    encoded.styleOverrides = Object.fromEntries(
+      Object.entries(doc.styleOverrides).map(([id, set]) => [id, { ...set }]),
+    );
+  }
+  encoded.panels = doc.panels.map(encodePanel);
   if (doc.figure !== undefined) encoded.figure = { columns: doc.figure.columns };
   if (doc.locants !== undefined) encoded.locants = Object.fromEntries(Object.entries(doc.locants));
   encoded.metadata = encodeMetadata(doc.metadata);

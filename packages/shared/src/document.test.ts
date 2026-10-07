@@ -47,6 +47,7 @@ import {
   touchDocument,
   withFigureLayout,
   withLocants,
+  withStyleOverrides,
   pruneLocants,
   setAtomLocant,
   MAX_FIGURE_COLUMNS,
@@ -781,6 +782,58 @@ describe("figure layout (additive, no schema bump)", () => {
   });
 });
 
+
+describe("figure-style edits (additive on v2, decision 237)", () => {
+  const raw = (doc: SketchDocument): Record<string, unknown> =>
+    JSON.parse(JSON.stringify(encodeDocument(doc))) as Record<string, unknown>;
+
+  it("round-trips per-preset edits", () => {
+    const original = createDocument({
+      id: "doc-style",
+      molecule: ethanol(),
+      styleOverrides: { publication: { lineWidthPt: 0.8, background: "none" } },
+      now: NOW,
+    });
+    const encoded = raw(original);
+    expect(encoded.styleOverrides).toEqual({ publication: { lineWidthPt: 0.8, background: "none" } });
+    expect(decodeDocument(encoded)).toEqual(original);
+  });
+
+  it("writes no key for a document that edited nothing, and decodes one without it", () => {
+    const doc = createDocument({ id: "plain", molecule: ethanol(), now: NOW });
+    expect(Object.hasOwn(raw(doc), "styleOverrides")).toBe(false);
+    expect(Object.hasOwn(decodeDocument(raw(doc)), "styleOverrides")).toBe(false);
+  });
+
+  it("refuses values outside range, unknown keys and empty sets, rather than clamping", () => {
+    const base = raw(createDocument({ id: "bad", molecule: ethanol(), now: NOW }));
+    for (const styleOverrides of [
+      { publication: { lineWidthPt: 0 } },
+      { publication: { fontSizePt: "10" } },
+      { publication: { bondColor: "black" } },
+      { publication: { fontFamily: "Times" } },
+      { publication: {} },
+      { print: { lineWidthPt: 0.6 } },
+      {},
+    ]) {
+      expect(safeDecodeDocument({ ...base, styleOverrides }).ok, JSON.stringify(styleOverrides)).toBe(
+        false,
+      );
+    }
+  });
+
+  it("edits one preset, keeps the other by reference, and clears to no key", () => {
+    const doc = createDocument({ molecule: ethanol(), now: NOW });
+    const screen = withStyleOverrides(doc, "screen", { fontSizePt: 7 });
+    const both = withStyleOverrides(screen, "publication", { lineWidthPt: 1, marginMm: undefined });
+    expect(both.styleOverrides).toEqual({ publication: { lineWidthPt: 1 }, screen: { fontSizePt: 7 } });
+    expect(both.styleOverrides?.screen).toBe(screen.styleOverrides?.screen);
+    expect(withStyleOverrides(both, "publication", { lineWidthPt: 1 })).toBe(both);
+    const cleared = withStyleOverrides(withStyleOverrides(both, "screen", null), "publication", {});
+    expect(Object.hasOwn(cleared, "styleOverrides")).toBe(false);
+    expect(() => withStyleOverrides(doc, "publication", { lineWidthPt: -1 })).toThrow();
+  });
+});
 
 describe("explicit locants (additive on v2, decision 142)", () => {
   /** Open-chain D-glucose from the structure dictionary, as the insert box reads it. */

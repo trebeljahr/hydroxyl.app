@@ -31,6 +31,7 @@
  */
 
 export * from "./style.js";
+export * from "./style-params.js";
 export * from "./representation.js";
 export * from "./availability.js";
 export * from "./scene/types.js";

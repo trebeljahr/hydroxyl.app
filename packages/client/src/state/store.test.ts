@@ -830,6 +830,33 @@ describe("documents and panels", () => {
   });
 });
 
+describe("figure-style edits (decision 237)", () => {
+  it("edits the current preset as one undo step, and resets to the preset", () => {
+    const store = makeStore();
+    store.getState().setStyleOverrides({ lineWidthPt: 0.8 });
+    expect(store.getState().document.styleOverrides).toEqual({ publication: { lineWidthPt: 0.8 } });
+    expect(store.getState().history.past.at(-1)?.label).toBe("Edit figure style");
+
+    // The same set again is not an edit.
+    store.getState().setStyleOverrides({ lineWidthPt: 0.8 });
+    expect(store.getState().history.past).toHaveLength(1);
+
+    // A switch keeps the Publication edits for when it comes back.
+    store.getState().setStylePreset("screen");
+    store.getState().setStyleOverrides({ fontSizePt: 9 });
+    expect(store.getState().document.styleOverrides).toEqual({
+      publication: { lineWidthPt: 0.8 },
+      screen: { fontSizePt: 9 },
+    });
+    store.getState().setStyleOverrides(null);
+    expect(store.getState().history.past.at(-1)?.label).toBe("Reset style to preset");
+    expect(store.getState().document.styleOverrides).toEqual({ publication: { lineWidthPt: 0.8 } });
+
+    store.getState().undo();
+    expect(store.getState().document.styleOverrides?.screen).toEqual({ fontSizePt: 9 });
+  });
+});
+
 describe("draft safety", () => {
   it("throws when an edit hands chem-core an immer draft", () => {
     const store = makeStore();

@@ -1797,6 +1797,22 @@ const VIEW_COMMANDS: readonly Command[] = [
     }),
   ),
   {
+    // Decision 237: drops the current preset's figure-style edits, one undo
+    // step. The style panel's "Reset to preset" button runs this.
+    id: "view.style-reset",
+    title: "Reset style to preset",
+    keywords: ["style", "preset", "reset", "default", "figure", "line", "font"],
+    group: "view",
+    enabled: (state) => state.document.styleOverrides?.[state.document.stylePreset] !== undefined,
+    run: (store) => {
+      const state = store.getState();
+      const preset = state.document.stylePreset;
+      if (state.document.styleOverrides?.[preset] === undefined) return;
+      state.setStyleOverrides(null);
+      state.setStatusMessage(`Reset to the ${STYLE_PRESET_IN_SENTENCE[preset]} style`);
+    },
+  },
+  {
     id: "view.command-palette",
     title: "Command palette",
     keywords: ["command", "palette", "search", "actions"],

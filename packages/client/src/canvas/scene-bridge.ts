@@ -27,6 +27,7 @@ import { atomNumbering } from "@starter/chem-core";
 import type { AtomNumbering } from "@starter/chem-core";
 import {
   RENDER_STYLES,
+  applyStyleOverrides,
   buildAnnotatedScene,
   buildScene,
   isStructural,
@@ -95,7 +96,35 @@ void DOCUMENT_KINDS_MATCH_VIEW_KINDS;
  * differently.
  */
 export function renderStyleFor(doc: SketchDocument): RenderStyle {
-  return RENDER_STYLES[doc.stylePreset];
+  return presetStyleFor(doc, doc.stylePreset);
+}
+
+/**
+ * Resolved styles, keyed on the document's frozen edit set for one preset.
+ * `withStyleOverrides` writes a new set only when that preset's edits change
+ * and keeps the others by reference, so an unrelated edit (an atom, a title)
+ * hands the canvas the SAME style object — which the export dialog's
+ * "matches the canvas" test compares by identity. A plain WeakMap: the key is
+ * not a document or a molecule, and it dies with the documents holding it.
+ */
+const editedStyles = new WeakMap<object, RenderStyle>();
+
+/**
+ * `preset` as this document draws it: the preset with the document's edits
+ * for it applied (decision 237), or the preset object itself when it has
+ * none. The canvas resolves its own preset here, and the export resolves the
+ * one it was asked for, so both apply the same edits.
+ */
+export function presetStyleFor(doc: SketchDocument, preset: StylePresetId): RenderStyle {
+  const base = RENDER_STYLES[preset];
+  const edits = doc.styleOverrides?.[preset];
+  if (edits === undefined) return base;
+  let style = editedStyles.get(edits);
+  if (style === undefined) {
+    style = applyStyleOverrides(base, edits);
+    editedStyles.set(edits, style);
+  }
+  return style;
 }
 
 /** Every preset, in the order the UI offers them. */
