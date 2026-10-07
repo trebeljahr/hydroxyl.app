@@ -81,6 +81,36 @@ export const GUIDES: readonly Guide[] = [
       },
     ],
   },
+  {
+    slug: "formal-charges-and-lone-pairs",
+    title: "How do you count formal charges and lone pairs?",
+    description:
+      "Formal charge is valence electrons minus lone-pair electrons minus bonds. " +
+      "This guide works it for ammonia, ammonium and acetate, and shows how the editor flags a missing charge.",
+    released: null,
+    figures: [
+      {
+        example: "formal-charges-ammonia",
+        alt: "Ammonia as NH3 in skeletal view, and in Lewis view with three N–H bonds and one lone pair on nitrogen.",
+      },
+      {
+        example: "formal-charges-ammonium",
+        alt: "Ammonium as NH4+ in skeletal view, and in Lewis view with four N–H bonds, no lone pair and a plus charge.",
+      },
+      {
+        example: "formal-charges-mistake",
+        alt: "A nitrogen with four bonds to hydrogen and no charge drawn, in skeletal and Lewis views.",
+      },
+      {
+        example: "formal-charges-fixed",
+        alt: "The same nitrogen with four bonds to hydrogen, now with a plus charge, in skeletal and Lewis views.",
+      },
+      {
+        example: "formal-charges-acetate",
+        alt: "Acetate in skeletal and Lewis views; the singly bonded oxygen carries three lone pairs and a minus charge.",
+      },
+    ],
+  },
 ];
 
 /** The guide with this slug. Throws, because every caller names a guide that

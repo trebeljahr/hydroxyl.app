@@ -252,3 +252,41 @@ test("the glycine guide's steps turn neutral glycine into the zwitterion", async
   await expect(page.locator('[data-status="exact-mass"]')).toHaveText(`Exact ${exact}`);
   await expect(page.locator('[data-status="charge"]')).toHaveText("Charge neutral");
 });
+
+/**
+ * The formal-charges guide quotes the editor's issue label, list row and fix
+ * button. This opens the guide's mistake figure in the real editor and holds
+ * the page to what the editor then shows, click by click.
+ */
+test("the formal-charges guide's mistake opens with the error it quotes, and its fix clears it", async ({
+  page,
+}) => {
+  const guide = "/guides/formal-charges-and-lone-pairs";
+  await page.goto(guide);
+  const label = (await page.locator('[data-guide="canvas-label"]').textContent()) ?? "";
+  const counter = (await page.locator('[data-guide="counter"]').textContent()) ?? "";
+  const message = (await page.locator('[data-guide="issue-message"]').textContent()) ?? "";
+  const fix = (await page.locator('[data-guide="fix-title"]').textContent()) ?? "";
+  const ion = (await page.locator('[data-guide="formula-ion"]').textContent()) ?? "";
+
+  await page.locator('a[data-guide-open-example="formal-charges-mistake"]').click();
+  await expect(page).toHaveURL(/\?example=formal-charges-mistake$/);
+  await expect(page.locator('[data-overlay="issue-label"]')).toHaveText(label);
+  const status = page.locator('[data-status="issues"]');
+  await expect(status).toHaveText(counter);
+
+  await status.click();
+  const row = page.locator("[data-issue-row]");
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText(message);
+  await row.getByRole("button", { name: fix }).click();
+  await expect(status).toHaveText("0 chemistry errors");
+  // The fix leaves the nitrogen selected, and the formula then reads the
+  // selection; the whole structure is what the guide's figure shows.
+  await page.keyboard.press("ControlOrMeta+Shift+A");
+  await expect(page.locator('[data-status="formula"]')).toHaveText("H₄N⁺");
+
+  await page.goto(guide);
+  await page.locator('a[data-guide-open-example="formal-charges-acetate"]').click();
+  await expect(page.locator('[data-status="formula"]')).toHaveText(ion);
+});

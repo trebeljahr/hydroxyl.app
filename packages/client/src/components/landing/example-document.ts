@@ -31,6 +31,14 @@ import { VIEW_KIND_TITLES } from "@starter/chem-render";
 import { createDocument, createPanel, withFigureLayout } from "@starter/shared";
 import type { Panel, RepresentationKind, SketchDocument } from "@starter/shared";
 
+import {
+  acetateDocument,
+  ammoniaDocument,
+  ammoniumDocument,
+  fixedDocument,
+  mistakeDocument,
+} from "@/components/guides/formal-charges-examples";
+
 /** The views the example lays side by side, in panel order. */
 export const EXAMPLE_VIEWS: readonly RepresentationKind[] = [
   "skeletal",
@@ -178,6 +186,11 @@ const EXAMPLES: Readonly<Record<string, () => SketchDocument>> = {
   "journal-figure-size-one-row": exampleOneRowDocument,
   "glycine-forms-neutral": () => glycineDocument("neutral"),
   "glycine-forms-zwitterion": () => glycineDocument("zwitterion"),
+  "formal-charges-ammonia": ammoniaDocument,
+  "formal-charges-ammonium": ammoniumDocument,
+  "formal-charges-mistake": mistakeDocument,
+  "formal-charges-fixed": fixedDocument,
+  "formal-charges-acetate": acetateDocument,
 };
 
 /**
