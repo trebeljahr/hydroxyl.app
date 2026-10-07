@@ -7,26 +7,36 @@
  * the main thread and only molblocks cross.
  */
 
-import type { InchiAndMolblock, NormalizedMolblock, OpResult, SmilesAndMolblock } from "./ops";
+import type {
+  DescriptorsAndMolblock,
+  InchiAndMolblock,
+  NormalizedMolblock,
+  OpResult,
+  SmilesAndMolblock,
+} from "./ops";
 
 /**
- * The three things RDKit is actually asked to do. Every public operation is
+ * The four things RDKit is actually asked to do. Every public operation is
  * one of these plus a chem-core conversion on one side or the other, which is
  * why there is no `toSmiles` op here — `toSmiles` is `moleculeToMolblock`
  * followed by `smiles`.
  */
-export type WorkerOp = "normalize" | "smiles" | "inchi";
+export type WorkerOp = "normalize" | "smiles" | "inchi" | "descriptors";
 
 export interface WorkerRequest {
   readonly id: number;
   readonly op: WorkerOp;
   /** A molblock or a SMILES; RDKit's `get_mol` sniffs which from `M  END`. */
   readonly text: string;
-  /** See `normalizeMolblock`. Ignored by `inchi`. */
+  /** See `normalizeMolblock`. Ignored by `inchi` and `descriptors`. */
   readonly layout: "preserve" | "generate";
 }
 
-export type WorkerPayload = NormalizedMolblock | SmilesAndMolblock | InchiAndMolblock;
+export type WorkerPayload =
+  | NormalizedMolblock
+  | SmilesAndMolblock
+  | InchiAndMolblock
+  | DescriptorsAndMolblock;
 
 export interface WorkerResponse {
   readonly id: number;

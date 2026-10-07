@@ -37,6 +37,7 @@ function fakeModule(options: {
     },
     get_inchi: () => "InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3",
     get_molblock: () => "MOLBLOCK",
+    get_descriptors: () => '{"tpsa":20.23,"CrippenClogP":-0.0014,"lipinskiHBD":1,"lipinskiHBA":1}',
     has_coords: () => 2,
     set_new_coords: () => true,
     delete: () => {

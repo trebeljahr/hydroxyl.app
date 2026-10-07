@@ -77,6 +77,9 @@ test("an inserted sugar makes the locants switch live, and the file carries the 
     "D-glucose (open chain)",
   );
   await page.keyboard.press("Enter");
+  // The inserted sugar stays selected and the bar measures it (decision 235).
+  await expect(page.locator(FORMULA)).toHaveText("C₆H₁₂O₆");
+  await page.keyboard.press("ControlOrMeta+Shift+a");
   await expect(page.locator(FORMULA)).toHaveText("C₁₂H₁₈O₆");
 
   // Now something is numbered: the switch is live, and turning it on draws

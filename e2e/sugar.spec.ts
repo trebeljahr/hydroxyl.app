@@ -137,8 +137,12 @@ test("builds the mutarotation figure: an open chain and both pyranose anomers", 
   const alphaCopy = await selectedAtomIds(page);
   await runFromPalette(page, "edit.duplicate");
   const betaCopy = await selectedAtomIds(page);
-  await expect(page.locator(FORMULA)).toHaveText("C₁₈H₃₆O₁₈");
+  // The bar measures the selected copy (decision 235) ...
+  await expect(page.locator(FORMULA)).toHaveText("C₆H₁₂O₆");
   expect(new Set([...chain, ...alphaCopy, ...betaCopy]).size).toBe(36);
+  // ... and all three once nothing is selected.
+  await page.keyboard.press("ControlOrMeta+Shift+a");
+  await expect(page.locator(FORMULA)).toHaveText("C₁₈H₃₆O₁₈");
 
   // Three separate columns of atoms, left to right, with no dragging.
   const spans = await Promise.all(
@@ -169,6 +173,8 @@ test("builds the mutarotation figure: an open chain and both pyranose anomers", 
   await expect(page.locator(MESSAGE)).toHaveText("Closed C1 onto the C5 hydroxyl: α-D-pyranose");
 
   // Same atoms, same formula: the ring-chain edit is an isomerisation.
+  // The clicked atom is still selected, so clear it to read the whole drawing.
+  await page.keyboard.press("ControlOrMeta+Shift+a");
   await expect(page.locator(FORMULA)).toHaveText("C₁₈H₃₆O₁₈");
   await expect(page.locator(DESCRIPTORS)).toHaveCount(14);
   await expect(page.locator(NOT_SHOWN)).toHaveCount(0);

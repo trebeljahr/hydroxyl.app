@@ -36,6 +36,8 @@ export interface JSMolLike {
   get_molblock(detailsJson?: string): string;
   /** 0 = no conformer, 2 = 2D, 3 = 3D. NOT a boolean, whatever the .d.ts says. */
   has_coords(): number;
+  /** A JSON object of RDKit's descriptor set, keyed by RDKit's own names. */
+  get_descriptors(): string;
   /** Mutates: always overwrites any existing conformer. */
   set_new_coords(useCoordGen?: boolean): boolean;
   delete(): void;
@@ -302,6 +304,64 @@ export function inchiAndMolblock(
         inchiKey: inchi === "" ? "" : rdkit.get_inchikey_for_inchi(inchi),
         molblock: mol.get_molblock(KEEP_WEDGING),
         hadCoords,
+        coordsGenerated: false,
+      };
+    },
+    { log: log ?? null },
+  );
+}
+
+/**
+ * The four descriptors the properties popover shows (decision 235), by the
+ * names RDKit's `get_descriptors` uses.
+ *
+ * `tpsa` is Ertl's topological polar surface area with RDKit's default of N
+ * and O only — no S or P contributions — which is the published method and
+ * the number most papers quote. `CrippenClogP` is Wildman and Crippen's
+ * atom-contribution estimate: a CALCULATED logP, labelled as such in the UI,
+ * never a measured one. The donor and acceptor counts are the `lipinski*`
+ * pair (every N/O, and every N/O carrying a hydrogen), because those are the
+ * counts the rule of five is stated in; RDKit's `NumHBD`/`NumHBA` use a
+ * stricter SMARTS definition and give benzoic acid one acceptor, not two.
+ */
+export interface Descriptors {
+  readonly tpsa: number;
+  readonly clogp: number;
+  readonly hbd: number;
+  readonly hba: number;
+}
+
+export interface DescriptorsAndMolblock extends NormalizedMolblock {
+  readonly descriptors: Descriptors;
+}
+
+function requireNumber(table: Record<string, unknown>, key: string): number {
+  const value = table[key];
+  // A renamed key in a later RDKit must fail loudly here, not render as NaN.
+  if (typeof value !== "number") throw new Error(`RDKit's descriptors carry no "${key}".`);
+  return value;
+}
+
+/** The descriptors, plus the sanitized molblock so the caller can diff. */
+export function descriptorsAndMolblock(
+  rdkit: RDKitModuleLike,
+  text: string,
+  log?: RDKitLogLike | null,
+): OpResult<DescriptorsAndMolblock> {
+  return withMol(
+    rdkit,
+    text,
+    (mol) => {
+      const table = JSON.parse(mol.get_descriptors()) as Record<string, unknown>;
+      return {
+        descriptors: {
+          tpsa: requireNumber(table, "tpsa"),
+          clogp: requireNumber(table, "CrippenClogP"),
+          hbd: requireNumber(table, "lipinskiHBD"),
+          hba: requireNumber(table, "lipinskiHBA"),
+        },
+        molblock: mol.get_molblock(KEEP_WEDGING),
+        hadCoords: mol.has_coords(),
         coordsGenerated: false,
       };
     },

@@ -79,6 +79,7 @@ describe("no RDKit at module scope", () => {
     expect(hits.filter((f) => !f.endsWith(".node.test.ts"))).toEqual([]);
     expect(hits.map((f) => path.basename(f)).toSorted()).toEqual([
       "dative.node.test.ts",
+      "descriptors.node.test.ts",
       "fidelity.node.test.ts",
       "inchi.node.test.ts",
       "insert-fidelity.node.test.ts",

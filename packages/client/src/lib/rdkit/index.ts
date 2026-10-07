@@ -18,6 +18,7 @@
 
 export {
   canonicalize,
+  computeDescriptors,
   disposeRdkitWorker,
   fromMolblock,
   fromSmiles,
@@ -36,6 +37,7 @@ export {
   moleculeToMolblock,
   molblockToMolecule,
 } from "./translate";
+export type { Descriptors } from "./ops";
 export type {
   CanonicalResult,
   ChangeReport,

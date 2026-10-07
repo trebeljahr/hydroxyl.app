@@ -22,6 +22,7 @@ import type { Page } from "@playwright/test";
 
 const SCENE = '[data-canvas-root] [data-layer="scene"]';
 const FORMULA = '[data-status="formula"]';
+const SCOPE = '[data-status="scope"]';
 const MESSAGE = '[data-status="message"]';
 const INPUT = '[data-shell="insert-input"]';
 const OPTIONS = '[data-shell="insert-candidates"] [role="option"]';
@@ -68,8 +69,14 @@ test("a name inserts the listed structure beside the drawing, without fetching R
 
   await expect(page.locator('[data-shell="insert-dialog"]')).toBeHidden();
   await expect(page.locator(`${SCENE} [data-atom-id]`)).toHaveCount(6 + 14);
-  await expect(page.locator(FORMULA)).toHaveText("C₁₄H₁₆N₄O₂");
   await expect(page.locator(MESSAGE)).toHaveText("Inserted caffeine (C₈H₁₀N₄O₂)");
+  // The insert stays selected, so the bar measures it (decision 235) ...
+  await expect(page.locator(SCOPE)).toHaveText("Selection");
+  await expect(page.locator(FORMULA)).toHaveText("C₈H₁₀N₄O₂");
+  // ... and the whole drawing once nothing is.
+  await page.keyboard.press("ControlOrMeta+Shift+a");
+  await expect(page.locator(SCOPE)).toBeHidden();
+  await expect(page.locator(FORMULA)).toHaveText("C₁₄H₁₆N₄O₂");
   expect(rdkitRequests).toEqual([]);
 
   // One undo entry takes the whole insert back.
@@ -88,8 +95,10 @@ test("a formula lists every listed compound it matches, and inserts the one pick
   );
   await page.locator(OPTIONS, { hasText: "β-D-galactopyranose" }).click();
 
-  await expect(page.locator(FORMULA)).toHaveText("C₁₂H₁₈O₆");
   await expect(page.locator(MESSAGE)).toHaveText("Inserted β-D-galactopyranose (C₆H₁₂O₆)");
+  await expect(page.locator(FORMULA)).toHaveText("C₆H₁₂O₆");
+  await page.keyboard.press("ControlOrMeta+Shift+a");
+  await expect(page.locator(FORMULA)).toHaveText("C₁₂H₁₈O₆");
 });
 
 test("a SMILES is read by RDKit and arrives with its hydrogens", async ({ page }) => {
@@ -102,6 +111,8 @@ test("a SMILES is read by RDKit and arrives with its hydrogens", async ({ page }
   await page.keyboard.press("Enter");
 
   await expect(page.locator(MESSAGE)).toHaveText("Inserted c1cc[nH]c1 (C₄H₅N)", { timeout: 30_000 });
+  await expect(page.locator(FORMULA)).toHaveText("C₄H₅N");
+  await page.keyboard.press("ControlOrMeta+Shift+a");
   await expect(page.locator(FORMULA)).toHaveText("C₁₀H₁₁N");
 });
 
@@ -159,6 +170,9 @@ test("PubChem is asked only on a click, with only the typed text, and its SMILES
 
   await lookUp.click();
   await expect(page.locator(MESSAGE)).toContainText("Caffeine (PubChem CID 2519)", { timeout: 30_000 });
+  // The insert stays selected, so the bar measures it (decision 235).
+  await expect(page.locator(FORMULA)).toHaveText("C₈H₁₀N₄O₂");
+  await page.keyboard.press("ControlOrMeta+Shift+a");
   await expect(page.locator(FORMULA)).toHaveText("C₁₄H₁₆N₄O₂");
   expect(asked).toEqual([
     "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/58-08-2/property/SMILES,Title/JSON",

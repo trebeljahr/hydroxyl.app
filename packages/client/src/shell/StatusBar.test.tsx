@@ -479,3 +479,25 @@ describe("StatusBar — the Feedback link (decisions 140 and 167)", () => {
     expect(screen.queryByRole("link", { name: "Donate" })).toBeNull();
   });
 });
+
+describe("StatusBar — the selection's properties (decision 235)", () => {
+  it("measures the selected atoms, with the hydrogens they carry in the drawing", () => {
+    render(<StatusBar />);
+    expect(document.querySelector('[data-status="scope"]')).toBeNull();
+
+    // One ring carbon of benzene is a CH, not methane.
+    const [first] = editorStore.getState().document.molecule.atomIds;
+    act(() => {
+      editorStore.getState().selectAtoms([first!]);
+    });
+    expect(statusText("scope")).toBe("Selection");
+    expect(statusText("formula")).toBe("CH");
+    expect(statusText("exact-mass")).toBe("Exact 13.0078");
+
+    act(() => {
+      editorStore.getState().clearSelection();
+    });
+    expect(document.querySelector('[data-status="scope"]')).toBeNull();
+    expect(statusText("formula")).toBe("C₆H₆");
+  });
+});

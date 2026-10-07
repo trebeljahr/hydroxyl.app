@@ -1,5 +1,5 @@
 /**
- * The chem-io boundary. Seven async operations, every one returning a
+ * The chem-io boundary. Eight async operations, every one returning a
  * discriminated result.
  *
  * Async because each crosses a Worker. Never-throwing because a bad pasted
@@ -16,7 +16,13 @@
 import type { Molecule } from "@starter/chem-core";
 
 import { rdkitAssetBase } from "./asset-base";
-import type { InchiAndMolblock, OpResult, SmilesAndMolblock } from "./ops";
+import type {
+  Descriptors,
+  DescriptorsAndMolblock,
+  InchiAndMolblock,
+  OpResult,
+  SmilesAndMolblock,
+} from "./ops";
 import { NO_COORDS } from "./ops";
 import { isReady, type WorkerMessage, type WorkerPayload, type WorkerRequest } from "./protocol";
 import {
@@ -379,6 +385,33 @@ export async function toInchi(mol: Molecule, title = ""): Promise<ChemIoResult<I
   const round = molblockToMolecule(payload.molblock);
   return ok(
     { inchi: payload.inchi, inchiKey: payload.inchiKey },
+    buildReport(mol, round.ok ? round.value.molecule : undefined, {
+      coordinates: "not-applicable",
+      verification: verificationOf(round.ok),
+      warnings: round.ok ? round.report.warnings : [],
+      notes: round.ok ? result.notes : [...result.notes, unverifiedNote(round.error.message)],
+    }),
+  );
+}
+
+/**
+ * TPSA, Crippen cLogP and the Lipinski donor and acceptor counts for `mol`
+ * (decision 235).
+ *
+ * The report diffs RDKit's reading against `mol`, as `toSmiles` does: a
+ * sanitizer that charge-separated a nitro group computed its descriptors on
+ * a different structure from the one drawn, and the caller should be able
+ * to say so.
+ */
+export async function computeDescriptors(mol: Molecule): Promise<ChemIoResult<Descriptors>> {
+  const written = moleculeToMolblock(mol);
+  if (!written.ok) return written;
+  const result = await call({ op: "descriptors", text: written.value, layout: "preserve" });
+  if (!result.ok) return fail(opError(result, mol));
+  const payload = result.value as DescriptorsAndMolblock;
+  const round = molblockToMolecule(payload.molblock);
+  return ok(
+    payload.descriptors,
     buildReport(mol, round.ok ? round.value.molecule : undefined, {
       coordinates: "not-applicable",
       verification: verificationOf(round.ok),

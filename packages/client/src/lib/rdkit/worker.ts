@@ -24,7 +24,12 @@
  * structure never fetches 6.9 MB of wasm.
  */
 
-import { inchiAndMolblock, normalizeMolblock, smilesAndMolblock } from "./ops";
+import {
+  descriptorsAndMolblock,
+  inchiAndMolblock,
+  normalizeMolblock,
+  smilesAndMolblock,
+} from "./ops";
 import type { OpResult, RDKitLogLike, RDKitModuleLike } from "./ops";
 import type { WorkerPayload, WorkerRequest, WorkerResponse } from "./protocol";
 
@@ -81,6 +86,8 @@ function run(runtimeValue: Runtime, request: WorkerRequest): OpResult<WorkerPayl
       return smilesAndMolblock(rdkit, request.text, request.layout, log);
     case "inchi":
       return inchiAndMolblock(rdkit, request.text, log);
+    case "descriptors":
+      return descriptorsAndMolblock(rdkit, request.text, log);
   }
 }
 

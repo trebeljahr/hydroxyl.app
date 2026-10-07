@@ -15,6 +15,14 @@
  * thing, so the undefined case renders as an em dash and never as an average
  * weight, a zero, or a hidden row.
  *
+ * ── THE READOUTS MEASURE THE SELECTION WHEN THERE IS ONE (decision 235) ───
+ *
+ * Formula, both masses and the charge are the selected atoms', with the
+ * hydrogens they carry in the drawing; a "Selection" tag says so, because
+ * the same strip reading C₆H₅ with nothing to explain it looks like a bug.
+ * The formula opens the properties popover, which adds TPSA, cLogP and the
+ * donor/acceptor counts from RDKit — asked for on opening, never awaited.
+ *
  * ── AND IT SHARES THE CANVAS'S WALK OF THE MOLECULE ────────────────────────
  *
  * Both numbers come through `@/editor/derived`, which memoises them on the
@@ -75,10 +83,12 @@ import { DONATE_URL } from "@/lib/donation";
 import { FEEDBACK_ADDRESS, FEEDBACK_HREF } from "@/lib/feedback";
 import { useSaveState } from "@/persistence/save-state";
 import { moleculeMass } from "@/editor/derived";
+import { propertiesScope } from "@/editor/properties";
 import { cn } from "@/lib/utils";
 import { editorStore, useEditorStore } from "@/state";
 
 import { IssueStatus } from "./IssueList";
+import { PropertiesPopover } from "./PropertiesPopover";
 
 /** How to move the view, for the zoom readout's tooltip. */
 const ZOOM_HELP =
@@ -241,8 +251,10 @@ export function StatusBar(): ReactElement {
   const zoom = useEditorStore((state) => state.viewport.zoom);
   const message = useEditorStore((state) => state.ui.statusMessage);
   const buffer = useEditorStore((state) => state.ui.elementInputBuffer);
+  const selectedAtoms = useEditorStore((state) => state.selection.atomIds);
 
-  const mass = moleculeMass(doc.molecule);
+  const scope = propertiesScope(doc.molecule, selectedAtoms);
+  const mass = moleculeMass(scope.molecule);
   const exactMass = mass.exactMass === undefined ? "—" : formatMass(mass.exactMass);
 
   return (
@@ -264,9 +276,17 @@ export function StatusBar(): ReactElement {
       data-shell="status-bar"
       className="bg-background text-muted-foreground flex h-8 shrink-0 items-center gap-4 border-t px-3 text-xs whitespace-nowrap"
     >
-      <span data-status="formula" className="text-foreground font-medium">
+      {scope.kind === "selection" ? (
+        <span
+          data-status="scope"
+          className="bg-muted text-foreground -mr-3 rounded px-1.5 font-medium"
+        >
+          Selection
+        </span>
+      ) : null}
+      <PropertiesPopover scope={scope}>
         {mass.formulaUnicode === "" ? "Empty sketch" : mass.formulaUnicode}
-      </span>
+      </PropertiesPopover>
 
       <span
         data-status="weight"

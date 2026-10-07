@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { benzene, buildMolecule } from "./builders.js";
-import { elementCounts, netCharge } from "./formula.js";
+import { elementCounts, exactMass, massSummary, netCharge } from "./formula.js";
 import {
   duplicateFragment,
   extractFragment,
+  extractSelectedPart,
   insertFragment,
 } from "./fragment.js";
 import * as M from "./molecule.js";
@@ -186,6 +187,56 @@ describe("extractFragment", () => {
     expect(result.molecule).toEqual(M.emptyMolecule());
     expect(result.atomIdMap.size).toBe(0);
     expect(result.bondIdMap.size).toBe(0);
+  });
+});
+
+describe("extractSelectedPart", () => {
+  /** Toluene: benzene with a methyl on the first ring atom. */
+  function toluene(): { mol: Molecule; ring: AtomId[]; methyl: AtomId } {
+    const ring = benzene();
+    const ringIds = [...ring.atomIds];
+    const methyl = buildMolecule((b) => {
+      b.atom("C", vec(0, 2));
+    });
+    const inserted = insertFragment(ring, methyl);
+    const methylId = inserted.atomIds[0]!;
+    const mol = M.addBond(inserted.molecule, { from: ringIds[0]!, to: methylId, order: 1 }).molecule;
+    return { mol, ring: ringIds, methyl: methylId };
+  }
+
+  it("keeps the hydrogens a cut atom carries in the drawing: phenyl, not benzene", () => {
+    const { mol, ring } = toluene();
+    const part = extractSelectedPart(mol, ring);
+    expect(massSummary(part).formula).toBe("C6H5");
+    // The cut is a substituent, and its mass is C6H5's, not C6H6's.
+    expect(exactMass(part)).toBeCloseTo(6 * 12 + 5 * 1.00782503207, 6);
+  });
+
+  it("measures the selection and the rest so they add up to the whole", () => {
+    const { mol, ring, methyl } = toluene();
+    const phenyl = exactMass(extractSelectedPart(mol, ring));
+    const methylPart = extractSelectedPart(mol, [methyl]);
+    expect(massSummary(methylPart).formula).toBe("CH3");
+    expect(phenyl + exactMass(methylPart)).toBeCloseTo(exactMass(mol), 9);
+  });
+
+  it("measures a whole species exactly as the species on its own", () => {
+    const mol = ethanol();
+    const whole = massSummary(extractSelectedPart(mol, mol.atomIds));
+    expect(whole).toEqual(massSummary(mol));
+  });
+
+  it("carries the charge of the selected atoms only", () => {
+    const mol = acetate();
+    const [, carboxyl, carbonyl, anion] = mol.atomIds;
+    const part = extractSelectedPart(mol, [carboxyl!, carbonyl!, anion!]);
+    // The carboxylate of acetate: no hydrogen on the cut carbon, the charge kept.
+    expect(massSummary(part).formula).toBe("[CO2]-");
+    expect(netCharge(part)).toBe(-1);
+  });
+
+  it("returns an empty molecule for a selection of no atoms", () => {
+    expect(extractSelectedPart(ethanol(), []).atomIds).toEqual([]);
   });
 });
 

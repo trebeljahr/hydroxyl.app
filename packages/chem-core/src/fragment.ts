@@ -38,6 +38,7 @@ import {
   remappedStereoGroups,
   stereoGroupsOf,
 } from "./stereo-groups.js";
+import { implicitHydrogenCount } from "./valence.js";
 import { add as addVec, type Vec2 } from "./vec.js";
 
 export interface ExtractedFragment {
@@ -178,6 +179,50 @@ export function extractFragment(
     atomIdMap,
     bondIdMap,
   };
+}
+
+/**
+ * The selected atoms as a molecule whose hydrogens are the ones they carry IN
+ * THE DRAWING — what the properties readout measures for a selection
+ * (decision 235).
+ *
+ * `extractFragment` drops every bond that leaves the selection, so the cut
+ * atoms would gain an implicit hydrogen per lost bond: the phenyl ring of
+ * toluene, selected, would read as benzene, C6H6, and the methyl of ethanol
+ * as methane. Neither is what the chemist pointed at. So each atom's hydrogen
+ * count is PINNED to its in-context value, and the selected phenyl reads
+ * C6H5, with the mass of C6H5. That is the substituent convention ChemDraw's
+ * analysis window follows, and the only one under which a selection's
+ * formula and the rest's formula add up to the whole.
+ *
+ * A pin is RDKit's own vocabulary for this (a molfile valence field, an
+ * `[CH2]` in SMILES), so the fragment crosses to the worker unchanged and
+ * RDKit sees a radical at each cut — which is what a substituent is, and
+ * what the descriptors are then computed on. When the selection cuts no bond
+ * every pin equals the value the atom would derive anyway, so a whole
+ * species measures exactly as it does on its own.
+ */
+export function extractSelectedPart(
+  mol: Molecule,
+  ids: readonly AtomId[],
+): Molecule {
+  const { molecule: fragment, atomIdMap } = extractFragment(mol, ids);
+  if (fragment.atomIds.length === 0) return fragment;
+  const atoms: Record<AtomId, Atom> = {};
+  for (const [sourceId, id] of atomIdMap) {
+    atoms[id] = cloneAtomWith(requireAtom(fragment, id), {
+      explicitHydrogenCount: implicitHydrogenCount(mol, sourceId),
+    });
+  }
+  return assembleMolecule({
+    atoms,
+    bonds: fragment.bonds,
+    atomIds: fragment.atomIds,
+    bondIds: fragment.bondIds,
+    nextId: fragment.nextId,
+    stereoGroups: stereoGroupsOf(fragment),
+    speciesJoins: speciesJoinsOf(fragment),
+  });
 }
 
 /**
