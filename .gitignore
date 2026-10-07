@@ -25,6 +25,10 @@ src-tauri/gen/
 # macOS-style global gitignores often contain `Icon?`, which also matches
 # the src-tauri/icons/ directory — re-include the Tauri icon set explicitly.
 !src-tauri/icons/
+# The same pattern hides the web app's icons, which build-app-icons.mjs writes
+# and which are committed: the manifest and the service worker list them.
+!packages/client/public/icons/
+!packages/client/public/icons/*.png
 
 # Capacitor-generated native projects (created by `cap add ios|android`)
 # Comment these out if you want to commit the native Xcode / Gradle projects.
