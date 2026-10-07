@@ -29,7 +29,11 @@ export default defineConfig({
   // into swap, so cap it locally too.
   workers: process.env.CI ? 1 : 2,
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
-  use: { baseURL, trace: "on-first-retry" },
+  // Service workers BLOCKED by default: a request a worker answers never
+  // reaches `page.route`, so the offline worker (decision 239) would quietly
+  // disarm every spec that intercepts the network. e2e/pwa.spec.ts turns
+  // them back on for itself.
+  use: { baseURL, trace: "on-first-retry", serviceWorkers: "block" },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
     // build:client chains build:deps (chem-core tsc, then shared tsc)

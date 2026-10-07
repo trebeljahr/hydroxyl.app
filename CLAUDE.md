@@ -153,6 +153,12 @@ the entire dependency is confined to `packages/client/src/lib/rdkit/`.
   import.meta.url))` resolves the emitted chunk against `location.origin`,
   which drops any subpath the static export is served under, 404s, and reports
   it as an error event with an EMPTY message.
+- **RDKit URLs carry `?v=<content hash>`.** The staged files keep fixed
+  names, and the hosted build's service worker serves them cache-first
+  (decision 239), so `rdkitAssetUrl()` appends `NEXT_PUBLIC_RDKIT_ASSET_VERSION`
+  (hashed in `next.config.ts`) and the worker repeats its own query on the glue
+  and the wasm. Build any new RDKit URL through it, or a cached worker will
+  outlive the client code it talks to.
 - **chem-core's molblock codec is the only translation layer.** RDKit never
   sees a chem-core type and chem-core never sees a JSMol; text is the whole
   interface, which is what lets the fidelity harness run with no worker.

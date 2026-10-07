@@ -24,3 +24,29 @@ import { deploymentRoot } from "@/lib/deployment";
 export function rdkitAssetBase(): string {
   return `${deploymentRoot()}rdkit/`;
 }
+
+/**
+ * The files the worker needs, versioned by content.
+ *
+ * They keep fixed names in `public/rdkit/`, so the URL alone cannot tell one
+ * release's worker from the next. The service worker serves them cache-first
+ * (decision 239), and a cached worker from an older release would then speak
+ * an older message protocol to newer client code. `next.config.ts` hashes the
+ * staged files into `NEXT_PUBLIC_RDKIT_ASSET_VERSION`; the worker repeats its
+ * own query on the glue and the wasm, so all three move together.
+ *
+ * Unset outside a Next build (Vitest), where the bare names are what exists.
+ */
+export function rdkitAssetUrl(name: RdkitAsset): string {
+  const version = process.env.NEXT_PUBLIC_RDKIT_ASSET_VERSION;
+  const query = version === undefined || version === "" ? "" : `?v=${version}`;
+  return `${rdkitAssetBase()}${name}${query}`;
+}
+
+export type RdkitAsset = "rdkit.worker.js" | "RDKit_minimal.js" | "RDKit_minimal.wasm";
+
+/** Everything SMILES import needs offline, for the service worker to fetch
+ *  ahead of the first import. */
+export function rdkitOfflineAssetUrls(): string[] {
+  return (["rdkit.worker.js", "RDKit_minimal.js", "RDKit_minimal.wasm"] as const).map(rdkitAssetUrl);
+}

@@ -15,7 +15,7 @@
 
 import type { Molecule } from "@starter/chem-core";
 
-import { rdkitAssetBase } from "./asset-base";
+import { rdkitAssetUrl } from "./asset-base";
 import type {
   Descriptors,
   DescriptorsAndMolblock,
@@ -132,7 +132,7 @@ function ensureWorker(): Worker | undefined {
   // emitted chunk against `location.origin` and drops any subpath in the
   // static export — a 404 whose error event carries an empty message. See the
   // header of worker.ts.
-  const url = `${rdkitAssetBase()}rdkit.worker.js`;
+  const url = rdkitAssetUrl("rdkit.worker.js");
   claimPage();
   let created: Worker;
   try {

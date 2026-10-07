@@ -4,6 +4,7 @@ import "@/styles/globals.css";
 import { Analytics } from "@/components/Analytics";
 import { DonationReturn } from "@/components/DonationReturn";
 import { ReleaseLifetime } from "@/components/ReleaseLifetime";
+import { ServiceWorker } from "@/components/ServiceWorker";
 import { siteUrl } from "@/lib/deployment";
 import { SITE_DESCRIPTION, SITE_NAME } from "@/lib/site";
 
@@ -30,6 +31,7 @@ export default function RootLayout({
         <Analytics />
         <DonationReturn />
         <ReleaseLifetime />
+        <ServiceWorker />
         {children}
       </body>
     </html>

@@ -35,7 +35,7 @@ import type { WorkerPayload, WorkerRequest, WorkerResponse } from "./protocol";
 
 declare function importScripts(...urls: string[]): void;
 declare const self: {
-  location: { href: string };
+  location: { href: string; search: string };
   onmessage: ((event: { data: WorkerRequest }) => void) | null;
   postMessage(message: unknown): void;
   initRDKitModule?: (options?: {
@@ -45,6 +45,11 @@ declare const self: {
 
 /** Absolute, and correct at any subpath: the worker's own directory. */
 const BASE = new URL(".", self.location.href).href;
+
+/** The `?v=<content hash>` this worker was loaded with (`rdkitAssetUrl`),
+ *  repeated on the glue and the wasm so a cache keyed by URL can never pair
+ *  this worker with another release's wasm. */
+const VERSION = self.location.search;
 
 interface Runtime {
   readonly rdkit: RDKitModuleLike;
@@ -63,13 +68,13 @@ let runtime: Promise<Runtime> | undefined;
 
 function ensureRDKit(): Promise<Runtime> {
   runtime ??= (async () => {
-    importScripts(`${BASE}RDKit_minimal.js`);
+    importScripts(`${BASE}RDKit_minimal.js${VERSION}`);
     const init = self.initRDKitModule;
     if (!init) throw new Error("RDKit_minimal.js loaded but defined no initRDKitModule");
     // `locateFile` is redundant with emscripten's own default here, and kept
     // because the default is derived from a global the glue sets during load:
     // stating it makes the wasm's location a property of this file.
-    const rdkit = await init({ locateFile: (path) => `${BASE}${path}` });
+    const rdkit = await init({ locateFile: (path) => `${BASE}${path}${VERSION}` });
     const log = rdkit.set_log_capture?.("rdApp.*") ?? null;
     self.postMessage({ id: 0, ready: true, version: rdkit.version() });
     return { rdkit, log };

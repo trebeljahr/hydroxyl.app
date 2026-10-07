@@ -46,6 +46,10 @@ packages/client/public/social-card.png
 # One per guide, from its first figure, by the same script (decision 245).
 packages/client/public/social-cards/
 
+# The service worker, bundled with this build's precache list by
+# packages/client/scripts/build-service-worker.mjs after every web build.
+packages/client/public/sw.js
+
 # Environment (committed: .env.example, .env.development, AND
 #              .env.production — because production values are
 #              encrypted via dotenvx, not plaintext).

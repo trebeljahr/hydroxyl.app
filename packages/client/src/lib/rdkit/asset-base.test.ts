@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { rdkitAssetBase } from "./asset-base";
+import { rdkitAssetBase, rdkitAssetUrl, rdkitOfflineAssetUrls } from "./asset-base";
 
 /**
  * The one piece of URL cleverness in the bridge, and the one that fails
@@ -9,6 +9,7 @@ import { rdkitAssetBase } from "./asset-base";
  */
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   document.head.querySelectorAll("script").forEach((s) => s.remove());
   document.head.querySelectorAll("base").forEach((b) => b.remove());
 });
@@ -42,5 +43,26 @@ describe("rdkitAssetBase", () => {
     base.href = "https://example.test/app/editor/";
     document.head.append(base);
     expect(rdkitAssetBase()).toBe("https://example.test/app/editor/rdkit/");
+  });
+});
+
+describe("rdkitAssetUrl", () => {
+  it("carries the content version, so a cache keyed by URL cannot pair releases", () => {
+    // Decision 239: the files keep fixed names and the service worker serves
+    // them cache-first.
+    vi.stubEnv("NEXT_PUBLIC_RDKIT_ASSET_VERSION", "0123456789abcdef");
+    addScript("/_next/static/chunks/main-app.js");
+    expect(rdkitAssetUrl("rdkit.worker.js")).toBe(`${location.origin}/rdkit/rdkit.worker.js?v=0123456789abcdef`);
+    expect(rdkitOfflineAssetUrls()).toEqual(
+      ["rdkit.worker.js", "RDKit_minimal.js", "RDKit_minimal.wasm"].map(
+        (name) => `${location.origin}/rdkit/${name}?v=0123456789abcdef`,
+      ),
+    );
+  });
+
+  it("is the bare name outside a Next build", () => {
+    vi.stubEnv("NEXT_PUBLIC_RDKIT_ASSET_VERSION", "");
+    addScript("/_next/static/chunks/main-app.js");
+    expect(rdkitAssetUrl("RDKit_minimal.wasm")).toBe(`${location.origin}/rdkit/RDKit_minimal.wasm`);
   });
 });

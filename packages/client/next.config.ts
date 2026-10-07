@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { NextConfig } from "next";
 
@@ -22,6 +23,25 @@ function siteUrlFromHatchkit(): string {
     throw new Error(`${manifest} has no usable "domain"; sitemap.xml and robots.txt need one`);
   }
   return `https://${domain}/`;
+}
+
+/**
+ * A content hash of the RDKit files `scripts/copy-rdkit.mjs` staged into
+ * `public/rdkit/`, appended to their URLs as `?v=` (`rdkitAssetUrl`).
+ *
+ * Their names never change between releases, and the service worker serves
+ * them cache-first (decision 239), so the URL has to change when the bytes do
+ * or a cached worker outlives the client code it talks to. Every script that
+ * runs `next` stages the files first; empty when they are absent, which only
+ * happens to tooling that loads this config without building.
+ */
+function rdkitAssetVersion(): string {
+  const dir = path.join(process.cwd(), "public", "rdkit");
+  const names = ["rdkit.worker.js", "RDKit_minimal.js", "RDKit_minimal.wasm"];
+  if (!names.every((name) => existsSync(path.join(dir, name)))) return "";
+  const hash = createHash("sha256");
+  for (const name of names) hash.update(readFileSync(path.join(dir, name)));
+  return hash.digest("hex").slice(0, 16);
 }
 
 const nextConfig: NextConfig = {
@@ -90,11 +110,20 @@ const nextConfig: NextConfig = {
   // prerender, so the emitted HTML would carry the wrong href until hydration
   // — and in the export "/editor" is a file that does not exist. `env` is
   // substituted at build time, so the very first byte of HTML is right.
-  env: { NEXT_PUBLIC_FILE_EXPORT: isExport ? "1" : "0", NEXT_PUBLIC_SITE_URL: siteUrlFromHatchkit() },
+  env: {
+    NEXT_PUBLIC_FILE_EXPORT: isExport ? "1" : "0",
+    NEXT_PUBLIC_SITE_URL: siteUrlFromHatchkit(),
+    NEXT_PUBLIC_RDKIT_ASSET_VERSION: rdkitAssetVersion(),
+  },
   // Release identity must never be cached across a rolling replacement.
   ...(!isExport ? {
     async headers() {
-      return [{ source: "/version.json", headers: [{ key: "Cache-Control", value: "no-store" }] }];
+      return [
+        { source: "/version.json", headers: [{ key: "Cache-Control", value: "no-store" }] },
+        // The browser already bypasses its HTTP cache for a service worker
+        // script; this keeps any proxy in between from holding an old one.
+        { source: "/sw.js", headers: [{ key: "Cache-Control", value: "no-cache" }] },
+      ];
     },
   } : {}),
   images: { unoptimized: true },
