@@ -215,6 +215,8 @@ describe("every menu, on every target", () => {
       "structure.rotate-cw",
       "structure.align-top",
       "edit.copy-selection-smiles",
+      "edit.copy-selection-inchi",
+      "edit.copy-selection-inchikey",
       "edit.copy",
       "select.invert",
     ]) {

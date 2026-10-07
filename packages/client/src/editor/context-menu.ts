@@ -32,7 +32,7 @@
  *              delete
  *   bond       order, stereo, flip direction, double-bond side, fuse ring,
  *              select connected, delete
- *   selection  cut / copy / duplicate, copy as SMILES or molfile, flip,
+ *   selection  cut / copy / duplicate, copy as SMILES, InChI or molfile, flip,
  *              rotate, align, clean up, element, charge, bond order, stereo,
  *              select connected / invert / clear, delete
  *   canvas     paste, select all, undo, redo, fit, reset view, clean up,
@@ -618,6 +618,8 @@ function selectionMenu(state: EditorState): ContextMenuModel {
       command(state, "edit.duplicate", { label: "Duplicate" }),
       submenu("copy-as", "Copy as", [
         command(state, "edit.copy-selection-smiles", { label: "SMILES" }),
+        command(state, "edit.copy-selection-inchi", { label: "InChI" }),
+        command(state, "edit.copy-selection-inchikey", { label: "InChIKey" }),
         command(state, "edit.copy-selection-molfile", { label: "Molfile" }),
         // The whole figure, and the title says so: an SVG of the selection
         // alone would need the figure pipeline to run on a fragment whose ids

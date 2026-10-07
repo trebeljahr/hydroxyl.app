@@ -476,6 +476,99 @@ describe("InChI", () => {
 });
 
 // ---------------------------------------------------------------------------
+// InChI out, checked against published identifiers
+//
+// The expected strings are PubChem's, not a snapshot of whatever RDKit said:
+// an InChIKey is a hash, so the only way to know one is right is to compare
+// it with a key someone else computed for the same compound. The stereo and
+// charge cases are the ones "Copy as InChI" is most likely to get wrong
+// silently: a lost wedge drops the /t layer and turns the key's second block
+// into UHFFFAOYSA, and a lost charge changes the layer and the final letter.
+// ---------------------------------------------------------------------------
+
+/** Butan-2-ol with C2's oxygen drawn wedged, hashed, or plain. */
+function butan2ol(stereo: "wedge" | "hash" | "none"): Molecule {
+  return buildMolecule((b) => {
+    const c1 = b.atom("C", vec(0, 0));
+    const c2 = b.atom("C", vec(0.87, 0.5));
+    const c3 = b.atom("C", vec(1.73, 0));
+    const c4 = b.atom("C", vec(2.6, 0.5));
+    const o = b.atom("O", vec(0.87, 1.5));
+    b.bond(c1, c2, 1);
+    if (stereo === "none") b.bond(c2, o, 1);
+    else b.bond(c2, o, 1, stereo);
+    b.bond(c2, c3, 1);
+    b.bond(c3, c4, 1);
+  });
+}
+
+/** (CH3)4N(+): a cation with no counter-ion, so the charge layer is /q, not /p. */
+function tetramethylammonium(): Molecule {
+  return buildMolecule((b) => {
+    const n = b.atom("N", vec(0, 0), { charge: 1 });
+    for (const at of [vec(1, 0), vec(-1, 0), vec(0, 1), vec(0, -1)]) {
+      b.bond(n, b.atom("C", at), 1);
+    }
+  });
+}
+
+function inchiOf(mol: Molecule): { inchi: string; inchiKey: string } {
+  const written = moleculeToMolblock(mol);
+  if (!written.ok) throw new Error(written.error.message);
+  const op = inchiAndMolblock(RDKit, written.value);
+  if (!op.ok) throw new Error(op.message);
+  return { inchi: op.value.inchi, inchiKey: op.value.inchiKey };
+}
+
+describe("InChI out", () => {
+  it.each([
+    ["ethanol", ethanol, "InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3", "LFQSCWFLJHTTHZ-UHFFFAOYSA-N"],
+    ["pyrrole", pyrrole, "InChI=1S/C4H5N/c1-2-4-5-3-1/h1-5H", "KAESVJOAVNADME-UHFFFAOYSA-N"],
+    // Acetate: the charge goes into a mobile-H /p-1 layer, and the key's last
+    // letter is M (one proton removed) rather than N.
+    [
+      "acetate",
+      acetate,
+      "InChI=1S/C2H4O2/c1-2(3)4/h1H3,(H,3,4)/p-1",
+      "QTBSBXVTEAMEQO-UHFFFAOYSA-M",
+    ],
+    [
+      "tetramethylammonium",
+      tetramethylammonium,
+      "InChI=1S/C4H12N/c1-5(2,3)4/h1-4H3/q+1",
+      "QEMXHQIAXOOASZ-UHFFFAOYSA-N",
+    ],
+    // The sulfone is the case a charge-separating writer would get wrong.
+    [
+      "dimethyl sulfone",
+      dimethylSulfone,
+      "InChI=1S/C2H6O2S/c1-5(2,3)4/h1-2H3",
+      "HHVIBTZHLRERCL-UHFFFAOYSA-N",
+    ],
+  ])("writes %s as PubChem does", (_name, build, inchi, key) => {
+    expect(inchiOf(build())).toEqual({ inchi, inchiKey: key });
+  });
+
+  it("carries a drawn stereocentre into the /t layer and the key", () => {
+    // Oxygen up the page, ethyl to the right, methyl to the left: a wedged
+    // OH is (R)-butan-2-ol, a hashed one (S).
+    expect(inchiOf(butan2ol("wedge"))).toEqual({
+      inchi: "InChI=1S/C4H10O/c1-3-4(2)5/h4-5H,3H2,1-2H3/t4-/m1/s1",
+      inchiKey: "BTANRVKWQNVYAZ-SCSAIBSYSA-N",
+    });
+    expect(inchiOf(butan2ol("hash"))).toEqual({
+      inchi: "InChI=1S/C4H10O/c1-3-4(2)5/h4-5H,3H2,1-2H3/t4-/m0/s1",
+      inchiKey: "BTANRVKWQNVYAZ-BYPYZUCNSA-N",
+    });
+    // Undrawn stereo is undefined stereo, not a guess: no /t layer at all.
+    expect(inchiOf(butan2ol("none"))).toEqual({
+      inchi: "InChI=1S/C4H10O/c1-3-4(2)5/h4-5H,3H2,1-2H3",
+      inchiKey: "BTANRVKWQNVYAZ-UHFFFAOYSA-N",
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // A refused "Clean up" names an atom the user can find
 //
 // Cleanup is `normalizeMolblock(..., "generate")`. When RDKit's sanitizer

@@ -17,7 +17,23 @@ vi.mock("@/lib/export/png", () => ({
   }),
 }));
 
-import { copyFigure, copyMolblock } from "./figure";
+// The worker is not reachable from jsdom; the real InChI is asserted against
+// the wasm in `fidelity.node.test.ts`. This stands in for the bridge only.
+const inchi = vi.hoisted(() => ({
+  molecules: [] as unknown[],
+  key: "LFQSCWFLJHTTHZ-UHFFFAOYSA-N",
+}));
+vi.mock("@/lib/rdkit/client", () => ({
+  toInchi: vi.fn(async (mol: unknown) => {
+    inchi.molecules.push(mol);
+    return {
+      ok: true,
+      value: { inchi: "InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3", inchiKey: inchi.key },
+    };
+  }),
+}));
+
+import { copyFigure, copyInchi, copyMolblock } from "./figure";
 import { molblockVersionNotice } from "@/lib/rdkit/translate";
 
 const NOW = "2024-01-01T00:00:00.000Z";
@@ -51,6 +67,8 @@ function editor(molecule = ethanol()): EditorStore {
 }
 
 beforeEach(() => {
+  inchi.molecules = [];
+  inchi.key = "LFQSCWFLJHTTHZ-UHFFFAOYSA-N";
   canvas.canHold = true;
   canvas.asked = [];
   writes = [];
@@ -60,6 +78,9 @@ beforeEach(() => {
     value: {
       write: vi.fn(async (items: FakeClipboardItem[]) => {
         writes.push(items);
+        // A real ClipboardItem consumes its parts, and a rejected part rejects
+        // the write; without this a failed part is an unhandled rejection.
+        await Promise.all(items.flatMap((item) => Object.values(item.parts)));
       }),
     },
   });
@@ -140,6 +161,58 @@ describe("Copy figure", () => {
     await copyFigure(store);
     expect(writes).toHaveLength(0);
     expect(store.getState().ui.statusMessage).toMatch(/Panel \(c\) cannot be drawn/);
+  });
+});
+
+describe("Copy as InChI / InChIKey", () => {
+  it("puts the InChI alone on the clipboard, issued inside the gesture", async () => {
+    const pending = copyInchi(store, "structure", "inchi");
+    expect(writes).toHaveLength(1);
+    await pending;
+    const text = await (await writes[0]![0]!.parts["text/plain"]!).text();
+    expect(text).toBe("InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3");
+    expect(store.getState().ui.statusMessage).toBe(
+      "Copied InChI InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3",
+    );
+  });
+
+  it("puts the key alone on the clipboard for Copy as InChIKey", async () => {
+    await copyInchi(store, "structure", "inchikey");
+    const text = await (await writes[0]![0]!.parts["text/plain"]!).text();
+    expect(text).toBe("LFQSCWFLJHTTHZ-UHFFFAOYSA-N");
+    expect(store.getState().ui.statusMessage).toBe("Copied InChIKey LFQSCWFLJHTTHZ-UHFFFAOYSA-N");
+  });
+
+  it("reports an empty key as a failure rather than copying nothing", async () => {
+    inchi.key = "";
+    await copyInchi(store, "structure", "inchikey");
+    expect(store.getState().ui.statusMessage).toBe(
+      "The InChIKey could not be copied: RDKit produced no InChIKey for this structure.",
+    );
+  });
+
+  it("sends only the selected atoms for the selection scope", async () => {
+    store.getState().setSelection({ atomIds: ["a1", "a2"], bondIds: [], annotationIds: [] });
+    await copyInchi(store, "selection", "inchi");
+    const sent = inchi.molecules[0] as { atomIds: readonly string[] };
+    expect(sent.atomIds).toHaveLength(2);
+  });
+
+  it("refuses an empty selection without touching the clipboard", async () => {
+    store.getState().setSelection({ atomIds: [], bondIds: [], annotationIds: [] });
+    await copyInchi(store, "selection", "inchikey");
+    expect(writes).toHaveLength(0);
+    expect(store.getState().ui.statusMessage).toBe(
+      "No atoms are selected, so there is no InChIKey to copy.",
+    );
+  });
+
+  it("names a labelled atom before the wasm is asked (decision 8)", async () => {
+    store = editor(benzylAlcoholAbbreviated());
+    await copyInchi(store, "structure", "inchi");
+    expect(writes).toHaveLength(0);
+    expect(inchi.molecules).toHaveLength(0);
+    expect(store.getState().ui.statusMessage).toContain('"Ph"');
   });
 });
 

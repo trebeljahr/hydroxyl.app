@@ -1,6 +1,6 @@
 /**
  * The figure commands: export SVG, export PNG, copy the figure, copy the
- * structure as SMILES or as a molfile.
+ * structure as SMILES, InChI, InChIKey or a molfile.
  *
  * Kept out of `registry.ts` for the reason the file commands are: the registry
  * stays importable by a plain-node test, and this is where the browser APIs
@@ -234,21 +234,66 @@ export async function copySmiles(
   store: EditorStore,
   scope: CopyScope = "structure",
 ): Promise<void> {
+  await copyRdkitText(store, scope, "SMILES", async (molecule, title) => {
+    const { toSmiles } = await import("@/lib/rdkit/client");
+    const result = await toSmiles(molecule, title);
+    if (!result.ok) throw new Error(result.error.message);
+    return result.value;
+  });
+}
+
+/**
+ * The InChI or the InChIKey. Both come out of one worker call (`toInchi`
+ * returns the pair), but each command puts ONE string on the clipboard: a
+ * database search box wants the key alone, and a supplementary-information
+ * table wants the identifier alone.
+ *
+ * There is no InChI READER behind this. The bundled RDKit writes an InChI but
+ * cannot parse one; `inchi.node.test.ts` pins that, and `open.ts` refuses a
+ * pasted InChI by name.
+ */
+export async function copyInchi(
+  store: EditorStore,
+  scope: CopyScope = "structure",
+  which: "inchi" | "inchikey" = "inchi",
+): Promise<void> {
+  const format = which === "inchi" ? "InChI" : "InChIKey";
+  await copyRdkitText(store, scope, format, async (molecule, title) => {
+    const { toInchi } = await import("@/lib/rdkit/client");
+    const result = await toInchi(molecule, title);
+    if (!result.ok) throw new Error(result.error.message);
+    if (which === "inchi") return result.value.inchi;
+    // An empty key is RDKit's only failure signal from the key step (see
+    // `inchiAndMolblock`). Never put an empty string on the clipboard.
+    if (result.value.inchiKey === "") {
+      throw new Error("RDKit produced no InChIKey for this structure.");
+    }
+    return result.value.inchiKey;
+  });
+}
+
+/** The shared body of every text copy that has to go through the RDKit worker. */
+async function copyRdkitText(
+  store: EditorStore,
+  scope: CopyScope,
+  format: string,
+  write: (molecule: Molecule, title: string) => Promise<string>,
+): Promise<void> {
   const doc = store.getState().document;
   const source = copySource(store, scope);
   if (source === null || isEmpty(source.molecule)) {
     report(
       store,
       scope === "selection"
-        ? "No atoms are selected, so there is no SMILES to copy."
-        : "Nothing has been drawn yet, so there is no SMILES to copy.",
+        ? `No atoms are selected, so there is no ${format} to copy.`
+        : `Nothing has been drawn yet, so there is no ${format} to copy.`,
     );
     return;
   }
   const molecule = source.molecule;
-  // Checked synchronously first: the same molblock gate `toSmiles` applies,
-  // so a labelled atom is reported and selected before the clipboard or the
-  // wasm is touched at all.
+  // Checked synchronously first: the same molblock gate the worker call
+  // applies, so a labelled atom is reported and selected before the clipboard
+  // or the wasm is touched at all.
   const gate = moleculeToMolblock(molecule, doc.metadata.title);
   if (!gate.ok) {
     const refused = source.refusal(gate.error.message, gate.error.atomIds);
@@ -256,17 +301,13 @@ export async function copySmiles(
     return;
   }
   // Dynamic, like clean-up: /editor must not fetch RDKit until asked.
-  const smiles = import("@/lib/rdkit/client").then(async ({ toSmiles }) => {
-    const result = await toSmiles(molecule, doc.metadata.title);
-    if (!result.ok) throw new Error(result.error.message);
-    return result.value;
-  });
-  const { done } = writeClipboardParts({ "text/plain": smiles.then((text) => textBlob(text)) });
+  const text = write(molecule, doc.metadata.title);
+  const { done } = writeClipboardParts({ "text/plain": text.then((value) => textBlob(value)) });
   try {
     await done;
-    report(store, `Copied SMILES ${await smiles}`);
+    report(store, `Copied ${format} ${await text}`);
   } catch (error) {
-    report(store, `The SMILES could not be copied: ${describe(error)}`);
+    report(store, `The ${format} could not be copied: ${describe(error)}`);
   }
 }
 

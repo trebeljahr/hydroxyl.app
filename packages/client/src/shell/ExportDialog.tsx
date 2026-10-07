@@ -404,6 +404,22 @@ export function ExportDialog(): ReactElement {
           <button
             type="button"
             className={button}
+            data-command="figure.copy-inchi"
+            onClick={() => run("figure.copy-inchi")}
+          >
+            Copy InChI
+          </button>
+          <button
+            type="button"
+            className={button}
+            data-command="figure.copy-inchikey"
+            onClick={() => run("figure.copy-inchikey")}
+          >
+            Copy InChIKey
+          </button>
+          <button
+            type="button"
+            className={button}
             data-command="figure.copy-molblock"
             onClick={() => run("figure.copy-molblock")}
           >
