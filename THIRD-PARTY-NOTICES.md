@@ -50,6 +50,29 @@ Trust's terms by name and version.
 None. BSD 3-Clause governs redistribution of the software, and a molfile or an
 SVG this tool produces is neither the software nor a derivative work of it.
 
+## OpenChemLib JS (the 3D view's force field)
+
+- **Files:** `packages/client/public/conformer/conformer.worker.js` (1.3 MB),
+  an esbuild bundle of `src/lib/conformer/worker.ts` with `openchemlib` and
+  the MMFF94 tables from its `resources.json`, staged by
+  `packages/client/scripts/copy-conformer.mjs` on every dev, build and test
+  run. Gitignored; the script writes `public/conformer/THIRD-PARTY-NOTICES.txt`
+  beside it with the `LICENSE` file verbatim.
+- **Version:** `openchemlib` 9.25.1.
+- **Copyright:** Copyright (c) 2015-2017, cheminfo. See the shipped `LICENSE`.
+- **Licence:** BSD 3-Clause.
+- **Why:** the bundled RDKit MinimalLib has no conformer embedding (decision
+  232); OpenChemLib's MMFF94s+ minimiser builds the 3D view's geometry in the
+  browser, so nothing drawn leaves the machine (decision 108).
+
+## three.js (the 3D view's renderer)
+
+- **Files:** bundled by Next into the editor's client chunks, loaded only when
+  the 3D view opens.
+- **Version:** `three` 0.186.1.
+- **Copyright:** Copyright © 2010-2026 three.js authors.
+- **Licence:** MIT.
+
 ## Arimo (the figure font)
 
 - **Files:** `packages/chem-render/assets/arimo-latin-400-normal.woff`,

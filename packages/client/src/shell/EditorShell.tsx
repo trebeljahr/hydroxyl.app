@@ -34,6 +34,7 @@ import { EditorCanvas } from "@/canvas";
 import { RepresentationSwitcher } from "@/canvas/RepresentationSwitcher";
 import { usePersistedRecentElements } from "@/editor/recent-elements";
 import { useKeyBindings } from "@/editor/useKeyBindings";
+import { useEditorStore } from "@/state";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { flushEditorDocument } from "@/persistence/session";
 
@@ -45,6 +46,7 @@ import { InsertDialog } from "./InsertDialog";
 import { useFileDrop } from "./useFileDrop";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { StatusBar } from "./StatusBar";
+import { ThreeDPanel } from "./ThreeDPanel";
 import { ToolRail } from "./ToolRail";
 import { TopBar } from "./TopBar";
 
@@ -60,6 +62,7 @@ export function EditorShell(): ReactElement {
   // in is part of how Mod+V resolves. See useFileDrop's header.
   useFileDrop();
   usePersistedRecentElements();
+  const threeDViewOpen = useEditorStore((state) => state.ui.threeDViewOpen);
 
   return (
     <TooltipProvider delayDuration={400} skipDelayDuration={200}>
@@ -78,6 +81,7 @@ export function EditorShell(): ReactElement {
               </CanvasErrorBoundary>
             </div>
           </main>
+          {threeDViewOpen ? <ThreeDPanel /> : null}
           <PropertiesPanel />
         </div>
         <StatusBar />

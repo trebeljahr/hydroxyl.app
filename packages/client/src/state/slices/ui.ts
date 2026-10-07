@@ -32,6 +32,7 @@ export const INITIAL_UI_STATE: UiState = Object.freeze({
   exportDialogOpen: false,
   periodicTableOpen: false,
   insertDialogOpen: false,
+  threeDViewOpen: false,
   figureExport: Object.freeze({ width: "single", customWidthCm: 12, dpi: 300, style: "publication", pngBackground: "white" }),
   refusal: null,
 });
@@ -118,6 +119,13 @@ export function createUiSlice(
       if (get().ui.periodicTableOpen === open) return;
       set((draft) => {
         draft.ui.periodicTableOpen = open;
+      });
+    },
+
+    setThreeDViewOpen(open) {
+      if (get().ui.threeDViewOpen === open) return;
+      set((draft) => {
+        draft.ui.threeDViewOpen = open;
       });
     },
 

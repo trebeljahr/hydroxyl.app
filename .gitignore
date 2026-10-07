@@ -40,6 +40,11 @@ packages/client/out/
 # regenerate on every dev/build/test run.
 packages/client/public/rdkit/
 
+# The 3D view's conformer worker (OpenChemLib bundled by esbuild) and its
+# licence notice, staged by packages/client/scripts/copy-conformer.mjs on
+# every dev/build/test run.
+packages/client/public/conformer/
+
 # The 1200x630 link-preview image, rendered from the landing's example figure
 # by packages/client/scripts/build-social-card.mjs on every dev/build run.
 packages/client/public/social-card.png

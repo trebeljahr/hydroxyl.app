@@ -1824,6 +1824,17 @@ const VIEW_COMMANDS: readonly Command[] = [
     },
   },
   {
+    id: "view.3d",
+    title: "Show or hide the 3D view",
+    keywords: ["3d", "three", "conformer", "ball", "stick", "space", "fill", "cpk", "mmff", "geometry", "rotate"],
+    group: "view",
+    enabled: always,
+    run: (store) => {
+      const state = store.getState();
+      state.setThreeDViewOpen(!state.ui.threeDViewOpen);
+    },
+  },
+  {
     id: "view.theme",
     title: "Toggle light / dark theme",
     keywords: ["theme", "dark", "light", "appearance", "mode"],

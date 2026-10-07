@@ -180,6 +180,25 @@ the entire dependency is confined to `packages/client/src/lib/rdkit/`.
   those two are identical for a sulfone and its charge-separated form, for
   glycine's neutral and zwitterionic forms, and for 13-C methane and 12-C.
 
+### The 3D view derives its geometry; nothing stores it
+
+- **Conformers come from OpenChemLib's MMFF94s+, not RDKit** (decision 232):
+  the bundled MinimalLib has no ETKDG or force field, which
+  `lib/rdkit/conformer-capability.node.test.ts` pins. OpenChemLib is confined
+  to `packages/client/src/lib/conformer/`, in its own worker that
+  `scripts/copy-conformer.mjs` bundles into `public/conformer/` (gitignored,
+  same no-Turbopack rule as RDKit's). A molblock goes in, plain atom/bond
+  records come out; chem-core never sees either side's types.
+- **The drawn stereo is checked, not hoped for.** `embed.ts` starts from the
+  2D drawing lifted off the plane by its wedges, minimises, and reads every
+  attempt's parities back from the 3D molfile. An attempt that inverts a
+  drawn centre is discarded; after five the view refuses rather than show
+  the enantiomer.
+- **Each species is embedded on its own** and set side by side; minimised
+  together the force field clumps them.
+- three.js renders it (`lib/three-d/`), loaded by `import()` when the panel
+  opens. The panel's state is session-only and never touches the document.
+
 ## How to Run
 
 ```bash

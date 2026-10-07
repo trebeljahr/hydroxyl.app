@@ -15,6 +15,9 @@ const config = defineConfig([
     // src/lib/rdkit/worker.ts; linting its bundle would only report on
     // minifier output and on 128 kB of generated C++ shim.
     "public/rdkit/**",
+    // Staged by scripts/copy-conformer.mjs: OpenChemLib bundled into the 3D
+    // view's worker. Its source is src/lib/conformer/worker.ts.
+    "public/conformer/**",
   ]),
 ]);
 

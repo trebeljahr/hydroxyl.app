@@ -22,6 +22,7 @@
 
 import type { MouseEvent, ReactElement } from "react";
 import {
+  BoxIcon,
   ChevronLeftIcon,
   CommandIcon,
   FlaskConicalIcon,
@@ -254,6 +255,12 @@ export function TopBar(): ReactElement {
           <>
             <SparklesIcon className="size-4" />
             <span aria-hidden="true">Clean up</span>
+          </>
+        </CommandButton>
+        <CommandButton id="view.3d" label="3D view">
+          <>
+            <BoxIcon className="size-4" />
+            <span aria-hidden="true">3D</span>
           </>
         </CommandButton>
         <CommandButton id="figure.export-dialog">

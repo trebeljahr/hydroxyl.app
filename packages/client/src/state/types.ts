@@ -188,6 +188,12 @@ export interface UiState {
   readonly periodicTableOpen: boolean;
   /** The insert box: a structure by name, sum formula, SMILES or molfile. */
   readonly insertDialogOpen: boolean;
+  /**
+   * The 3D view beside the canvas (decisions 222 and 232). Session-only, like
+   * the dialogs: whether it is open says nothing about the drawing, and its
+   * geometry is derived from the molecule each time it is shown.
+   */
+  readonly threeDViewOpen: boolean;
   readonly figureExport: FigureExportSettings;
   /**
    * What an outside toolkit refused about THE CURRENT MOLECULE, or nothing.
@@ -439,6 +445,7 @@ export interface UiSlice {
   setExportDialogOpen(open: boolean): void;
   setPeriodicTableOpen(open: boolean): void;
   setInsertDialogOpen(open: boolean): void;
+  setThreeDViewOpen(open: boolean): void;
   setFigureExport(patch: Partial<FigureExportSettings>): void;
   clearElementInputBuffer(): void;
   setRefusal(refusal: ToolkitRefusal | null): void;

@@ -202,8 +202,10 @@ export function Landing(): ReactElement {
 
       <Section id="limits" heading="Not in this version">
         <ul className="list-disc space-y-2 pl-5">
+          <li>No Fischer, Haworth, chair, Newman or sawhorse projections yet.</li>
           <li>
-            No 3D views, and no Fischer, Haworth, chair, Newman or sawhorse projections yet.
+            The 3D view shows one computed conformer. It does not search conformers or export 3D
+            files yet.
           </li>
           <li>No condensed formula for molecules with rings. It works for chains only.</li>
           <li>
