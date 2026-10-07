@@ -69,7 +69,7 @@ describe("ExportDialog annotation size warning (decision 60)", () => {
     expect(shown!.getAttribute("data-annotation-kinds")).toBe("descriptor");
     expect(shown!.textContent).toMatch(/^Stereo descriptors print at \d+\.\d pt, below the 8 pt minimum ACS asks for in figures\./);
     expect(shown!.getAttribute("data-annotation-pt")).toBe(/at (\d+\.\d) pt/.exec(shown!.textContent!)![1]);
-    for (const command of ["figure.export-svg", "figure.export-png", "figure.copy"]) {
+    for (const command of ["figure.export-svg", "figure.export-pdf", "figure.export-png", "figure.copy"]) {
       const button = document.querySelector<HTMLButtonElement>(`[data-command="${command}"]`);
       expect(button, command).not.toBeNull();
       expect(button!.disabled, command).toBe(false);

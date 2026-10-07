@@ -118,6 +118,7 @@ import {
   copyInchi,
   copySmiles,
   exportCdxml,
+  exportFigurePdf,
   exportFigurePng,
   exportFigureSvg,
 } from "./figure";
@@ -1908,7 +1909,7 @@ const FIGURE_COMMANDS: readonly Command[] = [
   {
     id: "figure.export-dialog",
     title: "Export figure…",
-    keywords: ["export", "figure", "svg", "png", "publication", "journal", "dpi", "panels"],
+    keywords: ["export", "figure", "svg", "pdf", "png", "publication", "journal", "dpi", "panels"],
     shortcut: "Mod+Shift+e",
     group: "figure",
     enabled: always,
@@ -1923,6 +1924,14 @@ const FIGURE_COMMANDS: readonly Command[] = [
     group: "figure",
     enabled: hasPanels,
     run: (store) => exportFigureSvg(store),
+  },
+  {
+    id: "figure.export-pdf",
+    title: "Export figure as PDF",
+    keywords: ["export", "figure", "pdf", "vector", "print", "manuscript"],
+    group: "figure",
+    enabled: hasPanels,
+    run: (store) => exportFigurePdf(store),
   },
   {
     id: "figure.export-png",

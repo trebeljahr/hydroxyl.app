@@ -9,6 +9,10 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./pdf": {
+      "import": "./dist/pdf/figure.js",
+      "types": "./dist/pdf/figure.d.ts"
     }
   },
   "scripts": {

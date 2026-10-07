@@ -274,7 +274,8 @@ export function JournalFigureSizeGuide(): ReactElement {
             them at <N k="min-label-pt">{n.minLabelPt}</N> pt.
           </li>
           <li>
-            Choose <strong>Download SVG</strong>, or <strong>Download PNG</strong> at{" "}
+            Choose <strong>Download SVG</strong>, <strong>Download PDF</strong>, or{" "}
+            <strong>Download PNG</strong> at{" "}
             {n.dpiChoices.map((dpi, i) => (
               <span key={dpi}>
                 {i === 0 ? "" : " or "}

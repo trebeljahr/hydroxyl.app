@@ -72,6 +72,9 @@ export * from "./svg/serialize.js";
 export * from "./figure/compose.js";
 export * from "./figure/physical.js";
 export * from "./svg/figure.js";
+// The PDF writer itself is served from `@starter/chem-render/pdf`, so its
+// embedded font loads only on a PDF export; this is just its fallback report.
+export * from "./pdf/symbol.js";
 // Scheme annotations: the stored arrows, plus signs, brackets and text a
 // document holds beside its molecule. Types, anchors and pruning.
 export * from "./scheme/annotation.js";

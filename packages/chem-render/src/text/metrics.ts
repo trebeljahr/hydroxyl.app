@@ -138,6 +138,11 @@ const ADVANCE_BY_CODEPOINT: ReadonlyMap<number, number> = new Map(
   ADVANCE_WIDTHS.map(([codepoint, advance]) => [codepoint, advance]),
 );
 
+/** Whether the vendored subset has a glyph for `codepoint` at all. */
+export function hasGlyph(codepoint: number): boolean {
+  return ADVANCE_BY_CODEPOINT.has(codepoint);
+}
+
 /**
  * Advance of one code point, in font units.
  *

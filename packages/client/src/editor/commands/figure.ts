@@ -1,5 +1,5 @@
 /**
- * The figure commands: export SVG, export PNG, copy the figure, copy the
+ * The figure commands: export SVG, PDF or PNG, copy the figure, copy the
  * structure as SMILES, InChI, InChIKey or a molfile, download it as CDXML,
  * copy its elemental analysis.
  *
@@ -25,6 +25,7 @@ import {
   annotationSizeNotice,
   figureSvgForFile,
   figureSvgForRaster,
+  pdfFontNotice,
   prepareFigure,
   rasterTooLarge,
   labelSizeNotice,
@@ -32,6 +33,7 @@ import {
 } from "@/lib/export/figure";
 import type { PreparedFigure } from "@/lib/export/figure";
 import { textBlob, writeClipboardParts } from "@/lib/export/clipboard";
+import { figurePdfBlob } from "@/lib/export/pdf";
 import { canvasCanHold, rasterizeSvg } from "@/lib/export/png";
 import { writeBlobFile } from "@/lib/io/file-system";
 import { fileBaseName } from "@/lib/io/save";
@@ -77,6 +79,28 @@ export async function exportFigureSvg(store: EditorStore): Promise<void> {
   );
   if (outcome.ok) report(store, `Exported the figure as SVG, ${sizeNote(store, figure)}`);
   else if (!outcome.cancelled) report(store, outcome.message);
+}
+
+export async function exportFigurePdf(store: EditorStore): Promise<void> {
+  const figure = prepared(store);
+  if (figure === null) return;
+  // The writer loads inside the picker's promise, after the gesture is spent.
+  const outcome = await writeBlobFile(
+    () => figurePdfBlob(figure),
+    `${figure.filenameBase}.pdf`,
+    "application/pdf",
+    "PDF figure",
+    ".pdf",
+  );
+  if (outcome.ok) {
+    const fonts = pdfFontNotice(figure);
+    report(
+      store,
+      `Exported the figure as PDF, ${sizeNote(store, figure)}${fonts === null ? "" : ` ${fonts}`}`,
+    );
+  } else if (!outcome.cancelled) {
+    report(store, outcome.message);
+  }
 }
 
 export async function exportFigurePng(store: EditorStore): Promise<void> {

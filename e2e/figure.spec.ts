@@ -311,6 +311,35 @@ test("exports ONE self-contained SVG: labelled panels, one bond length, unique i
   }
 });
 
+test("PDF is one vector page the printed size, with Arimo embedded (decision 236)", async ({
+  page,
+}, testInfo) => {
+  await openEditor(page);
+  await composeThreeViews(page);
+  await openExportDialog(page);
+  await page.locator(`${DIALOG} input[name="figure-width"][value="single"]`).check();
+  const readout = await page.locator('[data-shell="figure-size"]').textContent();
+  const printed = /Prints ([\d.]+) × ([\d.]+) cm/.exec(readout ?? "");
+  expect(printed).not.toBeNull();
+
+  const pdf = await downloadFrom(page, "figure.export-pdf");
+  const { writeFileSync } = await import("node:fs");
+  writeFileSync(testInfo.outputPath("figure.pdf"), pdf);
+  const text = pdf.toString("latin1");
+  expect(text.startsWith("%PDF-1.7\n")).toBe(true);
+  expect(text.endsWith("%%EOF\n")).toBe(true);
+
+  // The page is the size the dialog read out, in points.
+  const box = /\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/.exec(text);
+  expect(Number(box?.[1])).toBeCloseTo((Number(printed?.[1]) / 2.54) * 72, 0);
+  expect(Number(box?.[2])).toBeCloseTo((Number(printed?.[2]) / 2.54) * 72, 0);
+  // Text set in the embedded face, not left to the reader's fonts.
+  expect(text).toContain("/FontFile2");
+  expect(text).toContain("/Encoding /Identity-H");
+  expect(text).not.toContain("/BaseFont /Symbol");
+  await expect(page.locator('[data-shell="export-status"]')).toContainText("Exported the figure as PDF");
+});
+
 test("PNG at 300 dpi follows the printed size, not the column, rasterised with its resolution stamped", async ({
   page,
 }, testInfo) => {
@@ -456,7 +485,7 @@ test("labels scaled under 8 pt: the read-out states the printed pt, the dialog w
   await expect(warning).toContainText("Try a double column, fewer panels per row, or fewer panels.");
 
   // A warning, not a refusal (decision 51).
-  for (const command of ["figure.export-svg", "figure.export-png", "figure.copy"]) {
+  for (const command of ["figure.export-svg", "figure.export-pdf", "figure.export-png", "figure.copy"]) {
     await expect(page.locator(`${DIALOG} [data-command="${command}"]`)).toBeEnabled();
   }
   const svg = (await downloadFrom(page, "figure.export-svg")).toString("utf8");

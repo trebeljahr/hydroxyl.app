@@ -42,6 +42,11 @@
  * and a change shows up in the file at once. Captions and the column count
  * stay in the properties panel.
  *
+ * PDF (decision 236). The same figure as the SVG, at the same printed size,
+ * with Arimo embedded. A figure with Greek letters gets a sentence under the
+ * buttons: the bundled face has none, so the PDF leaves them to the reader's
+ * Symbol font.
+ *
  * Every button runs a registry command synchronously inside its click, which
  * is what keeps the clipboard and the save picker inside the user gesture.
  */
@@ -63,6 +68,7 @@ import {
   figureStyleNotice,
   formatPt,
   labelSizeNotice,
+  pdfFontNotice,
   prepareFigure,
   rasterTooLarge,
   scaleNotice,
@@ -134,6 +140,7 @@ export function ExportDialog(): ReactElement {
   const annotationNotice =
     prepared?.ok === true ? annotationSizeNotice(prepared.value, settings) : null;
   const canExport = prepared?.ok === true;
+  const pdfNotice = prepared?.ok === true ? pdfFontNotice(prepared.value) : null;
   const styleNotice = figureStyleNotice(doc, settings);
   // Decision 49: the app picks V3000 whenever the structure states stereo
   // groups, and SAYS SO here — before the button is pressed, since a chemist
@@ -380,6 +387,15 @@ export function ExportDialog(): ReactElement {
           <button
             type="button"
             className={button}
+            data-command="figure.export-pdf"
+            disabled={!canExport}
+            onClick={() => run("figure.export-pdf")}
+          >
+            Download PDF
+          </button>
+          <button
+            type="button"
+            className={button}
             data-command="figure.export-png"
             disabled={!canExport || tooLarge !== null}
             onClick={() => run("figure.export-png")}
@@ -437,6 +453,11 @@ export function ExportDialog(): ReactElement {
             Copy molfile
           </button>
         </div>
+        {pdfNotice === null ? null : (
+          <p data-shell="pdf-font" role="status" className="text-muted-foreground mt-2 text-xs">
+            {pdfNotice}
+          </p>
+        )}
         {molfileNotice === null ? null : (
           <p
             data-shell="molfile-version"
