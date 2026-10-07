@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
 // chem-render's own source, not a copy: the point of this spec is that the
 // numbers the guide prints are these constants. Only type imports leave
@@ -175,4 +176,79 @@ test("the guide ends at the export dialog it describes", async ({ page }) => {
     `bond ${(PRINTED_BOND_LENGTH_CM * 10).toFixed(2)} mm`,
   );
   await expect(dialog.locator('[data-shell="figure-size"]')).toContainText("labels 10.0 pt");
+});
+
+/**
+ * The glycine-zwitterion guide. Its readings are chem-core's, computed at
+ * build time; here they are held to what the editor's status bar shows for
+ * the same two figures, and its four steps are run as written.
+ */
+const GLYCINE_GUIDE = "/guides/glycine-zwitterion";
+const STATUS_FORMULA = '[data-status="formula"]';
+
+/** The centre of a drawn atom in page px. A labelled atom (N, O) is drawn
+ *  as its label text, not a circle, so the box of whichever element carries
+ *  the id is what a click aims at. */
+async function atomCentre(page: Page, atomId: string): Promise<{ x: number; y: number }> {
+  const box = await page
+    .locator(`[data-canvas-root] [data-layer="scene"] [data-atom-id="${atomId}"]`)
+    .first()
+    .boundingBox();
+  if (box === null) throw new Error(`atom ${atomId} is not drawn`);
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
+test("the glycine guide's readings are what the editor shows for each figure", async ({ page }) => {
+  const response = await page.goto(GLYCINE_GUIDE);
+  expect(response?.status()).toBe(200);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+    "Glycine as a neutral molecule and as a zwitterion",
+  );
+  const formula = (await page.locator('[data-guide-number="formula"]').textContent()) ?? "";
+  const exact = (await page.locator('[data-guide-number="exact-mass"]').textContent()) ?? "";
+  expect(formula).toBe("C₂H₅NO₂");
+  await expect(page.locator('[data-guide-row][data-guide-same="false"]')).toHaveCount(3);
+  await expect(page.locator('[data-guide-figure="zwitterion"] [data-view]')).toHaveCount(2);
+
+  for (const figure of guideBySlug("glycine-zwitterion").figures) {
+    await page.goto(GLYCINE_GUIDE);
+    await page.locator(`a[data-guide-open-example="${figure.example}"]`).click();
+    await expect(page).toHaveURL(new RegExp(`\\?example=${figure.example}$`));
+    await expect(page.locator(STATUS_FORMULA)).toHaveText(formula);
+    await expect(page.locator('[data-status="exact-mass"]')).toHaveText(`Exact ${exact}`);
+    await expect(page.locator('[data-status="charge"]')).toHaveText("Charge neutral");
+    await expect(page.locator('[data-shell="figure-panels"] [data-panel-id]')).toHaveCount(2);
+  }
+});
+
+test("the glycine guide's steps turn neutral glycine into the zwitterion", async ({ page }) => {
+  const [neutral] = guideBySlug("glycine-zwitterion").figures;
+  await page.goto(GLYCINE_GUIDE);
+  const formula = (await page.locator('[data-guide-number="status-formula"]').textContent()) ?? "";
+  const exact = (await page.locator('[data-guide-number="status-exact-mass"]').textContent()) ?? "";
+  const increase = (await page.locator('[data-guide="shortcut-increase"]').textContent()) ?? "";
+  const decrease = (await page.locator('[data-guide="shortcut-decrease"]').textContent()) ?? "";
+
+  // Step 1: the link under the neutral figure.
+  await page.locator(`a[data-guide-open-example="${neutral.example}"]`).click();
+  await expect(page.locator(STATUS_FORMULA)).toHaveText(formula);
+  const scene = page.locator('[data-canvas-root] [data-layer="scene"]');
+  await expect(scene).not.toContainText("+");
+
+  // Steps 2 and 3. glycineMolecule adds N first and the hydroxyl O last.
+  const nitrogen = await atomCentre(page, "a1");
+  await page.mouse.click(nitrogen.x, nitrogen.y);
+  await expect(page.locator('[data-overlay="selected-atom"]')).toHaveCount(1);
+  await page.keyboard.press(increase);
+  const oxygen = await atomCentre(page, "a5");
+  await page.mouse.click(oxygen.x, oxygen.y);
+  await page.keyboard.press(decrease === "−" ? "-" : decrease);
+
+  // Step 4: clear the selection, so the bar measures the whole structure.
+  await page.locator("[data-canvas-root]").click({ position: { x: 8, y: 8 } });
+  await expect(page.locator('[data-overlay="selected-atom"]')).toHaveCount(0);
+  await expect(scene).toContainText("+");
+  await expect(page.locator(STATUS_FORMULA)).toHaveText(formula);
+  await expect(page.locator('[data-status="exact-mass"]')).toHaveText(`Exact ${exact}`);
+  await expect(page.locator('[data-status="charge"]')).toHaveText("Charge neutral");
 });

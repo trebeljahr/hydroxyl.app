@@ -63,6 +63,24 @@ export const GUIDES: readonly Guide[] = [
       },
     ],
   },
+  {
+    slug: "glycine-zwitterion",
+    title: "Glycine as a neutral molecule and as a zwitterion",
+    description:
+      "Neutral glycine and its zwitterion have the same sum formula and the same mass. " +
+      "Where the two structures differ, how to draw each one, and the PubChem record for each.",
+    released: null,
+    figures: [
+      {
+        example: "glycine-forms-neutral",
+        alt: "Neutral glycine, H2N–CH2–COOH, as a skeletal formula and as a Lewis structure.",
+      },
+      {
+        example: "glycine-forms-zwitterion",
+        alt: "The glycine zwitterion, with NH3+ and CO2−, as a skeletal formula and as a Lewis structure.",
+      },
+    ],
+  },
 ];
 
 /** The guide with this slug. Throws, because every caller names a guide that

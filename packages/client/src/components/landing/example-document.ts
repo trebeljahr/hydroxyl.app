@@ -105,6 +105,64 @@ export function exampleOneRowDocument(): SketchDocument {
   );
 }
 
+/** Which of glycine's two drawings: the neutral amino acid, or the
+ *  zwitterion with NH3+ and CO2−. */
+export type GlycineForm = "neutral" | "zwitterion";
+
+/**
+ * Glycine, H2N–CH2–COOH, drawn as the glycine-forms guide draws it: the
+ * nitrogen on the left, the zig-zag running right, the carbonyl up.
+ *
+ * The zwitterion is the SAME graph with two formal charges, +1 on the
+ * nitrogen and −1 on the hydroxyl oxygen. No hydrogen is moved by hand,
+ * because hydrogens are implicit: chem-core reads the charges and gives the
+ * nitrogen three and the oxygen none. That one fact is the guide's subject.
+ *
+ * The atoms go in the order N, Cα, C, O(carbonyl), O(hydroxyl), so the two
+ * forms share atom ids and the guide's spec can find each atom by position.
+ */
+export function glycineMolecule(form: GlycineForm): Molecule {
+  const zwitterion = form === "zwitterion";
+  return buildMolecule((b) => {
+    const nitrogen = b.atom("N", ORIGIN, zwitterion ? { charge: 1 } : {});
+    const alphaPos = step(ORIGIN, -30);
+    const alpha = b.atom("C", alphaPos);
+    const carboxylPos = step(alphaPos, 30);
+    const carboxyl = b.atom("C", carboxylPos);
+    const carbonyl = b.atom("O", step(carboxylPos, 90));
+    const hydroxyl = b.atom("O", step(carboxylPos, -30), zwitterion ? { charge: -1 } : {});
+    b.bond(nitrogen, alpha, 1);
+    b.bond(alpha, carboxyl, 1);
+    b.bond(carboxyl, carbonyl, 2);
+    b.bond(carboxyl, hydroxyl, 1);
+  });
+}
+
+/** The two views the glycine-forms guide shows: the skeletal panel carries
+ *  the charges, the Lewis panel the lone pairs that go with them. */
+export const GLYCINE_VIEWS: readonly RepresentationKind[] = ["skeletal", "lewis"];
+
+/**
+ * One form of glycine as a two-panel document. The ids are fixed, for the
+ * same byte-identical-build reason as `exampleDocument`, and they differ by
+ * form, because both figures sit inline on one page.
+ */
+export function glycineDocument(form: GlycineForm): SketchDocument {
+  const panels: Panel[] = GLYCINE_VIEWS.map((kind) => ({
+    ...createPanel(kind, VIEW_KIND_TITLES[kind], "publication"),
+    id: `panel-glycine-${form}-${kind}`,
+  }));
+  return createDocument({
+    id: `doc-guide-glycine-${form}`,
+    title: form === "neutral" ? "Glycine" : "Glycine zwitterion",
+    molecule: glycineMolecule(form),
+    stylePreset: "publication",
+    panels,
+    figure: { columns: GLYCINE_VIEWS.length },
+    now: "2026-01-01T00:00:00.000Z",
+  });
+}
+
 /**
  * Every name `?example=` accepts: the landing figure, and every figure of
  * every guide, released or not (`components/guides/guides.ts` names them).
@@ -118,6 +176,8 @@ const EXAMPLES: Readonly<Record<string, () => SketchDocument>> = {
   [LANDING_EXAMPLE]: exampleDocument,
   "journal-figure-size-two-per-row": exampleDocument,
   "journal-figure-size-one-row": exampleOneRowDocument,
+  "glycine-forms-neutral": () => glycineDocument("neutral"),
+  "glycine-forms-zwitterion": () => glycineDocument("zwitterion"),
 };
 
 /**

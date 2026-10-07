@@ -81,6 +81,7 @@ for (const page of [
   "about.html",
   "guides.html",
   "guides-journal-figure-size.html",
+  "guides-glycine-zwitterion.html",
 ]) {
   try {
     statSync(path.join(out, page));

@@ -14,6 +14,10 @@ import {
 } from "@starter/chem-core";
 import type { Molecule } from "@starter/chem-core";
 
+// The glycine-zwitterion guide's own two molecules, so the pair the guide
+// says this harness checks is exactly the pair it draws.
+import { glycineMolecule } from "@/components/landing/example-document";
+
 import {
   inchiAndMolblock,
   molLifecycleCounts,
@@ -209,6 +213,8 @@ const FIXTURES: ReadonlyArray<readonly [string, Molecule]> = [
   ["13-C methane", isotopeMethane()],
   ["ethyl radical", ethylRadical()],
   ["bromochlorofluoromethane", bromochlorofluoromethane()],
+  ["glycine", glycineMolecule("neutral")],
+  ["glycine zwitterion", glycineMolecule("zwitterion")],
 ];
 
 // ---------------------------------------------------------------------------
@@ -275,6 +281,18 @@ describe("molecule -> RDKit -> molecule", () => {
     // V2000 `hhh` field makes RDKit treat the atom as a QUERY atom and drop
     // every hydrogen, so the failure mode is C6, silently, with an empty log.
     expect(elementCounts(roundTrip(benzene()))).toEqual({ C: 6, H: 6 });
+  });
+
+  it("keeps glycine's zwitterion apart from neutral glycine", () => {
+    // Same element counts and net charge on both sides, so those two alone
+    // would pass either form back as the other. The charge multiset is what
+    // separates them, and it must survive RDKit on each side.
+    const neutral = roundTrip(glycineMolecule("neutral"));
+    const zwitterion = roundTrip(glycineMolecule("zwitterion"));
+    expect(elementCounts(zwitterion)).toEqual(elementCounts(neutral));
+    expect(netCharge(zwitterion)).toBe(netCharge(neutral));
+    expect(formalCharges(neutral)).toEqual([]);
+    expect(formalCharges(zwitterion)).toEqual([-1, 1]);
   });
 
   it("keeps pyrrole's N-H", () => {

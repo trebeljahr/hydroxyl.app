@@ -12,6 +12,8 @@ import {
 } from "@starter/chem-core";
 import type { MolblockWarning, Molecule } from "@starter/chem-core";
 
+import { glycineMolecule } from "@/components/landing/example-document";
+
 import {
   atomIdsNamedByRdkit,
   classifyWarnings,
@@ -349,6 +351,14 @@ describe("diffMolecules", () => {
     const kinds = diffMolecules(plain, separated).map((d) => d.kind);
     expect(kinds).toContain("formal-charges");
     expect(kinds).toContain("bond-orders");
+  });
+
+  it("tells glycine's zwitterion from neutral glycine by the formal charges alone", () => {
+    // The glycine-zwitterion guide prints this result: formula, mass, net
+    // charge and bond orders agree, and only the charges differ.
+    expect(diffMolecules(glycineMolecule("neutral"), glycineMolecule("zwitterion"))).toEqual([
+      { kind: "formal-charges", before: [], after: [-1, 1] },
+    ]);
   });
 
   it("catches a lost wedge", () => {
