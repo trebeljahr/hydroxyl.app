@@ -20,6 +20,7 @@
   "publicService": "client",
   "coolifyRuntime": "image",
   "containerPorts": { "app": 6337 },
+  "coolifyApps": { "app": "zs9m5lti6vevcu7tanvsenl8" },
   "email": {
     "transactional": "listmonk-ses",
     "mailingList": "listmonk-ses"
