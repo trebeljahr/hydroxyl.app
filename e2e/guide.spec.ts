@@ -427,3 +427,59 @@ test("the multi-panel guide's steps, clicked in order, build the figure it shows
   await expect(dialog.locator('[data-shell="figure-size"]')).toContainText(`Prints ${size}`);
   await expect(dialog.locator('[data-shell="figure-fit"]')).toHaveText("Printed at its natural size.");
 });
+
+/**
+ * The skeletal-formula guide (decision 247). Its counts are chem-core's, which
+ * this spec cannot import, so it holds the page to the EDITOR instead: the
+ * formula the guide prints is the one the editor shows for its figure and for
+ * the insert box's "isoleucine", and the issue label it quotes is the one the
+ * canvas draws on the five-bond example.
+ */
+const SKELETAL = "/guides/skeletal-formula";
+
+test("the skeletal-formula guide's figure is the insert box's isoleucine, in the editor too", async ({
+  page,
+}) => {
+  const response = await page.goto(SKELETAL);
+  expect(response?.status()).toBe(200);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+    guideBySlug("skeletal-formula").title,
+  );
+  await expect(page.locator('[data-guide-figure="isoleucine"] [data-view]')).toHaveCount(2);
+  await expect(page.locator("[data-guide-carbon]")).toHaveCount(
+    Number(await page.locator('[data-guide-number="carbon-count"]').textContent()),
+  );
+  const formula = (await page.locator('[data-guide-number="formula"]').textContent()) ?? "";
+  expect(formula).toBe("C₆H₁₃NO₂");
+  const viewName = (await page.locator('[data-guide="add-view"]').textContent()) ?? "";
+
+  const [figure] = guideBySlug("skeletal-formula").figures;
+  await page.locator(`a[data-guide-open-example="${figure!.example}"]`).click();
+  await expect(page).toHaveURL(new RegExp(`\\?example=${figure!.example}$`));
+  await expect(page.locator('[data-status="formula"]')).toHaveText(formula);
+  await expect(page.locator('[data-shell="figure-panels"] [data-panel-id]')).toHaveCount(2);
+
+  // The guide's first step: the insert box gives the same molecule.
+  await page.goto("/editor");
+  await expect(page.locator('[data-status="formula"]')).toHaveText("C₆H₆");
+  await page.locator('[data-command="structure.insert"]').click();
+  await page.locator('[data-shell="insert-input"]').fill("isoleucine");
+  await expect(page.locator('[data-shell="insert-candidates"] [role="option"]').first()).toContainText(
+    "L-isoleucine",
+  );
+  await page.keyboard.press("Enter");
+  await expect(page.locator('[data-shell="insert-dialog"]')).toBeHidden();
+  await expect(page.locator('[data-status="formula"]')).toHaveText(formula);
+
+  // Its second step: the chooser has the view the guide names.
+  await page.locator('[data-shell="panel-chooser-trigger"]').click();
+  await expect(page.locator('[data-add-view="explicitH"]')).toHaveText(viewName);
+});
+
+test("the five-bond example opens with the issue label the guide quotes", async ({ page }) => {
+  await page.goto(SKELETAL);
+  const label = (await page.locator('[data-guide="issue-label"]').textContent()) ?? "";
+  expect(label).toMatch(/^C has 5 bonds; max 4$/);
+  await page.locator('a[data-guide-open-example="skeletal-formula-five-bonds"]').click();
+  await expect(page.locator('[data-overlay="issue-label"]')).toHaveText([label]);
+});

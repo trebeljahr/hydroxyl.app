@@ -42,6 +42,10 @@ import {
   multiPanelAutomaticDocument,
   multiPanelDocument,
 } from "@/components/guides/multi-panel-examples";
+import {
+  fiveBondCarbonDocument,
+  skeletalFormulaDocument,
+} from "@/components/guides/skeletal-formula-examples";
 
 /** The views the example lays side by side, in panel order. */
 export const EXAMPLE_VIEWS: readonly RepresentationKind[] = [
@@ -197,6 +201,9 @@ const EXAMPLES: Readonly<Record<string, () => SketchDocument>> = {
   "formal-charges-acetate": acetateDocument,
   "multi-panel-figure": multiPanelDocument,
   "multi-panel-figure-automatic-columns": multiPanelAutomaticDocument,
+  "skeletal-formula-isoleucine": skeletalFormulaDocument,
+  // Not a figure: the guide links it so the reader sees the issue marker.
+  "skeletal-formula-five-bonds": fiveBondCarbonDocument,
 };
 
 /**

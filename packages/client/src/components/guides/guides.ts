@@ -131,6 +131,22 @@ export const GUIDES: readonly Guide[] = [
       },
     ],
   },
+  {
+    slug: "skeletal-formula",
+    title: "Where are the carbons and hydrogens in a skeletal formula?",
+    description:
+      "Every unlabelled corner and line end is a carbon, and hydrogens fill each carbon up to four bonds. " +
+      "L-isoleucine counted carbon by carbon, drawn skeletal and with every hydrogen.",
+    released: null,
+    figures: [
+      {
+        example: "skeletal-formula-isoleucine",
+        alt:
+          "L-isoleucine in two panels: (a) skeletal, with carbons 1 to 5 numbered, " +
+          "and (b) the same molecule with every hydrogen drawn.",
+      },
+    ],
+  },
 ];
 
 /** The guide with this slug. Throws, because every caller names a guide that
