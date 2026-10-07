@@ -192,7 +192,8 @@ export type RepresentationKind = ViewKind;
  * structural 2D views (`skeletal`, `kekule`, `explicitH`, `lewis`) — there is
  * nowhere to draw a lone pair on a sum formula — but they are stored for
  * every panel so that flipping a panel's kind back and forth does not lose
- * the settings the chemist had chosen.
+ * the settings the chemist had chosen. Only those: a flag still at its kind's
+ * default follows the new kind (`displayForKindChange`, decision 254).
  */
 export type RepresentationDisplay = DisplayFlags;
 
@@ -242,14 +243,15 @@ export interface Panel {
    * drawing, never `undefined`.
    *
    * AN AXIS ORTHOGONAL TO `representation.kind`, so a Fischer can be drawn
-   * skeletal or with explicit hydrogens, and a view survives a kind change the
-   * way the display flags do. It is chem-core's `ProjectionView` exactly
-   * (decision 162): `kind` plus `template` name the projection, `frame` the
-   * chemistry it looks at (a backbone, a ring atom-id SET, a sighted bond),
-   * `params` the view knobs, conformation included. Decision 12 puts a torsion
-   * or a chair flip HERE, on the panel, and never on the molecule; so two
-   * panels of one molecule may show two rotamers (decision 160: no shared,
-   * named conformations in v1).
+   * skeletal or with explicit hydrogens, and a view survives a kind change
+   * whole (the display flags are re-seeded instead, decision 254). It is
+   * chem-core's `ProjectionView` exactly (decision 162): `kind` plus
+   * `template` name the projection, `frame` the chemistry it looks at (a
+   * backbone, a ring atom-id SET, a sighted bond), `params` the view knobs,
+   * conformation included. Decision 12 puts a torsion or a chair flip HERE,
+   * on the panel, and never on the molecule; so two panels of one molecule
+   * may show two rotamers (decision 160: no shared, named conformations in
+   * v1).
    *
    * STORED CANONICAL. `assembleProjectionView` writes angles in [0, 360) and a
    * ring's atoms as a sorted set, so 370 and 10 are one panel by value and two
@@ -484,6 +486,37 @@ export function defaultRepresentation(
       seed === "kind" ? base : { ...base, aromaticCircles: seed },
     ),
   };
+}
+
+/**
+ * The display flags a panel carries into a new kind (decision 254).
+ *
+ * FLAG BY FLAG: a flag that still holds the OLD kind's default takes the NEW
+ * kind's default; a flag the chemist changed keeps its value. A flag at its
+ * default was never a choice, it was the old view's convention, and keeping
+ * it made a sum-formula panel switched to explicit H draw no C or H labels
+ * (decision 248 measured aspirin at 7.19 × 8.08 cm against 7.62 × 8.91 cm
+ * for a freshly added explicit-H panel). A flag the chemist DID change — lone
+ * pairs turned on in a skeletal panel — still survives a trip to Kekulé and
+ * back, which is what storing flags per panel was for.
+ *
+ * The defaults are read under the document's CURRENT preset, the one a new
+ * panel would be seeded from.
+ */
+export function displayForKindChange(
+  display: RepresentationDisplay,
+  from: RepresentationKind,
+  to: RepresentationKind,
+  preset: StylePresetId = NEW_DOCUMENT_PRESET,
+): RepresentationDisplay {
+  if (from === to) return display;
+  const before = defaultRepresentation(from, preset).display;
+  const after = defaultRepresentation(to, preset).display;
+  const next = {} as { -readonly [K in DisplayFlagKey]: boolean };
+  for (const key of DISPLAY_FLAG_KEYS) {
+    next[key] = display[key] === before[key] ? after[key] : display[key];
+  }
+  return next;
 }
 
 /**

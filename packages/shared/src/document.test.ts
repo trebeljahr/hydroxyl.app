@@ -44,6 +44,7 @@ import {
   createPanel,
   decodeDocument,
   defaultRepresentation,
+  displayForKindChange,
   encodeDocument,
   moleculeSchema,
   safeDecodeDocument,
@@ -675,6 +676,31 @@ describe("factories", () => {
     expect(touched.molecule).toBe(doc.molecule);
     expect(doc.metadata.modifiedAt).toBe(NOW);
     expect(undefinedValuedPaths(touched)).toEqual([]);
+  });
+
+  it("re-seeds only the flags a kind change finds at the old kind's default (decision 254)", () => {
+    const sum = defaultRepresentation("sumFormula").display;
+    // A sum-formula panel switched to explicit H is a fresh explicit-H panel.
+    expect(displayForKindChange(sum, "sumFormula", "explicitH")).toEqual(
+      defaultRepresentation("explicitH").display,
+    );
+    // Lone pairs the chemist turned on survive skeletal → Kekulé → skeletal.
+    const skeletal = {
+      ...defaultRepresentation("skeletal").display,
+      showLonePairs: true,
+    };
+    const kekule = displayForKindChange(skeletal, "skeletal", "kekule");
+    expect(kekule).toEqual({
+      ...defaultRepresentation("kekule").display,
+      showLonePairs: true,
+    });
+    expect(displayForKindChange(kekule, "kekule", "skeletal")).toEqual(skeletal);
+    // Under Nature every view starts Kekulé, so the circle stays off.
+    const lewis = defaultRepresentation("lewis", "nature").display;
+    expect(displayForKindChange(lewis, "lewis", "skeletal", "nature")).toEqual(
+      defaultRepresentation("skeletal", "nature").display,
+    );
+    expect(displayForKindChange(skeletal, "skeletal", "skeletal")).toBe(skeletal);
   });
 
   it("defaults display flags per representation kind", () => {

@@ -165,9 +165,9 @@ export function MultiPanelFigureGuide(): ReactElement {
           Alt+Up or Alt+Down. Each caption moves with its panel.
         </p>
         <p>
-          Add new panels rather than changing the view of an old one. A panel keeps its display
-          settings when its view changes, so a sum-formula panel switched to {b.view} draws no
-          carbon or hydrogen labels.
+          You can also change the view of a panel you have. The panel then takes the display
+          settings of the new view, so a sum-formula panel changed to {b.view} draws its carbon
+          and hydrogen labels. A setting you changed yourself stays with the panel.
         </p>
         <p>
           The letters and the captions print at the size of the atom labels:{" "}

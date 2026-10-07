@@ -7,12 +7,19 @@ import {
   VIEW_KIND_TITLES,
   defaultFigureColumns,
 } from "@starter/chem-render";
-import { DEFAULT_PANELS, createPanel } from "@starter/shared";
+import { DEFAULT_PANELS, createDocument, createPanel } from "@starter/shared";
 import { describe, expect, it } from "vitest";
 
 import { exampleNamed } from "@/components/landing/example-document";
+import { createEditorStore } from "@/state/store";
 
-import { ASPIRIN_MOLBLOCK, MULTI_PANEL_VIEWS, aspirinMolecule } from "./multi-panel-examples";
+import {
+  ASPIRIN_MOLBLOCK,
+  MULTI_PANEL_COLUMNS,
+  MULTI_PANEL_VIEWS,
+  aspirinMolecule,
+} from "./multi-panel-examples";
+import { singleColumnFigure } from "./guide-figure";
 
 import { ACS_FIGURE_CAPTION, multiPanelNumbers, printedSize } from "./multi-panel-figure";
 
@@ -50,15 +57,38 @@ describe("the multi-panel guide's steps", () => {
     );
   });
 
-  it("are right that a sum-formula panel switched to explicit H draws no C or H labels", () => {
-    // The page advises adding panels rather than switching one, because a
-    // kind change keeps the panel's display flags (patchPanel, document slice).
-    const sum = createPanel("sumFormula", undefined, "publication").representation.display;
-    expect(sum.showCarbonLabels).toBe(false);
-    expect(sum.showImplicitHydrogens).toBe(false);
-    const explicit = createPanel("explicitH", undefined, "publication").representation.display;
-    expect(explicit.showCarbonLabels).toBe(true);
-    expect(explicit.showImplicitHydrogens).toBe(true);
+  it("are right that a sum-formula panel switched to explicit H draws its C and H labels", () => {
+    // The page says a view change re-seeds the flags the chemist left alone
+    // (decision 254). Build the figure that way instead of the steps' way —
+    // switch the new sketch's Sum formula panel, then add Lewis and Sum
+    // formula — and it prints the guide's figure exactly.
+    const store = createEditorStore({
+      document: createDocument({
+        molecule: aspirinMolecule(),
+        stylePreset: "publication",
+        now: "2026-01-01T00:00:00.000Z",
+      }),
+      now: () => "2026-01-01T00:00:00.000Z",
+    });
+    const second = DEFAULT_PANELS[1]!.id;
+    const state = (): ReturnType<typeof store.getState> => store.getState();
+    state().updatePanel(second, { kind: "explicitH" });
+    const switched = state().document.panels.find((p) => p.id === second)!.representation;
+    const added = createPanel("explicitH", undefined, "publication").representation;
+    expect(switched).toEqual(added);
+    expect(switched.display.showCarbonLabels).toBe(true);
+    expect(switched.display.showImplicitHydrogens).toBe(true);
+
+    state().addPanel("lewis");
+    state().addPanel("sumFormula");
+    state().setFigureColumns(MULTI_PANEL_COLUMNS);
+    state().document.panels.forEach((panel, index) => {
+      state().setPanelCaption(panel.id, MULTI_PANEL_VIEWS[index]!.caption);
+    });
+    expect(state().document.panels.map((p) => p.representation.kind)).toEqual(
+      MULTI_PANEL_VIEWS.map((v) => v.kind),
+    );
+    expect(printedSize(singleColumnFigure(state().document))).toBe(printedSize(numbers.finished));
   });
 
   it("explain (d) with the editor's own refusal of a condensed formula", () => {

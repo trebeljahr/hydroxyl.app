@@ -751,3 +751,50 @@ test("a labelled atom: the formula panel shows why, export refuses, copy-as-molf
   await expect(status).toContainText('"Ph"');
   expect(await page.evaluate(() => (window as unknown as { __clipboardWrites: number }).__clipboardWrites)).toBe(0);
 });
+
+test("a panel switched to another view takes that view's display, as a freshly added panel does (decision 254)", async ({
+  page,
+}) => {
+  await openEditor(page);
+  // Ethanol: a skeletal drawing labels only the O, an explicit-H one spells
+  // out CH3 and CH2 as well, which widens the printed figure.
+  const ethanol = [
+    "Ethanol",
+    "  e2e               2D",
+    "",
+    "  3  2  0  0  0  0  0  0  0  0999 V2000",
+    "    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0",
+    "    1.2990    0.7500    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0",
+    "    2.5981    0.0000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0",
+    "  1  2  1  0  0  0  0",
+    "  2  3  1  0  0  0  0",
+    "M  END",
+    "",
+  ].join("\n");
+  await dropMolfile(page, "ethanol.mol", ethanol);
+  await expect(page.locator('[data-status="formula"]')).toHaveText("C₂H₆O");
+  await expect.poll(() => panelKinds(page)).toEqual(["skeletal", "sumFormula"]);
+
+  const printed = async (): Promise<string> => {
+    await openExportDialog(page);
+    await page.locator(`${DIALOG} input[name="figure-width"][value="single"]`).check();
+    const readout = (await page.locator('[data-shell="figure-size"]').textContent()) ?? "";
+    await page.keyboard.press("Escape");
+    await expect(page.locator(DIALOG)).toBeHidden();
+    return /Prints [\d.]+ × [\d.]+ cm/.exec(readout)![0];
+  };
+
+  // The new sketch's Sum formula panel, switched through its view menu. It
+  // used to keep the sum formula's flags and draw a bare skeleton.
+  await page.locator(`${PANELS} [aria-label="View of panel (b)"]`).click();
+  await page.getByRole("option", { name: "Explicit H", exact: true }).click();
+  await expect.poll(() => panelKinds(page)).toEqual(["skeletal", "explicitH"]);
+  const switched = await printed();
+
+  // The same figure with that panel removed and a fresh Explicit H added.
+  await page.locator(`${PANELS} [aria-label="Remove panel (b)"]`).click();
+  await expect.poll(() => panelKinds(page)).toEqual(["skeletal"]);
+  await addPanel(page, "Explicit H");
+  await expect.poll(() => panelKinds(page)).toEqual(["skeletal", "explicitH"]);
+  expect(await printed()).toBe(switched);
+});

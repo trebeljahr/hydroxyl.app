@@ -36,6 +36,7 @@ import { pruneSchemeAnnotations } from "@starter/chem-render";
 import {
   DISPLAY_FLAG_KEYS,
   createPanel,
+  displayForKindChange,
   panelWithView,
   pruneLocants,
   prunePanelViews,
@@ -49,6 +50,7 @@ import {
   type Representation,
   type RepresentationDisplay,
   type SketchDocument,
+  type StylePresetId,
 } from "@starter/shared";
 import { castDraft } from "immer";
 import { assertNotDraft } from "../chem-guard";
@@ -174,22 +176,27 @@ function mergeDisplay(
 /**
  * Applies a patch to one panel, returning the SAME panel when nothing moved.
  *
- * A kind change KEEPS the display flags. They are stored per panel so that
- * flipping between skeletal and Kekule and back does not lose the "show lone
- * pairs" the chemist turned on — see the note on `RepresentationDisplay` in
- * @starter/shared. It keeps the projection `view` for the same reason (a
- * Fischer drawn skeletal is the same Fischer drawn with explicit hydrogens,
- * decision 128), even onto a text kind, where the panel reports that a
- * formula has nothing to project rather than forgetting the view.
+ * A kind change keeps the display flags the chemist CHANGED and re-seeds the
+ * rest from the new kind under the document's preset (`displayForKindChange`,
+ * decision 254): flipping skeletal to Kekulé and back keeps the "show lone
+ * pairs" the chemist turned on, while a sum-formula panel switched to
+ * explicit H draws its C and H labels. A `display` in the same patch applies
+ * on top. It keeps the projection `view` whole (a Fischer drawn skeletal is
+ * the same Fischer drawn with explicit hydrogens, decision 128), even onto a
+ * text kind, where the panel reports that a formula has nothing to project
+ * rather than forgetting the view.
  *
  * The view is compared by canonical VALUE (`panelWithView`), not by
  * reference: a view arrives as a fresh object from every click and every
  * pointer frame, and one that draws the picture the panel already shows must
  * not become an undo step (decision 159).
  */
-function patchPanel(panel: Panel, patch: PanelPatch): Panel {
+function patchPanel(panel: Panel, patch: PanelPatch, preset: StylePresetId): Panel {
   const kind = patch.kind ?? panel.representation.kind;
-  const display = mergeDisplay(panel.representation.display, patch.display);
+  const display = mergeDisplay(
+    displayForKindChange(panel.representation.display, panel.representation.kind, kind, preset),
+    patch.display,
+  );
   const viewed = patch.view === undefined ? panel : panelWithView(panel, patch.view);
   if (
     kind === panel.representation.kind &&
@@ -522,7 +529,7 @@ export function createDocumentSlice(
         let label: string | undefined;
         const next = panels.map((panel) => {
           if (panel.id !== id) return panel;
-          const patched = patchPanel(panel, patch);
+          const patched = patchPanel(panel, patch, get().document.stylePreset);
           if (patched !== panel) label = panelPatchLabel(panel, patched);
           return patched;
         });

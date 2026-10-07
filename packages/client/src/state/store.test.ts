@@ -37,6 +37,8 @@ import {
   panelWithView,
   projectionViewsEqual,
   type Panel,
+  type RepresentationDisplay,
+  type RepresentationKind,
   type SketchDocument,
 } from "@starter/shared";
 import { createDraft, isDraft, produce } from "immer";
@@ -778,6 +780,34 @@ describe("documents and panels", () => {
 
     store.getState().undo();
     expect(ids()).toEqual([first, second, added]);
+  });
+
+  it("re-seeds a panel's default flags on a view change and keeps the ones the chemist set (decision 254)", () => {
+    const store = makeStore();
+    const display = (id: string): RepresentationDisplay =>
+      store.getState().document.panels.find((p) => p.id === id)!.representation.display;
+    const defaults = (kind: RepresentationKind): RepresentationDisplay =>
+      defaultRepresentation(kind, "publication").display;
+
+    // Benzene, lone pairs turned on in the skeletal panel: they survive
+    // Kekulé and back, while the circle follows each view's own default.
+    store.getState().updatePanel("panel-skeletal", { display: { showLonePairs: true } });
+    store.getState().updatePanel("panel-skeletal", { kind: "kekule" });
+    expect(display("panel-skeletal")).toEqual({ ...defaults("kekule"), showLonePairs: true });
+    store.getState().updatePanel("panel-skeletal", { kind: "skeletal" });
+    expect(display("panel-skeletal")).toEqual({ ...defaults("skeletal"), showLonePairs: true });
+
+    // A Lewis panel's lone pairs were the view's, not a choice: a skeletal
+    // panel made from it draws none. A flag in the same patch still wins.
+    const lewis = store.getState().addPanel("lewis");
+    store.getState().updatePanel(lewis, { kind: "skeletal" });
+    expect(display(lewis)).toEqual(defaults("skeletal"));
+    store.getState().updatePanel(lewis, { kind: "explicitH", display: { showCarbonLabels: false } });
+    expect(display(lewis)).toEqual({ ...defaults("explicitH"), showCarbonLabels: false });
+
+    // The new sketch's sum-formula panel, switched, is a fresh explicit-H panel.
+    store.getState().updatePanel("panel-sum-formula", { kind: "explicitH" });
+    expect(display("panel-sum-formula")).toEqual(defaults("explicitH"));
   });
 
   it("sets and resets the figure column count as an undoable document edit", () => {
