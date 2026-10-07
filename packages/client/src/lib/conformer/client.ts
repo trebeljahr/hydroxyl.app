@@ -36,8 +36,17 @@ let worker: Worker | undefined;
 let inFlight: InFlight | undefined;
 let nextId = 1;
 
+/**
+ * The staged worker script, versioned by content like RDKit's files
+ * (`rdkitAssetUrl` says why): the service worker serves it cache-first
+ * (decision 253), and its name never changes between releases.
+ *
+ * Unset outside a Next build (Vitest), where the bare name is what exists.
+ */
 export function conformerWorkerUrl(): string {
-  return `${deploymentRoot()}conformer/conformer.worker.js`;
+  const version = process.env.NEXT_PUBLIC_CONFORMER_ASSET_VERSION;
+  const query = version === undefined || version === "" ? "" : `?v=${version}`;
+  return `${deploymentRoot()}conformer/conformer.worker.js${query}`;
 }
 
 function settle(result: ConformerResult | null): void {

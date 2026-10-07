@@ -11,6 +11,8 @@ export type Route =
   | "static"
   /** A versioned RDKit file (`?v=<content hash>`). Cache first. */
   | "rdkit"
+  /** The versioned 3D conformer worker (`?v=<content hash>`). Cache first. */
+  | "conformer"
   /** Everything else, left to the browser untouched. */
   | "pass";
 
@@ -26,7 +28,8 @@ export const CACHE_PREFIX = "sketcher-";
 export const PAGE_CACHE = `${CACHE_PREFIX}pages-v1`;
 export const STATIC_CACHE = `${CACHE_PREFIX}static-v1`;
 export const RDKIT_CACHE = `${CACHE_PREFIX}rdkit-v1`;
-export const CACHES = [PAGE_CACHE, STATIC_CACHE, RDKIT_CACHE] as const;
+export const CONFORMER_CACHE = `${CACHE_PREFIX}conformer-v1`;
+export const CACHES = [PAGE_CACHE, STATIC_CACHE, RDKIT_CACHE, CONFORMER_CACHE] as const;
 
 /** Pages stored at install, so the first offline launch has both the
  *  library (`start_url`) and the editor even if only one was visited. */
@@ -43,6 +46,7 @@ export function route(request: RouteInput, origin: string): Route {
   if (request.rsc || url.searchParams.has("_rsc")) return "pass";
   if (url.pathname.startsWith("/_next/static/")) return "static";
   if (url.pathname.startsWith("/rdkit/") && url.searchParams.has("v")) return "rdkit";
+  if (url.pathname.startsWith("/conformer/") && url.searchParams.has("v")) return "conformer";
   return "pass";
 }
 
@@ -87,7 +91,7 @@ export function cacheableStatic(status: number, cacheControl: string | null): bo
   return status === 200 && cacheControl !== null && /\bimmutable\b/i.test(cacheControl);
 }
 
-/** The RDKit version a URL names, or null. */
-export function rdkitVersion(url: string): string | null {
+/** The content version a versioned asset URL (RDKit, conformer) names, or null. */
+export function assetVersion(url: string): string | null {
   return new URL(url).searchParams.get("v");
 }

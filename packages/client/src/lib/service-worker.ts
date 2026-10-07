@@ -10,6 +10,7 @@
  */
 
 import { isFileExportBuild } from "@/lib/deployment";
+import { conformerWorkerUrl } from "@/lib/conformer/client";
 import { rdkitOfflineAssetUrls } from "@/lib/rdkit/asset-base";
 
 export const SERVICE_WORKER_URL = "/sw.js";
@@ -29,17 +30,23 @@ export function serviceWorkerPlan(env: {
 }
 
 /**
- * Whether to fetch RDKit ahead of the first import: on the editor, and only
- * in the INSTALLED app.
+ * Whether to fetch RDKit and the 3D conformer worker ahead of first use: on
+ * the editor, and only in the INSTALLED app (decisions 239 and 253).
  *
  * In a browser tab the rule in `e2e/rdkit.spec.ts` stands — loading the
  * editor must not cost 6.9 MB, on conference wifi least of all — and the
- * worker caches RDKit the first time an import really asks for it. Someone
- * who installed the app has said they want it offline, and the first
- * offline import should not be the one that discovers the wasm is missing.
+ * worker caches each file the first time the editor really asks for it.
+ * Someone who installed the app has said they want it offline, and the first
+ * offline import or 3D view should not be the one that discovers a file is
+ * missing.
  */
-export function shouldWarmRdkit(pathname: string, installed: boolean): boolean {
+export function shouldWarmOfflineAssets(pathname: string, installed: boolean): boolean {
   return installed && (pathname === "/editor" || pathname.startsWith("/editor/"));
+}
+
+/** Every versioned file the service worker should hold for offline use. */
+export function offlineAssetUrls(): string[] {
+  return [...rdkitOfflineAssetUrls(), conformerWorkerUrl()];
 }
 
 /** True when the page runs as an installed app rather than in a tab. */
@@ -68,11 +75,12 @@ export async function setUpServiceWorker(): Promise<void> {
     }
     if (plan !== "register") return;
     await navigator.serviceWorker.register(SERVICE_WORKER_URL, { scope: "/" });
-    if (!shouldWarmRdkit(location.pathname, runsInstalled())) return;
-    // Fetch the RDKit worker, glue and wasm now, so a SMILES import works
-    // offline even if this visit never imported one.
+    if (!shouldWarmOfflineAssets(location.pathname, runsInstalled())) return;
+    // Fetch the RDKit worker, glue and wasm and the conformer worker now, so
+    // a SMILES import and the 3D view work offline even if this visit never
+    // used them.
     const ready = await navigator.serviceWorker.ready;
-    ready.active?.postMessage({ type: "warm-rdkit", urls: rdkitOfflineAssetUrls() });
+    ready.active?.postMessage({ type: "warm-assets", urls: offlineAssetUrls() });
   } catch {
     // Private windows, blocked storage and disabled workers all land here.
     // The app works online without a worker, so there is nothing to report.

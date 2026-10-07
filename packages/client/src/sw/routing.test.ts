@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { cacheableStatic, pageKeys, rdkitVersion, route, staticKey } from "./routing";
+import { CACHES, CONFORMER_CACHE, assetVersion, cacheableStatic, pageKeys, route, staticKey } from "./routing";
 
 /** Decision 239, rule by rule. */
 
@@ -21,14 +21,22 @@ describe("route", () => {
     expect(get("/rdkit/RDKit_minimal.wasm?v=0123456789abcdef")).toBe("rdkit");
   });
 
+  it("serves the versioned 3D conformer worker cache-first, in a cache of its own", () => {
+    expect(get("/conformer/conformer.worker.js?v=0123456789abcdef")).toBe("conformer");
+    // Kept by activate's sweep, which deletes any sketcher- cache not listed.
+    expect(CACHES).toContain(CONFORMER_CACHE);
+  });
+
   it("leaves the release identity files to the network, so CI and ReleaseLifetime see the truth", () => {
     expect(get("/releases.json?at=1")).toBe("pass");
     expect(get("/version.json")).toBe("pass");
   });
 
-  it("never caches an unversioned RDKit file, whose fixed name outlives a release", () => {
+  it("never caches an unversioned RDKit or conformer file, whose fixed name outlives a release", () => {
     expect(get("/rdkit/rdkit.worker.js")).toBe("pass");
     expect(get("/rdkit/THIRD-PARTY-NOTICES.txt")).toBe("pass");
+    expect(get("/conformer/conformer.worker.js")).toBe("pass");
+    expect(get("/conformer/THIRD-PARTY-NOTICES.txt")).toBe("pass");
   });
 
   it("passes RSC payloads, writes and other origins through", () => {
@@ -49,9 +57,12 @@ describe("keys", () => {
     expect(pageKeys(`${ORIGIN}/editor/?doc=x`)).toEqual([`${ORIGIN}/editor/`]);
   });
 
-  it("reads the RDKit content version off the URL", () => {
-    expect(rdkitVersion(`${ORIGIN}/rdkit/RDKit_minimal.js?v=abc`)).toBe("abc");
-    expect(rdkitVersion(`${ORIGIN}/rdkit/RDKit_minimal.js`)).toBeNull();
+  it("reads the content version off a versioned URL, which decides what eviction keeps", () => {
+    expect(assetVersion(`${ORIGIN}/rdkit/RDKit_minimal.js?v=abc`)).toBe("abc");
+    expect(assetVersion(`${ORIGIN}/rdkit/RDKit_minimal.js`)).toBeNull();
+    expect(assetVersion(`${ORIGIN}/conformer/conformer.worker.js?v=new`)).not.toBe(
+      assetVersion(`${ORIGIN}/conformer/conformer.worker.js?v=old`),
+    );
   });
 });
 

@@ -15,6 +15,7 @@
 import {
   CACHES,
   CACHE_PREFIX,
+  CONFORMER_CACHE,
   PAGE_CACHE,
   PRECACHED_PAGES,
   RDKIT_CACHE,
@@ -22,7 +23,7 @@ import {
   cacheableStatic,
   pageKey,
   pageKeys,
-  rdkitVersion,
+  assetVersion,
   route,
   staticKey,
 } from "./routing";
@@ -52,6 +53,7 @@ declare const self: {
 
 const origin = self.location.origin;
 const precached = new Set(__PRECACHE__.map((path) => new URL(path, origin).href));
+const VERSIONED_CACHE = { rdkit: RDKIT_CACHE, conformer: CONFORMER_CACHE } as const;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -89,7 +91,8 @@ self.addEventListener("activate", (event) => {
         if (!precached.has(request.url)) await statics.delete(request);
       }
       // The first visit's page becomes controlled at once, so the editor's
-      // request to fetch RDKit ahead of time reaches this worker.
+      // request to fetch RDKit and the 3D worker ahead of time reaches
+      // this worker.
       await self.clients.claim();
     })(),
   );
@@ -103,18 +106,22 @@ self.addEventListener("fetch", (event) => {
   );
   if (kind === "page") event.respondWith(page(request));
   else if (kind === "static") event.respondWith(staticFile(request));
-  else if (kind === "rdkit") event.respondWith(rdkitFile(request));
+  else if (kind === "rdkit") event.respondWith(versionedFile(RDKIT_CACHE, request));
+  else if (kind === "conformer") event.respondWith(versionedFile(CONFORMER_CACHE, request));
 });
 
 self.addEventListener("message", (event) => {
   const data = event.data as { type?: unknown; urls?: unknown } | null;
-  if (data?.type !== "warm-rdkit" || !Array.isArray(data.urls)) return;
-  const urls = data.urls.filter(
-    (url): url is string =>
-      typeof url === "string" &&
-      route({ url, method: "GET", mode: "cors", rsc: false }, origin) === "rdkit",
-  );
-  event.waitUntil(Promise.all(urls.map((url) => rdkitFile(new Request(url)))).catch(() => {}));
+  if (data?.type !== "warm-assets" || !Array.isArray(data.urls)) return;
+  const fetches: Promise<Response>[] = [];
+  for (const url of data.urls) {
+    if (typeof url !== "string") continue;
+    const kind = route({ url, method: "GET", mode: "cors", rsc: false }, origin);
+    if (kind === "rdkit" || kind === "conformer") {
+      fetches.push(versionedFile(VERSIONED_CACHE[kind], new Request(url)));
+    }
+  }
+  event.waitUntil(Promise.all(fetches).catch(() => {}));
 });
 
 /** Network first: a rolled release is never hidden behind a cache. */
@@ -150,17 +157,19 @@ async function staticFile(request: Request): Promise<Response> {
   return response;
 }
 
-async function rdkitFile(request: Request): Promise<Response> {
-  const rdkit = await caches.open(RDKIT_CACHE);
-  const cached = await rdkit.match(request.url);
+/** A `?v=`-versioned file (RDKit's three, the conformer worker), cache first. */
+async function versionedFile(cacheName: string, request: Request): Promise<Response> {
+  const cache = await caches.open(cacheName);
+  const cached = await cache.match(request.url);
   if (cached) return cached;
   const response = await fetch(request);
   if (response.status === 200) {
-    await rdkit.put(request.url, response.clone());
-    // One RDKit build at a time: 6.9 MB per stale copy adds up.
-    const version = rdkitVersion(request.url);
-    for (const key of await rdkit.keys()) {
-      if (rdkitVersion(key.url) !== version) await rdkit.delete(key);
+    await cache.put(request.url, response.clone());
+    // One build at a time per cache: 6.9 MB per stale RDKit copy and 1.3 MB
+    // per stale conformer worker add up.
+    const version = assetVersion(request.url);
+    for (const key of await cache.keys()) {
+      if (assetVersion(key.url) !== version) await cache.delete(key);
     }
   }
   return response;

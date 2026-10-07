@@ -48,6 +48,7 @@ beforeEach(async () => {
 afterEach(() => {
   client.disposeConformerWorker();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe("requestConformer", () => {
@@ -60,6 +61,20 @@ describe("requestConformer", () => {
     expect(started[0]?.url).toMatch(/conformer\/conformer\.worker\.js$/);
     started[0]!.answer();
     await expect(pending).resolves.toMatchObject({ ok: true });
+  });
+
+  it("versions the script by content, so a cache keyed by URL cannot pair releases", async () => {
+    // Decision 253: the name is fixed and the service worker serves it cache-first.
+    vi.stubEnv("NEXT_PUBLIC_CONFORMER_ASSET_VERSION", "0123456789abcdef");
+    const pending = client.requestConformer("molblock");
+    expect(started[0]?.url).toMatch(/conformer\/conformer\.worker\.js\?v=0123456789abcdef$/);
+    started[0]!.answer();
+    await pending;
+  });
+
+  it("loads the bare name outside a Next build", () => {
+    vi.stubEnv("NEXT_PUBLIC_CONFORMER_ASSET_VERSION", "");
+    expect(client.conformerWorkerUrl()).toMatch(/conformer\/conformer\.worker\.js$/);
   });
 
   it("reuses one worker for requests that do not overlap", async () => {

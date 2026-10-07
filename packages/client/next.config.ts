@@ -26,21 +26,20 @@ function siteUrlFromHatchkit(): string {
 }
 
 /**
- * A content hash of the RDKit files `scripts/copy-rdkit.mjs` staged into
- * `public/rdkit/`, appended to their URLs as `?v=` (`rdkitAssetUrl`).
+ * A content hash of files a staging script wrote into `public/<dir>/`,
+ * appended to their URLs as `?v=` (`rdkitAssetUrl`, `conformerWorkerUrl`).
  *
  * Their names never change between releases, and the service worker serves
- * them cache-first (decision 239), so the URL has to change when the bytes do
- * or a cached worker outlives the client code it talks to. Every script that
- * runs `next` stages the files first; empty when they are absent, which only
- * happens to tooling that loads this config without building.
+ * them cache-first (decisions 239 and 253), so the URL has to change when the
+ * bytes do or a cached worker outlives the client code it talks to. Every
+ * script that runs `next` stages the files first; empty when they are absent,
+ * which only happens to tooling that loads this config without building.
  */
-function rdkitAssetVersion(): string {
-  const dir = path.join(process.cwd(), "public", "rdkit");
-  const names = ["rdkit.worker.js", "RDKit_minimal.js", "RDKit_minimal.wasm"];
-  if (!names.every((name) => existsSync(path.join(dir, name)))) return "";
+function stagedAssetVersion(dir: string, names: readonly string[]): string {
+  const root = path.join(process.cwd(), "public", dir);
+  if (!names.every((name) => existsSync(path.join(root, name)))) return "";
   const hash = createHash("sha256");
-  for (const name of names) hash.update(readFileSync(path.join(dir, name)));
+  for (const name of names) hash.update(readFileSync(path.join(root, name)));
   return hash.digest("hex").slice(0, 16);
 }
 
@@ -113,7 +112,12 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_FILE_EXPORT: isExport ? "1" : "0",
     NEXT_PUBLIC_SITE_URL: siteUrlFromHatchkit(),
-    NEXT_PUBLIC_RDKIT_ASSET_VERSION: rdkitAssetVersion(),
+    NEXT_PUBLIC_RDKIT_ASSET_VERSION: stagedAssetVersion("rdkit", [
+      "rdkit.worker.js",
+      "RDKit_minimal.js",
+      "RDKit_minimal.wasm",
+    ]),
+    NEXT_PUBLIC_CONFORMER_ASSET_VERSION: stagedAssetVersion("conformer", ["conformer.worker.js"]),
   },
   // Release identity must never be cached across a rolling replacement.
   ...(!isExport ? {
