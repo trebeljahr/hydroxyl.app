@@ -17,15 +17,19 @@
  * ── A SERVER COMPONENT, LIKE THE LANDING PAGE ──────────────────────────────
  *
  * It composes two figures at build time. Every link is a plain anchor from
- * `@/lib/deployment`, for the reason given there. The page is not linked from
- * the landing header, the sitemap or any nav until Rico has read it.
+ * `@/lib/deployment`, for the reason given there. Under each figure, "Open
+ * this figure in the editor" opens that figure's document through
+ * `?example=` (decision 127); the names are the guide's entry in `guides.ts`.
+ * Whether the page is linked from anywhere is that entry's `released`.
  */
 
 import type { ReactElement, ReactNode } from "react";
 
-import { editorHref } from "@/lib/deployment";
+import { editorExampleHref, editorHref } from "@/lib/deployment";
 import { SITE_NAME } from "@/lib/site";
 
+import { guideBySlug } from "./guides";
+import type { GuideFigure } from "./guides";
 import { ACS_GUIDELINE, cmFromPt, decimal, guideNumbers } from "./journal-figure-size";
 import type { WorkedFigure } from "./journal-figure-size";
 
@@ -53,29 +57,45 @@ function Section({
   );
 }
 
+const GUIDE = guideBySlug("journal-figure-size");
+const [TWO_PER_ROW, ONE_ROW] = GUIDE.figures as readonly [GuideFigure, GuideFigure];
+
 function WorkedExample({
   id,
   figure,
   label,
+  opens,
 }: {
   readonly id: string;
   readonly figure: WorkedFigure;
   readonly label: string;
+  /** The guide figure this is, for its editor link. */
+  readonly opens: GuideFigure;
 }): ReactElement {
   return (
-    <div className="inline-block max-w-full rounded-lg border bg-white p-3 shadow-sm">
-      <div
-        data-guide-figure={id}
-        role="img"
-        aria-label={label}
-        // CSS centimetres, so the two examples keep their printed widths
-        // relative to each other. Markup this app generated at build time
-        // from its own document, never from anyone's file.
-        style={{ width: `${figure.widthCm}cm` }}
-        className="max-w-full [&>svg]:h-auto [&>svg]:w-full"
-        dangerouslySetInnerHTML={{ __html: figure.svg }}
-      />
-    </div>
+    <figure className="space-y-2">
+      <div className="inline-block max-w-full rounded-lg border bg-white p-3 shadow-sm">
+        <div
+          data-guide-figure={id}
+          role="img"
+          aria-label={label}
+          // CSS centimetres, so the two examples keep their printed widths
+          // relative to each other. Markup this app generated at build time
+          // from its own document, never from anyone's file.
+          style={{ width: `${figure.widthCm}cm` }}
+          className="max-w-full [&>svg]:h-auto [&>svg]:w-full"
+          dangerouslySetInnerHTML={{ __html: figure.svg }}
+        />
+      </div>
+      {/* A copy under a fresh id, stored only once edited (decision 127). */}
+      <a
+        href={editorExampleHref(opens.example)}
+        data-guide-open-example={opens.example}
+        className="text-foreground focus-visible:ring-ring block w-fit rounded-sm text-sm font-medium underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2"
+      >
+        Open this figure in the editor
+      </a>
+    </figure>
   );
 }
 
@@ -101,7 +121,7 @@ export function JournalFigureSizeGuide(): ReactElement {
       <header className="py-10 md:py-14">
         <p className="mb-3 text-sm font-medium tracking-wide uppercase">Guide</p>
         <h1 className="text-foreground text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-          How big should a chemical structure be in a single-column figure?
+          {GUIDE.title}
         </h1>
         <p data-guide="answer" className="mt-6 text-lg leading-relaxed">
           Draw every bond <N k="bond-cm">{n.bondCm}</N> cm long, with{" "}
@@ -224,6 +244,7 @@ export function JournalFigureSizeGuide(): ReactElement {
         <WorkedExample
           id="two-per-row"
           figure={twoPerRow}
+          opens={TWO_PER_ROW}
           label={`Acetic acid in four panels, two to a row, ${twoPerRow.widthCm.toFixed(1)} cm wide at full size.`}
         />
         <p>
@@ -235,6 +256,7 @@ export function JournalFigureSizeGuide(): ReactElement {
         <WorkedExample
           id="one-row"
           figure={oneRow}
+          opens={ONE_ROW}
           label={`The same four panels in one row, shrunk to ${decimal(oneRow.widthCm, 2)} cm, with ${oneRow.fontSizePt} pt labels.`}
         />
         <p className="text-sm">

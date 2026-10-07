@@ -1,11 +1,14 @@
 /**
- * Render the social card to `packages/client/public/social-card.png`.
+ * Render the social cards: `packages/client/public/social-card.png` for the
+ * landing pages, and `public/social-cards/<slug>.png` for each guide
+ * (decisions 138 and 245).
  *
- * The card is composed by `src/components/landing/social-card.ts` from the
- * landing page's example figure; this script only turns that SVG into the PNG
- * that Open Graph and Twitter require (neither accepts SVG). The file is
- * gitignored and rebuilt on every `dev` and `build`, like the RDKit assets,
- * so the card can never show a figure the renderer no longer draws.
+ * The cards are composed by `src/components/landing/social-card.ts` from the
+ * landing page's example figure and by `src/components/guides/social-card.ts`
+ * from each guide's first figure; this script only turns that SVG into the
+ * PNG that Open Graph and Twitter require (neither accepts SVG). The files
+ * are gitignored and rebuilt on every `dev` and `build`, like the RDKit
+ * assets, so a card can never show a figure the renderer no longer draws.
  *
  * WHY resvg, AS WASM. It rasterises without a browser and without system
  * fonts, so the card is the same pixels on a Mac and in the bookworm-slim
@@ -26,7 +29,7 @@
  * `next build` needs anyway.
  */
 
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -86,14 +89,21 @@ function woffToSfnt(woff) {
   return sfnt;
 }
 
-/** The card module, bundled for node: it imports through `@/` and the
+/** The card modules, bundled for node: they import through `@/` and the
  *  workspace packages, which only a bundler resolves. */
 async function loadCardModule() {
   const dir = await mkdtemp(path.join(os.tmpdir(), "hydroxyl-social-card-"));
   try {
     const outfile = path.join(dir, "social-card.mjs");
     await esbuild.build({
-      entryPoints: [path.join(clientRoot, "src", "components", "landing", "social-card.ts")],
+      stdin: {
+        contents:
+          'export { SOCIAL_CARD, socialCardSvg } from "./landing/social-card";\n' +
+          'export { allGuideSocialCards } from "./guides/social-card";\n',
+        resolveDir: path.join(clientRoot, "src", "components"),
+        loader: "ts",
+        sourcefile: "social-cards-entry.ts",
+      },
       outfile,
       bundle: true,
       format: "esm",
@@ -107,7 +117,7 @@ async function loadCardModule() {
   }
 }
 
-const { SOCIAL_CARD, socialCardSvg } = await loadCardModule();
+const { SOCIAL_CARD, socialCardSvg, allGuideSocialCards } = await loadCardModule();
 
 await initWasm(await readFile(fileURLToPath(import.meta.resolve("@resvg/resvg-wasm/index_bg.wasm"))));
 
@@ -137,17 +147,23 @@ if (!probe.pixels.some((value, i) => i % 4 === 3 && value > 0)) {
   throw new Error("resvg drew no text with the unwrapped Arimo; the card's labels would be blank.");
 }
 
-const rendered = new Resvg(socialCardSvg(), renderOptions).render();
-if (rendered.width !== SOCIAL_CARD.width || rendered.height !== SOCIAL_CARD.height) {
-  throw new Error(
-    `The social card rendered at ${rendered.width}×${rendered.height}, ` +
-      `not ${SOCIAL_CARD.width}×${SOCIAL_CARD.height}.`,
+async function writeCard(cardPath, svg) {
+  const rendered = new Resvg(svg, renderOptions).render();
+  if (rendered.width !== SOCIAL_CARD.width || rendered.height !== SOCIAL_CARD.height) {
+    throw new Error(
+      `The social card ${cardPath} rendered at ${rendered.width}×${rendered.height}, ` +
+        `not ${SOCIAL_CARD.width}×${SOCIAL_CARD.height}.`,
+    );
+  }
+  const png = rendered.asPng();
+  const target = path.join(clientRoot, "public", ...cardPath.split("/").filter(Boolean));
+  await mkdir(path.dirname(target), { recursive: true });
+  await writeFile(target, png);
+  console.log(
+    `social card: ${path.relative(clientRoot, target)} ` +
+      `(${rendered.width}×${rendered.height}, ${Math.round(png.length / 1024)} kB)`,
   );
 }
-const png = rendered.asPng();
-const target = path.join(clientRoot, "public", ...SOCIAL_CARD.path.split("/").filter(Boolean));
-await writeFile(target, png);
-console.log(
-  `social card: ${path.relative(clientRoot, target)} ` +
-    `(${rendered.width}×${rendered.height}, ${Math.round(png.length / 1024)} kB)`,
-);
+
+await writeCard(SOCIAL_CARD.path, socialCardSvg());
+for (const card of allGuideSocialCards()) await writeCard(card.path, card.svg());

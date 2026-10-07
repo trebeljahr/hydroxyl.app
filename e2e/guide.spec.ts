@@ -9,6 +9,13 @@ import {
   PRINTED_BOND_LENGTH_CM,
   RASTER_DPI_CHOICES,
 } from "../packages/chem-render/src/figure/physical";
+// Pure data with no imports, so it loads here by relative path.
+import {
+  GUIDES,
+  guideBySlug,
+  releasedGuides,
+  unreleasedGuides,
+} from "../packages/client/src/components/guides/guides";
 
 /**
  * The journal-figure-size guide (manual notes 3, "Landing page and launch").
@@ -70,13 +77,80 @@ test("the guide prerenders, and its product numbers are chem-render's constants"
   expect(html).toContain(`data-guide-number="bond-cm">${PRINTED_BOND_LENGTH_CM}<`);
 });
 
-test("nothing links to the guide yet", async ({ page }) => {
-  // Not from the landing header, the about page or the grid until Rico has
-  // read it. When that changes, this test goes with it.
-  for (const path of ["/", "/about"]) {
+/**
+ * Unreleased guides are linked from nowhere (decision 243): not from the
+ * landing, the about page, the index or another guide, not from the sitemap,
+ * and their pages ask crawlers to stay away. Releasing a guide in guides.ts
+ * moves it out of this test and into the index's.
+ */
+test("every unreleased guide is linked from nowhere and kept out of search", async ({
+  page,
+  request,
+}) => {
+  const unreleased = unreleasedGuides();
+  const pages = ["/", "/about", "/guides", ...GUIDES.map((g) => `/guides/${g.slug}`)];
+  for (const path of pages) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await expect(page.locator('a[href*="guides"]'), path).toHaveCount(0);
+    for (const g of unreleased) {
+      await expect(
+        page.locator(`a[href*="guides/${g.slug}"], a[href*="guides-${g.slug}"]`),
+        `${path} → ${g.slug}`,
+      ).toHaveCount(0);
+    }
+  }
+
+  const sitemap = await (await request.get("/sitemap.xml")).text();
+  for (const g of unreleased) {
+    expect(sitemap, g.slug).not.toContain(g.slug);
+    const html = await (await request.get(`/guides/${g.slug}`)).text();
+    expect(html, g.slug).toMatch(/<meta name="robots" content="noindex, follow"/);
+  }
+});
+
+test("the guides index lists exactly the released guides", async ({ page, request }) => {
+  const released = releasedGuides();
+  await page.goto("/guides");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Guides");
+  const listed = await page
+    .locator('[data-guides="entry"]')
+    .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-guide-slug")));
+  expect(listed).toEqual(released.map((g) => g.slug));
+
+  // While nothing is released, the index itself is unlinked and unindexed.
+  const html = await (await request.get("/guides")).text();
+  const navLinks = async (path: string): Promise<number> => {
+    await page.goto(path);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    return page.locator('a[data-nav="guides"]').count();
+  };
+  if (released.length === 0) {
+    await page.goto("/guides");
+    await expect(page.locator('[data-guides="empty"]')).toBeVisible();
+    expect(html).toMatch(/<meta name="robots" content="noindex, follow"/);
+    for (const path of ["/", "/about"]) expect(await navLinks(path), path).toBe(0);
+  } else {
+    expect(html).not.toMatch(/<meta name="robots"/);
+    for (const path of ["/", "/about"]) expect(await navLinks(path), path).toBe(1);
+  }
+});
+
+test("each guide figure opens in the editor as a new sketch", async ({ page }) => {
+  const [twoPerRow, oneRow] = guideBySlug("journal-figure-size").figures;
+  for (const [figure, columns] of [
+    [twoPerRow, "2"],
+    [oneRow, "4"],
+  ] as const) {
+    await page.goto(GUIDE);
+    await page.locator(`a[data-guide-open-example="${figure!.example}"]`).click();
+    await expect(page).toHaveURL(new RegExp(`\\?example=${figure!.example}$`));
+    await expect(page.locator('[data-status="formula"]')).toHaveText("C₂H₄O₂");
+    await expect(page.locator('[data-shell="figure-panels"] [data-panel-id]')).toHaveCount(4);
+    // The figure's own layout, which is what tells the two figures apart.
+    const input = page.locator("[data-figure-columns]");
+    await expect
+      .poll(async () => (await input.inputValue()) || (await input.getAttribute("placeholder")))
+      .toBe(columns);
   }
 });
 

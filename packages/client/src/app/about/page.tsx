@@ -10,6 +10,7 @@
 import type { Metadata } from "next";
 import type { ReactElement } from "react";
 
+import { GuidesNavLink } from "@/components/guides/GuidesNavLink";
 import { Landing } from "@/components/landing/Landing";
 import { landingSocialMetadata } from "@/components/landing/metadata";
 import { editorHref, recentsHref } from "@/lib/deployment";
@@ -37,6 +38,7 @@ export default function AboutPage(): ReactElement {
           {SITE_NAME}
         </a>
         <nav className="ml-auto flex items-center gap-2 text-sm">
+          <GuidesNavLink />
           <a
             href={recentsHref()}
             data-about="sketches"

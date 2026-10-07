@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import type { APIRequestContext } from "@playwright/test";
 
+import { GUIDES } from "../packages/client/src/components/guides/guides";
+
 /**
  * Link previews for `/` and `/about`: the Open Graph and Twitter card tags, and
  * the 1200×630 card they point at.
@@ -85,3 +87,23 @@ test("the editor gets no card: its ?doc= links open a sketch only the sharer has
   expect(meta.has("og:image")).toBe(false);
   expect(meta.has("twitter:card")).toBe(false);
 });
+
+/** One card per guide, from its own figure, released or not (decision 245). */
+for (const guide of GUIDES) {
+  test(`the ${guide.slug} guide unfurls into its own card`, async ({ request }) => {
+    const meta = await headMeta(request, `/guides/${guide.slug}`);
+    const card = `${ORIGIN}/social-cards/${guide.slug}.png`;
+    expect(meta.get("og:type")).toBe("article");
+    expect(meta.get("og:title")).toBe(guide.title);
+    expect(meta.get("og:description")).toBe(guide.description);
+    expect(meta.get("og:image")).toBe(card);
+    expect(meta.get("twitter:image")).toBe(card);
+    expect(meta.get("og:image:alt")).toContain(guide.figures[0].alt);
+
+    const response = await request.get(new URL(card).pathname);
+    expect(response.status()).toBe(200);
+    expect(response.headers()["content-type"]).toBe("image/png");
+    const png = await response.body();
+    expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([1200, 630]);
+  });
+}

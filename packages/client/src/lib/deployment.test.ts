@@ -5,10 +5,12 @@ import {
   deploymentRoot,
   editorExampleHref,
   editorHref,
+  guideHref,
+  guidesIndexHref,
   indexablePageUrls,
   isFileExportBuild,
-  journalFigureSizeGuideHref,
   recentsHref,
+  releasedGuideUrls,
   siteUrl,
   thirdPartyNoticesHref,
 } from "./deployment";
@@ -45,7 +47,8 @@ describe("the standalone / dev build", () => {
     expect(editorHref("doc_1")).toBe("/editor?doc=doc_1");
     expect(recentsHref()).toBe("/");
     expect(aboutHref()).toBe("/about");
-    expect(journalFigureSizeGuideHref()).toBe("/guides/journal-figure-size");
+    expect(guideHref("journal-figure-size")).toBe("/guides/journal-figure-size");
+    expect(guidesIndexHref()).toBe("/guides");
     // Origin-absolute: `/about` is served as `/about/`, and a relative path
     // would resolve under it.
     expect(thirdPartyNoticesHref()).toBe("/rdkit/THIRD-PARTY-NOTICES.txt");
@@ -83,7 +86,9 @@ describe("the static export", () => {
     // directory down, where `./_next/` finds no assets, so flatten-export.mjs
     // moves it to the root. The href and the script must agree on the name.
     vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "1");
-    expect(journalFigureSizeGuideHref()).toBe(flatName("guides/journal-figure-size.html"));
+    expect(guideHref("journal-figure-size")).toBe(flatName("guides/journal-figure-size.html"));
+    // One level down already sits at the root, like about.html.
+    expect(guidesIndexHref()).toBe("guides.html");
   });
 
   it("needs no DOM to answer, because the grid is PRERENDERED", () => {
@@ -111,6 +116,29 @@ describe("the public URL, for sitemap.xml and robots.txt (decision 122)", () => 
     vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "1");
     vi.stubEnv("NEXT_PUBLIC_SITE_URL", SITE);
     expect(indexablePageUrls()).toEqual([SITE, `${SITE}about.html`]);
+  });
+
+  it("lists no guide, and not the guides index, while none is released (decision 244)", () => {
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", SITE);
+    for (const flag of ["0", "1"]) {
+      vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", flag);
+      expect(releasedGuideUrls([])).toEqual([]);
+    }
+  });
+
+  it("lists the index and each released guide where each build serves it with a 200", () => {
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", SITE);
+    vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "0");
+    expect(releasedGuideUrls(["a", "b"])).toEqual([
+      `${SITE}guides/`,
+      `${SITE}guides/a/`,
+      `${SITE}guides/b/`,
+    ]);
+    vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "1");
+    expect(releasedGuideUrls(["a"])).toEqual([
+      `${SITE}guides.html`,
+      `${SITE}${flatName("guides/a.html")}`,
+    ]);
   });
 
   it("never lists the editor", () => {

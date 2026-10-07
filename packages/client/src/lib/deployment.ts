@@ -172,14 +172,40 @@ export function indexablePageUrls(): string[] {
 }
 
 /**
- * The figure-size guide. Nested on the web; in the export it is moved to the
- * root under its path joined with hyphens (decision 137), since a page one
- * directory down resolves `./_next/` into a directory with no assets.
+ * A guide. Nested on the web; in the export it is moved to the root under its
+ * path joined with hyphens (decision 137), since a page one directory down
+ * resolves `./_next/` into a directory with no assets.
  * `scripts/flatten-export.mjs` owns that name, and deployment.test.ts holds
  * this href to it.
  */
-export function journalFigureSizeGuideHref(): string {
-  return isFileExportBuild() ? "guides-journal-figure-size.html" : "/guides/journal-figure-size";
+export function guideHref(slug: string): string {
+  return isFileExportBuild() ? `guides-${slug}.html` : `/guides/${slug}`;
+}
+
+/** The `/guides` index. One level down from the root, like `/about`, so the
+ *  export writes it flat as `guides.html` with no move. */
+export function guidesIndexHref(): string {
+  return isFileExportBuild() ? "guides.html" : "/guides";
+}
+
+/**
+ * The sitemap entries for released guides (decision 244, amending 122): the
+ * index, then each guide, at the address that answers with a 200. Nothing at
+ * all while no guide is released — the index then lists nothing and asks
+ * crawlers to stay away.
+ *
+ * Takes the slugs rather than reading the guide list, so this module stays
+ * free of page data: the editor imports it.
+ */
+export function releasedGuideUrls(slugs: readonly string[]): string[] {
+  if (slugs.length === 0) return [];
+  const root = siteUrl();
+  const at = (exported: string, web: string): string =>
+    new URL(isFileExportBuild() ? exported : web, root).href;
+  return [
+    at("guides.html", "guides/"),
+    ...slugs.map((slug) => at(`guides-${slug}.html`, `guides/${slug}/`)),
+  ];
 }
 
 /**

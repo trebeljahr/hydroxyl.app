@@ -43,10 +43,9 @@ import {
   printedCmPerPx,
   serializeFigure,
 } from "@starter/chem-render";
-import { withFigureLayout } from "@starter/shared";
 import type { SketchDocument } from "@starter/shared";
 
-import { EXAMPLE_VIEWS, exampleDocument } from "@/components/landing/example-document";
+import { exampleDocument, exampleOneRowDocument } from "@/components/landing/example-document";
 import { formatPt, labelSizeNotice, prepareFigure, scaleNotice } from "@/lib/export/figure";
 import type { FigureExportSettings } from "@/state/types";
 
@@ -145,21 +144,6 @@ function worked(doc: SketchDocument): WorkedFigure {
   };
 }
 
-/**
- * The same four panels in one row. The panel ids change too: they reach the
- * SVG's element ids, and two inline figures on one page must not share them.
- */
-function oneRowDocument(): SketchDocument {
-  const doc = exampleDocument();
-  return withFigureLayout(
-    {
-      ...doc,
-      panels: doc.panels.map((panel) => ({ ...panel, id: `${panel.id}-row` })),
-    },
-    { columns: EXAMPLE_VIEWS.length },
-  );
-}
-
 export interface GuideNumbers {
   readonly bondCm: string;
   readonly bondMm: string;
@@ -204,6 +188,6 @@ export function guideNumbers(): GuideNumbers {
     acsDoubleMinCm: cmFromPt(ACS_GUIDELINE.doubleColumnMinPt).toFixed(2),
     acsDoubleMaxCm: cmFromPt(ACS_GUIDELINE.doubleColumnMaxPt).toFixed(2),
     twoPerRow: worked(exampleDocument()),
-    oneRow: worked(oneRowDocument()),
+    oneRow: worked(exampleOneRowDocument()),
   };
 }

@@ -7,49 +7,26 @@
  * `guides-journal-figure-size.html` (decision 137, `scripts/flatten-export.mjs`),
  * which is why every link on it is a root-level href from `@/lib/deployment`.
  *
- * Deliberately linked from nowhere yet: not the landing header, not a sitemap,
- * not a nav. Rico reads it first.
+ * Its title, description, social card and whether it is released all come
+ * from its entry in `components/guides/guides.ts` (decision 243).
  */
 
 import type { Metadata } from "next";
 import type { ReactElement } from "react";
 
+import { GuidePageShell } from "@/components/guides/GuidePageShell";
+import { guideBySlug } from "@/components/guides/guides";
 import { JournalFigureSizeGuide } from "@/components/guides/JournalFigureSizeGuide";
-import { aboutHref, editorHref, recentsHref } from "@/lib/deployment";
-import { SITE_NAME } from "@/lib/site";
+import { guideMetadata } from "@/components/guides/metadata";
 
-export const metadata: Metadata = {
-  title: "How big should a chemical structure be in a single-column figure?",
-  description:
-    "Bond length, label size and column width for a chemical structure in a journal figure, " +
-    "from the ACS author guidelines, and how to export a figure at those sizes.",
-};
+const GUIDE = guideBySlug("journal-figure-size");
+
+export const metadata: Metadata = guideMetadata(GUIDE);
 
 export default function JournalFigureSizePage(): ReactElement {
   return (
-    <div className="bg-background text-foreground min-h-screen">
-      <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-4 py-3 sm:px-6">
-        <a href={recentsHref()} className="text-lg font-semibold tracking-tight">
-          {SITE_NAME}
-        </a>
-        <nav className="ml-auto flex items-center gap-2 text-sm">
-          <a
-            href={aboutHref()}
-            className="text-muted-foreground hover:text-foreground rounded-md px-2 py-1.5"
-          >
-            About
-          </a>
-          <a
-            href={editorHref()}
-            className="bg-primary text-primary-foreground rounded-md px-3 py-1.5 font-medium"
-          >
-            New sketch
-          </a>
-        </nav>
-      </header>
-      <main>
-        <JournalFigureSizeGuide />
-      </main>
-    </div>
+    <GuidePageShell>
+      <JournalFigureSizeGuide />
+    </GuidePageShell>
   );
 }

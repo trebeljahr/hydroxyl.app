@@ -24,7 +24,14 @@
  *      PNG, and the two landing pages point `og:image` and `twitter:image`
  *      at it on that domain (decision 138). `e2e/social-metadata.spec.ts`
  *      checks the standalone side.
- *   5. No analytics (decisions 136 and 170). No file in `out/` carries the
+ *   5. Guides (decisions 243–245). The index is `guides.html`, each guide
+ *      `guides-<slug>.html`. A guide page is released exactly when it carries
+ *      no `noindex` robots tag, and the sitemap lists exactly the released
+ *      ones, plus the index once any is. Every guide page points `og:image`
+ *      at its own 1200×630 card, `social-cards/<slug>.png`. Read from the
+ *      exported pages rather than from `guides.ts`, so the check holds the
+ *      files to each other and needs no TypeScript.
+ *   6. No analytics (decisions 136 and 170). No file in `out/` carries the
  *      pageview script, and when the build was given Plausible settings — CI
  *      passes some on purpose, so this is not vacuous — none names their
  *      host either. `e2e/analytics.spec.ts` checks the standalone side.
@@ -68,7 +75,13 @@ if (nested.length > 0) {
   );
 }
 
-for (const page of ["index.html", "editor.html", "about.html", "guides-journal-figure-size.html"]) {
+for (const page of [
+  "index.html",
+  "editor.html",
+  "about.html",
+  "guides.html",
+  "guides-journal-figure-size.html",
+]) {
   try {
     statSync(path.join(out, page));
   } catch {
@@ -103,11 +116,37 @@ function readOut(name) {
   }
 }
 
+/** True when the page asks crawlers to stay away: an unreleased guide, or
+ *  the guides index while no guide is released (decision 243). */
+function isNoindex(html) {
+  return /<meta name="robots" content="[^"]*noindex/.test(html);
+}
+
+// The guide pages the export holds, and which of them are released.
+const outRoot = readdirSync(out);
+const guidePages = outRoot.filter((f) => /^guides-.+\.html$/.test(f)).sort();
+const releasedGuidePages = guidePages.filter((f) => {
+  const html = readOut(f);
+  return html !== null && !isNoindex(html);
+});
+const guidesIndex = readOut("guides.html");
+if (guidesIndex !== null && isNoindex(guidesIndex) !== (releasedGuidePages.length === 0)) {
+  problems.push(
+    `out/guides.html is ${isNoindex(guidesIndex) ? "noindex" : "indexable"} while ` +
+      `${releasedGuidePages.length} guide(s) are released; it should be indexable exactly when one is`,
+  );
+}
+
 const sitemap = readOut("sitemap.xml");
 if (sitemap !== null) {
   const listed = [...sitemap.matchAll(/<loc>([^<]*)<\/loc>/g)].map((m) => m[1]);
-  const expected = [site, `${site}about.html`];
-  if (JSON.stringify(listed) !== JSON.stringify(expected)) {
+  const guideEntries =
+    releasedGuidePages.length === 0 ? [] : ["guides.html", ...releasedGuidePages];
+  const expected = [site, `${site}about.html`, ...guideEntries.map((f) => `${site}${f}`)];
+  // The guides' order is the index's (newest first), which only guides.ts
+  // knows; the set is what the pages decide.
+  const sorted = (urls) => [...urls.slice(0, 2), ...urls.slice(2).sort()];
+  if (JSON.stringify(sorted(listed)) !== JSON.stringify(sorted(expected))) {
     problems.push(
       `out/sitemap.xml lists\n  ${listed.join("\n  ")}\nbut should list\n  ${expected.join("\n  ")}`,
     );
@@ -152,6 +191,28 @@ for (const page of ["index.html", "about.html"]) {
   }
 }
 
+// One card per guide, named by its slug, released or not (decision 245).
+for (const page of guidePages) {
+  const slug = page.slice("guides-".length, -".html".length);
+  const cardFile = `social-cards/${slug}.png`;
+  try {
+    const png = readFileSync(path.join(out, cardFile));
+    const isPng = png.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    const size = isPng ? `${png.readUInt32BE(16)}×${png.readUInt32BE(20)}` : "not a PNG";
+    if (size !== "1200×630") problems.push(`out/${cardFile} is ${size}, not 1200×630`);
+  } catch {
+    problems.push(`out/${cardFile} is missing; see scripts/build-social-card.mjs`);
+  }
+  const html = readOut(page);
+  if (html === null) continue;
+  for (const key of ['property="og:image"', 'name="twitter:image"']) {
+    const content = new RegExp(`<meta ${key} content="([^"]*)"`).exec(html)?.[1];
+    if (content !== `${site}${cardFile}`) {
+      problems.push(`out/${page}: ${key} is ${content ?? "missing"}, expected ${site}${cardFile}`);
+    }
+  }
+}
+
 const robots = readOut("robots.txt");
 if (robots !== null) {
   for (const line of ["Disallow: /editor", `Sitemap: ${site}sitemap.xml`]) {
@@ -184,7 +245,8 @@ if (problems.length > 0) {
   process.exit(1);
 }
 console.log(
-  "static export: every page at the root, the guide flattened, RDKit assets and notice present, " +
-    `sitemap.xml, robots.txt and the social card name ${site}, and no analytics ` +
+  "static export: every page at the root, the guides flattened, RDKit assets and notice present, " +
+    `sitemap.xml, robots.txt and the social cards name ${site}, ` +
+    `${releasedGuidePages.length} of ${guidePages.length} guides released, and no analytics ` +
     (plausibleUrl ? `(built with Plausible settings for ${new URL(plausibleUrl).host})` : "(built without Plausible settings)"),
 );

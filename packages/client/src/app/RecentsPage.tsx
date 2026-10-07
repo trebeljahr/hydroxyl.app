@@ -71,6 +71,7 @@ import {
   UploadIcon,
 } from "lucide-react";
 
+import { GuidesNavLink } from "@/components/guides/GuidesNavLink";
 import { onDocumentChange } from "@/persistence/broadcast";
 import {
   copyOf,
@@ -254,6 +255,7 @@ export default function RecentsPage({ landing }: RecentsPageProps = {}): ReactEl
           <h1 className="text-xl font-semibold tracking-tight">{SITE_NAME}</h1>
         )}
         <nav className="ml-auto flex flex-wrap items-center gap-2 text-sm">
+          <GuidesNavLink />
           {showLanding ? null : (
             <a
               href={aboutHref()}

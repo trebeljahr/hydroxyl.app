@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { commandById, formatShortcut } from "@/editor/commands/registry";
 
+import { guideBySlug } from "./guides";
 import { JournalFigureSizeGuide } from "./JournalFigureSizeGuide";
 import { ACS_GUIDELINE } from "./journal-figure-size";
 
@@ -45,6 +46,22 @@ describe("the journal figure size guide", () => {
     vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "1");
     const { container } = render(<JournalFigureSizeGuide />);
     expect(container.querySelector('[data-guide="open-editor"]')).toHaveAttribute("href", "editor.html");
+  });
+
+  it("puts an editor link under each figure, opening that figure's example", () => {
+    vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "1");
+    const { container } = render(<JournalFigureSizeGuide />);
+    const figures = [...container.querySelectorAll("figure")].filter(
+      (f) => f.querySelector("[data-guide-figure]") !== null,
+    );
+    expect(
+      figures.map((f) => f.querySelector("[data-guide-figure]")?.getAttribute("data-guide-figure")),
+    ).toEqual(["two-per-row", "one-row"]);
+    expect(
+      figures.map((f) => f.querySelector("a[data-guide-open-example]")?.getAttribute("href")),
+    ).toEqual(
+      guideBySlug("journal-figure-size").figures.map((g) => `editor.html?example=${g.example}`),
+    );
   });
 
   it("uses none of the banned marketing words", () => {

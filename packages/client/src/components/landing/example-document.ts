@@ -28,7 +28,7 @@
 import { add, buildMolecule, DEG, fromPolar, ORIGIN } from "@starter/chem-core";
 import type { Molecule, Vec2 } from "@starter/chem-core";
 import { VIEW_KIND_TITLES } from "@starter/chem-render";
-import { createDocument, createPanel } from "@starter/shared";
+import { createDocument, createPanel, withFigureLayout } from "@starter/shared";
 import type { Panel, RepresentationKind, SketchDocument } from "@starter/shared";
 
 /** The views the example lays side by side, in panel order. */
@@ -89,8 +89,35 @@ export function exampleDocument(): SketchDocument {
 /** The `?example=` value the landing figure links with. */
 export const LANDING_EXAMPLE = "landing";
 
+/**
+ * The same four panels in one row: the journal-figure-size guide's figure
+ * that is too wide for a column. The panel ids change too: they reach the
+ * SVG's element ids, and two inline figures on one page must not share them.
+ */
+export function exampleOneRowDocument(): SketchDocument {
+  const doc = exampleDocument();
+  return withFigureLayout(
+    {
+      ...doc,
+      panels: doc.panels.map((panel) => ({ ...panel, id: `${panel.id}-row` })),
+    },
+    { columns: EXAMPLE_VIEWS.length },
+  );
+}
+
+/**
+ * Every name `?example=` accepts: the landing figure, and every figure of
+ * every guide, released or not (`components/guides/guides.ts` names them).
+ *
+ * A guide figure gets its own name even where it draws the same document as
+ * the landing. The name belongs to the figure on the page, so retuning the
+ * landing example can never change what a guide's link opens without the
+ * guide's own figure changing with it.
+ */
 const EXAMPLES: Readonly<Record<string, () => SketchDocument>> = {
   [LANDING_EXAMPLE]: exampleDocument,
+  "journal-figure-size-two-per-row": exampleDocument,
+  "journal-figure-size-one-row": exampleOneRowDocument,
 };
 
 /**

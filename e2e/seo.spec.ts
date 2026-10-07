@@ -3,6 +3,8 @@ import { join } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
+import { releasedGuides } from "../packages/client/src/components/guides/guides";
+
 /**
  * `sitemap.xml` and `robots.txt` as the standalone server serves them
  * (decision 122). The static export's copies are checked on the files by
@@ -20,7 +22,7 @@ const { domain } = JSON.parse(readFileSync(join(process.cwd(), ".hatchkit.json")
 };
 const SITE = `https://${domain}/`;
 
-test("the sitemap lists the landing and the about page, and each answers without a redirect", async ({
+test("the sitemap lists the landing, the about page and the released guides, each without a redirect", async ({
   request,
 }) => {
   // maxRedirects 0 throughout: trailingSlash:true redirects extensionless
@@ -30,7 +32,13 @@ test("the sitemap lists the landing and the about page, and each answers without
   expect(response.headers()["content-type"]).toContain("xml");
 
   const locs = [...(await response.text()).matchAll(/<loc>([^<]*)<\/loc>/g)].map((m) => m[1]);
-  expect(locs).toEqual([SITE, `${SITE}about/`]);
+  // Guides only once Rico has released one (decision 244).
+  const released = releasedGuides().map((g) => g.slug);
+  const guides =
+    released.length === 0
+      ? []
+      : [`${SITE}guides/`, ...released.map((slug) => `${SITE}guides/${slug}/`)];
+  expect(locs).toEqual([SITE, `${SITE}about/`, ...guides]);
 
   for (const loc of locs) {
     const page = await request.get(new URL(loc!).pathname, { maxRedirects: 0 });

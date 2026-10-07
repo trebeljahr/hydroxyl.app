@@ -1,5 +1,6 @@
 /**
- * `/sitemap.xml`, the landing and the about page (decision 122).
+ * `/sitemap.xml`: the landing, the about page (decision 122) and, once Rico
+ * has released one, the guides index and every released guide (decision 244).
  *
  * No `lastModified`: the only date to hand is the build's, and stamping it
  * would tell crawlers both pages changed on every deploy.
@@ -7,7 +8,8 @@
 
 import type { MetadataRoute } from "next";
 
-import { indexablePageUrls } from "@/lib/deployment";
+import { releasedGuides } from "@/components/guides/guides";
+import { indexablePageUrls, releasedGuideUrls } from "@/lib/deployment";
 
 // Measured: without it `output: "export"` refuses the route outright ("export
 // const dynamic = "force-static" … not configured on route"), even though
@@ -15,5 +17,6 @@ import { indexablePageUrls } from "@/lib/deployment";
 export const dynamic = "force-static";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  return indexablePageUrls().map((url) => ({ url }));
+  const guides = releasedGuideUrls(releasedGuides().map((g) => g.slug));
+  return [...indexablePageUrls(), ...guides].map((url) => ({ url }));
 }

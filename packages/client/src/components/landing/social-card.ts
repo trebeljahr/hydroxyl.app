@@ -1,6 +1,7 @@
 /**
  * The image a link to `/` or `/about` unfurls into: 1200×630, the size Open
- * Graph and Twitter's large card both crop to without losing an edge.
+ * Graph and Twitter's large card both crop to without losing an edge. Each
+ * guide's card is laid out by the same `composeSocialCard` (decision 245).
  *
  * ── THE PRODUCT'S OWN OUTPUT, LIKE THE LANDING FIGURE ──────────────────────
  *
@@ -165,7 +166,7 @@ function viewBoxAspect(svg: string): number {
   const viewBox = /\sviewBox="([^"]+)"/.exec(root)?.[1]?.trim().split(/[\s,]+/).map(Number);
   const [, , width, height] = viewBox ?? [];
   if (width === undefined || height === undefined || !(width > 0) || !(height > 0)) {
-    throw new Error("The example figure's root <svg> has no usable viewBox.");
+    throw new Error("The card's figure has no usable viewBox on its root <svg>.");
   }
   return width / height;
 }
@@ -178,7 +179,7 @@ function nestAt(
   box: { x: number; y: number; width: number; height: number },
 ): string {
   const root = /^<svg\b([^>]*)>/.exec(svg);
-  if (root === null) throw new Error("The example figure does not start with <svg>.");
+  if (root === null) throw new Error("The card's figure does not start with <svg>.");
   const attributes = (root[1] ?? "").replace(/\s(?:x|y|width|height)="[^"]*"/g, "");
   return (
     `<svg${attributes} x="${px(box.x)}" y="${px(box.y)}" ` +
@@ -187,12 +188,37 @@ function nestAt(
   );
 }
 
+/** What a card says and shows. The layout is the same for every card. */
+export interface SocialCardContent {
+  /** Root-`<svg>` markup with a viewBox, as `serializeFigure` writes it. */
+  readonly figureSvg: string;
+  readonly headline: string;
+  readonly caption: string;
+  /** The headline's size in px; a long guide title needs less than 46. */
+  readonly headlineSizePx?: number;
+}
+
+/** The landing's card: its headline, its caption and its figure (decision 138). */
 export function socialCardSvg(): string {
-  const { width: W, height: H } = SOCIAL_CARD;
   const example = exampleFigure();
+  return composeSocialCard({
+    figureSvg: example.svg,
+    headline: LANDING_HEADLINE,
+    caption: exampleCaption(example),
+  });
+}
+
+/**
+ * A card: the site name, the headline and the caption on the left, the figure
+ * framed on the right. Throws when the text does not fit, so a card that
+ * would be cut off fails the build instead of shipping.
+ */
+export function composeSocialCard(content: SocialCardContent): string {
+  const { width: W, height: H } = SOCIAL_CARD;
+  const headlineSizePx = content.headlineSizePx ?? 46;
 
   // The figure, as large as the height allows and no wider than its share.
-  const aspect = viewBoxAspect(example.svg);
+  const aspect = viewBoxAspect(content.figureSvg);
   const maxFigureWidth = W * MAX_FIGURE_SHARE - 2 * FRAME_PADDING;
   const maxFigureHeight = H - 2 * MARGIN - 2 * FRAME_PADDING;
   const figureWidth = Math.min(maxFigureWidth, maxFigureHeight * aspect);
@@ -207,8 +233,13 @@ export function socialCardSvg(): string {
   const column = frame.x - GUTTER - MARGIN;
   const blocks: TextBlock[] = [
     { lines: [SITE_NAME], sizePx: 30, lineHeight: 1.2, fill: FOREGROUND },
-    { lines: wrap(LANDING_HEADLINE, 46, column), sizePx: 46, lineHeight: 1.16, fill: FOREGROUND },
-    { lines: wrap(exampleCaption(example), 22, column), sizePx: 22, lineHeight: 1.45, fill: MUTED },
+    {
+      lines: wrap(content.headline, headlineSizePx, column),
+      sizePx: headlineSizePx,
+      lineHeight: 1.16,
+      fill: FOREGROUND,
+    },
+    { lines: wrap(content.caption, 22, column), sizePx: 22, lineHeight: 1.45, fill: MUTED },
   ];
   const gaps = [44, 36];
 
@@ -238,7 +269,7 @@ export function socialCardSvg(): string {
     ...text,
     `<rect x="${px(frame.x)}" y="${px(frame.y)}" width="${px(frame.width)}" ` +
       `height="${px(frame.height)}" rx="${FRAME_RADIUS}" fill="#ffffff" stroke="${BORDER}" stroke-width="2"/>`,
-    nestAt(example.svg, {
+    nestAt(content.figureSvg, {
       x: frame.x + FRAME_PADDING,
       y: frame.y + FRAME_PADDING,
       width: figureWidth,
