@@ -33,7 +33,7 @@ packages/
   chem-core/   pure TypeScript chemistry model — graph, valence, formula.
                No React, no DOM, no dependencies. Fully unit-tested.
   client/      Next.js app (App Router, Tailwind v4, shadcn/ui).
-  mcp/         Local MCP server for AI assistants (not published yet).
+  mcp/         Local MCP server for AI assistants (npm: hydroxyl-mcp).
   shared/      zod schemas shared across packages.
 ```
 
@@ -109,34 +109,35 @@ It has five tools:
 A structure is one of `smiles`, `molfile`, or `name` (a compound from the
 editor's insert box, such as `caffeine`).
 
-The package is not on npm yet. Build it from this repository:
-
-```bash
-pnpm install
-pnpm build:mcp    # writes packages/mcp/dist/server.js
-```
-
-Then add it to your MCP client. For Claude Desktop, edit
-`claude_desktop_config.json` (Settings → Developer → Edit Config) and restart
-the app:
+Add it to your MCP client; `npx` fetches the
+[`hydroxyl-mcp`](https://www.npmjs.com/package/hydroxyl-mcp) package from npm
+(Node.js 22 or newer). For Claude Desktop, edit `claude_desktop_config.json`
+(Settings → Developer → Edit Config) and restart the app:
 
 ```json
 {
   "mcpServers": {
     "hydroxyl": {
-      "command": "node",
-      "args": ["/absolute/path/to/chemistry-sketcher/packages/mcp/dist/server.js"]
+      "command": "npx",
+      "args": ["-y", "hydroxyl-mcp"]
     }
   }
 }
 ```
 
-Other clients that start stdio servers take the same command and argument. For
+Other clients that start stdio servers take the same command and arguments. For
 Claude Code:
 
 ```bash
-claude mcp add hydroxyl -- node /absolute/path/to/chemistry-sketcher/packages/mcp/dist/server.js
+claude mcp add hydroxyl -- npx -y hydroxyl-mcp
 ```
+
+To run it from this repository instead, `pnpm build:mcp` writes
+`packages/mcp/dist/server.js`; point the client at
+`node /absolute/path/to/hydroxyl-app/packages/mcp/dist/server.js`.
+
+To publish a new version: bump `version` in `packages/mcp/package.json`, run
+`pnpm build:mcp`, then `pnpm publish --access public` from `packages/mcp`.
 
 `editor_link` points at `https://hydroxyl.app/editor/`. Set
 `HYDROXYL_EDITOR_URL` in the server's environment to link to a local or

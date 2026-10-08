@@ -43,4 +43,9 @@ await copyFile(
   path.join(root, "..", "chem-render", "assets", "arimo-latin-400-normal.woff"),
   path.join(dist, "arimo.woff"),
 );
+// The OFL requires its text to travel with the font.
+await copyFile(
+  path.join(root, "..", "chem-render", "assets", "OFL.txt"),
+  path.join(dist, "arimo-OFL.txt"),
+);
 console.log("Built packages/mcp/dist/server.js");

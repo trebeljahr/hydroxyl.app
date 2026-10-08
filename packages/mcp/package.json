@@ -1,15 +1,37 @@
 {
-  "name": "@starter/mcp",
+  "name": "hydroxyl-mcp",
   "version": "0.1.0",
-  "private": true,
   "license": "MIT",
   "description": "Local stdio MCP server: publication figures, structure checks and conversions for AI assistants",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "chemistry",
+    "molecule",
+    "smiles",
+    "molfile",
+    "rdkit",
+    "journal-figure"
+  ],
+  "homepage": "https://hydroxyl.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/trebeljahr/hydroxyl.app.git",
+    "directory": "packages/mcp"
+  },
+  "author": "Rico Trebeljahr",
+  "mcpName": "io.github.trebeljahr/hydroxyl",
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "bin": {
     "hydroxyl-mcp": "./dist/server.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",

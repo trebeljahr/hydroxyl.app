@@ -17,10 +17,10 @@
     "test:render": "pnpm --filter @starter/chem-render run test",
     "test:shared": "pnpm --filter @starter/shared run test",
     "test:client": "pnpm --filter @starter/client run test",
-    "test:mcp": "pnpm --filter @starter/mcp run test",
+    "test:mcp": "pnpm --filter hydroxyl-mcp run test",
     "test:e2e": "playwright test",
     "typecheck": "pnpm run build:deps && pnpm -r run typecheck && tsc --noEmit -p tsconfig.json",
-    "build:mcp": "pnpm run build:deps && pnpm --filter @starter/mcp run build"
+    "build:mcp": "pnpm run build:deps && pnpm --filter hydroxyl-mcp run build"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
