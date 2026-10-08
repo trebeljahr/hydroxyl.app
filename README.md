@@ -155,4 +155,6 @@ query string, and the static export contains none of it. See
 
 ## Licence
 
-Not yet chosen.
+MIT — see [`LICENSE`](LICENSE). Bundled fonts, RDKit and other third-party
+components keep their own licences; see
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).

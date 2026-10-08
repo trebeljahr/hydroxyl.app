@@ -2,6 +2,7 @@
   "name": "@starter/mcp",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Local stdio MCP server: publication figures, structure checks and conversions for AI assistants",
   "type": "module",
   "bin": {

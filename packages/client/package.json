@@ -2,6 +2,7 @@
   "name": "@starter/client",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "dev": "node scripts/dev-preflight.mjs && node scripts/copy-rdkit.mjs && node scripts/copy-conformer.mjs && node scripts/build-social-card.mjs && NODE_OPTIONS=\"$NODE_OPTIONS --heapsnapshot-near-heap-limit=1 --diagnostic-dir=.next/heap-snapshots\" next dev --port ${PORT:-6337}",
     "build": "node scripts/copy-rdkit.mjs && node scripts/copy-conformer.mjs && node scripts/build-social-card.mjs && next build && node scripts/flatten-export.mjs && node scripts/build-service-worker.mjs",

@@ -3,8 +3,9 @@
  *
  * ── ONE ADDRESS, AND NOTHING FROM THE SKETCH ───────────────────────────────
  *
- * The repo is private, so there is no public issue tracker: feedback is an
- * email alias, linked from the landing footer and the editor's status bar.
+ * Feedback is an email alias, linked from the landing footer and the editor's
+ * status bar: a chemist should not need a GitHub account to report a missing
+ * feature, even though the repo is public (MIT).
  * Both read the address from here, so a change of alias is one line.
  *
  * The link is a bare `mailto:` with no `?subject=` or `?body=`. A body filled
