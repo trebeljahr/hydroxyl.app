@@ -391,8 +391,10 @@ test("the canvas is focusable and the arrow keys walk it atom to atom", async ({
   }
   expect(reached, "Tab never reached the canvas").toBe(true);
 
-  // Focus lands somewhere as soon as the canvas has it.
+  // Focus lands somewhere as soon as the canvas has it, and a Tab in is
+  // keyboard focus, so the ring shows at once and the caption names it.
   await expect(page.locator('[data-overlay="focus-atom"]')).toHaveCount(1);
+  await expect(page.locator('[data-canvas-hint="focus"]')).toContainText("Keyboard focus");
   const first = await page
     .locator('[data-overlay="focus-atom"]')
     .getAttribute("data-overlay-target");
@@ -433,8 +435,9 @@ test("the BARE arrows reach every atom of the ring too, and say so each time", a
   page,
 }) => {
   await openEditor(page);
+  // Script focus may or may not count as keyboard focus (decision 255); the
+  // first arrow press settles it, so the ring is read only after one.
   await page.locator(CANVAS).focus();
-  await expect(page.locator('[data-overlay="focus-atom"]')).toHaveCount(1);
 
   // The bonded walk used to trade focus back and forth across one bond: four
   // of six atoms pressing Right, two of six pressing Down. It now refuses to
@@ -455,6 +458,38 @@ test("the BARE arrows reach every atom of the ring too, and say so each time", a
   // handed a byte-identical string on every press, never mutate, and never
   // announce. A screen-reader user heard the first move and then silence.
   expect(heard.size).toBeGreaterThan(1);
+});
+
+// Decision 255. The ring is for the keyboard. A click focuses the canvas as
+// surely as Tab does, and the ring used to follow that focus alone, so every
+// click left a dashed violet circle on the first atom with nothing to say what
+// it was. jsdom cannot tell a click from a Tab, which is why this is proven
+// here.
+test("a click leaves no focus ring; the arrow keys bring it back with its caption", async ({
+  page,
+}) => {
+  await openEditor(page);
+  const box = (await page.locator(CANVAS).boundingBox())!;
+  // A corner of the canvas, clear of the benzene the editor opens with.
+  await page.mouse.click(box.x + 8, box.y + 8);
+  await expect
+    .poll(() =>
+      page.evaluate(() => document.activeElement?.getAttribute("data-canvas-root")),
+    )
+    .toBe("true");
+  await expect(page.locator('[data-overlay="focus-atom"]')).toHaveCount(0);
+  await expect(page.locator('[data-canvas-hint="focus"]')).toHaveCount(0);
+
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator('[data-overlay="focus-atom"]')).toHaveCount(1);
+  await expect(page.locator('[data-canvas-hint="focus"]')).toContainText(
+    "Arrows follow bonds",
+  );
+
+  // Back to the mouse: the ring and the caption go with the next press.
+  await page.mouse.click(box.x + 8, box.y + 8);
+  await expect(page.locator('[data-overlay="focus-atom"]')).toHaveCount(0);
+  await expect(page.locator('[data-canvas-hint="focus"]')).toHaveCount(0);
 });
 
 test("a letter typed at the properties panel's Select does not edit the molecule", async ({

@@ -66,6 +66,10 @@ function canvasRoot(): SVGSVGElement {
   return svg;
 }
 
+function focusHint(): Element | null {
+  return document.querySelector('[data-canvas-hint="focus"]');
+}
+
 /**
  * Where a model position currently sits in canvas px.
  *
@@ -540,11 +544,62 @@ describe("EditorCanvas — keyboard focus", () => {
     expect(editorStore.getState().ui.focusedAtomId).toBeNull();
     fireEvent.focus(canvasRoot());
     expect(editorStore.getState().ui.focusedAtomId).toBe(MOL.atomIds[0]);
+  });
+
+  // Decision 255. jsdom's synthetic focus never matches `:focus-visible`, so
+  // it stands in for the CLICK here; that a Tab in does match is proven
+  // against Chromium in e2e/shell.spec.ts.
+  it("draws no ring and no caption when focus did not come from the keyboard", () => {
+    render(<EditorCanvas />);
+    fireEvent.focus(canvasRoot());
+    expect(document.querySelector('[data-overlay="focus-atom"]')).toBeNull();
+    expect(focusHint()).toBeNull();
+  });
+
+  it("shows the ring and its caption once an arrow key walks the canvas", () => {
+    render(<EditorCanvas />);
+    fireEvent.focus(canvasRoot());
+    // Only the capture listener sees this: the key layer that MOVES the focus
+    // is the shell's, and is not mounted here. So the ring stays on the seed.
+    fireEvent.keyDown(canvasRoot(), { key: "ArrowRight" });
     expect(
       document.querySelector('[data-overlay="focus-atom"]')?.getAttribute(
         "data-overlay-target",
       ),
     ).toBe(MOL.atomIds[0]);
+    expect(focusHint()?.textContent).toContain("Keyboard focus");
+    expect(focusHint()?.textContent).toContain("Shift+arrows");
+  });
+
+  it("is not turned on by a letter, or by Mod+arrow, which nudges instead", () => {
+    render(<EditorCanvas />);
+    fireEvent.focus(canvasRoot());
+    fireEvent.keyDown(canvasRoot(), { key: "n" });
+    fireEvent.keyDown(canvasRoot(), { key: "ArrowRight", ctrlKey: true });
+    fireEvent.keyDown(canvasRoot(), { key: "ArrowRight", metaKey: true });
+    expect(document.querySelector('[data-overlay="focus-atom"]')).toBeNull();
+    expect(focusHint()).toBeNull();
+  });
+
+  it("hides the ring on a pointer press and on blur, and keeps the walk's place", () => {
+    render(<EditorCanvas />);
+    editorStore.getState().setFocusedAtom("a3");
+    fireEvent.focus(canvasRoot());
+    fireEvent.keyDown(canvasRoot(), { key: "ArrowLeft" });
+    expect(document.querySelector('[data-overlay="focus-atom"]')).not.toBeNull();
+
+    // Over empty canvas, far from every atom: the press itself edits nothing.
+    fireEvent.pointerDown(canvasRoot(), { button: 0, pointerId: 3, clientX: 2, clientY: 2 });
+    fireEvent.pointerUp(canvasRoot(), { button: 0, pointerId: 3, clientX: 2, clientY: 2 });
+    expect(document.querySelector('[data-overlay="focus-atom"]')).toBeNull();
+    expect(focusHint()).toBeNull();
+    expect(editorStore.getState().ui.focusedAtomId).toBe("a3");
+
+    fireEvent.keyDown(canvasRoot(), { key: "ArrowLeft" });
+    expect(document.querySelector('[data-overlay="focus-atom"]')).not.toBeNull();
+    fireEvent.blur(canvasRoot());
+    expect(document.querySelector('[data-overlay="focus-atom"]')).toBeNull();
+    expect(focusHint()).toBeNull();
   });
 
   it("keeps a focus the user already moved, rather than resetting it on refocus", () => {

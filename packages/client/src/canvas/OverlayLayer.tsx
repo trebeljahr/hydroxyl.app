@@ -154,7 +154,13 @@ const ISSUE_ERROR_COLOR = "#dc2626";
  * as the status bar's notice and the export dialog's warnings are.
  */
 const ISSUE_WARNING_COLOR = "#d97706";
-const FOCUS_COLOR = "#7c3aed";
+/**
+ * The keyboard focus ring's colour, and the swatch in the caption that names
+ * it (decision 255) — exported so the two cannot drift apart. Violet because
+ * nothing else on the canvas uses it: the ring must not read as a selection,
+ * a hover or a refusal.
+ */
+export const FOCUS_COLOR = "#7c3aed";
 /** Clear of the selection ring so both are legible on the same atom. */
 const FOCUS_RING_PAD_PX = 5;
 const GHOST_WIDTH_PX = 2;
@@ -761,6 +767,11 @@ function atomHalo(
  * focused, selected and hovered at once, and a focus indicator that replaced
  * one of the other two would make the keyboard user lose track of what an
  * edit is about to act on.
+ *
+ * Drawn only while the KEYBOARD is driving the canvas (decision 255). The
+ * gate is EditorCanvas's, which passes `focusedAtomId` as null otherwise: a
+ * click focuses the `<svg>` too, and a ring on an arbitrary atom after a
+ * click is a mark nobody asked for and nothing explains.
  */
 function focusRing(index: SceneIndex, u: number, id: AtomId): ReactElement | null {
   const centre = index.atomCentre(id);

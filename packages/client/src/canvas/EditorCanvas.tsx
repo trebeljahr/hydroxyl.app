@@ -45,7 +45,7 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ReactElement } from "react";
+import type { FocusEvent, KeyboardEvent, ReactElement } from "react";
 import { isEmpty } from "@starter/chem-core";
 import { modelToPx, pxPerModelUnit } from "@starter/chem-render";
 import {
@@ -66,7 +66,7 @@ import { buildCanvasScene, renderStyleFor } from "./scene-bridge";
 import { createSceneIndex, fitBounds } from "./metrics";
 import { pickAt, type PickContext } from "./pick";
 import { SceneLayer } from "./SceneLayer";
-import { OverlayLayer } from "./OverlayLayer";
+import { FOCUS_COLOR, OverlayLayer } from "./OverlayLayer";
 import { rotateHandleGeometry } from "./handles";
 import { RotateHandleHint } from "./RotateHandleHint";
 import {
@@ -93,6 +93,80 @@ export interface EditorCanvasProps {
 function svgNumber(n: number): number {
   if (!Number.isFinite(n)) return 0;
   return Math.abs(n) < 1e-6 ? 0 : n;
+}
+
+/**
+ * Whether focus arrived the way a keyboard user's does.
+ *
+ * The browser's own answer, so the canvas follows the same rule as every
+ * button in the shell: Tab in and it matches, click in and it does not. In a
+ * runtime that cannot parse the selector, the answer is "no" — the arrow keys
+ * still turn the ring on.
+ */
+function focusIsVisible(element: Element): boolean {
+  try {
+    return element.matches(":focus-visible");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The keys that mean "the keyboard is walking the drawing": the four arrows
+ * the roving focus moves on, and the two that open the context menu at it.
+ * Not every key — a letter arms an element, and a mouse user who types "N"
+ * after a click has not started navigating by keyboard.
+ */
+function isFocusWalkKey(event: KeyboardEvent): boolean {
+  if (event.key === "ContextMenu") return true;
+  if (event.key === "F10" && event.shiftKey) return true;
+  // Mod+arrow nudges the selection instead; see useKeyBindings.
+  if (event.metaKey || event.ctrlKey) return false;
+  return (
+    event.key === "ArrowUp" ||
+    event.key === "ArrowDown" ||
+    event.key === "ArrowLeft" ||
+    event.key === "ArrowRight"
+  );
+}
+
+export const FOCUS_HINT_TITLE = "Keyboard focus";
+export const FOCUS_HINT_DETAIL = "Arrows follow bonds · Shift+arrows visit every atom";
+
+/**
+ * What the violet ring is, said beside the canvas while it shows (decision
+ * 255).
+ *
+ * A fixed corner rather than beside the ring: the ring moves on every arrow
+ * press and a caption chasing it would cover the neighbours the user is
+ * about to step to. The swatch is the ring's own colour and dash, which is
+ * what ties the words to the mark.
+ *
+ * `aria-hidden` because a screen reader already has it: `#canvas-focus-help`
+ * is read when focus enters, and the live region names each atom.
+ */
+function CanvasFocusHint(): ReactElement {
+  return (
+    <div
+      data-canvas-hint="focus"
+      aria-hidden="true"
+      className="bg-popover text-popover-foreground pointer-events-none absolute bottom-2 left-2 z-10 flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2 py-1 text-xs shadow-sm"
+    >
+      <svg width="12" height="12" viewBox="0 0 12 12" className="shrink-0">
+        <circle
+          cx="6"
+          cy="6"
+          r="4.5"
+          fill="none"
+          stroke={FOCUS_COLOR}
+          strokeWidth="1.5"
+          strokeDasharray="2.5 1.5"
+        />
+      </svg>
+      <span className="font-medium">{FOCUS_HINT_TITLE}</span>
+      <span className="text-muted-foreground">· {FOCUS_HINT_DETAIL}</span>
+    </div>
+  );
 }
 
 export function EditorCanvas(props: EditorCanvasProps): ReactElement {
@@ -376,16 +450,40 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
   // the EDITOR usable under that preset without inventing one for the export.
   const ground = renderStyleFor(doc).colors.background ?? "#ffffff";
 
+  // THE RING IS FOR THE KEYBOARD (decision 255). A click focuses the `<svg>`
+  // as surely as Tab does, and the ring used to follow `focusedAtomId` alone,
+  // so every click left a dashed violet circle on whichever atom happened to
+  // be first, with nothing on screen to say what it was. It now shows only
+  // while the keyboard is driving: focus that arrives as `:focus-visible`, or
+  // an arrow or menu key at the canvas. Any pointer press or a blur hides it.
+  // The store keeps `focusedAtomId` either way, so the walk resumes from where
+  // it was.
+  const [keyboardFocus, setKeyboardFocus] = useState(false);
+
   // Focus has to land SOMEWHERE, or the first arrow press has nothing to move
   // from and the canvas is a tab stop that does nothing. Seeding only when the
   // held id is stale keeps a Tab away and back from resetting the traversal.
-  const handleFocus = useCallback(() => {
+  const handleFocus = useCallback((event: FocusEvent<SVGSVGElement>) => {
+    setKeyboardFocus(focusIsVisible(event.currentTarget));
     const state = editorStore.getState();
     const mol = state.document.molecule;
     const held = state.ui.focusedAtomId;
     if (held !== null && Object.hasOwn(mol.atoms, held)) return;
     state.setFocusedAtom(mol.atomIds[0] ?? null);
   }, []);
+  const handleBlur = useCallback(() => {
+    setKeyboardFocus(false);
+  }, []);
+  // CAPTURE phase on the `<svg>`, which runs before the gesture hook's own
+  // handlers and the window key layer, so neither can stop it, and both stay
+  // exactly as they were.
+  const handlePointerDownCapture = useCallback(() => {
+    setKeyboardFocus(false);
+  }, []);
+  const handleKeyDownCapture = useCallback((event: KeyboardEvent<SVGSVGElement>) => {
+    if (isFocusWalkKey(event)) setKeyboardFocus(true);
+  }, []);
+  const shownFocusAtomId = keyboardFocus ? focusedAtomId : null;
 
   return (
     <div
@@ -417,6 +515,9 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
         aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight"
         aria-describedby="canvas-focus-help canvas-focus-status"
         onFocus={handleFocus}
+        onBlur={handleBlur}
+        onPointerDownCapture={handlePointerDownCapture}
+        onKeyDownCapture={handleKeyDownCapture}
         // `touchAction: none` so the canvas gets every finger: one finger is
         // the tool (a marquee, a bond), two pan and pinch-zoom the VIEW (see
         // gesture-reducer.ts). Without it the browser claims both as a page
@@ -446,7 +547,7 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
             issues={issues}
             rotateHandle={rotateHandle}
             zoom={viewport.zoom}
-            focusedAtomId={focusedAtomId}
+            focusedAtomId={shownFocusAtomId}
           />
         </g>
       </svg>
@@ -454,6 +555,8 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
       {onRotateHandle && !rotating ? (
         <RotateHandleHint geometry={rotateHandle} viewport={viewport} />
       ) : null}
+
+      {shownFocusAtomId !== null ? <CanvasFocusHint /> : null}
 
       <CanvasContextMenu request={menu} onClose={closeMenu} returnFocus={focusCanvas} />
 
@@ -463,7 +566,7 @@ export function EditorCanvas(props: EditorCanvasProps): ReactElement {
         not change as focus moves, the position does, and re-labelling the
         widget on every arrow press is what makes some readers announce the
         role again each time. Visually hidden rather than absent — sighted
-        users have the dashed focus ring.
+        users have the dashed focus ring and its caption.
       */}
       {/* Static, and read once when focus enters the widget: what the arrow
           keys do here, and which modifier guarantees every atom. Separate
