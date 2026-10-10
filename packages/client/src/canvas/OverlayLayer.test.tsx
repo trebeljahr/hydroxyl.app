@@ -20,7 +20,8 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { benzene } from "@starter/chem-core";
+import { addAtom, addBond, benzene } from "@starter/chem-core";
+import type { Molecule } from "@starter/chem-core";
 import {
   PUBLICATION_STYLE,
   SCREEN_STYLE,
@@ -72,6 +73,20 @@ function overValentIssue(atomId: string, bondIds: readonly string[]): EditorIssu
     message: "C has 5 bonds but allows at most 4",
     label: "C has 5 bonds; max 4",
   };
+}
+
+/**
+ * A generous box around a label's text, from its anchor and font size: 0.6 em
+ * a character, which over-reads a bold sans face, so a pass here is not luck.
+ */
+function textBox(label: Element): { minX: number; minY: number; maxX: number; maxY: number } {
+  const x = Number(label.getAttribute("x"));
+  const y = Number(label.getAttribute("y"));
+  const size = Number(label.getAttribute("font-size"));
+  const width = (label.textContent ?? "").length * size * 0.6;
+  const anchor = label.getAttribute("text-anchor") ?? "start";
+  const minX = anchor === "start" ? x : anchor === "end" ? x - width : x - width / 2;
+  return { minX, minY: y - size, maxX: minX + width, maxY: y + size * 0.3 };
 }
 
 /** A decision-77 warning: sound chemistry this build cannot express. */
@@ -444,6 +459,67 @@ describe("OverlayLayer — gesture marks", () => {
     ]);
     expect(labels[0]!.getAttribute("y")).not.toBe(labels[1]!.getAttribute("y"));
     expect(container.querySelectorAll('[data-overlay="issue-halo"]')).toHaveLength(2);
+  });
+
+  it("keeps an error's label off the bond it flags", () => {
+    // Toluene drawn as benzene plus a methyl, with a wedge from a3 — the ring
+    // carbon at 30 degrees, so the wedge leaves up and to the right, straight
+    // into the corner the label used to be pinned to. The label sat on the
+    // wedge and its white halo cut gaps into it.
+    const ring = benzene();
+    const a3 = ring.atoms.a3!.pos;
+    const methyl = addAtom(ring, {
+      element: "C",
+      pos: { x: a3.x + Math.cos(Math.PI / 6), y: a3.y + Math.sin(Math.PI / 6) },
+    });
+    const wedged = addBond(methyl.molecule, { from: "a3", to: methyl.id, stereo: "wedge" });
+    const mol: Molecule = wedged.molecule;
+    const index = createSceneIndex(buildScene(mol, SCREEN_STYLE, representation("skeletal")), mol);
+    const { container } = render(
+      <svg>
+        <OverlayLayer
+          index={index}
+          selection={EMPTY_SELECTION}
+          hoveredAtomId={null}
+          hoveredBondId={null}
+          issues={[
+            {
+              kind: "wedge-on-non-stereocenter",
+              severity: "error",
+              atomId: "a3",
+              atomIds: ["a3", methyl.id],
+              bondIds: [wedged.id],
+              message: "a wedge bond starts at an atom that is not a stereocentre",
+              label: "wedge at a non-stereocentre",
+            },
+          ]}
+        />
+      </svg>,
+    );
+    const label = container.querySelector('[data-overlay="issue-label"]')!;
+    const box = textBox(label);
+    const from = index.atomCentre("a3")!;
+    const to = index.atomCentre(methyl.id)!;
+    for (let i = 0; i <= 50; i++) {
+      const t = i / 50;
+      const x = from.x + (to.x - from.x) * t;
+      const y = from.y + (to.y - from.y) * t;
+      expect(
+        x >= box.minX && x <= box.maxX && y >= box.minY && y <= box.maxY,
+        `wedge point ${t.toFixed(2)} is under the label`,
+      ).toBe(false);
+    }
+  });
+
+  it("puts a label up and to the right of its atom when nothing is there", () => {
+    // a4 is benzene's top atom: both its bonds leave downwards, so the
+    // preferred corner is clear and the label stays where it always was.
+    const container = renderGesture({ issues: [overValentIssue("a4", [])] });
+    const label = container.querySelector('[data-overlay="issue-label"]')!;
+    const centre = INDEX.atomCentre("a4")!;
+    expect(label.getAttribute("text-anchor")).toBe("start");
+    expect(Number(label.getAttribute("x"))).toBeGreaterThan(centre.x);
+    expect(Number(label.getAttribute("y"))).toBeLessThan(centre.y);
   });
 
   it("draws the rotate handle it is given, and none when it is given none", () => {

@@ -22,10 +22,11 @@
  * a sibling of `[data-layer="scene"]` under the same pan/zoom transform.
  */
 
+import { useMemo } from "react";
 import type { ReactElement } from "react";
 
 import type { AtomId, BondId, Vec2 } from "@starter/chem-core";
-import { modelToPx } from "@starter/chem-render";
+import { BUNDLED_MEASURER, modelToPx } from "@starter/chem-render";
 import type { ScenePoint } from "@starter/chem-render";
 
 import type { Selection } from "@/state";
@@ -179,6 +180,18 @@ const ISSUE_BOND_WIDTH_PX = 9;
 /** Screen px — divided by the zoom where it is used. */
 const ISSUE_LABEL_FONT_PX = 12;
 const ISSUE_LABEL_HALO_PX = 3.5;
+/**
+ * The label is set in the UI face and measured with chem-render's Arimo table
+ * as a stand-in; system-ui runs a little wider than Arimo, hence the slack.
+ * Ink above and below the baseline and the stacked-row pitch are fractions of
+ * the font size.
+ */
+const ISSUE_LABEL_WIDTH_SLACK = 1.1;
+const ISSUE_LABEL_ASCENT = 0.75;
+const ISSUE_LABEL_DESCENT = 0.25;
+const ISSUE_LABEL_LINE = 1.25;
+/** Scene px at the reference bond: a wedge's wide end is about this far off its axis. */
+const ISSUE_LABEL_CLEARANCE_PX = 2;
 
 export function OverlayLayer({
   index,
@@ -197,8 +210,17 @@ export function OverlayLayer({
     zoomProp !== undefined && Number.isFinite(zoomProp) && zoomProp > 0 ? zoomProp : 1;
   const showHandle =
     handle !== undefined && interaction?.marquee == null && interaction?.lasso == null;
-  const errors = (issues ?? []).filter((issue) => issue.severity === "error");
+  const errors = useMemo(
+    () => (issues ?? []).filter((issue) => issue.severity === "error"),
+    [issues],
+  );
   const warnings = (issues ?? []).filter((issue) => issue.severity !== "error");
+  // Memoised because placing a label scans every bond, and the overlay
+  // re-renders on every hover change while the issues and the zoom do not.
+  const labels = useMemo(
+    () => issueLabels(index, u, errors, zoom),
+    [index, u, errors, zoom],
+  );
   return (
     // Pointer-events off, as on the scene layer: the root <svg> is the only
     // element that handles pointers. A halo that ate its own clicks would make
@@ -230,7 +252,7 @@ export function OverlayLayer({
       */}
       {focusedAtomId == null ? null : focusRing(index, u, focusedAtomId)}
       {warnings.map((issue, at) => valenceBadge(index, u, issue, at))}
-      {issueLabels(index, u, errors, zoom)}
+      {labels}
       {showHandle && interaction?.handleHovered === true
         ? rotatePreview(handle, zoom)
         : null}
@@ -631,11 +653,22 @@ function issueRingRadius(index: SceneIndex, u: number, atomId: AtomId): number {
 /**
  * The short reason beside each error's atom: "C has 5 bonds; max 4".
  *
- * Up and to the right of the ring, clear of the atom's own label, and
+ * WHERE IT GOES IS CHOSEN, NOT FIXED (decision 256). Just outside the ring,
+ * at the first of eight places around it that no bond, no other atom and no
+ * other label crosses. Up and to the right is tried first
+ * and is where a label sits whenever it is clear, but a fixed corner put the
+ * text straight across whatever bond leaves that way — toluene's methyl, with
+ * the wedge that raised the error on it, wore its own label, the white halo
+ * cutting gaps into the very bond it named. When every place is crossed by
+ * something, the one with the least ink under it wins: a bond grazing a
+ * corner is cheaper than one running through the text.
+ *
  * STACKED when one atom carries two errors — an over-valent carbon with a
  * misplaced wedge on it is one edit away — rather than printed over each
- * other. White-haloed text rather than a filled pill: a pill needs the text
- * measured, and the overlay renders once with no DOM to measure against.
+ * other. White-haloed text rather than a filled pill: the overlay renders
+ * once with no DOM to measure against, so the width is chem-render's
+ * estimate, which is good enough to steer clear of a bond and not to frame
+ * text in a box.
  */
 function issueLabels(
   index: SceneIndex,
@@ -643,37 +676,236 @@ function issueLabels(
   errors: readonly EditorIssue[],
   zoom: number,
 ): ReactElement[] {
+  // Nothing to place is the common case, and this runs on every frame of a
+  // drag: do not walk the bonds for it.
+  if (errors.length === 0) return [];
   const scale = 1 / (Number.isFinite(zoom) && zoom > 0 ? zoom : 1);
   const fontSize = ISSUE_LABEL_FONT_PX * scale;
-  const stacked = new Map<AtomId, number>();
-  const labels: ReactElement[] = [];
+  const pad = (ISSUE_LABEL_HALO_PX * scale) / 2 + ISSUE_LABEL_CLEARANCE_PX * u;
+
+  // One block per atom, in the order its first error is listed.
+  const byAtom = new Map<AtomId, { readonly issue: EditorIssue; readonly at: number }[]>();
   errors.forEach((issue, at) => {
-    const centre = index.atomCentre(issue.atomId);
-    if (centre === undefined || !isFinitePoint(centre)) return;
-    const row = stacked.get(issue.atomId) ?? 0;
-    stacked.set(issue.atomId, row + 1);
-    const reach = issueRingRadius(index, u, issue.atomId);
-    labels.push(
-      <text
-        key={`issue-label:${at}:${issue.atomId}`}
-        data-overlay="issue-label"
-        data-overlay-target={issue.atomId}
-        x={centre.x + reach * 0.7}
-        y={centre.y - reach * 0.7 - row * fontSize * 1.25}
-        fontSize={fontSize}
-        fontWeight={600}
-        fontFamily="ui-sans-serif, system-ui, sans-serif"
-        fill={ISSUE_ERROR_COLOR}
-        stroke="#ffffff"
-        strokeWidth={ISSUE_LABEL_HALO_PX * scale}
-        strokeLinejoin="round"
-        paintOrder="stroke"
-      >
-        {issue.label}
-      </text>,
-    );
+    const rows = byAtom.get(issue.atomId);
+    if (rows === undefined) byAtom.set(issue.atomId, [{ issue, at }]);
+    else rows.push({ issue, at });
   });
+
+  const segments: { readonly a: ScenePoint; readonly b: ScenePoint }[] = [];
+  for (const bondId of index.bondIds) {
+    const segment = index.bondSegment(bondId);
+    if (segment !== undefined && isFinitePoint(segment.a) && isFinitePoint(segment.b)) {
+      segments.push(segment);
+    }
+  }
+  const placed: Box[] = [];
+  const labels: ReactElement[] = [];
+
+  for (const [atomId, rows] of byAtom) {
+    const centre = index.atomCentre(atomId);
+    if (centre === undefined || !isFinitePoint(centre)) continue;
+    const reach = issueRingRadius(index, u, atomId);
+    const width =
+      Math.max(
+        ...rows.map(
+          ({ issue }) =>
+            BUNDLED_MEASURER.measureText(issue.label, {
+              family: "Arimo",
+              weight: "bold",
+              sizePx: fontSize,
+            }).advanceWidthPx,
+        ),
+      ) * ISSUE_LABEL_WIDTH_SLACK;
+
+    let best: LabelBlock | undefined;
+    let bestCovered = Infinity;
+    for (const place of LABEL_PLACES) {
+      const block = labelBlock(place, centre, reach, width, fontSize, rows.length);
+      const covered = coveredInk(index, atomId, inflate(block.box, pad), segments, placed);
+      if (covered < bestCovered) {
+        best = block;
+        bestCovered = covered;
+        if (covered === 0) break;
+      }
+    }
+    if (best === undefined) continue;
+    placed.push(best.box);
+
+    rows.forEach(({ issue, at }, row) => {
+      labels.push(
+        <text
+          key={`issue-label:${at}:${issue.atomId}`}
+          data-overlay="issue-label"
+          data-overlay-target={issue.atomId}
+          x={best.x}
+          y={best.baseline + row * best.rowStep}
+          textAnchor={best.anchor}
+          fontSize={fontSize}
+          fontWeight={600}
+          fontFamily="ui-sans-serif, system-ui, sans-serif"
+          fill={ISSUE_ERROR_COLOR}
+          stroke="#ffffff"
+          strokeWidth={ISSUE_LABEL_HALO_PX * scale}
+          strokeLinejoin="round"
+          paintOrder="stroke"
+        >
+          {issue.label}
+        </text>,
+      );
+    });
+  }
   return labels;
+}
+
+interface Box {
+  readonly minX: number;
+  readonly minY: number;
+  readonly maxX: number;
+  readonly maxY: number;
+}
+
+interface LabelBlock {
+  readonly x: number;
+  /** Row 0's baseline; row `i` sits `i * rowStep` below it. */
+  readonly baseline: number;
+  readonly rowStep: number;
+  readonly anchor: "start" | "middle" | "end";
+  readonly box: Box;
+}
+
+/**
+ * The eight places a label block can sit, as the direction out of the ring,
+ * in order of preference. A label on the right reads away from its atom, so
+ * the right-hand side goes first; above and below go last, since text centred
+ * over an atom is crossed by both bonds that leave on that side.
+ */
+const LABEL_PLACES: readonly { readonly x: -1 | 0 | 1; readonly y: -1 | 0 | 1 }[] = [
+  { x: 1, y: -1 },
+  { x: 1, y: 1 },
+  { x: 1, y: 0 },
+  { x: -1, y: -1 },
+  { x: -1, y: 1 },
+  { x: -1, y: 0 },
+  { x: 0, y: -1 },
+  { x: 0, y: 1 },
+];
+
+/**
+ * Where a block of `rows` labels goes for one place: anchored on the ring at
+ * that direction (a diagonal at 0.7 of the radius on each axis) and growing
+ * away from the atom — up from a place above it, down from one below, out to
+ * either side.
+ */
+function labelBlock(
+  place: { readonly x: -1 | 0 | 1; readonly y: -1 | 0 | 1 },
+  centre: ScenePoint,
+  reach: number,
+  width: number,
+  fontSize: number,
+  rows: number,
+): LabelBlock {
+  const k = place.x !== 0 && place.y !== 0 ? 0.7 : 1;
+  const px = centre.x + place.x * reach * k;
+  const py = centre.y + place.y * reach * k;
+  const ascent = ISSUE_LABEL_ASCENT * fontSize;
+  const descent = ISSUE_LABEL_DESCENT * fontSize;
+  const line = ISSUE_LABEL_LINE * fontSize;
+  const height = (rows - 1) * line + ascent + descent;
+
+  const anchor = place.x > 0 ? "start" : place.x < 0 ? "end" : "middle";
+  const minX = place.x > 0 ? px : place.x < 0 ? px - width : px - width / 2;
+
+  let baseline: number;
+  let rowStep: number;
+  let minY: number;
+  if (place.y < 0) {
+    // Row 0 nearest the atom, later rows stacked above it.
+    baseline = place.x === 0 ? py - descent : py;
+    rowStep = -line;
+    minY = baseline - (rows - 1) * line - ascent;
+  } else if (place.y > 0) {
+    baseline = py + ascent;
+    rowStep = line;
+    minY = py;
+  } else {
+    minY = py - height / 2;
+    baseline = minY + ascent;
+    rowStep = line;
+  }
+  return {
+    x: px,
+    baseline,
+    rowStep,
+    anchor,
+    box: { minX, minY, maxX: minX + width, maxY: minY + height },
+  };
+}
+
+function inflate(box: Box, by: number): Box {
+  return {
+    minX: box.minX - by,
+    minY: box.minY - by,
+    maxX: box.maxX + by,
+    maxY: box.maxY + by,
+  };
+}
+
+/**
+ * How much the box would cover, in scene px: the length of every bond inside
+ * it, the diameter of every other atom's ink it touches, and the width it
+ * shares with each label already placed. A length rather than a count, so a
+ * bond grazing the padding at one corner loses to one running the length of
+ * the text.
+ */
+function coveredInk(
+  index: SceneIndex,
+  atomId: AtomId,
+  box: Box,
+  segments: readonly { readonly a: ScenePoint; readonly b: ScenePoint }[],
+  placed: readonly Box[],
+): number {
+  let covered = 0;
+  for (const segment of segments) covered += lengthInBox(segment.a, segment.b, box);
+  for (const other of index.atomIds) {
+    if (other === atomId) continue;
+    const centre = index.atomCentre(other);
+    if (centre === undefined || !isFinitePoint(centre)) continue;
+    const r = index.atomRadiusPx(other);
+    const nearestX = Math.min(Math.max(centre.x, box.minX), box.maxX);
+    const nearestY = Math.min(Math.max(centre.y, box.minY), box.maxY);
+    if (Math.hypot(centre.x - nearestX, centre.y - nearestY) <= r) covered += 2 * r;
+  }
+  for (const label of placed) {
+    const overlapX = Math.min(label.maxX, box.maxX) - Math.max(label.minX, box.minX);
+    const overlapY = Math.min(label.maxY, box.maxY) - Math.max(label.minY, box.minY);
+    if (overlapX > 0 && overlapY > 0) covered += overlapX;
+  }
+  return covered;
+}
+
+/** Liang–Barsky: the length of the segment that lies inside the box. */
+function lengthInBox(a: ScenePoint, b: ScenePoint, box: Box): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  let t0 = 0;
+  let t1 = 1;
+  const edges: readonly (readonly [number, number])[] = [
+    [-dx, a.x - box.minX],
+    [dx, box.maxX - a.x],
+    [-dy, a.y - box.minY],
+    [dy, box.maxY - a.y],
+  ];
+  for (const [p, q] of edges) {
+    if (p === 0) {
+      if (q < 0) return 0;
+      continue;
+    }
+    const t = q / p;
+    if (p < 0) t0 = Math.max(t0, t);
+    else t1 = Math.min(t1, t);
+    if (t0 > t1) return 0;
+  }
+  return (t1 - t0) * Math.hypot(dx, dy);
 }
 
 /**

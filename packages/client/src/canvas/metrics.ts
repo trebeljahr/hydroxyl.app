@@ -46,6 +46,13 @@ import type { Bounds } from "@/state";
 
 export interface SceneIndex {
   readonly scene: RenderScene;
+  /**
+   * The atoms and bonds AS DRAWN — an abbreviation's folded atoms and bonds
+   * are not here — for a mark that has to see everything near it rather than
+   * look one id up.
+   */
+  readonly atomIds: readonly AtomId[];
+  readonly bondIds: readonly BondId[];
   /** Scene px. `undefined` when the molecule has no such atom. */
   atomCentre(id: AtomId): ScenePoint | undefined;
   /** Measured ink radius around that centre, scene px; 0 when nothing is drawn. */
@@ -279,7 +286,16 @@ export function createSceneIndex(
     return { start: Math.max(0, start), end: Math.min(1, end) };
   }
 
-  return { scene, atomCentre, atomRadiusPx, bondSegment, labelRadius, drawnSpan };
+  return {
+    scene,
+    atomIds: molecule.atomIds,
+    bondIds: molecule.bondIds,
+    atomCentre,
+    atomRadiusPx,
+    bondSegment,
+    labelRadius,
+    drawnSpan,
+  };
 }
 
 /**
