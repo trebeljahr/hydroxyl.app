@@ -6,7 +6,10 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { verifyRelease, ORIGINS, PAGE_MARKER } from "./verify-release.mjs";
 const SHA = "a".repeat(40);
-function transport(commits, { cache = "no-store", marker = PAGE_MARKER, htmlCommit = SHA } = {}) {
+function transport(
+  commits,
+  { cache = "no-store", marker = PAGE_MARKER, htmlCommit = SHA, chunkStatus = 200 } = {},
+) {
   return async (url) => {
     assert.ok(ORIGINS.includes(new URL(url).origin));
     if (new URL(url).pathname === "/version.json") {
@@ -15,8 +18,12 @@ function transport(commits, { cache = "no-store", marker = PAGE_MARKER, htmlComm
         headers: { "Cache-Control": cache },
       });
     }
+    if (new URL(url).pathname.startsWith("/_next/static/")) {
+      return new Response("", { status: chunkStatus });
+    }
     return new Response(
-      `<head><title>${marker}</title><meta name="build-sha" content="${htmlCommit}"></head>`,
+      `<head><title>${marker}</title><meta name="build-sha" content="${htmlCommit}">` +
+        `<script src="/_next/static/chunks/main.js?dpl=${htmlCommit}"></script></head>`,
     );
   };
 }
@@ -76,6 +83,7 @@ test("rejects stale, cached, wrong-site and invalid-SHA evidence", async () => {
     transport([SHA], { cache: "public" }),
     transport([SHA], { htmlCommit: "b".repeat(40) }),
     transport([SHA], { marker: "Welcome to nginx" }),
+    transport([SHA], { chunkStatus: 404 }),
   ]) {
     await assert.rejects(verifyRelease(SHA, { ...options, fetch }));
   }

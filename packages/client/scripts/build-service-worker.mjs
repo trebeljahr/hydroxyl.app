@@ -9,12 +9,15 @@
  *
  * `public/` is copied into the image after `pnpm run build` (Dockerfile) and
  * read by `next start` at request time, so writing there after the build is
- * in time for both.
+ * in time for both. The web export (NEXT_FILE_EXPORT=web, decision 257) has
+ * already copied `public/` into `out/` by now; `stage-web-export.mjs` copies
+ * the fresh worker across.
  *
- * NOT IN THE STATIC EXPORT. A `file://` page or a shell's custom protocol
- * cannot register a worker, and `@/lib/service-worker` never tries. Export
- * mode instead removes the `sw.js` a previous web build left in `public/`,
- * from both `public/` and `out/`, so the export carries no dead worker.
+ * NOT IN THE NATIVE EXPORT (NEXT_FILE_EXPORT=1). A `file://` page or a
+ * shell's custom protocol cannot register a worker, and
+ * `@/lib/service-worker` never tries. That mode instead removes the `sw.js` a
+ * previous web build left in `public/`, from both `public/` and `out/`, so
+ * the export carries no dead worker.
  */
 
 import { existsSync, readdirSync, rmSync } from "node:fs";

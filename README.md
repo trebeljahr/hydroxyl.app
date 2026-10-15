@@ -145,8 +145,9 @@ self-hosted editor instead.
 
 ## Deployment
 
-Managed by [hatchkit](https://hatchkit.trebeljahr.com) — Docker image built in
-CI, deployed to Coolify on a Hetzner VPS.
+Managed by [hatchkit](https://hatchkit.trebeljahr.com). CI builds a static
+export and uploads it to a Cloudflare Worker with static assets; see
+`scripts/WORKER-RELEASE.md`.
 
 Analytics is one cookie-less Plausible pageview per page load, sent only when
 the GitHub repository variables `NEXT_PUBLIC_PLAUSIBLE_DOMAIN` and

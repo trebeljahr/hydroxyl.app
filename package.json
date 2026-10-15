@@ -12,6 +12,7 @@
     "build": "pnpm run build:deps && pnpm --filter @starter/client run build",
     "build:deps": "pnpm --filter @starter/chem-core run build && pnpm --filter @starter/chem-render run build && pnpm --filter @starter/shared run build",
     "build:client": "pnpm run build:deps && pnpm --filter @starter/client run build",
+    "build:web": "pnpm run build:deps && NEXT_FILE_EXPORT=web pnpm --filter @starter/client run build",
     "test": "pnpm run build:deps && pnpm run test:core && pnpm run test:render && pnpm run test:shared && pnpm run test:client && pnpm run test:mcp",
     "test:core": "pnpm --filter @starter/chem-core run test",
     "test:render": "pnpm --filter @starter/chem-render run test",

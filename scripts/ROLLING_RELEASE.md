@@ -1,5 +1,9 @@
 # Rolling image release contract
 
+> **Superseded by decision 257 (2026-10-15).** The site is served by a Cloudflare
+> Worker; see `WORKER-RELEASE.md`. This describes the Coolify image release,
+> kept only while that app soaks as the rollback target.
+
 This controller manages only `zs9m5lti6vevcu7tanvsenl8` (Hydroxyl), source `trebeljahr/hydroxyl.app` on `main`, image `ghcr.io/trebeljahr/hydroxyl.app-client`. Builds publish full-SHA candidate tags and a `release-<sha>-<run>-<attempt>` digest artifact. Building does not move `latest`.
 
 `CHEMISTRY_SKETCHER_ROLLOUT_MODE` defaults to unset/off. `manual` permits an explicit **Build & Release** dispatch with operation `deploy`, `target_sha`, `image_digest`, and `expected_current_digest`. `automatic` also releases successful future pushes. Repository/ref guards and a single workflow concurrency group serialize this controller. Keep the gate off until the operator completes first adoption and reviews the exact app settings below.

@@ -3,17 +3,23 @@ import { fileURLToPath } from "node:url";
 
 // hydroxyl.app is the product's domain; chemistry.trebeljahr.com stays an alias until
 // sketch libraries saved there have a way across (IndexedDB is per origin).
-export const ORIGINS = ["https://hydroxyl.app", "https://chemistry.trebeljahr.com"];
+// www.hydroxyl.app serves the same build. Each host reaches the Worker through
+// its own route (decision 257), so a missing route shows up as one origin
+// still answering with the old build.
+export const ORIGINS = [
+  "https://hydroxyl.app",
+  "https://www.hydroxyl.app",
+  "https://chemistry.trebeljahr.com",
+];
 // The product name: the homepage's <title> is `SITE_NAME`
 // (packages/client/src/lib/site.ts), so a rename changes this too.
 export const PAGE_MARKER = "hydroxyl";
 const pause = (ms) => new Promise((done) => setTimeout(done, ms));
 
-// Public HTTP proves the serving build. The rollout operator also verifies
-// Coolify's exact deployment UUID and the running container's image digest.
-// After the hook the old build keeps answering until the new image is pulled,
-// passes its start period and the old container has drained. The wait is nine
-// minutes, bounded by time so slow requests cannot extend it.
+// Public HTTP proves the serving build. A Worker version goes live within
+// seconds of `wrangler versions deploy`; the nine-minute budget was sized for
+// a Coolify image pull and drain and is kept as the ceiling. It is bounded by
+// time so slow requests cannot extend it.
 export async function verifyRelease(
   commit,
   {
@@ -61,6 +67,12 @@ export async function verifyRelease(
         ];
         if (identities.length !== 1 || identities[0][1] !== commit)
           throw new Error("The homepage and version endpoint differ from the requested build.");
+        // The page is only half the release: its entry chunk must answer too,
+        // or the HTML is served from a version that lacks its own files.
+        const chunk = /["'](\/_next\/static\/[^"'?#]+\.js)/.exec(html)?.[1];
+        if (!chunk) throw new Error("The homepage loads no script from /_next/static/.");
+        const script = await request(`${origin}${chunk}?release=${nonce}`, options());
+        if (script.status !== 200) throw new Error(`The homepage's ${chunk} answered ${script.status}.`);
       }
       consecutive += 1;
       if (consecutive >= stableSamples) return { commit, samples: consecutive, origins: ORIGINS };

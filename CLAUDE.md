@@ -53,7 +53,11 @@ such as `hatchkit destroy <project> --recipe`, `hatchkit gh-pages --undo
 - **Frontend:** Next.js 16 (App Router) + React 19 + Tailwind CSS v4 + shadcn/ui
 - **Chemistry:** `@starter/chem-core`, a dependency-free TypeScript model
 - **Tests:** Vitest (unit), Playwright (e2e)
-- **Deploy:** Docker image built in CI → Coolify on Hetzner, managed by hatchkit
+- **Deploy:** static web export (`pnpm run build:web`) uploaded by CI to the
+  assets-only Cloudflare Worker `chemistry-sketcher-client`, attached by
+  Workers routes to hydroxyl.app, www.hydroxyl.app and
+  chemistry.trebeljahr.com (decision 257, `scripts/WORKER-RELEASE.md`). The
+  Coolify image and its release scripts stay only until the soak ends
 
 There is no server package. This is a static/client-only surface; the editor
 runs entirely in the browser. If a server becomes necessary (IUPAC naming is

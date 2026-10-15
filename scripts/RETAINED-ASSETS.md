@@ -1,5 +1,9 @@
 # Browser assets during rolling releases
 
+> **Superseded by decision 257 (2026-10-15).** The site is served by a Cloudflare
+> Worker; see `WORKER-RELEASE.md`. This describes the Coolify image release,
+> kept only while that app soaks as the rollback target.
+
 During a rolling release the old and new web containers serve traffic at the
 same time. A tab opened from either release must keep loading its own hashed
 chunks from whichever container answers. Next's standalone server only knows

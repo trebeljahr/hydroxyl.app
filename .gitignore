@@ -93,3 +93,6 @@ coverage/
 # Misc
 *.log
 npm-debug.log*
+
+# Wrangler state from `wrangler dev` (decision 257)
+.wrangler/

@@ -1,0 +1,25 @@
+// The hosted site: an assets-only Worker serving the web export
+// (NEXT_FILE_EXPORT=web, decision 257). scripts/WORKER-RELEASE.md has the
+// release contract.
+//
+// Keep it assets-only. No `main`: with no script, asset requests are free and
+// never count toward the 100,000 requests a day of Workers Free. No `routes`:
+// the routes on hydroxyl.app, www.hydroxyl.app and chemistry.trebeljahr.com
+// were made by hand, and without the key Wrangler leaves them alone (it would
+// otherwise rewrite them on every deploy, and CI's per-Worker token cannot).
+// No `cache`, no `run_worker_first`: both make asset requests billable.
+// check-web-export.mjs fails the build on any of these.
+{
+  "name": "chemistry-sketcher-client",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./packages/client/out",
+    // `/editor` → 307 → `/editor/`, served from out/editor/index.html, which
+    // is what `trailingSlash: true` wrote.
+    "html_handling": "auto-trailing-slash",
+    // An unknown path gets out/404.html with status 404.
+    "not_found_handling": "404-page"
+  }
+}

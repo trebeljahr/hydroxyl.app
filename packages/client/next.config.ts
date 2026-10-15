@@ -4,7 +4,22 @@ import path from "node:path";
 import type { NextConfig } from "next";
 
 const isDev = process.env.NODE_ENV === "development";
-const isExport = process.env.NEXT_FILE_EXPORT === "1";
+/**
+ * Two static exports share `output: "export"` and differ in where they run.
+ *
+ * `NEXT_FILE_EXPORT=1` is the NATIVE flavour, for the Electron and Capacitor
+ * shells: relative asset prefix, flat pages (see `trailingSlash` below).
+ *
+ * `NEXT_FILE_EXPORT=web` is the HOSTED site since decision 257: the files a
+ * Cloudflare Worker serves at the site root. It is the standalone build's
+ * twin, not the shells': root-absolute `/_next/…`, nested pages under
+ * `trailingSlash: true`, the service worker and `ReleaseLifetime` on. The
+ * native prefix would be wrong here — a page one directory down resolves
+ * `./_next/` into a directory with no assets.
+ */
+const isNativeExport = process.env.NEXT_FILE_EXPORT === "1";
+const isWebExport = process.env.NEXT_FILE_EXPORT === "web";
+const isExport = isNativeExport || isWebExport;
 
 /**
  * The public URL this app is published at, from the domain Hatchkit deploys
@@ -63,24 +78,33 @@ const nextConfig: NextConfig = {
   turbopack: { root: path.join(process.cwd(), "..", "..") },
   ...(isDev
     ? {}
-    : isExport
+    : isNativeExport
       ? {
           // Static export for desktop (Electron) + mobile (Capacitor) shells.
           output: "export" as const,
           assetPrefix: "./",
         }
-      : {
-          // Standalone build for the web image (the root ./Dockerfile).
-          // Trace from the monorepo root so the standalone tree is
-          // re-rooted there — server.js lands at
-          // packages/client/server.js. The workspace deps
-          // (@starter/chem-core, @starter/shared) are inlined by
-          // transpilePackages below rather than traced into node_modules.
-          // process.cwd() is `<repo>/packages/client` during `next build`.
-          output: "standalone" as const,
-          outputFileTracingRoot: path.join(process.cwd(), "..", ".."),
-        }),
-  // TRUE EVERYWHERE EXCEPT THE EXPORT, and the exception is load-bearing.
+      : isWebExport
+        ? {
+            // Static export for the hosted site (decision 257). No prefix:
+            // a real origin resolves `/_next/…` from every page depth.
+            output: "export" as const,
+          }
+        : {
+            // Standalone build for the web image (the root ./Dockerfile),
+            // which `next start` and the e2e suite still run. The Coolify app
+            // that served it retires after the soak in decision 257.
+            // Trace from the monorepo root so the standalone tree is
+            // re-rooted there — server.js lands at
+            // packages/client/server.js. The workspace deps
+            // (@starter/chem-core, @starter/shared) are inlined by
+            // transpilePackages below rather than traced into node_modules.
+            // process.cwd() is `<repo>/packages/client` during `next build`.
+            output: "standalone" as const,
+            outputFileTracingRoot: path.join(process.cwd(), "..", ".."),
+          }),
+  // TRUE EVERYWHERE EXCEPT THE NATIVE EXPORT, and the exception is
+  // load-bearing.
   //
   // `assetPrefix: "./"` above makes every emitted asset URL relative to the
   // DOCUMENT, which is what lets the export run from a subdirectory, an
@@ -99,7 +123,12 @@ const nextConfig: NextConfig = {
   // as `editor.html`. This holds for one level of nesting, which is what the
   // route table has; a route at `/a/b` would need the prefix problem solved
   // properly instead.
-  trailingSlash: !isExport,
+  //
+  // The web export keeps `true`: it has no prefix to get wrong, and the
+  // Worker's `auto-trailing-slash` serves `out/editor/index.html` at
+  // `/editor/` and redirects `/editor` there, so public URLs, the sitemap and
+  // the service worker's precached `/editor/` stay what standalone served.
+  trailingSlash: !isNativeExport,
   // WHICH BUILD THIS IS, readable from client code.
   //
   // The recents grid has to link at the editor, and the two builds disagree
@@ -109,8 +138,11 @@ const nextConfig: NextConfig = {
   // prerender, so the emitted HTML would carry the wrong href until hydration
   // — and in the export "/editor" is a file that does not exist. `env` is
   // substituted at build time, so the very first byte of HTML is right.
+  //
+  // "1" means the native shells only. The web export answers "0": it is
+  // served from a real origin, where `/editor` is a route.
   env: {
-    NEXT_PUBLIC_FILE_EXPORT: isExport ? "1" : "0",
+    NEXT_PUBLIC_FILE_EXPORT: isNativeExport ? "1" : "0",
     NEXT_PUBLIC_SITE_URL: siteUrlFromHatchkit(),
     NEXT_PUBLIC_RDKIT_ASSET_VERSION: stagedAssetVersion("rdkit", [
       "rdkit.worker.js",
@@ -120,6 +152,8 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_CONFORMER_ASSET_VERSION: stagedAssetVersion("conformer", ["conformer.worker.js"]),
   },
   // Release identity must never be cached across a rolling replacement.
+  // An export has no server to send headers; the web export's copy of these
+  // rules is `cloudflare/_headers`, which the Worker applies.
   ...(!isExport ? {
     async headers() {
       return [

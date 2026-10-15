@@ -1,0 +1,37 @@
+# Response headers for the web export, applied by the Cloudflare Worker that
+# serves it (decision 257). `scripts/stage-web-export.mjs` copies this file to
+# `out/_headers`; Wrangler reads it at upload and does not serve it.
+#
+# Each rule replaces what the standalone server sent: `headers()` in
+# next.config.ts for `/version.json` and `/sw.js`, and shared-assets.cjs for
+# `/releases.json`. A path with no rule gets the Worker's default,
+# `public, max-age=0, must-revalidate` with an ETag.
+#
+# Workers Free allows 100 rules; check-web-export.mjs counts them.
+
+/*
+  X-Content-Type-Options: nosniff
+
+# NO RULE FOR /_next/static/*. Hashed chunks would take a year-long
+# `immutable`, but a rule here also covers the 404 a missing chunk gets, and
+# the edge and the browser keep that 404 as long as they would keep the file
+# (measured on the hatchkit canary). The Worker's default revalidates with an
+# ETag, which costs nothing. The service worker still precaches every chunk of
+# its release (decision 239); `Cache.addAll` ignores these headers, so the
+# installed app stays offline-ready.
+
+# Release identity. CI, ReleaseLifetime and the next build's chunk carry must
+# read what is live now, never a copy.
+/version.json
+  Cache-Control: no-store
+
+/releases.json
+  Cache-Control: no-store
+
+/release-assets.json
+  Cache-Control: no-store
+
+# The browser already bypasses its HTTP cache for a service worker script;
+# this keeps any proxy in between from holding an old one.
+/sw.js
+  Cache-Control: no-cache

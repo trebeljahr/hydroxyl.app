@@ -1,5 +1,16 @@
-# Candidate builds never move a live tag. Deployment requires explicit activation.
+# Build & Release for the hosted site (decision 257, scripts/WORKER-RELEASE.md).
+#
+# A build exports the web flavour (NEXT_FILE_EXPORT=web), carries the hashed
+# chunks of the releases still live, and UPLOADS the result as a version of
+# the assets-only Worker `chemistry-sketcher-client`. An upload is never live:
+# activation is the deploy job, so no visitor gets a page whose chunks are
+# still uploading (measured on the canary: seconds of 404s otherwise).
+#
 # CHEMISTRY_SKETCHER_ROLLOUT_MODE: unset/off, manual, or automatic.
+#   automatic  a green push to main uploads, activates and verifies.
+#   manual     a push only uploads; dispatch `deploy` with the commit to go live.
+# Dispatching `deploy` with an earlier commit is the rollback, while that
+# commit's version is among the Worker's last 100.
 name: Build & Release
 
 on:
@@ -8,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Build, deploy a reviewed image, or verify a release
+        description: Build, deploy an uploaded release, or verify the live one
         type: choice
         options: [build, deploy, verify]
         default: build
@@ -16,24 +27,18 @@ on:
         description: Full commit SHA required for deploy or verify
         type: string
         required: false
-      image_digest:
-        description: Exact sha256 image digest from the build artifact (deploy only)
-        type: string
-        required: false
-      expected_current_digest:
-        description: Reviewed current latest digest (deploy only)
-        type: string
-        required: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: image-release-main
+  group: site-release-main
   cancel-in-progress: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  # Pinned. The Worker config's guard rails are in check-web-export.mjs.
+  WRANGLER_VERSION: 4.145.0
 
 jobs:
   test:
@@ -46,7 +51,7 @@ jobs:
           node-version-file: .nvmrc
       - uses: pnpm/action-setup@v4
       - run: pnpm install --frozen-lockfile
-      - run: node --test scripts/release.test.mjs scripts/rolling-release.test.mjs scripts/shared-asset-releases.test.mjs
+      - run: node --test scripts/release.test.mjs scripts/worker-release.test.mjs scripts/rolling-release.test.mjs scripts/shared-asset-releases.test.mjs
       - run: pnpm run typecheck
       - run: pnpm run test
       - run: pnpm run build
@@ -95,59 +100,67 @@ jobs:
 
   build:
     outputs:
-      digest: ${{ steps.image.outputs.digest }}
+      version_id: ${{ steps.upload.outputs.version_id }}
     if: github.repository == 'trebeljahr/hydroxyl.app' && github.ref == 'refs/heads/main' && inputs.operation != 'verify' && inputs.operation != 'deploy'
     needs: [test, e2e]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
-      packages: write
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: '24'
-      - run: node --test scripts/release.test.mjs scripts/rolling-release.test.mjs scripts/shared-asset-releases.test.mjs
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/trebeljahr/hydroxyl.app-client
-          flavor: latest=false
-          tags: |
-            type=raw,value=${{ github.sha }}
-      - id: image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=site-release
-          cache-to: type=gha,mode=max,scope=site-release
-          platforms: linux/amd64
-          build-args: |
-            RELEASE_SHA=${{ github.sha }}
-            NEXT_PUBLIC_PLAUSIBLE_DOMAIN=${{ vars.NEXT_PUBLIC_PLAUSIBLE_DOMAIN }}
-            NEXT_PUBLIC_PLAUSIBLE_SCRIPT_URL=${{ vars.NEXT_PUBLIC_PLAUSIBLE_SCRIPT_URL }}
-
-      - name: Record immutable release identity
+          node-version-file: .nvmrc
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+      # Plausible (decisions 136 and 170): NEXT_PUBLIC_* is inlined at build
+      # time, and the copies in packages/client/.env.production are dotenvx
+      # ciphertext this job has no key for. Set-but-empty outranks that file,
+      # so no repository variables means no analytics.
+      - name: Export the web build
+        run: pnpm run build:web
         env:
-          IMAGE: ghcr.io/trebeljahr/hydroxyl.app-client
-          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          NEXT_DEPLOYMENT_ID: ${{ github.sha }}
+          NEXT_PUBLIC_BUILD_COMMIT: ${{ github.sha }}
+          NEXT_PUBLIC_PLAUSIBLE_DOMAIN: ${{ vars.NEXT_PUBLIC_PLAUSIBLE_DOMAIN }}
+          NEXT_PUBLIC_PLAUSIBLE_SCRIPT_URL: ${{ vars.NEXT_PUBLIC_PLAUSIBLE_SCRIPT_URL }}
+      - name: Write the release identity
+        run: node scripts/write-version.mjs packages/client/out "$GITHUB_SHA"
+      # A Worker version serves only its own files. The live site's
+      # /release-assets.json names the hashed files of the releases it holds;
+      # the two newest are downloaded into this upload so their open tabs keep
+      # loading chunks. ReleaseLifetime reloads any older tab after saving.
+      # --require-previous: the live Worker always has a manifest, so a
+      # missing or unreachable one is a failed run to retry, never a silent
+      # upload that strands every open tab.
+      - name: Carry the live releases' chunks
+        run: node packages/client/scripts/carry-static.mjs --site https://hydroxyl.app --out packages/client/out --release "$GITHUB_SHA" --keep 2 --require-previous
+      - name: Write the release list ReleaseLifetime reads
+        run: node packages/client/scripts/write-releases.mjs packages/client/out
+      - name: Check the upload's shape and the Workers Free limits
+        run: node packages/client/scripts/check-web-export.mjs --release "$GITHUB_SHA"
+      - name: Upload the version without activating it
+        id: upload
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/wrangler-upload.ndjson
         run: |
-          node --input-type=module <<'NODE'
-          import { writeFileSync } from 'node:fs';
-          const { GITHUB_SHA: commit, IMAGE: image, IMAGE_DIGEST: digest } = process.env;
-          if (!/^[a-f0-9]{40}$/.test(commit) || !/^sha256:[a-f0-9]{64}$/.test(digest)) throw new Error('Missing full release identity.');
-          writeFileSync('release.json', JSON.stringify({ commit, image, digest, reference: `${image}@${digest}` }, null, 2) + '\n');
-          NODE
+          npx --yes "wrangler@${WRANGLER_VERSION}" versions upload --tag "$GITHUB_SHA" --message "build ${GITHUB_SHA::12} run ${GITHUB_RUN_ID}"
+          version_id=$(node -e '
+            const lines = require("fs").readFileSync(process.argv[1], "utf8").trim().split("\n");
+            const upload = lines.map((line) => JSON.parse(line)).find((entry) => entry.type === "version-upload");
+            if (!/^[0-9a-f-]{36}$/.test(upload?.version_id ?? "")) throw new Error("wrangler reported no version id");
+            console.log(upload.version_id);
+          ' "$WRANGLER_OUTPUT_FILE_PATH")
+          echo "version_id=$version_id" >> "$GITHUB_OUTPUT"
+          echo "Uploaded $version_id for $GITHUB_SHA; not live until the deploy job."
+      - name: Record the release identity
+        env:
+          VERSION_ID: ${{ steps.upload.outputs.version_id }}
+        run: |
+          printf '{"commit":"%s","worker":"chemistry-sketcher-client","version_id":"%s"}\n' "$GITHUB_SHA" "$VERSION_ID" > release.json
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -178,28 +191,24 @@ jobs:
       ((github.event_name == 'push' && vars.CHEMISTRY_SKETCHER_ROLLOUT_MODE == 'automatic' && needs.build.result == 'success') ||
        (github.event_name == 'workflow_dispatch' && inputs.operation == 'deploy'))
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     permissions:
       contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
-      - name: Promote, queue this app, and verify the release
+      # Activates the version, then requires every origin's /version.json and
+      # homepage to name the commit. On a failed check it puts the previously
+      # live version back and the job still fails.
+      - name: Activate and verify the release
         env:
-          ROLLOUT_MODE: ${{ vars.CHEMISTRY_SKETCHER_ROLLOUT_MODE }}
           TARGET_SHA: ${{ github.event_name == 'push' && github.sha || inputs.target_sha }}
-          TARGET_DIGEST: ${{ github.event_name == 'push' && needs.build.outputs.digest || inputs.image_digest }}
-          EXPECTED_CURRENT_DIGEST: ${{ inputs.expected_current_digest }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
-          COOLIFY_RESOURCE_UUID: ${{ secrets.COOLIFY_RESOURCE_UUID }}
-          COOLIFY_DEPLOY_SECRET: ${{ secrets.COOLIFY_DEPLOY_SECRET }}
-          COOLIFY_DEPLOY_REPOSITORY: ${{ secrets.COOLIFY_DEPLOY_REPOSITORY }}
-          COOLIFY_DEPLOY_BRANCH: ${{ secrets.COOLIFY_DEPLOY_BRANCH }}
-        run: node scripts/rolling-release.mjs
+          VERSION_ID: ${{ github.event_name == 'push' && needs.build.outputs.version_id || '' }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/worker-release.mjs deploy "$TARGET_SHA" "$VERSION_ID"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
