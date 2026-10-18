@@ -105,12 +105,16 @@ handling as the Worker. The e2e suite runs against exactly this
 
 ## hatchkit
 
-`.hatchkit.json` still carries the Coolify image fields from before the move,
-because hatchkit has no shape yet for a client-only site on a routed Worker.
-Until the manifest is updated, do not run `hatchkit regen-infra`, or a
-`hatchkit sync` that deploys, in this repo: both read those fields and may
-recreate Coolify infra or rewrite this workflow. Neither touches the Workers
-routes, so the site keeps being served by the Worker either way.
+`.hatchkit.json` says `deploymentMode: "cloudflare"`, `clientHost: "cloudflare"`,
+`clientWorker: "chemistry-sketcher-client"` and `clientRelease: "repo"`
+(hatchkit `9b363d1`). Together they mean: no server, the Worker on the routes
+above, and a release workflow that belongs to this repo. hatchkit leaves the
+project alone: `sync`, `regen-infra` and `dns publish` do nothing, and
+`hatchkit cloudflare` setup and `--undo` refuse to run, so nothing overwrites
+`wrangler.jsonc`, `_headers` or this workflow. `hatchkit cloudflare https
+add|remove` and `hatchkit cloudflare token` still work. `hatchkit doctor`
+checks the routes, the Worker's live version, the HTTPS rule on both zones,
+and that each hostname answers 200.
 
 ## Retired with the Coolify app (2026-10-18)
 

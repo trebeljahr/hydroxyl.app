@@ -11,16 +11,15 @@
   "mlServices": [],
   "s3Provider": "none",
   "deployTarget": "existing",
-  "deploymentMode": "coolify",
+  "deploymentMode": "cloudflare",
   "ports": {
     "server": 3000,
     "client": 3001
   },
-  "surfaces": "fullstack",
-  "publicService": "client",
-  "coolifyRuntime": "image",
-  "containerPorts": { "app": 6337 },
-  "coolifyApps": { "app": "zs9m5lti6vevcu7tanvsenl8" },
+  "surfaces": "static",
+  "clientHost": "cloudflare",
+  "clientWorker": "chemistry-sketcher-client",
+  "clientRelease": "repo",
   "email": {
     "transactional": "listmonk-ses",
     "mailingList": "listmonk-ses"
@@ -44,7 +43,6 @@
       }
     ]
   },
-  "topology": "single-origin",
   "identifiers": {
     "slug": "chemistry-sketcher",
     "token": "chemistrysketcher",
