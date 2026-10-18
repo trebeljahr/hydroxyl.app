@@ -37,13 +37,17 @@ describe("releasesFromManifest", () => {
     expect(shouldReload(GONE, list)).toBe(true);
   });
 
+  it("lists a commit once when the carry holds two builds of it", () => {
+    expect(releasesFromManifest(manifest(NEW, `${NEW}-local`, NEW, OLD)).releases).toEqual([NEW, OLD]);
+  });
+
   it("refuses what ReleaseLifetime would read as malformed", () => {
     expect(() => releasesFromManifest({ schema: 2, releases: [] })).toThrow(/schema 1/);
-    expect(() => releasesFromManifest(manifest())).toThrow(/0 releases/);
+    expect(() => releasesFromManifest(manifest())).toThrow(/0 commits/);
     expect(() => releasesFromManifest(manifest(...Array.from({ length: 7 }, (_, i) => String(i).repeat(40))))).toThrow(
-      /7 releases/,
+      /7 commits/,
     );
     expect(() => releasesFromManifest(manifest("abc1234"))).toThrow(/full commit SHA/);
-    expect(() => releasesFromManifest(manifest(NEW, NEW))).toThrow(/twice/);
+    expect(() => releasesFromManifest(manifest(`${NEW}-`))).toThrow(/full commit SHA/);
   });
 });

@@ -209,8 +209,11 @@ if (release !== null) {
   if (manifest?.releases?.[0]?.sha !== release) {
     problems.push(`out/release-assets.json does not start with ${release}`);
   }
-  if (JSON.stringify(manifest?.releases?.map((r) => r.sha)) !== JSON.stringify(list?.releases)) {
-    problems.push("out/releases.json and out/release-assets.json name different releases");
+  // releases.json holds each commit once; the manifest may hold two builds of
+  // one commit (`<sha>` and `<sha>-local`).
+  const manifestCommits = [...new Set((manifest?.releases ?? []).map((r) => String(r.sha).slice(0, 40)))];
+  if (JSON.stringify(manifestCommits) !== JSON.stringify(list?.releases)) {
+    problems.push("out/releases.json and out/release-assets.json name different commits");
   }
   for (const entry of manifest?.releases ?? []) {
     for (const file of entry.files ?? []) {
