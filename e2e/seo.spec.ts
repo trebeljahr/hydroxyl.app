@@ -6,10 +6,10 @@ import { expect, test } from "@playwright/test";
 import { releasedGuides } from "../packages/client/src/components/guides/guides";
 
 /**
- * `sitemap.xml` and `robots.txt` as the standalone server serves them
- * (decision 122). The static export's copies are checked on the files by
- * `packages/client/scripts/check-export.mjs`, since `next start` cannot serve
- * an export.
+ * `sitemap.xml` and `robots.txt` as the hosted site serves them (decision
+ * 122; the web export under `wrangler dev`, decision 257). The native
+ * export's flat copies are checked on the files by
+ * `packages/client/scripts/check-export.mjs`.
  *
  * The expected host is read from `.hatchkit.json` here rather than taken from
  * the app, so a wrong derivation in `next.config.ts` cannot also be the

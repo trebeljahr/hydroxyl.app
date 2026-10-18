@@ -57,8 +57,10 @@ such as `hatchkit destroy <project> --recipe`, `hatchkit gh-pages --undo
   assets-only Cloudflare Worker `chemistry-sketcher-client`, attached by
   Workers routes to hydroxyl.app, www.hydroxyl.app and
   chemistry.trebeljahr.com (decision 257, `scripts/WORKER-RELEASE.md`) since
-  2026-10-18. The Coolify image and its release scripts stay only until the
-  soak ends on 2026-10-25
+  2026-10-18. Every production build is a static export (web by default,
+  native shells with `NEXT_FILE_EXPORT=1`); there is no server build, and e2e
+  runs against the web export under `wrangler dev`. The Coolify app retired
+  the same day
 
 There is no server package. This is a static/client-only surface; the editor
 runs entirely in the browser. If a server becomes necessary (IUPAC naming is

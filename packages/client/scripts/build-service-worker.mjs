@@ -7,11 +7,8 @@
  * the script also makes the script's bytes change with every release, which
  * is what tells a browser there is a new worker to install.
  *
- * `public/` is copied into the image after `pnpm run build` (Dockerfile) and
- * read by `next start` at request time, so writing there after the build is
- * in time for both. The web export (NEXT_FILE_EXPORT=web, decision 257) has
- * already copied `public/` into `out/` by now; `stage-web-export.mjs` copies
- * the fresh worker across.
+ * The web export (decision 257) has already copied `public/` into `out/` by
+ * now; `stage-web-export.mjs` copies the fresh worker across.
  *
  * NOT IN THE NATIVE EXPORT (NEXT_FILE_EXPORT=1). A `file://` page or a
  * shell's custom protocol cannot register a worker, and

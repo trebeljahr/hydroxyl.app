@@ -2,11 +2,11 @@
  * Registers the offline service worker (`src/sw/service-worker.ts`,
  * decision 239) where it can work, and nowhere else.
  *
- * Not in the static export: a `file://` page and a shell's custom protocol
- * cannot register one, and the export ships no `sw.js`. Not in `next dev`
- * either, where it UNREGISTERS instead: dev and `next start` share port 6337,
- * and a worker left by a production run would otherwise keep controlling
- * the dev origin.
+ * Not in the native export: a `file://` page and a shell's custom protocol
+ * cannot register one, and that export ships no `sw.js`. Not in `next dev`
+ * either, where it UNREGISTERS instead: dev and a local production build
+ * (e2e's `wrangler dev`) can share port 6337, and a worker left by a
+ * production run would otherwise keep controlling the dev origin.
  */
 
 import { isFileExportBuild } from "@/lib/deployment";

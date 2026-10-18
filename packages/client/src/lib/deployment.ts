@@ -13,7 +13,7 @@
  *
  * Three shapes have to work and they disagree about what a URL means:
  *
- *   dev / `output:"standalone"` — `trailingSlash: true`, assets at
+ *   dev / the web export (decision 257) — `trailingSlash: true`, assets at
  *     `/_next/…`, pages served from the site root. `/editor` is correct.
  *
  *   `output:"export"` with `assetPrefix:"./"` — every page is written FLAT at

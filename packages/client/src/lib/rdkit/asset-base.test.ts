@@ -22,7 +22,7 @@ function addScript(src: string): void {
 
 describe("rdkitAssetBase", () => {
   it("resolves to the site root when Next emits absolute asset paths", () => {
-    // dev and output:"standalone". public/ is served at the root.
+    // dev and the web export. public/ is served at the root.
     addScript("/_next/static/chunks/main-app.js");
     expect(rdkitAssetBase()).toBe(`${location.origin}/rdkit/`);
   });

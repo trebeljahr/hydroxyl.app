@@ -51,10 +51,13 @@ jobs:
           node-version-file: .nvmrc
       - uses: pnpm/action-setup@v4
       - run: pnpm install --frozen-lockfile
-      - run: node --test scripts/release.test.mjs scripts/worker-release.test.mjs scripts/rolling-release.test.mjs scripts/shared-asset-releases.test.mjs
+      - run: node --test scripts/release.test.mjs scripts/worker-release.test.mjs
       - run: pnpm run typecheck
       - run: pnpm run test
+      # The web export (what the Worker serves) and its shape; the release
+      # build job repeats this with the chunk carry and the release identity.
       - run: pnpm run build
+      - run: node packages/client/scripts/check-web-export.mjs
       # The export is built WITH Plausible settings, so that check-export.mjs
       # can prove it still ships no analytics (decision 136). The host is
       # reserved (.invalid) and never contacted.
@@ -85,8 +88,9 @@ jobs:
       # playwright, so `pnpm install` never downloads browsers.
       - run: pnpm exec playwright install --with-deps chromium
       # No separate build step: playwright.config.ts's webServer runs
-      # `pnpm run build:client` itself, which is what keeps a bare
-      # `pnpm exec playwright test` working on a clean checkout too.
+      # `pnpm run build:web` and serves it with `wrangler dev`, what
+      # production serves, which also keeps a bare `pnpm exec playwright
+      # test` working on a clean checkout.
       - name: Run E2E tests
         run: pnpm exec playwright test
         env:

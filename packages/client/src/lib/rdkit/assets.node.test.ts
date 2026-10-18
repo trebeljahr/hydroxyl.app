@@ -8,10 +8,9 @@ import { describe, expect, it } from "vitest";
  * sit beside them.
  *
  * This is the "ships in both build modes" assertion. `public/` is the one
- * directory both modes copy verbatim — `output:"export"` writes it into
- * `out/` unprefixed, and the root Dockerfile already does
- * `COPY --from=build /app/packages/client/public ./packages/client/public` —
- * so proving the files are staged here proves they reach both. Anything
+ * directory both export flavours copy verbatim — `output:"export"` writes it
+ * into `out/` unprefixed in each — so proving the files are staged here
+ * proves they reach both. Anything
  * routed through the bundler instead would have to be proved twice, and one
  * of the two only shows up when the export is served.
  */

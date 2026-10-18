@@ -39,7 +39,7 @@ function addScript(src: string): void {
   document.head.append(script);
 }
 
-describe("the standalone / dev build", () => {
+describe("the web / dev build", () => {
   it("addresses the editor by its route", () => {
     vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "0");
     expect(isFileExportBuild()).toBe(false);
@@ -103,7 +103,7 @@ describe("the static export", () => {
 describe("the public URL, for sitemap.xml and robots.txt (decision 122)", () => {
   const SITE = "https://chemistry.example.test/";
 
-  it("lists the landing and the about page at the address standalone serves with a 200", () => {
+  it("lists the landing and the about page at the address the web build serves with a 200", () => {
     vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "0");
     vi.stubEnv("NEXT_PUBLIC_SITE_URL", SITE);
     expect(siteUrl()).toBe(SITE);

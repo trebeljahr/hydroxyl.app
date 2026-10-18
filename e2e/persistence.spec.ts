@@ -394,7 +394,7 @@ test("the grid links at a file the export actually has, with no trailing slash",
   // and every later `./_next/…` chunk resolved into a directory with none, so
   // the RDKit import died with "Failed to load chunk" and reloading that URL
   // rendered nothing. Plain anchors at a build-appropriate href, and a real
-  // navigation, are the fix. Here (standalone) the correct href is `/editor`.
+  // navigation, are the fix. Here (the web export) the correct href is `/editor`.
   await page.goto("/editor");
   await chargeUpEverything(page);
   const id = await currentDocId(page);

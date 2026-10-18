@@ -25,7 +25,7 @@ import {
  * each product number sits in a `data-guide-number` span. In the static export
  * the page is moved to `guides-journal-figure-size.html` (decision 137), which
  * `scripts/check-export.mjs` checks for — this spec runs against the
- * standalone build, like every other.
+ * web export, like every other.
  */
 
 const GUIDE = "/guides/journal-figure-size";

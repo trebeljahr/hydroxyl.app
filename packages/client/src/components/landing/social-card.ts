@@ -16,8 +16,8 @@
  *
  * This module only writes SVG, so it stays testable under Vitest and free of
  * any rasteriser. The script bundles it, renders it with resvg and writes
- * `public/social-card.png`. `public/` is copied verbatim by both
- * `output:"standalone"` and the static export, so one file serves both builds
+ * `public/social-card.png`. `public/` is copied verbatim by both export
+ * flavours (web and native), so one file serves both builds
  * and neither has a route handler to prerender, or a wasm rasteriser to carry
  * through Turbopack's server bundle.
  *

@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+import { E2E_COMMIT } from "./e2e/support/release";
+
 /**
  * 6337 by default, overridable through PORT — the same convention the client's
  * own `dev` and `start` scripts already use.
@@ -36,10 +38,23 @@ export default defineConfig({
   use: { baseURL, trace: "on-first-retry", serviceWorkers: "block" },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    // build:client chains build:deps (chem-core tsc, then shared tsc)
-    // before `next build`, so this works on a clean checkout. cwd
-    // defaults to this config's directory, i.e. the repo root.
-    command: "pnpm run build:client && pnpm --filter @starter/client run start",
+    // What production serves (decision 257): the web export, served by the
+    // same Workers runtime with the same `_headers`, 307 trailing-slash
+    // redirects and 404 page. build:web chains build:deps (chem-core tsc, then
+    // shared tsc) before `next build`, so this works on a clean checkout. cwd
+    // defaults to this config's directory, i.e. the repo root, where
+    // wrangler.jsonc names packages/client/out. Wrangler is pinned to the
+    // version the release workflow uploads with.
+    //
+    // The two release-identity files a deploy writes are written here too
+    // (one release, carrying nothing), so `ReleaseLifetime` finds this build
+    // listed instead of logging a 404 into every spec's console.
+    command: [
+      "pnpm run build:web",
+      `node scripts/write-version.mjs packages/client/out ${E2E_COMMIT}`,
+      `node -e "require('fs').writeFileSync('packages/client/out/releases.json', JSON.stringify({ schema: 2, head: '${E2E_COMMIT}', window: ['${E2E_COMMIT}'], releases: ['${E2E_COMMIT}'] }))"`,
+      `npx --yes wrangler@4.145.0 dev --port ${PORT} --ip 127.0.0.1 --show-interactive-dev-session=false`,
+    ].join(" && "),
     url: baseURL,
     // 6337 is also the dev port. Locally, reuse a running `pnpm dev`
     // rather than fighting it for the port; in CI always build fresh.
@@ -47,19 +62,19 @@ export default defineConfig({
     // A cold chem-core + shared tsc plus `next build` is far past
     // Playwright's 60s default, especially on a CI runner.
     timeout: 300_000,
-    // NEXT_FILE_EXPORT must stay unset: output:"export" emits no server
-    // for `next start` to run.
-    //
     // The Plausible settings build the pageview script into every page, the
     // way a deploy with `hatchkit add` done does, so e2e/analytics.spec.ts can
     // read what it sends. The host is reserved (.invalid) and that spec
     // intercepts it. Every other spec stays off the network because the script
     // sends nothing while `navigator.webdriver` is set.
+    //
+    // A release identity, so `ReleaseLifetime` runs as it does in production.
+    // The served `/releases.json` lists it, so the check does nothing, except
+    // in e2e/release-reload.spec.ts, which answers that request itself.
     env: {
-      PORT: String(PORT),
-      NEXT_FILE_EXPORT: "",
       NEXT_PUBLIC_PLAUSIBLE_DOMAIN: "hydroxyl.app",
       NEXT_PUBLIC_PLAUSIBLE_SCRIPT_URL: "https://plausible.e2e.invalid/js/script.js",
+      NEXT_PUBLIC_BUILD_COMMIT: E2E_COMMIT,
     },
   },
 });

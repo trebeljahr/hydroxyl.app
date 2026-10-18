@@ -17,7 +17,7 @@
  * free: emscripten sets `_scriptName = self.location.href` in a worker and
  * derives `scriptDirectory` from it, so with the glue and the wasm sitting
  * beside this file, the default lookup is already correct in dev, in the
- * standalone build, in the export at the root and in the export at a subpath.
+ * web export at the root and in the native export at a subpath.
  *
  * NOTHING RDKIT AT MODULE SCOPE. `importScripts` runs inside `ensureRDKit`,
  * on the first request, so a session that never imports or exports a

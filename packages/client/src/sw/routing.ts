@@ -41,8 +41,8 @@ export function route(request: RouteInput, origin: string): Route {
   // Plausible, PubChem and anything else off-site are none of our business.
   if (url.origin !== origin) return "pass";
   if (request.mode === "navigate") return "page";
-  // An RSC payload names one release's modules; serving a stale one is the
-  // skew `shared-assets.cjs` answers with 409. Never cache it.
+  // An RSC payload names one release's modules; serving a stale one mixes
+  // two releases' code. Never cache it.
   if (request.rsc || url.searchParams.has("_rsc")) return "pass";
   if (url.pathname.startsWith("/_next/static/")) return "static";
   if (url.pathname.startsWith("/rdkit/") && url.searchParams.has("v")) return "rdkit";
@@ -83,9 +83,13 @@ export function pageKey(url: string): string {
 /**
  * Whether a network response to a static request may be stored.
  *
- * Production marks `/_next/static/` `immutable`; `next dev` does not, and its
- * chunk names are not content hashes. A worker a local `next start` left on
- * the dev port would otherwise pin dev chunks forever.
+ * Only a response marked `immutable` is stored, so a worker a local
+ * production run left on the dev port can never pin `next dev`'s chunks,
+ * whose names are not content hashes. The hosted site marks nothing
+ * `immutable` (decision 257: a long rule there also caches 404s), so this
+ * runtime path stores nothing in production. Offline readiness rests on the
+ * precache, which `Cache.addAll` fills from every chunk of the release
+ * regardless of headers.
  */
 export function cacheableStatic(status: number, cacheControl: string | null): boolean {
   return status === 200 && cacheControl !== null && /\bimmutable\b/i.test(cacheControl);

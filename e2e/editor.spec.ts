@@ -140,8 +140,8 @@ function parseViewTransform(value: string): ViewTransform {
  * throw out of a render, a null deref in a pointer handler, a failed asset.
  *
  * Two things it deliberately does NOT catch, so nobody trusts it for them.
- * `playwright.config.ts` serves a `next build` + `next start`, i.e. React's
- * PRODUCTION build, which strips the development key warning entirely — an
+ * `playwright.config.ts` serves the web export with `wrangler dev`, i.e.
+ * React's PRODUCTION build, which strips the development key warning entirely — an
  * index-keyed layer would sail past this collector, and the unit tests are
  * where that is pinned. And Chrome's "Unable to preventDefault inside passive
  * event listener" is an intervention at warning level, filtered out by the

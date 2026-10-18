@@ -26,10 +26,10 @@
  * Plausible's tracker applies to its own `src`.
  *
  * `hatchkit add` writes both into `packages/client/.env.production`, encrypted
- * with dotenvx, and `next build` loads that file. A build without the key (CI,
- * the Docker image) therefore reads `encrypted:…` ciphertext, which is treated
- * as no settings at all. The image takes the real values as build args from
- * GitHub repository variables instead; see the Dockerfile.
+ * with dotenvx, and `next build` loads that file. A build without the key
+ * (CI) therefore reads `encrypted:…` ciphertext, which is treated as no
+ * settings at all. The release workflow takes the real values from GitHub
+ * repository variables instead; see `.github/workflows/deploy.yml`.
  */
 
 import { isFileExportBuild } from "@/lib/deployment";

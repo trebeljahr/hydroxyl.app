@@ -14,8 +14,8 @@
  * And routing the WORKER through Turbopack is actively wrong: it resolves the
  * emitted chunk against `location.origin`, which drops any subpath the static
  * export is served under, 404s, and reports it as an error event with an
- * empty message. `public/` is copied verbatim in both `output:"standalone"`
- * and `output:"export"`, so one staging step covers both.
+ * empty message. `public/` is copied verbatim into both export flavours
+ * (web and native), so one staging step covers both.
  *
  * WHY esbuild RATHER THAN A HAND-WRITTEN WORKER. The JSMol lifetime rules and
  * the change reporting are the part of this bridge most worth typechecking

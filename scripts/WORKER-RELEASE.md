@@ -2,19 +2,17 @@
 
 hydroxyl.app, www.hydroxyl.app and chemistry.trebeljahr.com are served by the
 Cloudflare Worker `chemistry-sketcher-client`. It has static assets and no
-script. One Workers route per hostname (`<host>/*`) sends requests to it. A
-second route per hostname, `<host>/.well-known/acme-challenge/*` with no
-Worker, keeps certificate renewal on the Coolify origin while Traefik holds
-certificates for these hosts. The routes were made by hand on 2026-10-18.
-`wrangler.jsonc` has no `routes` key, so Wrangler never changes them, and
-CI's token cannot.
+script. One Workers route per hostname (`<host>/*`) sends every request to
+it; there is no origin server behind these hosts any more (the Coolify app
+retired on 2026-10-18). The routes were made by hand. `wrangler.jsonc` has
+no `routes` key, so Wrangler never changes them, and CI's token cannot.
 
 Plain `http://` gets a 301 to `https://` from hatchkit's one HTTP→HTTPS
-redirect rule per zone, which skips `/.well-known/` so Traefik's HTTP-01
-renewal still reaches the origin. Change the hosts in it only with
+redirect rule per zone. Change the hosts in it only with
 `hatchkit cloudflare https add|remove <host>`. The rule reads `not ssl`,
-because a Free zone refuses `http.request.scheme`. The zone setting Always Use
-HTTPS stays off: it would also redirect the renewal path.
+because a Free zone refuses `http.request.scheme`, and it skips
+`/.well-known/`. The zone setting Always Use HTTPS stays off: on
+trebeljahr.com it would also redirect other projects' certificate renewals.
 
 ## What a release is
 
@@ -54,9 +52,8 @@ deploys every green push to main, `manual` only uploads.
   group, so with `automatic` the next push can cancel a queued rollback and
   deploy itself. It works while that commit's version is among the Worker's
   last 100. A version keeps its own assets, so the rollback is complete.
-- **The whole move:** delete the `<host>/*` route of each hostname. The Coolify
-  app answers again within about 8 s (measured on the canary). This works
-  only while the Coolify app is kept for the soak.
+There is no Coolify app to fall back to any more. A broken Worker release is
+rolled back as above; the routes themselves stay.
 
 ## Open tabs across a release
 
@@ -70,8 +67,9 @@ after its sketch is stored.
 - **Expiry.** `ReleaseLifetime` reads `/releases.json` on focus, every
   minute, and after a failed chunk load. When the tab's release is not listed,
   it calls `saveBeforeReleaseReload()` and reloads only after the IndexedDB
-  write succeeded. The list has the shape the Coolify release volume served
-  (schema 2), so tabs opened on either host read it the same way.
+  write succeeded, into `?doc=<id>` of the sketch it just stored (decision
+  258), so the chemist lands back in the same sketch. The list keeps the
+  schema-2 shape the old Coolify release volume served.
 - **No 409 path.** Under Coolify, `shared-assets.cjs` refused a React Server
   Components request from another release with 409. On a static host nothing
   can refuse it. Nothing needs to: the app makes no client-side router
@@ -97,28 +95,28 @@ with an ETag).
 ## Local check
 
 ```bash
-NEXT_FILE_EXPORT=web pnpm run build:web
+pnpm run build:web
 npx --yes wrangler@4.145.0 dev --port <free high port>
 ```
 
 `wrangler dev` serves `out/` with the same `_headers`, trailing-slash and 404
-handling as the Worker.
+handling as the Worker. The e2e suite runs against exactly this
+(`playwright.config.ts`).
 
 ## hatchkit
 
-`.hatchkit.json` still says `deploymentMode: "coolify"` with the image
-runtime, because hatchkit has no field for a client on a Worker yet (the
-planned `clientHost: "cloudflare"`). Until it does, do not run
-`hatchkit regen-infra`, or a `hatchkit sync` that deploys, in this repo:
-both assume the Coolify image and may rewrite this workflow or redeploy the
-old app. Neither touches the Workers routes, so the site keeps being served
-by the Worker either way.
+`.hatchkit.json` still carries the Coolify image fields from before the move,
+because hatchkit has no shape yet for a client-only site on a routed Worker.
+Until the manifest is updated, do not run `hatchkit regen-infra`, or a
+`hatchkit sync` that deploys, in this repo: both read those fields and may
+recreate Coolify infra or rewrite this workflow. Neither touches the Workers
+routes, so the site keeps being served by the Worker either way.
 
-## Retired with the Coolify app
+## Retired with the Coolify app (2026-10-18)
 
-`Dockerfile`, `drain.cjs`, `shared-assets.cjs`, `release-entrypoint.sh`,
-`docker-compose.yml`, `scripts/rolling-release.mjs`, `scripts/lib/`,
-`scripts/shared-asset-releases.mjs` and their tests, `ROLLING_RELEASE.md` and
-`RETAINED-ASSETS.md` describe the Coolify release. They stay until the soak
-ends, so the old image can be rebuilt if the move is rolled back. The
-retirement steps are in the project's vault folder.
+The standalone build (`output: "standalone"`), `next start`, the Dockerfile,
+`drain.cjs`, `shared-assets.cjs`, `release-entrypoint.sh`,
+`docker-compose.yml` and the rolling image release (`scripts/rolling-release.mjs`,
+`scripts/shared-asset-releases.mjs`, their tests and contracts) are gone.
+Every production build is a static export now: web by default, native with
+`NEXT_FILE_EXPORT=1`.

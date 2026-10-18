@@ -19,11 +19,11 @@
  *      that stopped being true.
  *   3. `sitemap.xml` and `robots.txt` are emitted, name the domain in
  *      `.hatchkit.json`, and every sitemap entry is a file the export really
- *      contains (decision 122). `e2e/seo.spec.ts` checks the standalone side.
+ *      contains (decision 122). `e2e/seo.spec.ts` checks the web side.
  *   4. The social card rides the same `public/` copy: `out/` holds a 1200×630
  *      PNG, and the two landing pages point `og:image` and `twitter:image`
  *      at it on that domain (decision 138). `e2e/social-metadata.spec.ts`
- *      checks the standalone side.
+ *      checks the web side.
  *   5. Guides (decisions 243–245). The index is `guides.html`, each guide
  *      `guides-<slug>.html`. A guide page is released exactly when it carries
  *      no `noindex` robots tag, and the sitemap lists exactly the released
@@ -34,7 +34,7 @@
  *   6. No analytics (decisions 136 and 170). No file in `out/` carries the
  *      pageview script, and when the build was given Plausible settings — CI
  *      passes some on purpose, so this is not vacuous — none names their
- *      host either. `e2e/analytics.spec.ts` checks the standalone side.
+ *      host either. `e2e/analytics.spec.ts` checks the web side.
  *
  * A route below the root, such as `/guides/journal-figure-size`, reaches the
  * root through `flatten-export.mjs` (decision 137), which `build` runs after

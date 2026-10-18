@@ -16,8 +16,8 @@ test("the landing page is the recents grid, and it starts empty", async ({ page 
   await expect(page.getByText("Hydroxyl", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
   await expect(page.locator('[data-recents="empty"]')).toBeVisible();
-  // A regex, because `trailingSlash` is true for the standalone build and
-  // false for the static export — see next.config.ts — so the same Link emits
+  // A regex, because `trailingSlash` is true for the web build and false for
+  // the native export — see next.config.ts — so the same Link emits
   // `/editor/` in one and `/editor` in the other.
   await expect(page.locator('[data-recents="new"]')).toHaveAttribute(
     "href",
