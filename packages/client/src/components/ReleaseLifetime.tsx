@@ -1,20 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { saveBeforeReleaseReload } from "@/persistence/session";
+import { saveBeforeReleaseReload, storedEditorDocumentId } from "@/persistence/session";
 
 const RELOAD_GUARD_MS = 60_000;
 
 /**
- * Reload a tab whose release has left the server's retained set, but only
- * after its open sketch is safely stored.
+ * Reload a tab whose release has left the site's retained set, but only
+ * after its open sketch is safely stored, and back into that same sketch.
  *
- * During a rolling release two servers share browser assets through the
- * release volume (scripts/RETAINED-ASSETS.md), so an old tab keeps working
- * until its release expires. Then its next lazy chunk could be gone. The check
- * runs on focus and every minute; a chunk that fails to load triggers it too.
- * When the save fails the tab stays as it is and says why, so the chemist can
- * keep working and export the sketch.
+ * Each Worker upload carries the hashed files of the two releases before it
+ * and lists them in `/releases.json` (decision 257, scripts/WORKER-RELEASE.md),
+ * so an old tab keeps working until its release drops off that list. Then its
+ * next lazy chunk could be gone. The check runs on focus and every minute; a
+ * chunk that fails to load triggers it too. When the save fails the tab stays
+ * as it is and says why, so the chemist can keep working and export the
+ * sketch.
  */
 export function shouldReload(commit: string, data: unknown): boolean {
   if (!data || typeof data !== "object") return false;
@@ -27,6 +28,24 @@ export function shouldReload(commit: string, data: unknown): boolean {
     releases.every((id) => typeof id === "string" && /^[a-f0-9]{40}$/.test(id)) &&
     !releases.includes(commit)
   );
+}
+
+/**
+ * Where a release reload goes (decision 258): this page with `?doc=` naming
+ * the stored document, or null for a plain reload.
+ *
+ * `?example=` goes too: the example was copied into the stored document on its
+ * first edit, and the editor opens `?doc=` over it anyway. The fragment goes
+ * because `#smiles=`/`#molfile=` imports were consumed when the page opened.
+ */
+export function releaseReloadUrl(href: string, docId: string | null): string | null {
+  if (docId === null) return null;
+  const url = new URL(href);
+  if (url.searchParams.get("doc") === docId) return null;
+  url.searchParams.set("doc", docId);
+  url.searchParams.delete("example");
+  url.hash = "";
+  return url.href;
 }
 
 export function ReleaseLifetime() {
@@ -60,7 +79,10 @@ export function ReleaseLifetime() {
           /* See above. */
         }
         setBlocked(null);
-        window.location.reload();
+        const target = releaseReloadUrl(window.location.href, await storedEditorDocumentId());
+        if (stopped) return;
+        if (target === null) window.location.reload();
+        else window.location.replace(target);
       } finally {
         reloading = false;
       }

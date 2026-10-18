@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { benzene } from "@starter/chem-core";
 import { createDocument } from "@starter/shared";
 
-import { shouldReload } from "@/components/ReleaseLifetime";
+import { releaseReloadUrl, shouldReload } from "@/components/ReleaseLifetime";
 import { createEditorStore, guardedOps, type EditorStore } from "@/state";
 
 import { loadDocument, saveDocument, setDocumentStore } from "./documents";
@@ -24,6 +24,7 @@ import {
   resetEditorPersistence,
   saveBeforeReleaseReload,
   startEditorPersistence,
+  storedEditorDocumentId,
 } from "./session";
 import { storeFail } from "./types";
 
@@ -111,3 +112,37 @@ describe("release expiry", () => {
     expect(shouldReload(own, null)).toBe(false);
   });
 });
+
+describe("where a release reload lands", () => {
+  it("reopens the open sketch once it is stored, and not before", async () => {
+    expect(await storedEditorDocumentId()).toBeNull();
+    const editor = openEditor();
+    // Baselined but never written: an example or fixture nobody edited.
+    baselineEditorDocument(editor.getState().document);
+    expect(await storedEditorDocumentId()).toBeNull();
+
+    retypeFirstAtom(editor);
+    expect(await saveBeforeReleaseReload()).toEqual({ ok: true });
+    expect(await storedEditorDocumentId()).toBe("doc_1");
+  });
+
+  it("never reopens a sketch another tab deleted", async () => {
+    const editor = openEditor();
+    await saveDocument(editor.getState().document);
+    holdEditorDocument("doc_1", "This sketch was deleted in another tab.");
+    expect(await storedEditorDocumentId()).toBeNull();
+  });
+
+  it("puts the stored id into ?doc= and drops what the first load consumed", () => {
+    expect(releaseReloadUrl("https://hydroxyl.app/editor/", "doc_1")).toBe(
+      "https://hydroxyl.app/editor/?doc=doc_1",
+    );
+    expect(
+      releaseReloadUrl("https://hydroxyl.app/editor/?example=glycine#smiles=CCO", "doc_1"),
+    ).toBe("https://hydroxyl.app/editor/?doc=doc_1");
+    // Already there, or nothing to reopen: a plain reload.
+    expect(releaseReloadUrl("https://hydroxyl.app/editor/?doc=doc_1", "doc_1")).toBeNull();
+    expect(releaseReloadUrl("https://hydroxyl.app/about/", null)).toBeNull();
+  });
+});
+

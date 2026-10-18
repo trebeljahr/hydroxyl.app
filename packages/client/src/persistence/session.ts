@@ -18,7 +18,7 @@ import type { SketchDocument } from "@starter/shared";
 import { isStartupDocument, type EditorStore } from "@/state";
 
 import { startAutosave, type AutosaveHandle, type AutosaveOptions } from "./autosave";
-import { saveDocument } from "./documents";
+import { loadDocument, saveDocument } from "./documents";
 import { readJournals, writeJournal } from "./journal";
 import { clearUnsaved, markSaveFailed, markUnsaved, resetSaveState } from "./save-state";
 import { storeFail, storeOk, type StoreResult } from "./types";
@@ -299,4 +299,25 @@ export async function saveBeforeReleaseReload(): Promise<ReleaseSaveResult> {
   if ((session?.pending() ?? null) !== null)
     return { ok: false, message: "The latest change is still being saved." };
   return { ok: true };
+}
+
+/**
+ * The id of the document this editor has open, when storage holds it: where a
+ * release reload should land so the chemist is back in the same sketch.
+ *
+ * A sketch started from a bare `/editor` never puts `?doc=` in the address
+ * bar, so a plain `location.reload()` opened a new blank sketch and left the
+ * one just saved in the recents grid. Null when there is nothing to reopen:
+ * no editor on this page, the untouched startup placeholder, a held document
+ * (another tab deleted it), or an example or fixture nobody edited, which
+ * `baselineEditorDocument` marks as saved without ever writing it. The read
+ * is what tells the last case apart; a `?doc=` naming nothing would open an
+ * error instead of a sketch.
+ */
+export async function storedEditorDocumentId(): Promise<string | null> {
+  const doc = editor?.getState().document ?? null;
+  if (doc === null || isStartupDocument(doc)) return null;
+  if (held !== null && held.id === doc.id) return null;
+  const read = await loadDocument(doc.id);
+  return read.ok ? doc.id : null;
 }
