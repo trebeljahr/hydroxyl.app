@@ -5,8 +5,16 @@ Cloudflare Worker `chemistry-sketcher-client`. It has static assets and no
 script. One Workers route per hostname (`<host>/*`) sends requests to it. A
 second route per hostname, `<host>/.well-known/acme-challenge/*` with no
 Worker, keeps certificate renewal on the Coolify origin while Traefik holds
-certificates for these hosts. The routes were made by hand. `wrangler.jsonc`
-has no `routes` key, so Wrangler never changes them, and CI's token cannot.
+certificates for these hosts. The routes were made by hand on 2026-10-18.
+`wrangler.jsonc` has no `routes` key, so Wrangler never changes them, and
+CI's token cannot.
+
+Plain `http://` gets a 301 to `https://` from hatchkit's one HTTP→HTTPS
+redirect rule per zone, which skips `/.well-known/` so Traefik's HTTP-01
+renewal still reaches the origin. Change the hosts in it only with
+`hatchkit cloudflare https add|remove <host>`. The rule reads `not ssl`,
+because a Free zone refuses `http.request.scheme`. The zone setting Always Use
+HTTPS stays off: it would also redirect the renewal path.
 
 ## What a release is
 
