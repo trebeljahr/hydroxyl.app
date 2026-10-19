@@ -62,6 +62,13 @@ such as `hatchkit destroy <project> --recipe`, `hatchkit gh-pages --undo
   runs against the web export under `wrangler dev`. The Coolify app retired
   the same day
 
+`/privacy` names every host the visitor's browser contacts and everything the
+app keeps in the browser. Adding a request to another host, a script or an
+embed, changing a storage key, or setting the two `NEXT_PUBLIC_PLAUSIBLE_*`
+repository variables (the live site has no analytics of its own until they
+exist) updates `packages/client/src/app/privacy/page.tsx` and its `UPDATED_ON`
+in the same change.
+
 There is no server package. This is a static/client-only surface; the editor
 runs entirely in the browser. If a server becomes necessary (IUPAC naming is
 the likely trigger), add it with `hatchkit update` rather than by hand.

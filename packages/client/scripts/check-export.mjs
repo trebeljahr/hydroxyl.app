@@ -79,6 +79,7 @@ for (const page of [
   "index.html",
   "editor.html",
   "about.html",
+  "privacy.html",
   "guides.html",
   "guides-journal-figure-size.html",
   "guides-glycine-zwitterion.html",
@@ -145,7 +146,12 @@ if (sitemap !== null) {
   const listed = [...sitemap.matchAll(/<loc>([^<]*)<\/loc>/g)].map((m) => m[1]);
   const guideEntries =
     releasedGuidePages.length === 0 ? [] : ["guides.html", ...releasedGuidePages];
-  const expected = [site, `${site}about.html`, ...guideEntries.map((f) => `${site}${f}`)];
+  const expected = [
+    site,
+    `${site}about.html`,
+    `${site}privacy.html`,
+    ...guideEntries.map((f) => `${site}${f}`),
+  ];
   // The guides' order is the index's (newest first), which only guides.ts
   // knows; the set is what the pages decide.
   const sorted = (urls) => [...urls.slice(0, 2), ...urls.slice(2).sort()];

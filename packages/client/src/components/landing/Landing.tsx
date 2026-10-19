@@ -33,6 +33,7 @@ import {
   editorExampleHref,
   editorHref,
   isFileExportBuild,
+  privacyHref,
   thirdPartyNoticesHref,
 } from "@/lib/deployment";
 import { DONATE_URL } from "@/lib/donation";
@@ -222,6 +223,9 @@ export function Landing(): ReactElement {
         <span>{SITE_NAME}</span>
         <a href={thirdPartyNoticesHref()} className="hover:text-foreground underline-offset-2 hover:underline">
           Third-party licences
+        </a>
+        <a href={privacyHref()} className="hover:text-foreground underline-offset-2 hover:underline">
+          Privacy
         </a>
         {/* The address itself, so a visitor with no mail program set up can
             still copy it. In every build, the static export too (decision

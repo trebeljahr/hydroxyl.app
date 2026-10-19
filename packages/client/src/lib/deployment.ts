@@ -138,6 +138,12 @@ export function aboutHref(): string {
   return isFileExportBuild() ? "about.html" : "/about";
 }
 
+/** A link to the privacy page. One level down like `/about`, so the export
+ *  writes it flat as `privacy.html` with no move. */
+export function privacyHref(): string {
+  return isFileExportBuild() ? "privacy.html" : "/privacy";
+}
+
 /**
  * The public URL this app is published at, absolute and ending in a slash.
  *
@@ -157,7 +163,7 @@ export function siteUrl(): string {
 
 /**
  * The pages a search engine should index, as absolute URLs: the landing at
- * `/` and the about page. Not the editor, whose `?doc=` ids name one
+ * `/`, the about page and the privacy page. Not the editor, whose `?doc=` ids name one
  * browser's IndexedDB.
  *
  * Each is the address its build answers with a 200 rather than a redirect,
@@ -168,7 +174,12 @@ export function siteUrl(): string {
  */
 export function indexablePageUrls(): string[] {
   const root = siteUrl();
-  return [root, new URL(isFileExportBuild() ? "about.html" : "about/", root).href];
+  const exported = isFileExportBuild();
+  return [
+    root,
+    new URL(exported ? "about.html" : "about/", root).href,
+    new URL(exported ? "privacy.html" : "privacy/", root).href,
+  ];
 }
 
 /**

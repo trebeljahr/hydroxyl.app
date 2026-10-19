@@ -88,7 +88,7 @@ import {
   type StorageStatus,
 } from "@/persistence/storage-status";
 import type { DocumentMeta } from "@/persistence/types";
-import { aboutHref, editorHref } from "@/lib/deployment";
+import { aboutHref, editorHref, privacyHref } from "@/lib/deployment";
 import { exportLibrary, importIntoLibrary, type ActionReport } from "@/lib/io/library-actions";
 import { SITE_NAME } from "@/lib/site";
 import { cn } from "@/lib/utils";
@@ -481,6 +481,11 @@ function StorageLine({ rows }: { readonly rows: readonly Row[] }): ReactElement 
           )}
         </p>
       ) : null}
+      <p>
+        <a href={privacyHref()} data-recents="privacy" className="underline underline-offset-2">
+          Privacy
+        </a>
+      </p>
     </footer>
   );
 }

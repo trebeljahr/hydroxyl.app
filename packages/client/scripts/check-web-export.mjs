@@ -72,6 +72,7 @@ for (const page of [
   "404.html",
   "editor/index.html",
   "about/index.html",
+  "privacy/index.html",
   "guides/index.html",
   "guides/journal-figure-size/index.html",
 ]) {
