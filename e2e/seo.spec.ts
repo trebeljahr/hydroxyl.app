@@ -22,7 +22,7 @@ const { domain } = JSON.parse(readFileSync(join(process.cwd(), ".hatchkit.json")
 };
 const SITE = `https://${domain}/`;
 
-test("the sitemap lists the landing, the about page and the released guides, each without a redirect", async ({
+test("the sitemap lists the landing, the about, privacy and imprint pages and the released guides, each without a redirect", async ({
   request,
 }) => {
   // maxRedirects 0 throughout: trailingSlash:true redirects extensionless
@@ -38,7 +38,7 @@ test("the sitemap lists the landing, the about page and the released guides, eac
     released.length === 0
       ? []
       : [`${SITE}guides/`, ...released.map((slug) => `${SITE}guides/${slug}/`)];
-  expect(locs).toEqual([SITE, `${SITE}about/`, ...guides]);
+  expect(locs).toEqual([SITE, `${SITE}about/`, `${SITE}privacy/`, `${SITE}imprint/`, ...guides]);
 
   for (const loc of locs) {
     const page = await request.get(new URL(loc!).pathname, { maxRedirects: 0 });
