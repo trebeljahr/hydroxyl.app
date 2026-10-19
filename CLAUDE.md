@@ -62,6 +62,7 @@ such as `hatchkit destroy <project> --recipe`, `hatchkit gh-pages --undo
   runs against the web export under `wrangler dev`. The Coolify app retired
   the same day
 
+`/imprint` holds the provider information (§ 5 DDG, § 18 (2) MStV) and
 `/privacy` names every host the visitor's browser contacts and everything the
 app keeps in the browser. Adding a request to another host, a script or an
 embed, changing a storage key, or setting the two `NEXT_PUBLIC_PLAUSIBLE_*`

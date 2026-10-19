@@ -18,6 +18,7 @@ import type { ReactElement, ReactNode } from "react";
 import { GuidePageShell } from "@/components/guides/GuidePageShell";
 import { PUBCHEM_HOST } from "@/lib/io/pubchem";
 import { FEEDBACK_ADDRESS } from "@/lib/feedback";
+import { imprintHref } from "@/lib/deployment";
 import { SITE_NAME } from "@/lib/site";
 
 const UPDATED_ON = "October 19, 2026";
@@ -79,8 +80,13 @@ export default function PrivacyPage(): ReactElement {
 
         <Section title="Controller">
           <p>
-            The controller under the EU General Data Protection Regulation (GDPR) is Rico Trebeljahr, c/o Block
-            Services, Stuttgarter Str. 106, 70736 Fellbach, Germany. Email for privacy questions:{" "}
+            The controller under the EU General Data Protection Regulation (GDPR) is the service provider named
+            in the{" "}
+            <a href={imprintHref()} className={linkClass}>
+              imprint
+            </a>
+            : Rico Trebeljahr, c/o Block Services, Stuttgarter Str. 106, 70736 Fellbach, Germany. Email for
+            privacy questions:{" "}
             <Mail address={PRIVACY_ADDRESS} />.
           </p>
         </Section>

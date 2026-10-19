@@ -32,6 +32,7 @@ import { JOURNAL_WIDTHS_CM, MIN_PRINTED_LABEL_PT } from "@starter/chem-render";
 import {
   editorExampleHref,
   editorHref,
+  imprintHref,
   isFileExportBuild,
   privacyHref,
   thirdPartyNoticesHref,
@@ -226,6 +227,9 @@ export function Landing(): ReactElement {
         </a>
         <a href={privacyHref()} className="hover:text-foreground underline-offset-2 hover:underline">
           Privacy
+        </a>
+        <a href={imprintHref()} className="hover:text-foreground underline-offset-2 hover:underline">
+          Imprint
         </a>
         {/* The address itself, so a visitor with no mail program set up can
             still copy it. In every build, the static export too (decision

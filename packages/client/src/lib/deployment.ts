@@ -144,6 +144,12 @@ export function privacyHref(): string {
   return isFileExportBuild() ? "privacy.html" : "/privacy";
 }
 
+/** A link to the imprint. One level down like `/about`, so the export writes
+ *  it flat as `imprint.html` with no move. */
+export function imprintHref(): string {
+  return isFileExportBuild() ? "imprint.html" : "/imprint";
+}
+
 /**
  * The public URL this app is published at, absolute and ending in a slash.
  *
@@ -163,7 +169,7 @@ export function siteUrl(): string {
 
 /**
  * The pages a search engine should index, as absolute URLs: the landing at
- * `/`, the about page and the privacy page. Not the editor, whose `?doc=` ids name one
+ * `/`, the about, privacy and imprint pages. Not the editor, whose `?doc=` ids name one
  * browser's IndexedDB.
  *
  * Each is the address its build answers with a 200 rather than a redirect,
@@ -179,6 +185,7 @@ export function indexablePageUrls(): string[] {
     root,
     new URL(exported ? "about.html" : "about/", root).href,
     new URL(exported ? "privacy.html" : "privacy/", root).href,
+    new URL(exported ? "imprint.html" : "imprint/", root).href,
   ];
 }
 

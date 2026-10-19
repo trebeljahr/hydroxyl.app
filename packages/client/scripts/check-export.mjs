@@ -80,6 +80,7 @@ for (const page of [
   "editor.html",
   "about.html",
   "privacy.html",
+  "imprint.html",
   "guides.html",
   "guides-journal-figure-size.html",
   "guides-glycine-zwitterion.html",
@@ -150,6 +151,7 @@ if (sitemap !== null) {
     site,
     `${site}about.html`,
     `${site}privacy.html`,
+    `${site}imprint.html`,
     ...guideEntries.map((f) => `${site}${f}`),
   ];
   // The guides' order is the index's (newest first), which only guides.ts

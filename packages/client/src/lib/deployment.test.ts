@@ -7,6 +7,7 @@ import {
   editorHref,
   guideHref,
   guidesIndexHref,
+  imprintHref,
   indexablePageUrls,
   privacyHref,
   isFileExportBuild,
@@ -49,6 +50,7 @@ describe("the web / dev build", () => {
     expect(recentsHref()).toBe("/");
     expect(aboutHref()).toBe("/about");
     expect(privacyHref()).toBe("/privacy");
+    expect(imprintHref()).toBe("/imprint");
     expect(guideHref("journal-figure-size")).toBe("/guides/journal-figure-size");
     expect(guidesIndexHref()).toBe("/guides");
     // Origin-absolute: `/about` is served as `/about/`, and a relative path
@@ -81,6 +83,7 @@ describe("the static export", () => {
     expect(recentsHref()).toBe("index.html");
     expect(aboutHref()).toBe("about.html");
     expect(privacyHref()).toBe("privacy.html");
+    expect(imprintHref()).toBe("imprint.html");
     expect(thirdPartyNoticesHref()).toBe("rdkit/THIRD-PARTY-NOTICES.txt");
   });
 
@@ -106,19 +109,19 @@ describe("the static export", () => {
 describe("the public URL, for sitemap.xml and robots.txt (decision 122)", () => {
   const SITE = "https://chemistry.example.test/";
 
-  it("lists the landing, the about page and the privacy page at the address the web build serves with a 200", () => {
+  it("lists the landing, the about, privacy and imprint pages at the address the web build serves with a 200", () => {
     vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "0");
     vi.stubEnv("NEXT_PUBLIC_SITE_URL", SITE);
     expect(siteUrl()).toBe(SITE);
     // `about/`, not `aboutHref()`'s `/about`: trailingSlash answers that with
     // a 308, and a sitemap entry that redirects is one a crawler reports.
-    expect(indexablePageUrls()).toEqual([SITE, `${SITE}about/`, `${SITE}privacy/`]);
+    expect(indexablePageUrls()).toEqual([SITE, `${SITE}about/`, `${SITE}privacy/`, `${SITE}imprint/`]);
   });
 
-  it("lists the export's flat about.html and privacy.html, the files its own links point at", () => {
+  it("lists the export's flat about.html, privacy.html and imprint.html, the files its own links point at", () => {
     vi.stubEnv("NEXT_PUBLIC_FILE_EXPORT", "1");
     vi.stubEnv("NEXT_PUBLIC_SITE_URL", SITE);
-    expect(indexablePageUrls()).toEqual([SITE, `${SITE}about.html`, `${SITE}privacy.html`]);
+    expect(indexablePageUrls()).toEqual([SITE, `${SITE}about.html`, `${SITE}privacy.html`, `${SITE}imprint.html`]);
   });
 
   it("lists no guide, and not the guides index, while none is released (decision 244)", () => {
