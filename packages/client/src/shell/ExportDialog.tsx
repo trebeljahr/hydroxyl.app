@@ -49,6 +49,10 @@
  *
  * Every button runs a registry command synchronously inside its click, which
  * is what keeps the clipboard and the save picker inside the user gesture.
+ *
+ * SUPPORT (`SupportLine`). After the first export that finishes with the
+ * dialog open, one sentence under the status links the donate page, once per
+ * browser and never in the static export (`lib/donation.ts`).
  */
 
 import { useMemo } from "react";
@@ -80,6 +84,7 @@ import { editorStore, useEditorStore } from "@/state";
 import type { FigureExportSettings } from "@/state/types";
 
 import { FigurePanelChooser } from "./FigurePanelChooser";
+import { SupportLine } from "./SupportLine";
 
 const button =
   "hover:bg-accent focus-visible:ring-ring flex h-8 items-center justify-center rounded-md border px-3 text-xs focus-visible:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-40";
@@ -482,6 +487,7 @@ export function ExportDialog(): ReactElement {
         <p data-shell="export-status" role="status" className="text-muted-foreground mt-3 min-h-4 text-xs">
           {status}
         </p>
+        <SupportLine />
       </DialogContent>
     </Dialog>
   );

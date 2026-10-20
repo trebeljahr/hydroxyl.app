@@ -21,7 +21,7 @@ import { FEEDBACK_ADDRESS } from "@/lib/feedback";
 import { imprintHref } from "@/lib/deployment";
 import { SITE_NAME } from "@/lib/site";
 
-const UPDATED_ON = "October 19, 2026";
+const UPDATED_ON = "October 20, 2026";
 const PRIVACY_ADDRESS = "privacy@hydroxyl.app";
 
 const DESCRIPTION =
@@ -196,7 +196,11 @@ export default function PrivacyPage(): ReactElement {
             <li>
               <Host>donation-supported-at</Host> in local storage: the time you came back from the donation page
               on ricos.site. The app writes it only when the address has <code className="font-mono">?supported=1</code>.
-              Nothing reads it yet.
+              For 90 days after that time, the export dialog does not show its line about donating.
+            </li>
+            <li>
+              <Host>chemistry-sketcher.support-line-shown</Host> in local storage: the time the export dialog
+              showed its line about donating, so that it shows only once.
             </li>
             <li>
               <Host>chemistry-release-reload:…</Host> in session storage: a mark that stops a page from reloading

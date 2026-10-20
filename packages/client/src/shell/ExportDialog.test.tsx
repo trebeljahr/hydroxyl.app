@@ -4,7 +4,7 @@
  * disables an export for it.
  */
 
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { butan2olWedged } from "@starter/chem-render";
@@ -12,6 +12,7 @@ import { bonds, setBondStereo, withStereoGroups } from "@starter/chem-core";
 import { createDocument, createPanel } from "@starter/shared";
 import type { SketchDocument } from "@starter/shared";
 
+import { DONATE_URL, SUPPORT_LINE_KEY, noteExportFinished } from "@/lib/donation";
 import { molblockVersionNotice, wedgelessStereoGroupNotice } from "@/lib/rdkit/translate";
 import { editorStore } from "@/state";
 
@@ -230,5 +231,49 @@ describe("ExportDialog PNG background", () => {
     expect(
       dialog.querySelector('[data-shell="figure-preview-frame"]')!.getAttribute("data-png-background"),
     ).toBe("transparent");
+  });
+});
+
+describe("ExportDialog support line", () => {
+  const line = (): HTMLElement | null => document.querySelector<HTMLElement>('[data-shell="support-line"]');
+
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("appears under the buttons after an export finishes, links the donate page, and closes", () => {
+    openDialog(descriptorDoc(false), 17.8);
+    expect(line()).toBeNull();
+
+    act(() => noteExportFinished());
+    const shown = line();
+    expect(shown).not.toBeNull();
+    expect(shown!.closest('[data-shell="export-dialog"]')).not.toBeNull();
+    expect(shown!.querySelector("a")!.getAttribute("href")).toBe(DONATE_URL);
+    expect(window.localStorage.getItem(SUPPORT_LINE_KEY)).not.toBeNull();
+
+    fireEvent.click(document.querySelector('[data-shell="support-line-close"]')!);
+    expect(line()).toBeNull();
+    act(() => noteExportFinished());
+    expect(line()).toBeNull();
+  });
+
+  it("shows once: a later dialog and export leave it out, closed or not", () => {
+    openDialog(descriptorDoc(false), 17.8);
+    act(() => noteExportFinished());
+    expect(line()).not.toBeNull();
+    act(() => editorStore.getState().setExportDialogOpen(false));
+    expect(line()).toBeNull();
+
+    act(() => editorStore.getState().setExportDialogOpen(true));
+    act(() => noteExportFinished());
+    expect(line()).toBeNull();
+  });
+
+  it("needs an export made while the dialog is open", () => {
+    act(() => noteExportFinished());
+    openDialog(descriptorDoc(false), 17.8);
+    expect(line()).toBeNull();
+    expect(window.localStorage.getItem(SUPPORT_LINE_KEY)).toBeNull();
   });
 });

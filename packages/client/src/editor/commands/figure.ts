@@ -33,6 +33,7 @@ import {
 } from "@/lib/export/figure";
 import type { PreparedFigure } from "@/lib/export/figure";
 import { textBlob, writeClipboardParts } from "@/lib/export/clipboard";
+import { noteExportFinished } from "@/lib/donation";
 import { figurePdfBlob } from "@/lib/export/pdf";
 import { canvasCanHold, rasterizeSvg } from "@/lib/export/png";
 import { writeBlobFile } from "@/lib/io/file-system";
@@ -77,8 +78,12 @@ export async function exportFigureSvg(store: EditorStore): Promise<void> {
     "SVG figure",
     ".svg",
   );
-  if (outcome.ok) report(store, `Exported the figure as SVG, ${sizeNote(store, figure)}`);
-  else if (!outcome.cancelled) report(store, outcome.message);
+  if (outcome.ok) {
+    report(store, `Exported the figure as SVG, ${sizeNote(store, figure)}`);
+    noteExportFinished();
+  } else if (!outcome.cancelled) {
+    report(store, outcome.message);
+  }
 }
 
 export async function exportFigurePdf(store: EditorStore): Promise<void> {
@@ -98,6 +103,7 @@ export async function exportFigurePdf(store: EditorStore): Promise<void> {
       store,
       `Exported the figure as PDF, ${sizeNote(store, figure)}${fonts === null ? "" : ` ${fonts}`}`,
     );
+    noteExportFinished();
   } else if (!outcome.cancelled) {
     report(store, outcome.message);
   }
@@ -124,6 +130,7 @@ export async function exportFigurePng(store: EditorStore): Promise<void> {
   );
   if (outcome.ok) {
     report(store, `Exported the figure as PNG, ${widthPx} × ${heightPx} px at ${dpi} dpi`);
+    noteExportFinished();
   } else if (!outcome.cancelled) {
     report(store, outcome.message);
   }
@@ -153,6 +160,7 @@ export async function exportCdxml(store: EditorStore): Promise<void> {
   );
   if (outcome.ok) {
     report(store, ["Downloaded the structure as CDXML.", ...dropped].join(" "));
+    noteExportFinished();
   } else if (!outcome.cancelled) {
     report(store, outcome.message);
   }
@@ -178,6 +186,7 @@ export async function copyFigure(store: EditorStore): Promise<void> {
     const copied = `Copied the figure (${written.map((type) => type.replace(/^\w+\//, "").replace("+xml", "")).join(", ")})`;
     // A PNG left out is said out loud, with why, not implied by its absence.
     report(store, tooLarge === null ? copied : `${copied}, without a PNG. ${tooLarge}`);
+    noteExportFinished();
   } catch (error) {
     report(store, `The figure could not be copied: ${describe(error)}`);
   }
