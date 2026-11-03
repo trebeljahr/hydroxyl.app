@@ -44,7 +44,7 @@
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@rdkit/rdkit": "2025.3.4-1.0.0",
     "@resvg/resvg-wasm": "2.6.2",
-    "zod": "^4.6.5"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@starter/chem-core": "workspace:*",
